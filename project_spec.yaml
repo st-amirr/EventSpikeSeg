@@ -1,0 +1,955 @@
+document:
+  title: "Hardware-Oriented Event-Camera Spiking CNN for Region Proposal, Classification, and Tracking"
+  short_name: "EventSCNN-FPGA"
+  version: "0.1.0"
+  status: "research_design_draft"
+  created_date: "2026-08-02"
+  intended_uses:
+    - "Software and FPGA implementation specification"
+    - "Research planning and experiment tracking"
+    - "Foundation for a future journal or conference article"
+    - "Interface contract between SpikingJelly training and an extended Spiker+-derived FPGA backend"
+  central_interpretation: >-
+    The network is discrete-time at the algorithm level and is trained using temporal
+    event-count tensors, but the FPGA executes convolution sparsely by reading spike
+    addresses and adding shared kernel weights only for active spikes. Exact continuous
+    timestamp decay is intentionally outside the first implementation.
+
+researcher_context:
+  background:
+    - "MEng graduate in Electronic Engineering, Digital Systems"
+    - "FPGA-based real-time semantic segmentation for autonomous-vehicle imagery"
+    - "Adapted LMIINet to CGRA4ML on a Xilinx ZCU104"
+    - "Experience with 8-bit quantization-aware training and fixed-point optimization"
+    - "Experience with VHDL, FPGA synthesis/simulation, Python, C/C++, microcontrollers, sensors, and embedded systems"
+    - "Approximately 18 months of embedded-system experience"
+  research_direction:
+    - "Move from dense frame-based image processing toward neuromorphic and event-based perception"
+    - "Develop a spike-native vision pipeline whose hardware operations are dominated by additions, comparisons, shifts, address generation, and memory access"
+    - "Produce a credible research article and demonstrator for future PhD applications in neuromorphic vision and hardware-software co-design"
+  fixed_constraints:
+    - "Use event-only DAVIS input initially; do not use APS intensity frames"
+    - "Use genuine stateful spiking convolutional layers"
+    - "Training may use dense PyTorch convolution on a PC"
+    - "FPGA inference must exploit sparsity through conditional weight additions"
+    - "Exact event-by-event continuous-time decay is not required"
+    - "FPGA is the first hardware target; dedicated neuromorphic hardware is a later path"
+
+decision_history:
+  - step: 1
+    issue: "Continuous-time event processing"
+    decision: "Not required for version 1"
+    reason: "The main goal is matrix multiplier-minimized FPGA inference"
+  - step: 2
+    issue: "SpikingJelly NCHW/TNCHW representation"
+    decision: "Accepted"
+    reason: >-
+      Dense software convolution over a sparse spike tensor is mathematically equivalent
+      to summing the shared-kernel contributions of active spike addresses. The FPGA can
+      implement only those additions.
+  - step: 3
+    issue: "Custom training framework"
+    decision: "Do not build one"
+    reason: "SpikingJelly and PyTorch already provide training, automatic differentiation, datasets, and optimization"
+  - step: 4
+    issue: "Direct SpikingJelly-to-Spiker+ conversion"
+    decision: "Not currently assumed to work automatically"
+    reason: >-
+      A DAVIS-oriented shared-kernel convolution backend, custom cross-filter inhibition,
+      adaptive thresholds, proposal logic, and tracking are not available as a complete
+      existing Spiker+ path.
+  - step: 5
+    issue: "Extend Spiker+ or start from zero"
+    decision: "Build a clean convolutional backend while reusing selected Spiker+ components and methods"
+    reuse:
+      - "Fixed-point neuron arithmetic"
+      - "Threshold and reset concepts"
+      - "Power-of-two leak approximation"
+      - "Quantization methodology"
+      - "VHDL generation utilities and verification structure"
+    implement_new:
+      - "Spatial event routing"
+      - "Shared-kernel convolution scheduling"
+      - "Feature-map state memory"
+      - "f_inst and f_long logic"
+      - "Region proposal, ROI, classification, and tracking interfaces"
+
+research_problem:
+  problem_statement: >-
+    Event cameras generate sparse asynchronous brightness-change events, but trainable
+    deep-SNN frameworks typically execute convolution as dense tensor operations. FPGA
+    SNN generators provide efficient neuron implementations but do not directly provide
+    a DAVIS-oriented event-addressed convolutional pipeline with region proposals,
+    custom competition/homeostasis, classification, and tracking.
+  primary_question: >-
+    Can a convolutional SNN trained in SpikingJelly be mapped to a functionally equivalent
+    FPGA architecture that replaces dense convolutional multiplication with sparse
+    event-triggered kernel-weight accumulation while retaining useful competitive and
+    adaptive spiking dynamics?
+  secondary_questions:
+    - "What accuracy is lost after weight, state, threshold, and decay quantization?"
+    - "Does f_inst-style competition improve precision, feature diversity, and spike sparsity?"
+    - "Does f_long/T_thresh-style homeostasis justify its hardware overhead?"
+    - "Which event-bin duration gives the best accuracy-latency-throughput trade-off?"
+    - "Can the pipeline remain useful for tracking and classification with substantially fewer synaptic operations than dense convolution?"
+  working_hypotheses:
+    - "Sparse spike-address accumulation reduces arithmetic approximately in proportion to activity"
+    - "Stride-downsampled feature maps make DAVIS-resolution neuron-state storage practical on a ZCU104-class FPGA"
+    - "Feature-map-level homeostasis captures much of the filter-diversity benefit of per-neuron adaptive thresholds with much lower memory cost"
+    - "Three spiking convolution layers are sufficient for a first single-object demonstrator"
+
+literature_review:
+  lineage_summary:
+    - "DAVIS established low-latency sparse ON/OFF event output at practical image resolutions"
+    - "The 2019 SNN region-proposal paper demonstrated refractory filtering, local LIF convolution, and clustering on DAVIS traffic recordings"
+    - "The 2021 trajectory-prediction paper demonstrated a three-layer convolutional SNN with STDP, instantaneous inhibition, adaptive thresholds, motion-selective filters, and a supervised readout"
+    - "SpikingJelly provides a practical trainable framework for convolutional SNNs, event datasets, surrogate gradients, and optional STDP"
+    - "Spiker+ provides a reference path for compact fixed-point FPGA SNN accelerators and automatic VHDL generation"
+    - "Modern SNN trackers confirm that event-only or event-centered SNN tracking is an active research direction, but many use transformer or hybrid structures that are less suitable for the first accumulator-centric FPGA design"
+  key_works:
+    - id: "berner2013_sparse_sensor"
+      title: "A 240x180 10mW 12us latency sparse-output vision sensor for mobile applications"
+      authors: ["R. Berner", "C. Brandli", "M. Yang", "S.-C. Liu", "T. Delbruck"]
+      year: 2013
+      venue: "Symposium on VLSI Circuits"
+      role: "Sensor lineage and justification for native polarity events"
+      project_takeaway: "Preserve ON/OFF event addresses through the input hardware"
+      url: "https://www.research-collection.ethz.ch/handle/20.500.11850/78978"
+    - id: "acharya2019_rpn"
+      title: "Spiking Neural Network based Region Proposal Networks for Neuromorphic Vision Sensors"
+      authors: ["Jyotibdha Acharya", "Vandana Padala", "Arindam Basu"]
+      year: 2019
+      venue: "IEEE ISCAS"
+      doi: "10.1109/ISCAS.2019.8702651"
+      role: "Basis for local event-activity proposals and spatial clustering"
+      project_takeaway: "Add learned features, classification, and temporal tracking to the proposal concept"
+      url: "https://arxiv.org/abs/1902.09864"
+    - id: "debat2021_trajectory"
+      title: "Event-Based Trajectory Prediction Using Spiking Neural Networks"
+      authors: ["Guillaume Debat", "Tushar Chauhan", "Benoit R. Cottereau", "Timothee Masquelier", "Michel Paindavoine", "Robin Baures"]
+      year: 2021
+      venue: "Frontiers in Computational Neuroscience"
+      doi: "10.3389/fncom.2021.658764"
+      role: "Basis for three SNN layers, STDP experiments, f_inst, f_long, T_thresh, and motion-selective filters"
+      project_takeaway: "Redesign the concepts for supervised tracking and FPGA-efficient state storage"
+      url: "https://www.frontiersin.org/journals/computational-neuroscience/articles/10.3389/fncom.2021.658764/full"
+    - id: "fang2023_spikingjelly"
+      title: "SpikingJelly: An open-source machine learning infrastructure platform for spike-based intelligence"
+      authors: ["Wei Fang et al."]
+      year: 2023
+      venue: "Science Advances"
+      doi: "10.1126/sciadv.adi1480"
+      role: "Primary software framework"
+      project_takeaway: "Use a constrained hardware-compatible subset and custom neuron/competition modules"
+      url: "https://github.com/fangwei123456/spikingjelly"
+    - id: "carpegna2024_spiker_plus"
+      title: "Spiker+: a framework for the generation of efficient Spiking Neural Networks FPGA accelerators for inference at the edge"
+      authors: ["Alessio Carpegna", "Alessandro Savino", "Stefano Di Carlo"]
+      year: 2024
+      venue: "IEEE Transactions on Emerging Topics in Computing"
+      doi: "10.1109/TETC.2024.3511676"
+      role: "Reference and partial implementation base for FPGA SNN hardware"
+      project_takeaway: "Reuse lower-level hardware methods; add a separate spatial sparse-convolution backend"
+      url: "https://github.com/smilies-polito/Spiker"
+    - id: "zhang2022_stnet"
+      title: "Spiking Transformers for Event-Based Single Object Tracking"
+      authors: ["Jiqing Zhang et al."]
+      year: 2022
+      venue: "CVPR"
+      role: "Accuracy reference for event-based SNN tracking"
+      project_takeaway: "Use for comparison, not as the initial FPGA architecture"
+      url: "https://openaccess.thecvf.com/content/CVPR2022/html/Zhang_Spiking_Transformers_for_Event-Based_Single_Object_Tracking_CVPR_2022_paper.html"
+    - id: "ji2023_sctn"
+      title: "SCTN: Event-based object tracking with energy-efficient deep convolutional neural networks"
+      authors: ["M. Ji et al."]
+      year: 2023
+      venue: "Frontiers in Neuroscience"
+      role: "Convolutional SNN tracking reference"
+      project_takeaway: "Supports supervised discriminative training rather than exclusive reliance on STDP"
+      url: "https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2023.1123698/full"
+    - id: "wang2024_spikemot"
+      title: "SpikeMOT: Event-Based Multi-Object Tracking With Sparse Motion Features"
+      authors: ["Song Wang", "Zhu Wang", "Can Li", "Xiaojuan Qi", "Hayden Kwok-Hay So"]
+      year: 2024
+      venue: "IEEE TPAMI"
+      role: "Reference for sparse motion features and eventual multi-object extension"
+      project_takeaway: "Begin with single-object tracking, then add detection refresh and identity association"
+      url: "https://arxiv.org/abs/2309.16987"
+    - id: "shan2026_sdtrack"
+      title: "SDTrack: A Baseline for Event-based Tracking via Spiking Neural Networks"
+      authors: ["Yimeng Shan et al."]
+      year: 2026
+      venue: "CVPR"
+      role: "Contemporary fully spike-driven tracking reference"
+      project_takeaway: "Compare accuracy while emphasizing the simpler hardware-oriented convolutional design"
+      url: "https://openaccess.thecvf.com/content/CVPR2026/html/Shan_SDTrack_A_Baseline_for_Event-based_Tracking_via_Spiking_Neural_Networks_CVPR_2026_paper.html"
+  identified_gap: >-
+    The literature separately provides event sensors, SNN proposals, motion-selective
+    STDP networks, trainable SNN frameworks, modern trackers, and FPGA SNN generators.
+    The intended contribution integrates these into a reproducible train-to-hardware
+    path for sparse shared-kernel FPGA convolution with custom competition and
+    homeostasis, region proposals, classification, and tracking.
+
+scope:
+  version_1_in_scope:
+    - "Event-only DAVIS input"
+    - "Canonical 240x180 resolution"
+    - "Two polarity channels"
+    - "Fixed-duration discrete timesteps"
+    - "Three trainable spiking convolution layers"
+    - "Hardware-compatible LIF neurons"
+    - "f_inst-inspired cross-filter competition"
+    - "f_long/T_thresh-inspired adaptive threshold homeostasis"
+    - "Single-object acquisition, classification, and tracking"
+    - "Spiking region/objectness proposal map and spatial clustering"
+    - "SpikingJelly training and quantization-aware fine-tuning"
+    - "Bit-accurate Python reference"
+    - "Spiker+-derived custom VHDL convolution backend"
+    - "ZCU104 FPGA inference"
+  version_1_out_of_scope:
+    - "Exact continuous-time decay from every DAVIS timestamp"
+    - "Clockless asynchronous FPGA logic"
+    - "APS frame fusion"
+    - "Transformer attention"
+    - "Full multi-object re-identification"
+    - "On-chip backpropagation"
+    - "Automatic conversion of arbitrary SpikingJelly modules"
+    - "A general replacement for PyTorch or SpikingJelly"
+  future_scope:
+    - "DAVIS346 AER live input"
+    - "Dynamic ROI remapping and full-frame reacquisition"
+    - "Multi-object tracking"
+    - "Online local learning"
+    - "NIR export for standard supported layers"
+    - "Comparison with Speck, Loihi, SpiNNaker, or other neuromorphic hardware"
+
+sensor_and_input:
+  canonical_sensor_profile:
+    name: "DAVIS240_or_DAVIS240C"
+    event_resolution_wh: [240, 180]
+    canonical_tensor_shape_chw: [2, 180, 240]
+    polarity_channels:
+      0: "OFF_negative_contrast"
+      1: "ON_positive_contrast"
+    selection_reasons:
+      - "Matches the 2019 region-proposal paper"
+      - "Manageable FPGA state-memory footprint"
+      - "Established public recordings and datasets"
+      - "Adequate for vehicles, pedestrians, balls, drones, and laboratory objects"
+  live_sensor_upgrade:
+    name: "DAVIS346_AER"
+    native_event_resolution_wh: [346, 260]
+    strategies:
+      - "Deterministic crop to 240x180 for compatibility"
+      - "Retrain a native 346x260 model after validating the backend"
+      - "Use dedicated event-only AER output when available"
+  raw_event_fields: ["timestamp", "x", "y", "polarity"]
+  aps_frames_used: false
+  optional_input_filters:
+    - name: "per_pixel_refractory_filter"
+      purpose: "Suppress rapid repeated noise events"
+      initial_value_us: 100
+      enabled_in_first_fpga: false
+    - name: "background_activity_filter"
+      purpose: "Reject isolated events without nearby support"
+      enabled_in_first_fpga: false
+      reason: "First establish the raw network baseline"
+
+temporal_representation:
+  name: "polarity_event_count_tensor"
+  single_step_layout: "NCHW"
+  multi_step_layout: "TNCHW"
+  baseline_bin_duration_us: 1000
+  candidate_bin_duration_us: [500, 1000, 2000, 5000]
+  baseline_training_window_steps: 20
+  baseline_context_duration_ms: 20
+  rolling_inference: true
+  binning_rule: >-
+    Each DAVIS event contributes one count at its polarity, y, x coordinate in the
+    current timestep. Multiple events at the same coordinate produce an integer count.
+  hardware_equivalence: >-
+    The FPGA does not materialize or convolve the count tensor. Processing every event
+    address as one kernel-weight addition implements the same count accumulation.
+  end_of_timestep_barrier:
+    required: true
+    ordered_actions:
+      - "Accumulate every event assigned to timestep t"
+      - "Apply neuron state update and leak"
+      - "Compare thresholds"
+      - "Apply f_inst competition"
+      - "Emit spikes and reset"
+      - "Update f_long/T_thresh homeostasis"
+      - "Pass output spike addresses to the next layer for timestep t"
+      - "Advance to timestep t+1 only after every layer completes"
+
+model:
+  framework: "SpikingJelly_activation_based"
+  training_step_mode: "m"
+  inference_reference_step_mode: "s"
+  architecture_name: "ThreeLayerCompetitiveAdaptiveEventSCNN"
+  aggregate:
+    logical_spiking_neurons: 151680
+    membrane_state_kib_at_16_bits: 296.25
+    convolution_weight_count: 6160
+    weight_storage_kib_at_8_bits: 6.016
+    interpretation: "The backbone is state-memory dominated rather than weight-memory dominated"
+  layers:
+    - name: "conv1_proposal_features"
+      type: "event_conv_lif"
+      input_shape_chw: [2, 180, 240]
+      output_shape_chw: [8, 90, 120]
+      convolution:
+        in_channels: 2
+        out_channels: 8
+        kernel_size: [5, 5]
+        stride: [2, 2]
+        padding: [2, 2]
+        bias: false
+        weight_sharing: true
+        weight_bits: 8
+        weight_count: 400
+        maximum_output_locations_per_input_event_per_output_channel: 9
+        maximum_weight_additions_per_input_event: 72
+      neuron:
+        model: "hardware_compatible_lif"
+        equation: "V[t] = beta * V[t-1] + I[t]"
+        beta_parameterization: "beta = 1 - 2^(-beta_shift)"
+        beta_shift_initial: 4
+        beta_initial: 0.9375
+        threshold_training_initial: 1.0
+        threshold_integer_initial: 256
+        reset: "subtractive"
+        membrane_bits: 16
+        accumulator_bits: 24
+      state_memory:
+        logical_neurons: 86400
+        membrane_kib_at_16_bits: 168.75
+    - name: "conv2_motion_features"
+      type: "event_conv_lif"
+      input_shape_chw: [8, 90, 120]
+      output_shape_chw: [16, 45, 60]
+      convolution:
+        in_channels: 8
+        out_channels: 16
+        kernel_size: [3, 3]
+        stride: [2, 2]
+        padding: [1, 1]
+        bias: false
+        weight_sharing: true
+        weight_bits: 8
+        weight_count: 1152
+        maximum_output_locations_per_input_event_per_output_channel: 4
+        maximum_weight_additions_per_input_event: 64
+      neuron:
+        model: "hardware_compatible_lif"
+        equation: "V[t] = beta * V[t-1] + I[t]"
+        beta_shift_initial: 4
+        threshold_integer_initial: 256
+        reset: "subtractive"
+        membrane_bits: 16
+        accumulator_bits: 24
+      state_memory:
+        logical_neurons: 43200
+        membrane_kib_at_16_bits: 84.375
+    - name: "conv3_semantic_tracking_features"
+      type: "event_conv_lif"
+      input_shape_chw: [16, 45, 60]
+      output_shape_chw: [32, 23, 30]
+      convolution:
+        in_channels: 16
+        out_channels: 32
+        kernel_size: [3, 3]
+        stride: [2, 2]
+        padding: [1, 1]
+        bias: false
+        weight_sharing: true
+        weight_bits: 8
+        weight_count: 4608
+        maximum_output_locations_per_input_event_per_output_channel: 4
+        maximum_weight_additions_per_input_event: 128
+      neuron:
+        model: "hardware_compatible_lif"
+        equation: "V[t] = beta * V[t-1] + I[t]"
+        beta_shift_initial: 4
+        threshold_integer_initial: 256
+        reset: "subtractive"
+        membrane_bits: 16
+        accumulator_bits: 24
+      state_memory:
+        logical_neurons: 22080
+        membrane_kib_at_16_bits: 43.125
+  proposal_head:
+    input_taps: ["conv1_proposal_features", "conv2_motion_features"]
+    selected_method: "trainable_1x1_spiking_objectness_head_plus_spatial_clustering"
+    activity_window_steps_initial: 5
+    processing:
+      - "Accumulate objectness spikes"
+      - "Threshold the low-resolution objectness map"
+      - "Run connected components or neighboring-window clustering"
+      - "Produce boxes and confidence from component activity"
+    rationale: "Avoid continuous bounding-box regression in the first FPGA version"
+  classification_head:
+    feature_source: "conv3_semantic_tracking_features"
+    reduction: "ROI spike-count pooling per channel"
+    classifier: "small fixed-point linear or spiking output layer"
+    class_count: "dataset_dependent"
+    decoding: "spike count or final membrane"
+  tracking_head:
+    initial_task: "single_object_tracking"
+    state: ["x", "y", "width", "height", "vx", "vy", "confidence", "class_id"]
+    measurement: "selected proposal and class confidence"
+    motion_model: "fixed_point_alpha_beta_filter"
+    association: "distance plus IoU plus class consistency"
+    roi_policy:
+      enabled_after_acquisition: true
+      search_margin_relative_to_box: 0.5
+      on_confidence_drop: "expand ROI, then reactivate full-frame proposals"
+      event_filter: "Discard events outside the active ROI after a stable track exists"
+    implementation_order: "Validate on Zynq PS first; move to PL after SCNN stability"
+
+custom_spiking_dynamics:
+  lif:
+    equation: "V[t] = beta * V[t-1] + I[t]"
+    beta_constraint: "beta = 1 - 2^(-q)"
+    initial_q: 4
+    leak_hardware: "V - arithmetic_shift_right(V, q)"
+    threshold: "theta_base + theta_adapt"
+    reset: "subtractive"
+    bias: false
+    no_bias_reason: "A bias forces updates without spikes and weakens sparse execution"
+  f_inst:
+    concept: "Immediate competition among channels at one spatial coordinate"
+    article_lineage: "Instantaneous inhibition in the 2021 trajectory-prediction paper"
+    selected_training_rule:
+      - "Compute candidate membrane and spikes for all channels at a coordinate"
+      - "Select the channel with the highest membrane above threshold"
+      - "Allow only the winner to emit"
+      - "Optionally decrement losing membranes by f_inst times theta_base"
+    hardware_rule: "top_1_gate_with_configurable_competitor_decrement"
+    initial_strength_relative_to_threshold: 0.25
+    ablation_values: [0.0, 0.125, 0.25, 0.5]
+    expected_effects:
+      - "More diverse feature maps"
+      - "Lower hidden spike rate"
+      - "Fewer duplicate proposals"
+      - "Possible precision gain with potential recall loss"
+  f_long_and_T_thresh:
+    concept: "Slow homeostatic threshold adaptation for overactive filters"
+    article_lineage: "Long-term threshold modulation in the 2021 trajectory-prediction paper"
+    selected_hardware_efficient_rule:
+      scope: "per_output_feature_map"
+      state: "A[channel]"
+      statistic: "channel spike count per timestep"
+      threshold: "theta_effective[channel] = theta_base + A[channel]"
+      update: "A = max(0, A - decay) + f_long * normalized_channel_spike_count"
+      T_thresh_interpretation: "Controls return time toward zero"
+      first_decay_implementation: "linear_countdown_or_triangular"
+      initial_duration_steps: 32
+      initial_increment_relative_to_threshold: 0.0625
+    paper_fidelity_ablation:
+      scope: "per_neuron"
+      shape: "inverted-V threshold modulation"
+      purpose: "Determine whether accuracy benefit justifies threshold-state memory"
+
+training:
+  primary_method: "supervised_surrogate_gradient"
+  rationale: "Tracking, objectness, localization, and classification need task-level losses"
+  optional_conv1_pretraining:
+    method: "STDP"
+    framework: "SpikingJelly STDPLearner"
+    purposes:
+      - "Learn edge and motion filters"
+      - "Compare local learning with end-to-end training"
+      - "Test whether STDP improves sparsity or label efficiency"
+  sequence:
+    - "Prepare raw events and sequence-level annotations"
+    - "Create fixed-duration polarity event-count tensors"
+    - "Train a floating-point baseline without f_inst/f_long"
+    - "Add f_inst and measure accuracy, proposal precision/recall, feature diversity, and sparsity"
+    - "Add f_long/T_thresh and measure utilization and robustness"
+    - "Train proposal, classification, and temporal losses"
+    - "Apply quantization-aware training"
+    - "Export integer weights and neuron parameters"
+    - "Validate the bit-accurate event-scatter model"
+    - "Generate and verify RTL"
+  losses:
+    proposal_objectness:
+      type: "binary_cross_entropy_or_focal_loss"
+      initial_weight: 1.0
+    proposal_localization:
+      type: "component_center_and_extent_loss_or_optional_box_regression"
+      initial_weight: 1.0
+    classification:
+      type: "cross_entropy_on_spike_counts_or_membrane_logits"
+      initial_weight: 1.0
+    temporal_consistency:
+      type: "smooth_L1_on_box_displacement_and_velocity"
+      initial_weight: 0.25
+    spike_rate_regularization:
+      type: "layerwise_mean_spike_rate_penalty"
+      initial_weight: 0.001
+    filter_balance_regularization:
+      type: "channel_utilization_variance_or_KL_penalty"
+      initial_weight: 0.001
+  surrogate_gradient:
+    initial: "ATan_or_fast_sigmoid"
+    inference_hardware_effect: "none"
+  optimizer:
+    initial: "AdamW"
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    scheduler: "cosine_or_reduce_on_plateau"
+  state_reset:
+    between_independent_sequences: true
+    within_continuous_tracking_sequence: false
+
+quantization:
+  objective: "Match an addition/shift/comparison-based FPGA datapath"
+  initial_formats:
+    weights: "signed_int8"
+    membrane: "signed_int16"
+    current_accumulator: "signed_int24"
+    base_threshold: "int16"
+    adaptive_threshold: "uint16"
+    spike: "1_bit"
+    coordinate_x: "uint8_or_uint9"
+    coordinate_y: "uint8"
+    timestep: "uint16_or_uint32"
+  rules:
+    - "No convolution bias"
+    - "Use power-of-two-compatible decay"
+    - "Fold BatchNorm into weights and thresholds or omit it"
+    - "Use saturating arithmetic"
+    - "Freeze rounding, clipping, and overflow behavior"
+  experiments:
+    weight_bits: [4, 6, 8]
+    membrane_bits: [12, 16, 20]
+    accumulator_guard_bits: "sweep"
+    process:
+      - "Post-training quantization baseline"
+      - "Quantization-aware fine-tuning"
+      - "Bit-exact export and replay"
+
+spikingjelly_contract:
+  allowed_initial_operations:
+    - "Conv2d"
+    - "Custom hardware-compatible LIF"
+    - "Custom f_inst module"
+    - "Custom f_long/T_thresh module"
+    - "Sum or average spike-count pooling"
+    - "1x1 convolution"
+    - "Small linear output layer"
+  deferred_operations:
+    - "Standalone inference BatchNorm"
+    - "Max pooling"
+    - "Attention"
+    - "Dilated convolution"
+    - "Transposed convolution"
+    - "Unconstrained floating-point adaptive dynamics"
+    - "Arbitrary per-neuron trainable tau"
+  export_artifacts:
+    - "model_spec.yaml"
+    - "quantized_weights.npz"
+    - "quantized_parameters.json"
+    - "golden_input_event_bins.npz"
+    - "golden_layer_spikes.npz"
+    - "golden_outputs.json"
+  equivalence_requirement: "Bit-accurate Python, RTL simulation, and FPGA output must match exported golden tests"
+
+spiker_plus_strategy:
+  decision: "Reuse selected components and create a new convolutional backend"
+  reuse_candidates:
+    - "Fixed-point LIF concepts"
+    - "Threshold and reset logic"
+    - "Power-of-two leakage"
+    - "Quantization and parameter export methodology"
+    - "VHDL code-generation utilities"
+    - "Testbench organization"
+    - "Compatible control and handshake patterns"
+  new_components:
+    - "Spatial convolution intermediate representation"
+    - "DAVIS/event-bin input interface"
+    - "Spike-address FIFO"
+    - "Shared-kernel ROM"
+    - "Input-spike-to-output-address generator"
+    - "Membrane/current state RAM"
+    - "Active-neuron list"
+    - "Layer timestep controller"
+    - "f_inst competition unit"
+    - "Feature-map homeostasis counters"
+    - "Proposal clustering"
+    - "ROI event gate"
+    - "Classification and tracking output interface"
+  avoid:
+    - "Flattening convolution into a large fully connected matrix"
+    - "Deeply modifying every fully connected Spiker+ assumption"
+    - "Building a replacement for PyTorch training"
+  proposed_repository:
+    training:
+      - "models/"
+      - "custom_neurons/"
+      - "losses/"
+      - "datasets/"
+      - "quantization/"
+    intermediate_representation:
+      - "ir/model_schema.py"
+      - "ir/export_from_spikingjelly.py"
+      - "ir/validate_model.py"
+    reference:
+      - "reference/float_model.py"
+      - "reference/fixed_point_model.py"
+      - "reference/event_scatter_conv.py"
+    hardware:
+      - "rtl/event_input/"
+      - "rtl/event_conv/"
+      - "rtl/neuron/"
+      - "rtl/inhibition/"
+      - "rtl/homeostasis/"
+      - "rtl/proposal/"
+      - "rtl/tracking/"
+      - "rtl/top/"
+    verification:
+      - "verification/cocotb/"
+      - "verification/golden_vectors/"
+      - "verification/assertions/"
+
+fpga_execution:
+  algorithmic_model: "discrete_time_spiking_network"
+  physical_model: "clocked_sparse_event_address_processing"
+  synaptic_operation:
+    equation: "I_j[t] += W_ji for every active presynaptic spike i"
+    multiplication: "not_required_for_binary_hidden_spikes"
+    first_layer_counts: "Repeated sensor events cause repeated weight additions"
+  per_timestep_pipeline:
+    - "Buffer DAVIS events for timestep t"
+    - "Generate affected Conv1 addresses and read shared weights"
+    - "Accumulate Conv1 currents"
+    - "At the Conv1 barrier, process active neurons: leak, current, threshold, f_inst, spike, reset, f_long"
+    - "Route Conv1 spike addresses through Conv2"
+    - "Route Conv2 spike addresses through Conv3"
+    - "Update objectness, proposals, classification, and tracking"
+    - "Advance to timestep t+1"
+  active_state_management:
+    selected: "active_neuron_list"
+    alternatives:
+      - name: "full_neuron_sweep"
+        benefit: "Simple exact semantics"
+        cost: "High memory bandwidth"
+      - name: "active_neuron_list"
+        benefit: "Updates only neurons with nonzero state or input"
+        cost: "Queue and duplicate-management logic"
+      - name: "lazy_decay_with_last_update_step"
+        benefit: "Maximum sparsity"
+        cost: "More complex beta^delta approximation"
+  parallelism:
+    processing_elements: [1, 4, 8, 16]
+    strategies:
+      - "Parallel output channels"
+      - "Parallel kernel offsets"
+      - "Bank state RAM to avoid write conflicts"
+    double_buffering: "Use ping-pong event FIFOs"
+  throughput:
+    additions_per_input_spike: "ceil(Kh/Sh) * ceil(Kw/Sw) * Cout"
+    deadline: "processing_cycles_per_timestep <= bin_duration * FPGA_clock_frequency, otherwise FIFO buffering is required"
+    reporting: "Report average, 99th percentile, and worst-observed event loads"
+
+fpga_target:
+  board: "Xilinx_ZCU104"
+  initial_clock_target_mhz: 100
+  reasons:
+    - "Matches prior user experience"
+    - "Provides substantial BRAM/URAM"
+    - "Allows ARM-side control, replay, logging, and early software tracking"
+  interfaces:
+    offline_first: "DDR_or_host_stream_of_timestamped_events"
+    live_later: "USB_or_AER_bridge_to_AXI_Stream"
+    control: "AXI_Lite"
+    outputs: "AXI_Stream_or_memory_mapped_proposals_classes_tracks"
+  resource_priorities:
+    - "BRAM/URAM capacity and banking"
+    - "Memory port conflicts"
+    - "LUT adders and comparators"
+    - "FIFO capacity"
+    - "Minimal or zero DSP use in the spiking backbone"
+    - "Clock enable during inactive periods"
+
+datasets:
+  progression:
+    - stage: 1
+      dataset: "synthetic_moving_shapes_or_ball"
+      purpose: "Verify motion selectivity, dynamics, routing, and RTL equivalence"
+    - stage: 2
+      dataset: "MEVDT"
+      sensor: "DAVIS240C"
+      task: "vehicle detection, classification, and tracking"
+      reason: "Direct sensor/resolution match with boxes, classes, and track IDs"
+      url: "https://arxiv.org/abs/2407.20446"
+    - stage: 3
+      dataset: "FE240hz"
+      task: "high-frequency single-object tracking"
+      reason: "Used by established event-tracking literature"
+    - stage: 4
+      dataset: "DSEC-MOT"
+      task: "future multi-object tracking"
+      reason: "Real traffic with occlusion and identity challenges"
+      url: "https://neuromorphicsystems.github.io/land/dsec-mot"
+    - stage: 5
+      dataset: "custom_DAVIS_recordings"
+      task: "live FPGA demonstration"
+      reason: "Needed for real event bursts, noise, latency, and power"
+  split_policy:
+    - "Split by complete sequence, not random temporal windows"
+    - "Prevent adjacent windows from one trajectory appearing in train and test"
+    - "Report class, speed, lighting, event rate, and occlusion distributions"
+
+evaluation:
+  proposal_metrics: ["precision", "recall", "F1", "proposal_IoU", "proposals_per_timestep", "time_to_first_valid_proposal"]
+  classification_metrics: ["accuracy", "macro_F1", "per_class_precision", "per_class_recall", "confusion_matrix"]
+  tracking_metrics: ["success_AUC", "center_precision", "normalized_precision", "failure_count", "reacquisition_time"]
+  future_multi_object_metrics: ["HOTA", "MOTA", "IDF1", "ID_switches"]
+  snn_metrics:
+    - "Spikes per layer and timestep"
+    - "Spike rate per logical neuron"
+    - "Channel utilization"
+    - "Silent and dominant filters"
+    - "Synaptic additions"
+    - "Membrane updates"
+  hardware_metrics:
+    - "LUT"
+    - "FF"
+    - "BRAM"
+    - "URAM"
+    - "DSP"
+    - "Maximum clock frequency"
+    - "Latency per timestep"
+    - "End-to-end proposal and tracking latency"
+    - "Sustained events per second"
+    - "99th-percentile FIFO occupancy"
+    - "Dynamic power"
+    - "Energy per input event"
+    - "Energy per proposal"
+    - "Energy per tracking update"
+  comparisons:
+    - "Dense PyTorch Conv2d operation estimate"
+    - "Floating-point SpikingJelly"
+    - "Quantized software"
+    - "FPGA sparse implementation"
+    - "RPN-paper-style activity proposal baseline"
+    - "Simple event clustering or mean-shift baseline"
+    - "Contemporary SNN tracker where dataset compatibility permits"
+
+experiment_matrix:
+  architecture:
+    - "2 vs 3 vs 4 convolution layers"
+    - "Channels 4-8-16 vs 8-16-32 vs 16-32-64"
+    - "Conv1 kernel 3x3 vs 5x5"
+    - "Stride vs pooling downsampling"
+  temporal:
+    - "0.5, 1, 2, 5 ms bins"
+    - "10, 20, 50, 100 ms decision windows"
+    - "Rolling state vs reset-per-sample"
+  learning:
+    - "Surrogate gradient only"
+    - "Conv1 STDP plus supervised fine-tuning"
+    - "Fixed vs constrained learnable threshold"
+    - "Fixed vs constrained learnable beta"
+  competition:
+    - "No f_inst"
+    - "Top-1 gate"
+    - "Top-1 plus membrane decrement"
+    - "f_inst strength sweep"
+  homeostasis:
+    - "No f_long"
+    - "Per-feature-map adaptation"
+    - "Per-neuron article-fidelity adaptation"
+    - "Triangular vs shift decay"
+  quantization:
+    - "4/6/8-bit weights"
+    - "12/16/20-bit membrane"
+    - "Accumulator guard-width sweep"
+  hardware:
+    - "1/4/8/16 processing elements"
+    - "Full sweep vs active list"
+    - "BRAM banking strategies"
+    - "Channel vs kernel-offset parallelism"
+    - "ROI enabled vs disabled"
+
+verification:
+  levels:
+    - level: 1
+      name: "floating_point_spikingjelly"
+      goal: "Algorithmic accuracy and spike behavior"
+    - level: 2
+      name: "quantized_training_model"
+      goal: "Quantization loss"
+    - level: 3
+      name: "bit_accurate_event_scatter_python"
+      goal: "Integer arithmetic and event scheduling intended for RTL"
+    - level: 4
+      name: "RTL_unit_simulation"
+      goal: "Neuron, one convolution layer, f_inst, and f_long"
+    - level: 5
+      name: "RTL_network_simulation"
+      goal: "Exact golden spike/output match"
+    - level: 6
+      name: "FPGA_recording_replay"
+      goal: "Recorded DAVIS sequence comparison"
+    - level: 7
+      name: "live_camera"
+      goal: "End-to-end proposal, classification, and tracking"
+  golden_cases:
+    - "Empty timesteps"
+    - "Repeated events at one pixel"
+    - "Border events"
+    - "Competing channel spikes"
+    - "Membrane saturation and negative values"
+    - "Adaptive-threshold rise and decay"
+    - "ROI entry, exit, and reacquisition"
+
+implementation_plan:
+  phase_0:
+    name: "Literature and requirements"
+    deliverables: ["literature table", "frozen equations", "dataset choice", "equivalence contract"]
+    exit: "All state, ordering, reset, competition, and quantization semantics are unambiguous"
+  phase_1:
+    name: "SpikingJelly baseline"
+    deliverables: ["three-layer model", "event binning", "proposal head", "classifier", "single-object tracker"]
+    exit: "Stable training and meaningful task performance"
+  phase_2:
+    name: "Custom dynamics"
+    deliverables: ["f_inst", "f_long/T_thresh", "STDP experiment", "sparsity/diversity ablations"]
+    exit: "Selected dynamics with quantified benefit and cost"
+  phase_3:
+    name: "Quantized reference"
+    deliverables: ["integer exporter", "bit-accurate simulator", "golden vectors"]
+    exit: "Deterministic acceptable quantized accuracy"
+  phase_4:
+    name: "Single-layer FPGA"
+    deliverables: ["FIFO", "kernel ROM", "address generator", "state RAM", "LIF", "f_inst", "f_long"]
+    exit: "One layer exactly matches the golden model"
+  phase_5:
+    name: "Multilayer FPGA"
+    deliverables: ["three-layer routing", "proposal clustering", "classifier", "tracker interface"]
+    exit: "Recorded sequences run end-to-end without mismatch"
+  phase_6:
+    name: "Live demonstration and article"
+    deliverables: ["live DAVIS demo", "resource/power results", "ablations", "paper figures and tables"]
+    exit: "Claims are supported by accuracy, sparsity, latency, throughput, and power measurements"
+
+risks_and_mitigations:
+  - risk: "Three layers may be too small for robust classification"
+    mitigation: "Keep depth and widths parameterized; evaluate a fourth layer after validating hardware"
+  - risk: "Static objects produce insufficient events"
+    mitigation: "Target moving-object tasks first and use rolling temporal context"
+  - risk: "Event bursts exceed FPGA throughput"
+    mitigation: "Use Conv1 stride, PE scaling, FIFO sizing, optional filtering, and ROI gating"
+  - risk: "Per-neuron f_long doubles state memory"
+    mitigation: "Use per-feature-map homeostasis by default"
+  - risk: "SpikingJelly and RTL operation order differ"
+    mitigation: "Freeze a custom hardware-compatible neuron before final training"
+  - risk: "Quantization reduces accuracy"
+    mitigation: "Use QAT and report the accuracy-resource Pareto frontier"
+  - risk: "Proposal clustering becomes too expensive"
+    mitigation: "Use low-resolution objectness and simple connected components"
+  - risk: "Spiker+ extension becomes difficult"
+    mitigation: "Keep a separate convolution backend and treat Spiker+ as reusable infrastructure"
+
+novelty:
+  primary_candidates:
+    - "SpikingJelly-to-FPGA flow for shared-kernel convolution implemented as sparse event-addressed weight accumulation"
+    - "Unified event-SNN proposal, classification, and tracking pipeline"
+    - "Hardware-efficient f_inst cross-filter competition"
+    - "Hardware-efficient f_long/T_thresh feature-map homeostasis"
+    - "Spiker+-derived convolutional backend with bit-exact export and verification"
+  strongest_positioning: >-
+    Hardware-algorithm co-design for event-camera tracking: trainable competitive and
+    adaptive spiking convolution layers mapped to a multiplier-minimized sparse FPGA architecture.
+  claims_requiring_measurement:
+    - "Energy reduction relative to dense alternatives"
+    - "Accuracy improvement from f_inst or f_long"
+    - "Efficiency advantage over previous FPGA SNN accelerators"
+    - "Real-time operation under representative event-rate distributions"
+  claims_to_avoid_without_evidence:
+    - "Fully asynchronous hardware"
+    - "Biological equivalence"
+    - "State-of-the-art accuracy"
+    - "Zero multiplication in the complete system"
+    - "Guaranteed energy benefit based only on operation counts"
+
+article_outline:
+  - section: "1. Introduction"
+    contents: ["event-camera motivation", "software-hardware abstraction gap", "contributions"]
+  - section: "2. Related Work"
+    contents: ["DAVIS sensors", "SNN proposals", "motion-selective STDP", "SNN tracking", "SpikingJelly", "Spiker+ and FPGA accelerators"]
+  - section: "3. Proposed Network"
+    contents: ["event-count timesteps", "three-layer backbone", "LIF", "f_inst", "f_long/T_thresh", "heads"]
+  - section: "4. Training and Quantization"
+    contents: ["surrogate gradients", "optional STDP", "losses", "QAT"]
+  - section: "5. FPGA Architecture"
+    contents: ["event FIFO", "sparse scatter accumulation", "state memory", "active list", "competition", "homeostasis"]
+  - section: "6. Experimental Setup"
+    contents: ["datasets", "splits", "baselines", "board", "metrics"]
+  - section: "7. Results"
+    contents: ["task accuracy", "ablations", "quantization", "equivalence", "resources", "latency", "power"]
+  - section: "8. Discussion"
+    contents: ["trade-offs", "event-only limitations", "difference from continuous-time neuromorphic hardware", "scalability"]
+  - section: "9. Conclusion"
+    contents: ["summary", "multi-object and dedicated-hardware future work"]
+
+reproducibility:
+  freeze_versions:
+    - "Python"
+    - "PyTorch"
+    - "SpikingJelly"
+    - "NumPy"
+    - "CUDA and driver if used"
+    - "Vivado/Vitis"
+    - "RTL simulator"
+    - "cocotb"
+  randomness:
+    - "Store random seeds"
+    - "Use deterministic evaluation"
+    - "Repeat key experiments with at least three seeds"
+  publish_artifacts:
+    - "Model YAML schema"
+    - "Training configuration"
+    - "Preprocessing scripts"
+    - "Weights"
+    - "Bit-accurate simulator"
+    - "RTL"
+    - "Testbenches"
+    - "Golden vectors"
+    - "Synthesis reports"
+    - "Power measurement method"
+
+open_decisions:
+  - priority: "high"
+    item: "First target dataset and object classes"
+    recommended_default: "MEVDT vehicle detection/tracking after a synthetic moving-object test"
+  - priority: "high"
+    item: "Exact custom LIF update order"
+    recommended_default: "Leak previous membrane, add full timestep current, compare threshold, apply f_inst, emit, subtract threshold, update f_long"
+  - priority: "high"
+    item: "f_long decay implementation"
+    recommended_default: "Triangular/countdown per feature map"
+  - priority: "medium"
+    item: "Proposal extraction"
+    recommended_default: "1x1 spiking objectness plus connected components"
+  - priority: "medium"
+    item: "Live camera"
+    recommended_default: "Recorded DAVIS240C development; DAVIS346 AER live hardware if accessible"
+  - priority: "medium"
+    item: "Tracker placement"
+    recommended_default: "Zynq PS first, PL after the SCNN datapath is stable"
+
+source_notes:
+  web_verification_date: "2026-08-02"
+  verified_points:
+    - "DAVIS240 event resolution is 240x180"
+    - "DAVIS346 and DAVIS346 AER event resolution is 346x260"
+    - "SpikingJelly supports raw event dictionaries and fixed-duration/fixed-count integration"
+    - "SpikingJelly STDPLearner supports convolutional and linear synapses"
+    - "The 2019 proposal paper uses refractory, convolution, and clustering stages on DAVIS traffic recordings"
+    - "The 2021 trajectory paper uses motion-selective SNN processing, STDP, inhibition, adaptive thresholds, and a supervised readout"
+    - "Spiker+ is a configurable FPGA SNN accelerator framework with VHDL generation"
+  caution: "Freeze exact framework commits because APIs and capabilities can change"
