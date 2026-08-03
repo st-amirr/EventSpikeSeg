@@ -67,6 +67,7 @@ def run_mevdt_training(
 
     if max_samples <= 0:
         raise ValueError("max_samples must be positive")
+    root = root.expanduser().resolve()
     torch.manual_seed(17)
     indexed_records = discover_mevdt_frames(root, split="train")
     positive_records = [record for record in indexed_records if record.label_path.stat().st_size]
@@ -118,7 +119,11 @@ def run_mevdt_training(
         outputs = system.trainable_outputs(sequence, roi)
         activity = outputs["objectness_spikes"].mean(dim=0)
         target = objectness_target(sample.boxes, activity.shape[-2], activity.shape[-1])
-        proposal_loss = torch.nn.functional.mse_loss(activity, target)
+        # Foreground boxes occupy a small fraction of the 90x120 map. A bounded
+        # positive weight prevents the all-background solution without destabilizing
+        # sparse samples whose boxes cover only a handful of feature locations.
+        proposal_weights = 1.0 + 9.0 * target
+        proposal_loss = ((activity - target).square() * proposal_weights).mean()
         classification_loss = torch.nn.functional.cross_entropy(
             outputs["classification_logits"], class_target
         )

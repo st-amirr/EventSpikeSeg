@@ -73,3 +73,23 @@ fixed-point arithmetic, quantization, or test-generation components before imple
 equivalent future modules. No release or commit is pinned until a component is actually
 selected. Evidence: [official repository](https://github.com/smilies-polito/Spiker) and
 [Spiker+ paper](https://arxiv.org/abs/2401.01141).
+
+## 2026-08-03 — MEVDT-first binary training while FE108 access is blocked
+
+Keep FE108 as the multiclass target, but use the locally available MEVDT download for
+the first real floating-point vehicle/background baseline. MEVDT CSV timestamps are
+nanoseconds, detection text uses absolute XYXY coordinates, and the published
+`MEVDT_org_rate_{train,test}.csv` files are authoritative. Train and test sequences must
+remain disjoint. APS images are indexing aids only and are not model inputs.
+
+A Finder alias is not a portable dataset path. Commands accept an explicit root and the
+local convenience mount is a Git-ignored symbolic link at `data/mevdt`.
+
+The first baseline disables `f_inst` and `f_long`, matching the specification's required
+ablation order. Custom dynamics are enabled only after the plain surrogate-gradient
+baseline and proposal behavior are sound.
+
+Use positive-weighted mean-squared error on temporal objectness spike rate for this
+initial baseline because the head exposes hardware-realizable spikes rather than free
+logits. The positive multiplier is 10. This is provisional: held-out proposal metrics,
+not training loss, determine whether it is retained or replaced by a focal/logit design.

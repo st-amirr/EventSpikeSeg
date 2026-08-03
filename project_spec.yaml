@@ -2,7 +2,7 @@ document:
   title: Hardware-Oriented Event-Camera Spiking CNN for Region Proposal, Classification, and Tracking
   short_name: EventSCNN-FPGA
   version: 0.3.0
-  status: dataset_selected_research_design_draft
+  status: mevdt_floating_baseline_in_progress
   created_date: '2026-08-02'
   intended_uses:
   - Software and FPGA implementation specification
@@ -48,6 +48,11 @@ decision_history:
   decision: Use FE108/FE240hz as primary and MEVDT for hardware validation
   reason: FE108/FE240hz provides multiclass single-object tracking with raw DAVIS346 events and high-rate boxes. MEVDT
     provides native DAVIS240C 240x180 events, vehicle boxes, and track IDs for exact-resolution FPGA replay.
+- step: 7
+  issue: FE108 access unavailable while MEVDT is locally available
+  decision: Train a sequence-disjoint MEVDT vehicle/background baseline without replacing FE108 as the multiclass target
+  reason: MEVDT permits immediate validation of real event ingestion, proposals, binary classification, and tracking at
+    the canonical resolution. Its single vehicle category cannot support the planned 21-class claim.
 research_problem:
   problem_statement: Event cameras generate sparse asynchronous brightness-change events, but trainable deep-SNN frameworks
     typically execute convolution as dense tensor operations. FPGA SNN generators provide efficient neuron implementations
@@ -535,6 +540,7 @@ training:
   sequence:
   - Prepare raw events and sequence-level annotations
   - Create fixed-duration polarity event-count tensors
+  - Run the MEVDT vehicle/background baseline while FE108 access is pending
   - Train a floating-point baseline without f_inst/f_long
   - Add f_inst and measure accuracy, proposal precision/recall, feature diversity, and sparsity
   - Add f_long/T_thresh and measure utilization and robustness
@@ -545,8 +551,10 @@ training:
   - Generate and verify RTL
   losses:
     proposal_objectness:
-      type: binary_cross_entropy_or_focal_loss
+      type: positive_weighted_mean_squared_error_on_temporal_spike_rate
       initial_weight: 1.0
+      current_positive_pixel_multiplier: 10.0
+      alternatives_after_baseline: binary_cross_entropy_or_focal_loss
     proposal_localization:
       type: component_center_and_extent_loss_or_optional_box_regression
       initial_weight: 1.0
@@ -849,6 +857,14 @@ datasets:
     - event-rate burst characterization
     - latency, FIFO occupancy, throughput, and power measurement
     classification_scope: vehicle versus background or a single general vehicle class
+    current_software_baseline_role: Initial real-data training and held-out evaluation while FE108 access is pending
+    sequence_event_format:
+      file: sequences/{split}/{scene}/{sequence}/{sequence}_events.csv
+      columns: [ts, x, y, p]
+      timestamp_unit: nanoseconds
+      conversion: Filter exact nanosecond window, then convert to relative integer microseconds
+    detection_label_format: class_id x_min y_min x_max y_max in absolute 240x180 coordinates
+    authoritative_split_index: data_splits/MEVDT_org_rate_{train,test}.csv
     limitations:
     - Not suitable as the sole multiclass classification dataset
     - Static roadside camera and limited scene diversity

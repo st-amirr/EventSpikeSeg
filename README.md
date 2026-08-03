@@ -16,6 +16,28 @@ make train-smoke
 make validate-reference
 ```
 
+## MEVDT data and training
+
+Use a real symbolic link or pass the dataset root explicitly; a macOS Finder alias is
+not traversable by Python. The current machine uses `data/mevdt`, which links to the
+download outside the repository. Validate one real optimizer step with:
+
+```bash
+make train-mevdt-smoke
+```
+
+Longer bounded training and held-out evaluation are explicit commands:
+
+```bash
+.venv/bin/python -m eventscnn.train_mevdt --root data/mevdt \
+  --max-samples 1024 --checkpoint artifacts/checkpoints/mevdt_baseline_1024.pt
+.venv/bin/python -m eventscnn.evaluate_mevdt --root data/mevdt \
+  --checkpoint artifacts/checkpoints/mevdt_baseline_1024.pt --max-samples 128
+```
+
+MEVDT is currently a binary vehicle/background baseline. It does not replace FE108 for
+the planned 21-class model.
+
 `make rtl-test` requires GHDL with VHDL-2008 support and
 cocotb. It reports a blocker rather than claiming success when the simulator is absent.
 

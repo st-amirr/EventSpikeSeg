@@ -9,6 +9,7 @@ import torch
 
 from .config import BackboneConfig, EventBinningConfig, LIFConfig
 from .datasets import discover_mevdt_frames, load_mevdt_window
+from .heads import Proposal, connected_component_proposals
 from .system import EventSCNNSystem
 from .train_mevdt import box_to_feature_roi, objectness_target
 
@@ -21,6 +22,9 @@ class MEVDTEvaluationResult:
     oracle_roi_classification_accuracy: float
     positive_objectness_mean_iou: float
     negative_objectness_empty_rate: float
+    positive_proposal_mean_best_iou: float
+    positive_proposal_recall_at_0_5: float
+    negative_mean_proposal_count: float
     activity_threshold: float
 
 
@@ -37,6 +41,16 @@ def _balanced_records(root: Path, max_samples: int):
         if len(records) >= max_samples:
             return records[:max_samples]
     return records
+
+
+def _proposal_iou(proposal: Proposal, box) -> float:
+    x0 = max(float(proposal.x), box.x_min)
+    y0 = max(float(proposal.y), box.y_min)
+    x1 = min(float(proposal.x + proposal.width), box.x_max)
+    y1 = min(float(proposal.y + proposal.height), box.y_max)
+    intersection = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+    union = proposal.width * proposal.height + box.area - intersection
+    return intersection / union if union else 0.0
 
 
 def evaluate_mevdt_checkpoint(
@@ -61,7 +75,9 @@ def evaluate_mevdt_checkpoint(
     positive = 0
     negative = 0
     positive_ious: list[float] = []
+    proposal_best_ious: list[float] = []
     negative_empty = 0
+    negative_proposals = 0
     config = EventBinningConfig(bin_duration_us=int(checkpoint["bin_duration_us"]))
     records = _balanced_records(root, max_samples)
     with torch.no_grad():
@@ -83,12 +99,26 @@ def evaluate_mevdt_checkpoint(
             activity = outputs["objectness_spikes"].mean(dim=0)
             predicted = activity >= activity_threshold
             target = objectness_target(sample.boxes, activity.shape[-2], activity.shape[-1]) > 0
+            proposals = connected_component_proposals(
+                activity[0, 0], threshold=activity_threshold, scale_x=2, scale_y=2
+            )
             if sample.boxes:
                 intersection = int((predicted & target).sum())
                 union = int((predicted | target).sum())
                 positive_ious.append(intersection / union if union else 1.0)
+                proposal_best_ious.append(
+                    max(
+                        (
+                            _proposal_iou(proposal, box)
+                            for proposal in proposals
+                            for box in sample.boxes
+                        ),
+                        default=0.0,
+                    )
+                )
             else:
                 negative_empty += int(not predicted.any())
+                negative_proposals += len(proposals)
 
     return MEVDTEvaluationResult(
         samples=len(records),
@@ -97,6 +127,10 @@ def evaluate_mevdt_checkpoint(
         oracle_roi_classification_accuracy=correct / len(records),
         positive_objectness_mean_iou=sum(positive_ious) / len(positive_ious),
         negative_objectness_empty_rate=negative_empty / negative,
+        positive_proposal_mean_best_iou=sum(proposal_best_ious) / len(proposal_best_ious),
+        positive_proposal_recall_at_0_5=sum(iou >= 0.5 for iou in proposal_best_ious)
+        / len(proposal_best_ious),
+        negative_mean_proposal_count=negative_proposals / negative,
         activity_threshold=activity_threshold,
     )
 

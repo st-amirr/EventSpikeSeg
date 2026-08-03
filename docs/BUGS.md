@@ -36,3 +36,45 @@ subsequent commit; this run did not rewrite or undo the concurrent commit.
   GHDL correctly rejected as a non-locally-static mixed choice.
 - Fix: initialize all bits to zero and assign the sign bit explicitly.
 - Regression: all five VHDL-2008 entities pass GHDL 6.0.0/cocotb.
+
+## Resolved — MEVDT directory scan disagreed with official split
+
+- Reproduction: directory discovery found 10,132 train labels while the official CSV
+  listed 10,067.
+- Root cause: extra label files exist outside the published object-detection index.
+- Fix: use `MEVDT_org_rate_{train,test}.csv` as the authoritative index.
+- Regression: 10,067 train and 2,627 test frames are indexed across 51 and 12 disjoint
+  sequences respectively.
+
+## Resolved — surrogate gradient erased by detached threshold mask
+
+- Reproduction: a 32-step MEVDT run changed Conv1 weights by only `4.77e-7`.
+- Root cause: with competition disabled, surrogate spikes were multiplied by a detached
+  hard-threshold mask, zeroing subthreshold gradients.
+- Fix: emit the surrogate spike directly in the `f_inst` ablation path.
+- Regression: a unit test checks positive subthreshold gradient; the same 32-step run
+  changes Conv1 weights by `0.02015`.
+
+## Resolved — valid MEVDT border box rejected
+
+- Reproduction: label `1581956310656316936.txt` contains x_max
+  `240.00000000000003`.
+- Root cause: interpolation floating-point noise exceeded the exact 240-pixel bound.
+- Fix: clip only boundary error within `1e-6`; larger invalid boxes still fail.
+- Regression: all 7,816 indexed train boxes and 2,010 indexed test boxes parse.
+
+## Resolved — relative symlink root broke checkpoint metadata
+
+- Reproduction: training through `data/mevdt` completed updates but failed while making
+  absolute label paths relative to the unresolved root.
+- Fix: resolve the dataset root once at training entry.
+- Regression: the 1,024-step run saved `mevdt_baseline_1024.pt` successfully.
+
+## Open — learned objectness does not yet form useful MEVDT boxes
+
+- Reproduction: the 1,024-step baseline has held-out best-proposal mean IoU `0.06236`
+  and recall@0.5 `0.0` on 64 positive frames.
+- Diagnosis: connected components are small and fragmented; dense filled-box map loss
+  is poorly aligned with sparse event-edge activity and component decoding.
+- Status: classification training is functional, but proposal performance blocks claims
+  of end-to-end detection or tracking accuracy.

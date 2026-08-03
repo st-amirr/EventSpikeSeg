@@ -58,10 +58,17 @@ and Verilator were initially absent.
 - [x] M10 — VHDL-2008 RTL units: synthesizable neuron, competition, homeostasis, and event-conv
   address/accumulation units exist with golden vectors; cocotb equivalence passes under
   an actually executed simulator. This milestone stays incomplete if none is installed.
-- [ ] M11 — Integrated/data milestones: synthetic end-to-end smoke training passes;
-  FE108/MEVDT loaders pass metadata/tiny-fixture tests. Dataset accuracy, synthesis,
-  board replay, power, and throughput require the corresponding external assets/tools
-  and must not be claimed from synthetic tests.
+- [x] M11a — Real MEVDT adapter: official train/test indexes, nanosecond CSV events,
+  XYXY boxes, fixed-window alignment, repeated counts, border precision, and
+  sequence-disjoint metadata pass fixture and full-index validation.
+- [x] M11b — Floating MEVDT training entry point: balanced positive/background sampling,
+  baseline `f_inst/f_long` ablation, restartable checkpoint, held-out evaluation, and
+  one 1,024-step bounded run execute successfully.
+- [ ] M11c — Useful real-data proposals: positive connected-component proposal recall
+  and IoU must exceed a documented non-learned event-clustering baseline on a frozen
+  validation subset before enabling custom dynamics or claiming tracking readiness.
+- [ ] M11d — FE108 adapter and multiclass training: blocked by unavailable restricted
+  dataset access. Do not infer 21-class performance from MEVDT.
 
 ## Validation commands
 
@@ -70,6 +77,8 @@ make setup
 make test
 make lint
 make train-smoke
+make train-mevdt-smoke
+make eval-mevdt-smoke
 make validate-reference
 make rtl-test
 ```
@@ -100,6 +109,13 @@ make rtl-test
 - 2026-08-03: Added YAML policy regression tests and completed broad validation: 41
   Python tests, lint, end-to-end smoke training, 9 reference tests, and 5 GHDL/cocotb
   VHDL-2008 simulations all pass.
+- 2026-08-03: Indexed the downloaded MEVDT using its official split CSVs: 10,067 train
+  frames in 51 sequences and 2,627 test frames in 12 sequences, with no overlap.
+- 2026-08-03: Fixed nanosecond conversion, XYXY parsing, floating border noise, detached
+  surrogate gradients, and relative-symlink checkpoint metadata with regressions.
+- 2026-08-03: Trained a balanced 1,024-step SpikingJelly-surrogate baseline and evaluated
+  128 held-out frames. Oracle-ROI classification reached a measurable early baseline,
+  but proposal recall@0.5 is zero; M11c remains open.
 
 ## Discoveries
 
@@ -122,11 +138,13 @@ synthetic-first strategy are normative for this plan.
   for long-term reproducibility, although GHDL 6.0.0 executed successfully in this run.
 - A concurrent external commit (`070fa2d`) tracked initial `.venv` files. Ignore rules
   prevent further additions, but repository-index cleanup remains.
-- Full dataset/training and FPGA measurements are external-resource milestones.
+- FE108 remains an external access blocker. MEVDT is available locally.
+- MEVDT proposal components remain fragmented; tracking metrics would be misleading
+  until M11c passes.
 
 ## Next concrete action
 
-Complete M11 by adding real-format FE108 AEDAT4 and MEVDT event/annotation adapters using
-tiny redistributable or user-provided samples, then test timestamp/annotation alignment
-and sequence-disjoint split metadata. Do not download the full datasets or report task
-accuracy until those samples and official split information are available.
+Complete M11c: add a deterministic raw-event clustering baseline and align learned
+objectness supervision/connected-component merging with receptive-field overlap. Freeze
+the held-out subset, compare proposal IoU/recall, and retrain only after the regression
+tests pass. FE108 M11d resumes when official access is obtained.

@@ -32,3 +32,8 @@ shared-kernel architecture, and custom dynamics and reduce total integration ris
 
 See `project_spec.yaml` for the complete contract and
 `docs/exec-plans/active/project-bootstrap.md` for implementation status.
+
+MEVDT sequence CSV timestamps are nanoseconds and are filtered at nanosecond precision
+before conversion to relative microseconds. Detection rows are
+`class x_min y_min x_max y_max`; only sub-micro-pixel floating-point border noise is
+clipped. The official `data_splits/MEVDT_org_rate_{split}.csv` files define membership.
