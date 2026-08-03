@@ -1,6 +1,6 @@
 import torch
 
-from eventscnn.config import LIFConfig, LayerConfig
+from eventscnn.config import LayerConfig, LIFConfig
 from eventscnn.events import bin_events, synthetic_events
 from eventscnn.models import ConvLIFBlock
 

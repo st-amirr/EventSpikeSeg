@@ -1,7 +1,6 @@
 """Typed, validated configuration for the canonical EventSCNN model."""
 
 from dataclasses import dataclass, field
-from typing import Tuple
 
 
 @dataclass(frozen=True)
@@ -50,9 +49,9 @@ class LIFConfig:
 class LayerConfig:
     in_channels: int
     out_channels: int
-    kernel_size: Tuple[int, int]
-    stride: Tuple[int, int]
-    padding: Tuple[int, int]
+    kernel_size: tuple[int, int]
+    stride: tuple[int, int]
+    padding: tuple[int, int]
 
     def __post_init__(self) -> None:
         if self.in_channels <= 0 or self.out_channels <= 0:
@@ -63,7 +62,7 @@ class LayerConfig:
             raise ValueError("padding cannot be negative")
 
 
-def _default_layers() -> Tuple[LayerConfig, ...]:
+def _default_layers() -> tuple[LayerConfig, ...]:
     return (
         LayerConfig(2, 8, (5, 5), (2, 2), (2, 2)),
         LayerConfig(8, 16, (3, 3), (2, 2), (1, 1)),
@@ -73,7 +72,7 @@ def _default_layers() -> Tuple[LayerConfig, ...]:
 
 @dataclass(frozen=True)
 class BackboneConfig:
-    layers: Tuple[LayerConfig, ...] = field(default_factory=_default_layers)
+    layers: tuple[LayerConfig, ...] = field(default_factory=_default_layers)
     lif: LIFConfig = field(default_factory=LIFConfig)
 
     def __post_init__(self) -> None:

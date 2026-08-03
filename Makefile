@@ -13,7 +13,7 @@ test:
 	$(PYTEST)
 
 lint:
-	$(RUFF) check src tests
+	$(RUFF) check src tests scripts verification/cocotb
 
 train-smoke:
 	$(PYTHON) -m eventscnn.smoke_train

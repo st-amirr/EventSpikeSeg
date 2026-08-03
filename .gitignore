@@ -1,3 +1,8 @@
 literature_review/**
 literature_review/**/** */
 .DS_Store
+.venv/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+sim_build/

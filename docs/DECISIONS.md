@@ -21,8 +21,9 @@ only to above-threshold non-winning candidates and is clamped by configured arit
 
 ## 2026-08-02 — Homeostasis rule
 
-Use one non-negative adaptation scalar per output channel. Each step first decrements
-it toward zero, then adds `increment * emitted_spike_count`. This countdown form is
+Use one non-negative adaptation scalar per output channel. Each floating-point step
+first decrements it toward zero, then adds `increment * mean_emitted_spike_rate`; the
+integer reference accepts an explicit channel spike count and scaled increment. This countdown form is
 simple to reproduce in fixed-point hardware; per-neuron adaptation remains an ablation.
 
 ## 2026-08-02 — Synthetic-first validation

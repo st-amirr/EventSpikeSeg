@@ -1,6 +1,6 @@
 """SpikingJelly-compatible hardware-ordered spiking dynamics."""
 
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 from spikingjelly.activation_based import surrogate
@@ -16,12 +16,12 @@ class HardwareLIF(nn.Module):
     current, threshold, competition, subtractive reset, spike, adaptation.
     """
 
-    def __init__(self, channels: int, config: LIFConfig = LIFConfig()) -> None:
+    def __init__(self, channels: int, config: Optional[LIFConfig] = None) -> None:
         super().__init__()
         if channels <= 0:
             raise ValueError("channels must be positive")
         self.channels = channels
-        self.config = config
+        self.config = config or LIFConfig()
         self.spike_function = surrogate.ATan()
         self.register_buffer("membrane", torch.empty(0), persistent=False)
         self.register_buffer("adaptation", torch.zeros(channels), persistent=False)
@@ -67,6 +67,6 @@ class HardwareLIF(nn.Module):
             self.adaptation = decayed + self.config.adaptation_increment * activity
         return emitted
 
-    def state(self) -> Tuple[Optional[Tensor], Tensor]:
+    def state(self) -> tuple[Optional[Tensor], Tensor]:
         membrane = None if self.membrane.numel() == 0 else self.membrane
         return membrane, self.adaptation

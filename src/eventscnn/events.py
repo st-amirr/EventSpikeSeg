@@ -1,7 +1,8 @@
 """Timestamped event fixtures and fixed-duration TNCHW binning."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, List, Optional
+from typing import Optional
 
 import torch
 from torch import Tensor
@@ -22,7 +23,7 @@ class Event:
 
 def bin_events(
     events: Iterable[Event],
-    config: EventBinningConfig = EventBinningConfig(),
+    config: Optional[EventBinningConfig] = None,
     *,
     num_bins: Optional[int] = None,
     batch_size: Optional[int] = None,
@@ -34,6 +35,7 @@ def bin_events(
     time window or image are rejected, preventing silent software/hardware divergence.
     """
 
+    config = config or EventBinningConfig()
     materialized = list(events)
     if start_us < 0:
         raise ValueError("start_us cannot be negative")
@@ -77,12 +79,12 @@ def synthetic_events(
     bin_duration_us: int = 1_000,
     x0: int = 20,
     y0: int = 30,
-) -> List[Event]:
+) -> list[Event]:
     """Generate a deterministic diagonal ON target with an OFF trailing edge."""
 
     if steps <= 0:
         raise ValueError("steps must be positive")
-    events: List[Event] = []
+    events: list[Event] = []
     for step in range(steps):
         timestamp = step * bin_duration_us + bin_duration_us // 2
         x = x0 + step

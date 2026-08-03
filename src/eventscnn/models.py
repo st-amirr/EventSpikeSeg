@@ -1,18 +1,19 @@
 """Trainable convolutional SNN modules built on PyTorch and SpikingJelly surrogates."""
 
-from typing import List, Sequence
+from collections.abc import Sequence
+from typing import Optional
 
 import torch
 from torch import Tensor, nn
 
-from .config import BackboneConfig, LIFConfig, LayerConfig
+from .config import BackboneConfig, LayerConfig, LIFConfig
 from .dynamics import HardwareLIF
 
 
 class ConvLIFBlock(nn.Module):
     """Bias-free shared convolution followed by hardware-ordered LIF dynamics."""
 
-    def __init__(self, layer: LayerConfig, lif: LIFConfig = LIFConfig()) -> None:
+    def __init__(self, layer: LayerConfig, lif: Optional[LIFConfig] = None) -> None:
         super().__init__()
         self.layer_config = layer
         self.conv = nn.Conv2d(
@@ -37,8 +38,9 @@ class ConvLIFBlock(nn.Module):
 class EventSCNNBackbone(nn.Module):
     """Canonical three-layer 2→8→16→32 spiking convolutional backbone."""
 
-    def __init__(self, config: BackboneConfig = BackboneConfig()) -> None:
+    def __init__(self, config: Optional[BackboneConfig] = None) -> None:
         super().__init__()
+        config = config or BackboneConfig()
         self.config = config
         self.blocks = nn.ModuleList(
             [ConvLIFBlock(layer, config.lif) for layer in config.layers]
@@ -49,7 +51,7 @@ class EventSCNNBackbone(nn.Module):
             block.reset()
 
     def forward(self, sequence: Tensor, *, return_all: bool = False):
-        activations: List[Tensor] = []
+        activations: list[Tensor] = []
         output = sequence
         for block in self.blocks:
             output = block(output)
