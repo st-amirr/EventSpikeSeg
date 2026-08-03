@@ -6,3 +6,6 @@ literature_review/**/** */
 __pycache__/
 .pytest_cache/
 sim_build/
+data/**
+!data/README.md
+artifacts/checkpoints/**

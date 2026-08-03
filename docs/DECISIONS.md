@@ -1,10 +1,13 @@
 # Decisions
 
-## 2026-08-02 — Instruction filename compatibility
+## 2026-08-02 — Instruction filename compatibility (superseded)
 
 The supplied instruction file was named `agent.md`, while the task and common tooling
 expect `AGENTS.md`. Preserve `agent.md` as the canonical full text and add a small
 `AGENTS.md` pointer. No instructions were discarded.
+
+The repository now contains the complete instructions directly in `AGENTS.md`; the
+lowercase compatibility arrangement is no longer current.
 
 ## 2026-08-02 — Frozen LIF ordering
 
@@ -31,3 +34,42 @@ simple to reproduce in fixed-point hardware; per-neuron adaptation remains an ab
 All algorithmic and equivalence work uses deterministic synthetic fixtures before any
 FE108 or MEVDT download. Dataset acquisition and measured accuracy are separate future
 milestones.
+
+## 2026-08-03 — VHDL-2008 is the canonical RTL language
+
+All FPGA RTL is VHDL-2008 and portable unit simulation uses GHDL with cocotb. Verilog
+and SystemVerilog are not accepted implementation languages. C++ remains optional for
+accelerating software references; any HLS use requires a separate evidence-backed
+decision and does not replace the canonical VHDL equivalence target.
+
+The earlier SystemVerilog units were executable prototypes created under the previous
+“VHDL or SystemVerilog” specification. They are being replaced, not retained as a
+parallel implementation, to avoid two divergent RTL sources of truth.
+
+## 2026-08-03 — Existing frameworks are optional and evidence-driven
+
+SpikingJelly remains the primary trainable software framework. FPGA frameworks such as
+Spiker+ are permitted and must be evaluated when they may reduce work or risk. Adoption
+is component-by-component: a candidate must preserve sparse shared-kernel convolution,
+the frozen arithmetic order, custom competition/homeostasis, and system interfaces, and
+must pass bit-exact tests. If adaptation is more complex or restrictive than focused
+custom VHDL, do not use it. Record the evaluated version, evidence, and outcome before
+adding a dependency. No FPGA framework is required merely for the sake of using one.
+
+### Initial Spiker+ evaluation
+
+Reviewed the official repository and paper on 2026-08-03. Spiker+ provides Python-driven
+VHDL generation, quantization support, and reusable neuron/accelerator methodology, but
+its documented accelerator targets fully connected and recurrent fully connected
+architectures. EventSCNN's central datapath is sparse shared-kernel convolution with
+event-address scattering, followed by custom competition, homeostasis, proposals, ROI
+classification, and tracking. Adopting Spiker+ as the main backend now would therefore
+require replacing much of its topology and control structure and would not reduce total
+integration risk.
+
+Decision: do not add Spiker+ as a required dependency at this stage. Continue the focused
+VHDL convolutional backend, while explicitly re-evaluating isolated Spiker+ neuron,
+fixed-point arithmetic, quantization, or test-generation components before implementing
+equivalent future modules. No release or commit is pinned until a component is actually
+selected. Evidence: [official repository](https://github.com/smilies-polito/Spiker) and
+[Spiker+ paper](https://arxiv.org/abs/2401.01141).

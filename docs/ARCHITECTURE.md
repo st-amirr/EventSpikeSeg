@@ -25,5 +25,10 @@ single-target alpha-beta state update. The hardware reference performs convoluti
 scattering shared-kernel additions from active spike addresses; it never flattens a
 convolution to a fully connected matrix.
 
+The canonical FPGA implementation language is VHDL-2008. Portable RTL unit verification
+uses GHDL and cocotb. Existing FPGA-SNN frameworks, including Spiker+, may be reused or
+adapted component-by-component only when they preserve the frozen arithmetic, sparse
+shared-kernel architecture, and custom dynamics and reduce total integration risk.
+
 See `project_spec.yaml` for the complete contract and
 `docs/exec-plans/active/project-bootstrap.md` for implementation status.

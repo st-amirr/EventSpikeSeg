@@ -27,3 +27,12 @@ While this run was active, external commit `070fa2d` appeared and included the i
 `.venv` bootstrap files. `.gitignore` now excludes `.venv/` and future generated files,
 but removing already tracked environment files requires a deliberate index cleanup in a
 subsequent commit; this run did not rewrite or undo the concurrent commit.
+
+## Resolved — non-static VHDL aggregate rejected by GHDL
+
+- Reproduction: `make rtl-test` during the VHDL migration; four units passed and
+  `f_inst_top1.vhd` failed elaboration at its minimum-signed-value aggregate.
+- Root cause: the aggregate used a variable-derived index together with `others`, which
+  GHDL correctly rejected as a non-locally-static mixed choice.
+- Fix: initialize all bits to zero and assign the sign bit explicitly.
+- Regression: all five VHDL-2008 entities pass GHDL 6.0.0/cocotb.

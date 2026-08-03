@@ -14,9 +14,15 @@ Build the system specified in `project_spec.yaml`:
 * multiclass classification;
 * single-object tracking;
 * quantized bit-accurate inference;
-* independent FPGA RTL implementation.
+* VHDL-2008 FPGA RTL implementation.
 
-Spiker+ is not part of the implementation. It may be discussed only as related work and prior inspiration.
+Existing software and FPGA-SNN frameworks, including SpikingJelly and Spiker+, may be
+used, extended, or adapted when evidence shows that they satisfy the project contracts
+and reduce implementation or verification risk. Framework use is optional, not a goal
+by itself. Keep project-specific custom VHDL where a framework cannot preserve sparse
+shared-kernel convolution, exact operation ordering, `f_inst`, `f_long/T_thresh`, or
+the proposal/classification/tracking interfaces. Record each adoption or rejection in
+`docs/DECISIONS.md` with the evaluated alternative and evidence.
 
 Sources of truth
 
@@ -192,6 +198,10 @@ Maintain adaptation per output channel rather than per spatial neuron unless run
 The implementation must be integer-friendly and deterministic.
 
 ### FPGA interpretation
+
+All project RTL must be written in VHDL-2008. Do not add Verilog or SystemVerilog
+implementations. C++ may accelerate a software reference or be evaluated for HLS only
+under a separately documented decision; it does not replace the canonical VHDL RTL.
 
 Software training may use dense `Conv2d`.
 

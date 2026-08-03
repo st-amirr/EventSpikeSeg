@@ -10,8 +10,8 @@
   classification, and deterministic alpha-beta single-object tracking pass synthetic tests.
 - Frozen fixed-point arithmetic and sparse shared-kernel event-scatter convolution pass
   dense/reference equivalence tests and deterministic golden-vector export.
-- Synthesizable SystemVerilog LIF, competition, homeostasis, event address generation,
-  and repeated-weight accumulator units pass cocotb under Icarus Verilog 13.0.
+- Synthesizable VHDL-2008 LIF, competition, homeostasis, event address generation, and
+  repeated-weight accumulator entities pass cocotb under GHDL 6.0.0.
 - Tiny NPZ event adapters and the DAVIS346→240×180 coordinate transform pass without a
   dataset download. Integrated proposal-driven ROI classification/tracking passes, and a
   full-system surrogate-gradient smoke optimizer step updates Conv1 weights.
@@ -19,5 +19,7 @@
 
 ## Reproduction
 
-On 2026-08-02: `make test` (39 passed in 2.11 seconds), `make lint`, `make train-smoke`,
-`make validate-reference` (9 passed), and `make rtl-test` (5 passed) all succeeded.
+On 2026-08-03, `make rtl-test` passed all five VHDL-2008 unit simulations under GHDL
+6.0.0. The final migration validation also passed 41 Python tests, lint, end-to-end
+smoke training, and 9 fixed-point/sparse reference tests. The earlier
+SystemVerilog/Icarus measurements remain historical only.

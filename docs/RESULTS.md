@@ -11,3 +11,11 @@ Only measured results belong here.
   weight change 0.00005585. This verifies gradient flow only; it is not an accuracy result.
 
 No dataset accuracy, FPGA resources, timing, power, latency, or throughput has been measured.
+
+## 2026-08-03 VHDL migration validation
+
+- Python unit suite including YAML/language-policy regressions: 41 passed in 2.08 seconds.
+- Quantized/sparse reference subset: 9 passed in 1.25 seconds.
+- GHDL 6.0.0 cocotb VHDL-2008 unit suite: 5 passed in 6.34 seconds after the complete
+  replacement of the earlier SystemVerilog sources.
+- This is simulation/equivalence evidence only; synthesis and FPGA execution were not run.

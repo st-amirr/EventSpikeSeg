@@ -1,17 +1,18 @@
 document:
   title: Hardware-Oriented Event-Camera Spiking CNN for Region Proposal, Classification, and Tracking
   short_name: EventSCNN-FPGA
-  version: 0.2.0
+  version: 0.3.0
   status: dataset_selected_research_design_draft
   created_date: '2026-08-02'
   intended_uses:
   - Software and FPGA implementation specification
   - Research planning and experiment tracking
   - Foundation for a future journal or conference article
-  - Interface contract between SpikingJelly training, the bit-accurate reference model, and a custom FPGA backend
+  - Interface contract between SpikingJelly training, the bit-accurate reference model, and a VHDL-2008 FPGA backend
   central_interpretation: The network is discrete-time at the algorithm level and is trained using temporal event-count
     tensors, but the FPGA executes convolution sparsely by reading spike addresses and adding shared kernel weights
-    only for active spikes. The FPGA backend is an independent project-specific implementation.
+    only for active spikes. The FPGA backend is project-specific VHDL-2008 and may selectively reuse compatible
+    framework components after equivalence and architectural-fit validation.
 decision_history:
 - step: 1
   issue: Continuous-time event processing
@@ -30,16 +31,18 @@ decision_history:
     handling, temporal execution, and optimization.
 - step: 4
   issue: FPGA implementation framework
-  decision: Use an independent custom FPGA backend
+  decision: Use a project-specific VHDL-2008 backend with selective framework reuse
   reason: The required design contains shared-kernel event-addressed convolution, feature-map state memories, custom
     f_inst competition, f_long/T_thresh homeostasis, proposal extraction, ROI gating, classification, and tracking.
-    A purpose-built backend provides a cleaner architecture and verification path.
+    Custom VHDL remains necessary for unsupported operations, but compatible framework components should be reused
+    when they preserve the frozen arithmetic and interfaces and demonstrably reduce implementation or verification risk.
 - step: 5
   issue: Use of prior FPGA-SNN frameworks
-  decision: Use as literature and design inspiration only
+  decision: Evaluate for selective adoption; neither require nor prohibit integration
   reason: Spiker+ demonstrates fixed-point LIF arithmetic, power-of-two leakage, configurable reset behavior, VHDL
-    generation, and resource-aware acceleration. These ideas inform the project, but the implementation does not depend
-    on, extend, fork, or import Spiker+.
+    generation, and resource-aware acceleration. Spiker+ or another framework may be adapted for components that match
+    the EventSCNN contracts. Reject or replace framework components when they flatten convolution, alter operation order,
+    prevent custom dynamics, or add more integration cost than a focused VHDL implementation.
 - step: 6
   issue: Dataset selection
   decision: Use FE108/FE240hz as primary and MEVDT for hardware validation
@@ -75,8 +78,8 @@ literature_review:
     adaptive thresholds, motion-selective filters, and a supervised readout.
   - SpikingJelly provides the selected trainable framework for convolutional SNNs, event datasets, surrogate gradients,
     and optional STDP.
-  - 'Spiker+ is retained only as related work: its fixed-point neurons, configurable reset/leak behavior, VHDL generation,
-    and resource-aware FPGA methodology helped inspire an accumulator-centric independent backend.'
+  - 'Spiker+ is a candidate source of reusable VHDL and generation methodology: adopt compatible pieces only after
+    bit-exact and architectural-fit validation, while implementing unsupported EventSCNN features in custom VHDL.'
   - Modern event-based SNN trackers confirm that event-only tracking is active, but many use transformer-scale or
     hybrid structures that are less suitable for the first multiplier-minimized FPGA design.
   key_works:
@@ -140,9 +143,9 @@ literature_review:
     year: 2024
     venue: IEEE Transactions on Emerging Topics in Computing
     doi: 10.1109/TETC.2024.3511676
-    role: Related FPGA-SNN framework and design inspiration; not used by the proposed implementation
+    role: Candidate reusable FPGA-SNN framework and design inspiration
     project_takeaway: Its fixed-point LIF arithmetic, power-of-two leakage, configurable reset behavior, HDL generation,
-      and verification methodology motivate comparable principles in an independent custom backend.
+      and verification methodology should be evaluated for selective reuse against the frozen EventSCNN equivalence contract.
     url: https://github.com/smilies-polito/Spiker
   - id: zhang2022_stnet
     title: Spiking Transformers for Event-Based Single Object Tracking
@@ -202,7 +205,7 @@ scope:
   - Spiking region/objectness proposal map and spatial clustering
   - SpikingJelly training and quantization-aware fine-tuning
   - Bit-accurate Python reference
-  - Independent custom VHDL or SystemVerilog FPGA backend
+  - Project-specific VHDL-2008 FPGA backend with optional selective reuse of compatible framework components
   - ZCU104 FPGA inference
   - FE108/FE240hz primary training and evaluation
   - MEVDT native-resolution FPGA validation
@@ -214,7 +217,7 @@ scope:
   - Full multi-object re-identification
   - On-chip backpropagation
   - Automatic conversion of arbitrary SpikingJelly modules
-  - Dependency on an external FPGA or neuromorphic hardware generator
+  - Mandatory dependency on an external FPGA or neuromorphic hardware generator
   - A general replacement for PyTorch or SpikingJelly
   future_scope:
   - DAVIS346 AER live input
@@ -628,7 +631,7 @@ spikingjelly_contract:
   - golden_outputs.json
   equivalence_requirement: Bit-accurate Python, RTL simulation, and FPGA output must match exported golden tests
 custom_fpga_backend_strategy:
-  decision: Build an independent project-specific convolutional SNN FPGA backend
+  decision: Build a project-specific VHDL-2008 convolutional SNN backend and selectively reuse compatible framework components
   design_principles:
   - Binary presynaptic spikes select whether a stored weight is added; the convolutional backbone avoids activation-by-weight
     multipliers.
@@ -639,17 +642,35 @@ custom_fpga_backend_strategy:
     FPGA execution.
   - Keep event routing, neuron dynamics, inhibition, proposal extraction, classification, and tracking as separable
     verified modules.
-  related_work_inspiration:
-    framework: Spiker+
+  framework_reuse_policy:
+    candidate_framework: Spiker+
     advantages_observed:
     - Fixed-point LIF implementation
     - Configurable threshold and reset behavior
     - Power-of-two leakage approximations
     - Resource-aware FPGA SNN design
     - Automated HDL-generation and verification methodology
-    influence_on_this_project: These advantages helped motivate a configurable, quantized, accumulator-centric hardware
-      flow.
-    usage_policy: The project does not depend on, extend, fork, or import Spiker+.
+    potential_use: Reuse or adapt compatible VHDL neuron, arithmetic, generation, or verification components when doing
+      so preserves shared-kernel event-addressed convolution and the frozen software/integer/VHDL operation order.
+    rejection_conditions:
+    - Convolution is flattened into fully connected matrices
+    - Exact f_inst or f_long/T_thresh behavior cannot be represented
+    - Proposal, classification, tracking, or event-routing interfaces cannot be integrated cleanly
+    - Bit-exact equivalence cannot be demonstrated
+    - Adaptation costs more than a focused project-specific VHDL implementation
+    decision_process: Record evaluated version, components, compatibility evidence, integration cost, and adopt/reject
+      outcome in docs/DECISIONS.md before making it a project dependency.
+    current_evaluation:
+      reviewed_date: '2026-08-03'
+      evidence:
+      - Official Spiker+ repository documents Python-driven VHDL accelerator generation, quantization, and neuron libraries.
+      - The Spiker+ paper states that the current architecture targets fully connected and recurrent fully connected networks.
+      - EventSCNN requires sparse shared-kernel convolution, event-to-output address generation, f_inst, f_long/T_thresh,
+        proposal extraction, ROI classification, and tracking interfaces.
+      outcome: Do not add Spiker+ as a required dependency for the current convolutional backend because adapting its
+        fully connected architecture would not reduce total implementation risk. Re-evaluate isolated VHDL neuron,
+        arithmetic, quantization, or test-generation components before duplicating equivalent future work.
+      version_policy: No version is pinned while the framework is not a dependency; pin an exact release or commit before reuse.
   components_to_implement:
   - hardware-neutral model schema and exporter from SpikingJelly
   - bit-accurate fixed-point event-scatter reference model
@@ -671,8 +692,8 @@ custom_fpga_backend_strategy:
   implementation_languages:
     training_and_export: Python with PyTorch and SpikingJelly
     bit_accurate_reference: Python initially; optional C++ acceleration later
-    hardware: VHDL or SystemVerilog
-    verification: cocotb plus vendor simulation
+    hardware: VHDL-2008 only
+    verification: cocotb plus GHDL for portable simulation, followed by vendor simulation
   repository_structure:
     training:
     - models/
@@ -1067,16 +1088,16 @@ risks_and_mitigations:
   mitigation: Use QAT and report the accuracy-resource Pareto frontier
 - risk: Proposal clustering becomes too expensive
   mitigation: Use low-resolution objectness and simple connected components
-- risk: The custom FPGA backend grows into an overly broad hardware framework
-  mitigation: Implement only the operations required by the selected network, keep a frozen model schema, and validate
-    one layer before adding proposals, classification, or tracking.
+- risk: The project-specific FPGA backend grows into an overly broad hardware framework or duplicates suitable existing IP
+  mitigation: Implement only the operations required by the selected network, evaluate compatible framework components
+    such as Spiker+ before duplicating them, keep a frozen model schema, and validate one layer before integration.
 novelty:
   primary_candidates:
   - SpikingJelly-to-FPGA flow for shared-kernel convolution implemented as sparse event-addressed weight accumulation
   - Unified event-SNN proposal, multiclass classification, and tracking pipeline
   - Hardware-efficient f_inst cross-filter competition
   - Hardware-efficient f_long/T_thresh feature-map homeostasis
-  - Independent bit-exact custom FPGA backend for competitive and adaptive convolutional SNNs
+  - Bit-exact VHDL-2008 FPGA backend for competitive and adaptive convolutional SNNs with evidence-based framework reuse
   strongest_positioning: 'Hardware-algorithm co-design for event-camera tracking: trainable competitive and adaptive
     spiking convolution layers mapped to a multiplier-minimized sparse FPGA architecture.'
   claims_requiring_measurement:

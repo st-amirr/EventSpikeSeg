@@ -34,6 +34,14 @@ def test_f_inst_ablation_allows_all_candidates() -> None:
     assert spikes.flatten().tolist() == [1.0, 1.0]
 
 
+def test_f_inst_ablation_preserves_subthreshold_surrogate_gradient() -> None:
+    neuron = HardwareLIF(1, LIFConfig(f_inst_enabled=False, f_long_enabled=False))
+    current = torch.tensor([[[[0.5]]]], requires_grad=True)
+    neuron(current).sum().backward()
+    assert current.grad is not None
+    assert current.grad.item() > 0.0
+
+
 def test_homeostasis_rises_after_spike_then_decays_toward_zero() -> None:
     neuron = HardwareLIF(
         1,

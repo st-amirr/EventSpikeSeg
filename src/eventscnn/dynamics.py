@@ -52,10 +52,13 @@ class HardwareLIF(nn.Module):
             winner_index = masked.argmax(dim=1, keepdim=True)
             gate = torch.zeros_like(above).scatter_(1, winner_index, True)
             gate &= above.any(dim=1, keepdim=True)
+            emitted = raw_spikes * gate.to(raw_spikes.dtype)
         else:
             gate = above
+            # The surrogate already has the exact hard-spike forward value. Avoid a
+            # second detached threshold mask, which would erase subthreshold gradients.
+            emitted = raw_spikes
 
-        emitted = raw_spikes * gate.to(raw_spikes.dtype)
         winner_reset = gate.to(candidate.dtype) * threshold
         loser_mask = above & ~gate
         loser_decrement = loser_mask.to(candidate.dtype) * self.config.competitor_decrement

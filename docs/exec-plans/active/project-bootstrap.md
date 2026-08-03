@@ -55,7 +55,7 @@ and Verilator were initially absent.
   integer LIF, export schema, and float/integer comparison tests pass.
 - [x] M9 — Sparse event-scatter: shared-kernel address accumulation equals dense
   convolution for repeated, border, stride, and random seeded fixtures.
-- [x] M10 — RTL units: synthesizable neuron, competition, homeostasis, and event-conv
+- [x] M10 — VHDL-2008 RTL units: synthesizable neuron, competition, homeostasis, and event-conv
   address/accumulation units exist with golden vectors; cocotb equivalence passes under
   an actually executed simulator. This milestone stays incomplete if none is installed.
 - [ ] M11 — Integrated/data milestones: synthetic end-to-end smoke training passes;
@@ -89,6 +89,17 @@ make rtl-test
   changed smoke training to backpropagate through the full three-layer system.
 - 2026-08-02: Final self-review validation passed: 39 Python tests in 2.11 seconds,
   lint, end-to-end smoke training, 9 reference tests, and 5 Icarus/cocotb RTL tests.
+- 2026-08-03: User selected VHDL-2008 as the required RTL language and replaced the
+  blanket Spiker+ prohibition with evidence-driven optional framework reuse. M10 was
+  reopened until the five ported VHDL units pass GHDL/cocotb equivalence.
+- 2026-08-03: Replaced all five SystemVerilog prototypes with VHDL-2008 entities, changed
+  the runner to GHDL, repaired one non-static aggregate, and passed 5/5 cocotb tests.
+- 2026-08-03: Reviewed Spiker+ official sources. Its current FC/FC-recurrent accelerator
+  is not a sensible main backend for EventSCNN's sparse shared-kernel convolution, so no
+  dependency was added. Isolated compatible components remain candidates for later reuse.
+- 2026-08-03: Added YAML policy regression tests and completed broad validation: 41
+  Python tests, lint, end-to-end smoke training, 9 reference tests, and 5 GHDL/cocotb
+  VHDL-2008 simulations all pass.
 
 ## Discoveries
 
@@ -105,7 +116,10 @@ synthetic-first strategy are normative for this plan.
 
 - Python 3.9 constrains compatible PyTorch/SpikingJelly versions.
 - Dependency download may require network approval.
-- Unit RTL equivalence passes; network-level routing/integration RTL is not implemented.
+- VHDL unit equivalence passes; network-level routing/integration VHDL is not implemented.
+- Homebrew currently warns that its GHDL cask will be disabled on 2026-09-01 because of
+  a macOS Gatekeeper check; CI or an alternative supported installation path is needed
+  for long-term reproducibility, although GHDL 6.0.0 executed successfully in this run.
 - A concurrent external commit (`070fa2d`) tracked initial `.venv` files. Ignore rules
   prevent further additions, but repository-index cleanup remains.
 - Full dataset/training and FPGA measurements are external-resource milestones.

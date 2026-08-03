@@ -16,7 +16,7 @@ make train-smoke
 make validate-reference
 ```
 
-`make rtl-test` requires an installed supported simulator (initially Icarus Verilog) and
+`make rtl-test` requires GHDL with VHDL-2008 support and
 cocotb. It reports a blocker rather than claiming success when the simulator is absent.
 
 The implementation is driven by `project_spec.yaml`; architecture, decisions, measured
