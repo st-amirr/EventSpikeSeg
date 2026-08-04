@@ -10,8 +10,8 @@ Build the system specified in `project_spec.yaml`:
 * three-layer hardware-compatible convolutional SNN;
 * custom `f_inst` competition;
 * custom `f_long` / `T_thresh` homeostasis;
-* region proposals;
-* multiclass classification;
+* event-supported pixel attention and optional derived region proposals;
+* fully spiking learned classification (bias-free synapses followed by output LIF neurons);
 * single-object tracking;
 * quantized bit-accurate inference;
 * VHDL-2008 FPGA RTL implementation.
@@ -21,7 +21,7 @@ used, extended, or adapted when evidence shows that they satisfy the project con
 and reduce implementation or verification risk. Framework use is optional, not a goal
 by itself. Keep project-specific custom VHDL where a framework cannot preserve sparse
 shared-kernel convolution, exact operation ordering, `f_inst`, `f_long/T_thresh`, or
-the proposal/classification/tracking interfaces. Record each adoption or rejection in
+the attention/classification/tracking interfaces. Record each adoption or rejection in
 `docs/DECISIONS.md` with the evaluated alternative and evidence.
 
 Sources of truth
@@ -148,7 +148,7 @@ LIF + f_inst + f_long
 Conv 8→16, kernel 3×3, stride 2
 LIF + f_inst + f_long
 
-Conv 16→32, kernel 3×3, stride 2
+Conv 16→32, kernel 3×3, stride 1
 LIF + f_inst + f_long
 ```
 
@@ -159,6 +159,13 @@ bias=False
 ```
 
 Avoid inference-time operations that lack a clear fixed-point FPGA mapping.
+
+The learned inference path must remain fully spike-driven wherever a neuron/synapse
+mapping is sensible: pixel attention gates binary feature spikes; bias-free class
+synapses feed independent output LIF neurons; class decisions use emitted spike counts.
+Do not add an analog linear/softmax classifier to the primary path. Deterministic
+centroid measurement, class argmax, confidence calculation, and alpha-beta tracking are
+digital decoding/post-processing and need not be represented as neurons.
 
 ### Neuron
 
@@ -218,6 +225,26 @@ Do not flatten convolution into a large fully connected matrix.
 
 Do not describe the FPGA as clockless or fully asynchronous. It is a clocked, sparse, event-addressed implementation of a discrete-time SNN.
 
+### FPGA memory balance
+
+Do not assume that every persistent value belongs in block RAM. The future backend must
+use a synthesis-guided hybrid BRAM/LUTRAM/register mapping so that BRAM capacity does not
+become the only device-fit constraint:
+
+* keep large, deep Conv1/Conv2/Conv3 membrane arrays in BRAM by default;
+* evaluate small, shallow, or high-access-rate structures for distributed LUTRAM,
+  especially attention state, quantized shared weights, short event FIFOs, touched-address
+  queues, small accumulator tiles, and control lookup tables;
+* keep class-neuron state, per-channel `f_long` state, counters, and pipeline control in
+  registers when smaller than a practical inferred memory primitive;
+* do not force a structure into LUTRAM if replication for ports, routing, or timing costs
+  more than the BRAM it saves;
+* preserve bit-exact behavior regardless of the selected physical memory primitive.
+
+Treat these placements as planning defaults, not measured utilization. Freeze the final
+mapping only after synthesis for the selected FPGA part, and record BRAM, LUTRAM/LUT,
+ports, timing, and packing efficiency.
+
 ## Dataset plan
 
 Primary algorithm dataset:
@@ -228,7 +255,7 @@ FE108 with FE240hz annotations
 
 Use it for:
 
-* region/objectness supervision;
+* event-supported pixel-attention supervision derived from annotated regions;
 * multiclass classification;
 * single-object tracking.
 
@@ -243,7 +270,7 @@ MEVDT
 Use it for:
 
 * native DAVIS240C event replay;
-* vehicle proposals;
+* vehicle pixel attention and optional derived proposals;
 * vehicle tracking;
 * FPGA event-rate and throughput analysis.
 
@@ -267,9 +294,9 @@ Follow this order unless evidence justifies a documented change:
 5. `f_long` / `T_thresh` unit tests.
 6. Single convolutional SNN layer.
 7. Three-layer backbone.
-8. Proposal/objectness output.
-9. Classification output.
-10. Simple single-object tracking.
+8. Event-supported pixel-attention output.
+9. Predicted-attention, bias-free synapse/LIF classification output.
+10. Simple attention-centroid single-object tracking.
 11. FE108/FE240hz loader.
 12. MEVDT loader.
 13. Floating-point training baseline.
@@ -296,6 +323,8 @@ At minimum provide:
 * convolution shape and weight-sharing tests;
 * state-reset tests;
 * deterministic synthetic tracking tests;
+* event-supported attention-target and attention-pooling tests;
+* attention centroid/spread and box-free tracking tests;
 * quantized versus floating-point comparison;
 * sparse event-scatter versus dense convolution comparison;
 * exported golden vectors;

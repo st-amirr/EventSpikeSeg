@@ -3,6 +3,7 @@ import pytest
 
 from eventscnn.config import EventBinningConfig
 from eventscnn.datasets import (
+    _load_mevdt_event_stream,
     discover_mevdt_frames,
     load_event_npz,
     load_mevdt_boxes,
@@ -88,6 +89,13 @@ def test_mevdt_nanosecond_window_is_half_open_and_preserves_counts(tmp_path) -> 
     assert sample.events[0, 0, 1, 2, 1] == 1
     assert sample.events[1, 0, 1, 4, 3] == 2
     assert sample.events[:, 0, 1, 6, 5].sum() == 0
+    misses = _load_mevdt_event_stream.cache_info().misses
+    load_mevdt_window(
+        record,
+        config=EventBinningConfig(bin_duration_us=1_000),
+        window_steps=2,
+    )
+    assert _load_mevdt_event_stream.cache_info().misses == misses
 
 
 def test_mevdt_rejects_xywh_misinterpretation(tmp_path) -> None:

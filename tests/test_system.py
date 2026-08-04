@@ -12,23 +12,26 @@ def _configured_system() -> EventSCNNSystem:
         system.backbone.blocks[1].conv.weight[0, 0, 1, 1] = 1.0
         system.backbone.blocks[2].conv.weight[0, 0, 1, 1] = 1.0
         system.objectness.conv.weight.zero_()
-        system.objectness.conv.weight[0, 0, 0, 0] = 1.0
-        system.classification.classifier.weight.zero_()
-        system.classification.classifier.bias.zero_()
-        system.classification.classifier.weight[1, 0] = 1.0
+        system.attention.conv.weight[0, 0, 1, 1] = 1.0
+        system.classification.synapse.weight.zero_()
+        system.classification.synapse.weight[1, 0] = 1.0
     return system
 
 
-def test_integrated_synthetic_proposal_classification_and_tracking() -> None:
+def test_integrated_synthetic_attention_classification_and_tracking() -> None:
     system = _configured_system()
+    assert system.backbone.config.lif.f_inst_enabled
+    assert not system.classification.neuron.config.f_inst_enabled
+    assert not system.classification.neuron.config.f_long_enabled
     sequence = torch.zeros((1, 1, 2, 180, 240))
     sequence[0, 0, 1, 88, 120] = 2
-    outputs = system.trainable_outputs(sequence, torch.tensor([[0, 0, 30, 23]]))
+    outputs = system.trainable_outputs(sequence)
     system.reset()
-    detections, track = system.infer_single(sequence)
-    assert outputs["conv3_spikes"].shape == (1, 1, 32, 23, 30)
-    assert len(detections) == 1
-    assert detections[0].class_id == 1
+    observation, track = system.infer_attention_single(sequence)
+    assert outputs["conv3_spikes"].shape == (1, 1, 32, 45, 60)
+    assert outputs["attention_spikes"].shape == (1, 1, 1, 90, 120)
+    assert outputs["classification_spikes"].shape == (1, 1, 2)
+    assert observation is not None and observation.class_id == 1
     assert track is not None and track.class_id == 1
 
 
@@ -36,8 +39,7 @@ def test_integrated_reset_is_deterministic() -> None:
     system = _configured_system()
     sequence = torch.zeros((1, 1, 2, 32, 32))
     sequence[0, 0, 1, 16, 16] = 2
-    rois = torch.tensor([[0, 0, 4, 4]])
-    first = system.trainable_outputs(sequence, rois)
+    first = system.trainable_outputs(sequence)
     system.reset()
-    second = system.trainable_outputs(sequence, rois)
+    second = system.trainable_outputs(sequence)
     assert all(torch.equal(first[key], second[key]) for key in first)

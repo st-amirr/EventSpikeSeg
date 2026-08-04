@@ -1,8 +1,8 @@
 document:
-  title: Hardware-Oriented Event-Camera Spiking CNN for Region Proposal, Classification, and Tracking
+  title: Hardware-Oriented Event-Camera Spiking CNN for Pixel Attention, Classification, and Tracking
   short_name: EventSCNN-FPGA
-  version: 0.3.0
-  status: mevdt_floating_baseline_in_progress
+  version: 0.5.1
+  status: fully_spiking_mevdt_attention_measured
   created_date: '2026-08-02'
   intended_uses:
   - Software and FPGA implementation specification
@@ -33,7 +33,7 @@ decision_history:
   issue: FPGA implementation framework
   decision: Use a project-specific VHDL-2008 backend with selective framework reuse
   reason: The required design contains shared-kernel event-addressed convolution, feature-map state memories, custom
-    f_inst competition, f_long/T_thresh homeostasis, proposal extraction, ROI gating, classification, and tracking.
+    f_inst competition, f_long/T_thresh homeostasis, pixel attention, classification, and centroid tracking.
     Custom VHDL remains necessary for unsupported operations, but compatible framework components should be reused
     when they preserve the frozen arithmetic and interfaces and demonstrably reduce implementation or verification risk.
 - step: 5
@@ -42,7 +42,7 @@ decision_history:
   reason: Spiker+ demonstrates fixed-point LIF arithmetic, power-of-two leakage, configurable reset behavior, VHDL
     generation, and resource-aware acceleration. Spiker+ or another framework may be adapted for components that match
     the EventSCNN contracts. Reject or replace framework components when they flatten convolution, alter operation order,
-    prevent custom dynamics, or add more integration cost than a focused VHDL implementation.
+    prevent custom dynamics or pixel-attention interfaces, or add more integration cost than a focused VHDL implementation.
 - step: 6
   issue: Dataset selection
   decision: Use FE108/FE240hz as primary and MEVDT for hardware validation
@@ -53,6 +53,24 @@ decision_history:
   decision: Train a sequence-disjoint MEVDT vehicle/background baseline without replacing FE108 as the multiclass target
   reason: MEVDT permits immediate validation of real event ingestion, proposals, binary classification, and tracking at
     the canonical resolution. Its single vehicle category cannot support the planned 21-class claim.
+- step: 8
+  issue: Filled-box objectness and box ROI inference underperform on sparse MEVDT events
+  decision: Use event-supported pixel attention, predicted-attention classification, and centroid tracking as the primary path
+  reason: Active event pixels inside annotations align supervision with the input modality. A local 3x3 spiking head preserves
+    spatial detail, while weighted pooling and centroid moments avoid requiring a bounding-box ROI during inference. Boxes
+    remain supervision and evaluation metadata; legacy box utilities remain comparison baselines.
+- step: 9
+  issue: Analog linear classification readout remained after the spiking attention head
+  decision: Replace it with bias-free class synapses and independent hardware-compatible LIF output neurons
+  reason: The requested learned path is fully spike-driven. Predicted attention gates Conv3 spikes at every timestep;
+    weighted spike additions drive class LIF neurons; emitted class spike counts determine the class. Independent output
+    neurons avoid the non-background spike starvation observed when f_inst lateral competition was applied across classes.
+- step: 10
+  issue: A BRAM-only state and buffer mapping can prevent fit on BRAM-constrained FPGAs
+  decision: Require synthesis-guided hybrid BRAM, distributed LUTRAM, and register allocation
+  reason: Large deep convolution membrane arrays suit BRAM, while small high-access-rate attention state, shared weights,
+    short FIFOs, address queues, scratch tiles, and lookup tables can use LUTRAM without consuming scarce BRAM blocks.
+    Tiny channel/class state belongs in registers. Physical placement may change only if bit-exact behavior is preserved.
 research_problem:
   problem_statement: Event cameras generate sparse asynchronous brightness-change events, but trainable deep-SNN frameworks
     typically execute convolution as dense tensor operations. FPGA SNN generators provide efficient neuron implementations
@@ -195,7 +213,7 @@ literature_review:
   identified_gap: The literature separately provides event sensors, SNN proposals, motion-selective STDP networks,
     trainable SNN frameworks, modern trackers, and FPGA SNN generators. The intended contribution integrates these
     into a reproducible train-to-hardware path for sparse shared-kernel FPGA convolution with custom competition and
-    homeostasis, region proposals, classification, and tracking.
+    homeostasis, event-supported pixel attention, classification, and tracking.
 scope:
   version_1_in_scope:
   - Event-only DAVIS input
@@ -206,8 +224,8 @@ scope:
   - Hardware-compatible LIF neurons
   - f_inst-inspired cross-filter competition
   - f_long/T_thresh-inspired adaptive-threshold homeostasis
-  - Single-object acquisition, multiclass classification, and tracking
-  - Spiking region/objectness proposal map and spatial clustering
+  - Single-object acquisition, multiclass classification, and tracking from attended pixels
+  - Spiking event-supported pixel-attention map with optional derived spatial proposals
   - SpikingJelly training and quantization-aware fine-tuning
   - Bit-accurate Python reference
   - Project-specific VHDL-2008 FPGA backend with optional selective reuse of compatible framework components
@@ -292,8 +310,8 @@ temporal_representation:
   - 1000
   - 2000
   - 5000
-  baseline_training_window_steps: 20
-  baseline_context_duration_ms: 20
+  baseline_training_window_steps: 50
+  baseline_context_duration_ms: 50
   rolling_inference: true
   binning_rule: Each DAVIS event contributes one count at its polarity, y, x coordinate in the current timestep. Multiple
     events at the same coordinate produce an integer count.
@@ -316,10 +334,10 @@ model:
   inference_reference_step_mode: s
   architecture_name: ThreeLayerCompetitiveAdaptiveEventSCNN
   aggregate:
-    logical_spiking_neurons: 151680
-    membrane_state_kib_at_16_bits: 296.25
-    convolution_weight_count: 6160
-    weight_storage_kib_at_8_bits: 6.016
+    logical_spiking_neurons: 226802
+    membrane_state_kib_at_16_bits: 442.973
+    trainable_weight_count: 6296
+    weight_storage_kib_at_8_bits: 6.148
     interpretation: The backbone is state-memory dominated rather than weight-memory dominated
   layers:
   - name: conv1_proposal_features
@@ -356,8 +374,8 @@ model:
       beta_parameterization: beta = 1 - 2^(-beta_shift)
       beta_shift_initial: 4
       beta_initial: 0.9375
-      threshold_training_initial: 1.0
-      threshold_integer_initial: 256
+      threshold_training_initial: 0.25
+      threshold_integer_initial: 64
       reset: subtractive
       membrane_bits: 16
       accumulator_bits: 24
@@ -396,7 +414,7 @@ model:
       model: hardware_compatible_lif
       equation: V[t] = beta * V[t-1] + I[t]
       beta_shift_initial: 4
-      threshold_integer_initial: 256
+      threshold_integer_initial: 64
       reset: subtractive
       membrane_bits: 16
       accumulator_bits: 24
@@ -411,8 +429,8 @@ model:
     - 60
     output_shape_chw:
     - 32
-    - 23
-    - 30
+    - 45
+    - 60
     convolution:
       in_channels: 16
       out_channels: 32
@@ -420,8 +438,8 @@ model:
       - 3
       - 3
       stride:
-      - 2
-      - 2
+      - 1
+      - 1
       padding:
       - 1
       - 1
@@ -429,56 +447,63 @@ model:
       weight_sharing: true
       weight_bits: 8
       weight_count: 4608
-      maximum_output_locations_per_input_event_per_output_channel: 4
-      maximum_weight_additions_per_input_event: 128
+      maximum_output_locations_per_input_event_per_output_channel: 9
+      maximum_weight_additions_per_input_event: 288
     neuron:
       model: hardware_compatible_lif
       equation: V[t] = beta * V[t-1] + I[t]
       beta_shift_initial: 4
-      threshold_integer_initial: 256
+      threshold_integer_initial: 64
       reset: subtractive
       membrane_bits: 16
       accumulator_bits: 24
     state_memory:
-      logical_neurons: 22080
-      membrane_kib_at_16_bits: 43.125
-  proposal_head:
-    input_taps:
-    - conv1_proposal_features
-    - conv2_motion_features
-    selected_method: trainable_1x1_spiking_objectness_head_plus_spatial_clustering
-    activity_window_steps_initial: 5
+      logical_neurons: 86400
+      membrane_kib_at_16_bits: 168.75
+  pixel_attention_head:
+    feature_source: conv1_proposal_features
+    selected_method: bias_free_3x3_spiking_pixel_attention
+    output_shape_chw: [1, 90, 120]
+    activity_window_steps_initial: 50
+    supervision: Event-active pixels inside annotated boxes, reduced by OR pooling and locally dilated
     processing:
-    - Accumulate objectness spikes
-    - Threshold the low-resolution objectness map
-    - Run connected components or neighboring-window clustering
-    - Produce boxes and confidence from component activity
-    rationale: Avoid continuous bounding-box regression in the first FPGA version
+    - Accumulate attention spikes over the decision window
+    - Use the predicted map directly for classification pooling and centroid moments
+    - Optionally threshold and cluster the map to derive comparison boxes for legacy metrics
+    rationale: Preserve event-supported spatial evidence without making a bounding-box ROI part of inference
+    state_memory:
+      logical_neurons: 10800
+      membrane_kib_at_16_bits: 21.094
+      preferred_physical_memory_candidate: distributed_LUTRAM_due_to_small_shallow_high_access_map
   classification_head:
     feature_source: conv3_semantic_tracking_features
-    reduction: ROI spike-count pooling per channel
-    classifier: small fixed-point linear or spiking output layer
+    reduction: Per-timestep predicted-attention gating of feature spikes after max/OR resolution matching, followed by
+      integer spike-count accumulation per channel
+    classifier: bias-free class synapses followed by independent hardware-compatible LIF output neurons
     class_count: dataset_dependent
-    decoding: spike count or final membrane
+    decoding: emitted class-spike count argmax; silence ties resolve deterministically to background class zero
+    analog_readout_allowed: false
+    output_dynamics:
+      f_inst_enabled: false
+      f_long_enabled: false
+      reason: Classes integrate independently; competition is applied only by the final deterministic spike-count argmax.
   tracking_head:
     initial_task: single_object_tracking
     state:
     - x
     - y
-    - width
-    - height
+    - spread_x
+    - spread_y
     - vx
     - vy
     - confidence
     - class_id
-    measurement: selected proposal and class confidence
+    measurement: weighted centroid and spread of predicted attention plus class confidence
     motion_model: fixed_point_alpha_beta_filter
-    association: distance plus IoU plus class consistency
+    association: centroid distance plus class consistency
     roi_policy:
-      enabled_after_acquisition: true
-      search_margin_relative_to_box: 0.5
-      on_confidence_drop: expand ROI, then reactivate full-frame proposals
-      event_filter: Discard events outside the active ROI after a stable track exists
+      enabled_after_acquisition: false
+      reason: Inference remains box-free; attention pixels are the selector.
     implementation_order: Validate on Zynq PS first; move to PL after SCNN stability
 custom_spiking_dynamics:
   lif:
@@ -516,20 +541,21 @@ custom_spiking_dynamics:
     selected_hardware_efficient_rule:
       scope: per_output_feature_map
       state: A[channel]
-      statistic: channel spike count per timestep
+      statistic: one activity event when any neuron in the channel spikes during the timestep
       threshold: theta_effective[channel] = theta_base + A[channel]
-      update: A = max(0, A - decay) + f_long * normalized_channel_spike_count
+      update: A = max(0, A - decay) + f_long * channel_any_spike
       T_thresh_interpretation: Controls return time toward zero
       first_decay_implementation: linear_countdown_or_triangular
       initial_duration_steps: 32
       initial_increment_relative_to_threshold: 0.0625
+      initial_decay_relative_to_threshold: 0.03125
     paper_fidelity_ablation:
       scope: per_neuron
       shape: inverted-V threshold modulation
       purpose: Determine whether accuracy benefit justifies threshold-state memory
 training:
   primary_method: supervised_surrogate_gradient
-  rationale: Tracking, objectness, localization, and classification need task-level losses
+  rationale: Tracking, pixel attention, localization, and classification need task-level losses
   optional_conv1_pretraining:
     method: STDP
     framework: SpikingJelly STDPLearner
@@ -544,28 +570,29 @@ training:
   - Train a floating-point baseline without f_inst/f_long
   - Add f_inst and measure accuracy, proposal precision/recall, feature diversity, and sparsity
   - Add f_long/T_thresh and measure utilization and robustness
-  - Train proposal, classification, and temporal losses
+  - Train pixel-attention, predicted-attention classification, and centroid temporal losses
   - Apply quantization-aware training
   - Export integer weights and neuron parameters
   - Validate the bit-accurate event-scatter model
   - Generate and verify RTL
   losses:
-    proposal_objectness:
-      type: positive_weighted_mean_squared_error_on_temporal_spike_rate
+    pixel_attention:
+      type: positive_weighted_rate_error_plus_dice_on_event_supported_pixels
       initial_weight: 1.0
-      current_positive_pixel_multiplier: 10.0
-      alternatives_after_baseline: binary_cross_entropy_or_focal_loss
-    proposal_localization:
-      type: component_center_and_extent_loss_or_optional_box_regression
-      initial_weight: 1.0
+      current_positive_pixel_multiplier: 32.0
+      target_dilation_pixels_at_half_resolution: 1
+      temporal_reduction: clamp_sum_to_window_spike_presence
+    attention_centroid:
+      type: normalized_squared_centroid_error_to_annotated_target_center
+      initial_weight: 0.25
     classification:
       type: cross_entropy_on_spike_counts_or_membrane_logits
       initial_weight: 1.0
     temporal_consistency:
-      type: smooth_L1_on_box_displacement_and_velocity
+      type: smooth_L1_on_attention_centroid_displacement_and_velocity
       initial_weight: 0.25
     spike_rate_regularization:
-      type: layerwise_mean_spike_rate_penalty
+      type: layerwise_excess_mean_spike_rate_above_0.05
       initial_weight: 0.001
     filter_balance_regularization:
       type: channel_utilization_variance_or_KL_penalty
@@ -621,11 +648,14 @@ spikingjelly_contract:
   - Custom f_long/T_thresh module
   - Sum or average spike-count pooling
   - 1x1 convolution
-  - Small linear output layer
+  - 3x3 bias-free convolution for local pixel attention
+  - Integer-ratio max/OR pooling for attention resolution matching
+  - Attention-weighted sum and centroid moments
+  - Bias-free class synapses and hardware-compatible LIF output neurons
   deferred_operations:
   - Standalone inference BatchNorm
-  - Max pooling
-  - Attention
+  - General feature max pooling
+  - Transformer or dot-product attention
   - Dilated convolution
   - Transposed convolution
   - Unconstrained floating-point adaptive dynamics
@@ -644,12 +674,44 @@ custom_fpga_backend_strategy:
   - Binary presynaptic spikes select whether a stored weight is added; the convolutional backbone avoids activation-by-weight
     multipliers.
   - Store shared kernels once rather than expanding convolution into a fully connected matrix.
-  - Store logical neuron states in BRAM or URAM and time-multiplex a configurable number of processing elements.
+  - Store large deep logical-neuron state arrays in BRAM/URAM, place suitable small high-access structures in distributed
+    LUTRAM, retain tiny state in registers, and time-multiplex a configurable number of processing elements.
   - Use power-of-two-compatible membrane decay so leakage is implemented with additions and shifts.
   - Preserve exact discrete-timestep ordering between SpikingJelly, the fixed-point reference, RTL simulation, and
     FPGA execution.
-  - Keep event routing, neuron dynamics, inhibition, proposal extraction, classification, and tracking as separable
+  - Keep event routing, neuron dynamics, inhibition, pixel attention, classification, and tracking as separable
     verified modules.
+  memory_mapping_policy:
+    status: documented_for_future_implementation_not_yet_synthesized
+    objective: Balance BRAM capacity against LUT availability, memory-port demand, routing, and timing.
+    bram_default_candidates:
+    - Conv1 membrane state
+    - Conv2 membrane state
+    - Conv3 membrane state
+    - Any deep full-layer current or spike buffer that cannot be safely tiled
+    lutram_default_candidates:
+    - Pixel-attention membrane state
+    - Quantized shared-kernel and class-synapse weights when port structure is suitable
+    - Short event FIFOs and touched-address queues
+    - Small tiled current accumulators
+    - Address, threshold, and control lookup tables
+    register_default_candidates:
+    - Class-neuron membrane state
+    - Per-channel f_long/T_thresh state
+    - Counters, pipeline state, and small arbitration state
+    selection_rules:
+    - Prefer LUTRAM for shallow or small memories needing low-latency frequent access.
+    - Prefer BRAM for deep arrays where LUT cost and routing would dominate.
+    - Account for read/write ports, banking, replication, packing loss, and timing rather than comparing raw bits alone.
+    - Permit a synthesis result to override a default candidate when the measured tradeoff is documented.
+    - Preserve the exported address layout, widths, saturation, update ordering, and bit-exact golden outputs.
+    required_reports:
+    - Per-memory logical dimensions and inferred primitive
+    - BRAM36 and BRAM18 usage
+    - LUTRAM bits and LUT count
+    - Replication or banking required for ports
+    - Packing efficiency and unused capacity
+    - Post-synthesis timing and post-route fit
   framework_reuse_policy:
     candidate_framework: Spiker+
     advantages_observed:
@@ -663,7 +725,7 @@ custom_fpga_backend_strategy:
     rejection_conditions:
     - Convolution is flattened into fully connected matrices
     - Exact f_inst or f_long/T_thresh behavior cannot be represented
-    - Proposal, classification, tracking, or event-routing interfaces cannot be integrated cleanly
+    - Attention, classification, tracking, or event-routing interfaces cannot be integrated cleanly
     - Bit-exact equivalence cannot be demonstrated
     - Adaptation costs more than a focused project-specific VHDL implementation
     decision_process: Record evaluated version, components, compatibility evidence, integration cost, and adopt/reject
@@ -674,7 +736,7 @@ custom_fpga_backend_strategy:
       - Official Spiker+ repository documents Python-driven VHDL accelerator generation, quantization, and neuron libraries.
       - The Spiker+ paper states that the current architecture targets fully connected and recurrent fully connected networks.
       - EventSCNN requires sparse shared-kernel convolution, event-to-output address generation, f_inst, f_long/T_thresh,
-        proposal extraction, ROI classification, and tracking interfaces.
+        pixel attention, attention-weighted classification, and centroid-tracking interfaces.
       outcome: Do not add Spiker+ as a required dependency for the current convolutional backend because adapting its
         fully connected architecture would not reduce total implementation risk. Re-evaluate isolated VHDL neuron,
         arithmetic, quantization, or test-generation components before duplicating equivalent future work.
@@ -687,13 +749,14 @@ custom_fpga_backend_strategy:
   - shared-kernel ROM
   - input-spike-to-output-address generator
   - membrane/current state RAM
+  - synthesis-guided BRAM/LUTRAM/register memory mapper and per-memory placement manifest
   - active-neuron list or touched-address queue
   - layer timestep controller
   - hardware-compatible LIF processing element
   - f_inst competition unit
   - feature-map homeostasis and adaptive-threshold unit
-  - proposal objectness accumulation and clustering
-  - ROI event gate
+  - pixel-attention accumulation, OR pooling, and centroid-moment units
+  - optional attention-map clustering for comparison metrics
   - classification head
   - tracking-state interface
   - golden-vector and cocotb verification environment
@@ -744,7 +807,7 @@ fpga_execution:
   - 'At the Conv1 barrier, process active neurons: leak, current, threshold, f_inst, spike, reset, f_long'
   - Route Conv1 spike addresses through Conv2
   - Route Conv2 spike addresses through Conv3
-  - Update objectness, proposals, classification, and tracking
+  - Update pixel attention, attention-weighted classification, and centroid tracking
   - Advance to timestep t+1
   active_state_management:
     selected: active_neuron_list
@@ -787,6 +850,8 @@ fpga_target:
     outputs: AXI_Stream_or_memory_mapped_proposals_classes_tracks
   resource_priorities:
   - BRAM/URAM capacity and banking
+  - Balanced use of distributed LUTRAM for appropriate small high-bandwidth memories
+  - LUTRAM port replication and routing cost
   - Memory port conflicts
   - LUT adders and comparators
   - FIFO capacity
@@ -820,10 +885,10 @@ datasets:
     - fast-motion and challenging-light evaluation
     - f_inst and f_long/T_thresh ablations
     supervision_mapping:
-      proposal_positive_region: locations whose receptive fields overlap the target box
-      proposal_negative_region: background locations outside a configurable exclusion margin
+      attention_positive_pixels: event-active locations inside the target box, with configurable local dilation
+      attention_negative_pixels: non-target event support and background locations
       classification_label: target class associated with the sequence or object
-      tracking_target: target bounding box at each annotated time
+      tracking_target: target center derived from the annotation; boxes are not required at inference
     limitations:
     - Single-object rather than native multi-object tracking
     - Requires coordinate remapping to the 240x180 hardware baseline
@@ -851,8 +916,8 @@ datasets:
     - MOTChallenge format
     - higher-rate interpolated tracking annotations
     tasks:
-    - vehicle region proposal
-    - single-vehicle and multi-proposal tracking evaluation
+    - vehicle pixel attention and optional derived proposals
+    - single-vehicle attention-centroid tracking evaluation
     - native-resolution FPGA replay
     - event-rate burst characterization
     - latency, FIFO occupancy, throughput, and power measurement
@@ -916,6 +981,13 @@ evaluation:
   - proposal_IoU
   - proposals_per_timestep
   - time_to_first_valid_proposal
+  attention_metrics:
+  - pixel_precision
+  - pixel_recall
+  - pixel_Dice
+  - pixel_IoU
+  - centroid_detection_rate
+  - centroid_error_pixels
   classification_metrics:
   - accuracy
   - macro_F1
@@ -928,6 +1000,7 @@ evaluation:
   - normalized_precision
   - failure_count
   - reacquisition_time
+  - attention_center_precision
   future_multi_object_metrics:
   - HOTA
   - MOTA
@@ -942,6 +1015,7 @@ evaluation:
   - Membrane updates
   hardware_metrics:
   - LUT
+  - LUTRAM bits and LUTs used as distributed memory
   - FF
   - BRAM
   - URAM
@@ -969,6 +1043,8 @@ experiment_matrix:
   - Channels 4-8-16 vs 8-16-32 vs 16-32-64
   - Conv1 kernel 3x3 vs 5x5
   - Stride vs pooling downsampling
+  - Conv3 stride 1 vs 2
+  - 1x1 objectness versus 3x3 event-supported pixel attention
   temporal:
   - 0.5, 1, 2, 5 ms bins
   - 10, 20, 50, 100 ms decision windows
@@ -997,7 +1073,7 @@ experiment_matrix:
   - Full sweep vs active list
   - BRAM banking strategies
   - Channel vs kernel-offset parallelism
-  - ROI enabled vs disabled
+  - Full attention map vs centroid-guided event gating
 verification:
   levels:
   - level: 1
@@ -1028,7 +1104,7 @@ verification:
   - Competing channel spikes
   - Membrane saturation and negative values
   - Adaptive-threshold rise and decay
-  - ROI entry, exit, and reacquisition
+  - Attention acquisition, dropout, and centroid reacquisition
 implementation_plan:
   phase_0:
     name: Literature and requirements
@@ -1043,7 +1119,7 @@ implementation_plan:
     deliverables:
     - three-layer model
     - event binning
-    - proposal head
+    - pixel-attention head
     - classifier
     - single-object tracker
     exit: Stable training and meaningful task performance
@@ -1077,7 +1153,7 @@ implementation_plan:
     name: Multilayer FPGA
     deliverables:
     - three-layer routing
-    - proposal clustering
+    - pixel-attention accumulation and centroid moments
     - classifier
     - tracker interface
     exit: Recorded sequences run end-to-end without mismatch
@@ -1098,12 +1174,16 @@ risks_and_mitigations:
   mitigation: Use Conv1 stride, PE scaling, FIFO sizing, optional filtering, and ROI gating
 - risk: Per-neuron f_long doubles state memory
   mitigation: Use per-feature-map homeostasis by default
+- risk: A BRAM-only mapping prevents fit even when sufficient LUTRAM is available
+  mitigation: Use the documented hybrid placement policy, tile temporary accumulators, and compare synthesis reports for
+    BRAM-heavy and balanced mappings without changing numerical behavior
 - risk: SpikingJelly and RTL operation order differ
   mitigation: Freeze a custom hardware-compatible neuron before final training
 - risk: Quantization reduces accuracy
   mitigation: Use QAT and report the accuracy-resource Pareto frontier
-- risk: Proposal clustering becomes too expensive
-  mitigation: Use low-resolution objectness and simple connected components
+- risk: Pixel attention becomes fragmented or too dense
+  mitigation: Use event-supported targets, a local 3x3 head, Dice/rate losses, centroid supervision, and report both pixel
+    and derived-component metrics before hardware integration
 - risk: The project-specific FPGA backend grows into an overly broad hardware framework or duplicates suitable existing IP
   mitigation: Implement only the operations required by the selected network, evaluate compatible framework components
     such as Spiker+ before duplicating them, keep a frozen model schema, and validate one layer before integration.
@@ -1227,8 +1307,9 @@ open_decisions:
   recommended_default: Preserve official splits when available; otherwise create sequence-disjoint stratified splits
     and publish the exact lists.
 - priority: medium
-  item: Proposal extraction
-  recommended_default: 1x1 spiking objectness plus connected components.
+  item: Pixel-attention decoding
+  recommended_default: Use predicted half-resolution attention directly for pooling and centroid tracking; derive boxes
+    with connected components only for comparison metrics.
 - priority: medium
   item: Live camera
   recommended_default: Recorded FE108 and MEVDT development; DAVIS346 AER live hardware if accessible.

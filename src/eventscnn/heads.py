@@ -36,6 +36,23 @@ class ObjectnessHead(nn.Module):
         return torch.stack([self.neuron(self.conv(step)) for step in sequence])
 
 
+class PixelAttentionHead(nn.Module):
+    """Bias-free local spiking attention at the Conv1 spatial resolution."""
+
+    def __init__(self, in_channels: int, lif: Optional[LIFConfig] = None) -> None:
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, 1, kernel_size=3, padding=1, bias=False)
+        self.neuron = HardwareLIF(1, lif)
+
+    def reset(self) -> None:
+        self.neuron.reset()
+
+    def forward(self, sequence: Tensor) -> Tensor:
+        if sequence.ndim != 5:
+            raise ValueError("expected TNCHW features")
+        return torch.stack([self.neuron(self.conv(step)) for step in sequence])
+
+
 def connected_component_proposals(
     activity: Tensor,
     *,
@@ -104,14 +121,82 @@ def roi_spike_count_pool(features: Tensor, rois: Tensor) -> Tensor:
     return pooled
 
 
-class ClassificationHead(nn.Module):
-    """ROI spike-count pooling followed by a small trainable linear classifier."""
+def attention_weighted_spike_pool(features: Tensor, attention: Tensor) -> Tensor:
+    """Pool TNCHW features using predicted TN1HW binary or rate attention.
 
-    def __init__(self, channels: int, class_count: int) -> None:
+    Attention may have a higher integer-multiple spatial resolution than the features;
+    it is reduced with max/OR pooling, which has a direct FPGA mapping.
+    """
+
+    if features.ndim != 5 or attention.ndim != 5:
+        raise ValueError("features and attention must be TNCHW")
+    if features.shape[:2] != attention.shape[:2] or attention.shape[2] != 1:
+        raise ValueError("attention must have shape [T,N,1,H,W] matching T and N")
+    feature_height, feature_width = features.shape[-2:]
+    attention_height, attention_width = attention.shape[-2:]
+    if attention_height % feature_height or attention_width % feature_width:
+        raise ValueError("attention resolution must be an integer multiple of features")
+    ratio_y = attention_height // feature_height
+    ratio_x = attention_width // feature_width
+    if ratio_y > 1 or ratio_x > 1:
+        time, batch = attention.shape[:2]
+        attention = torch.nn.functional.max_pool2d(
+            attention.flatten(0, 1),
+            kernel_size=(ratio_y, ratio_x),
+            stride=(ratio_y, ratio_x),
+        ).view(time, batch, 1, feature_height, feature_width)
+    numerator = (features * attention).sum(dim=(0, 3, 4))
+    denominator = attention.sum(dim=(0, 3, 4)).clamp_min(1.0)
+    return numerator / denominator
+
+
+def attention_gated_spike_counts(features: Tensor, attention: Tensor) -> Tensor:
+    """Return per-timestep TNC counts of feature spikes selected by attention spikes."""
+
+    if features.ndim != 5 or attention.ndim != 5:
+        raise ValueError("features and attention must be TNCHW")
+    if features.shape[:2] != attention.shape[:2] or attention.shape[2] != 1:
+        raise ValueError("attention must have shape [T,N,1,H,W] matching T and N")
+    feature_height, feature_width = features.shape[-2:]
+    attention_height, attention_width = attention.shape[-2:]
+    if attention_height % feature_height or attention_width % feature_width:
+        raise ValueError("attention resolution must be an integer multiple of features")
+    ratio_y = attention_height // feature_height
+    ratio_x = attention_width // feature_width
+    if ratio_y > 1 or ratio_x > 1:
+        time, batch = attention.shape[:2]
+        attention = torch.nn.functional.max_pool2d(
+            attention.flatten(0, 1),
+            kernel_size=(ratio_y, ratio_x),
+            stride=(ratio_y, ratio_x),
+        ).view(time, batch, 1, feature_height, feature_width)
+    return (features * attention).sum(dim=(3, 4))
+
+
+class ClassificationHead(nn.Module):
+    """Bias-free class synapses followed by stateful class LIF neurons."""
+
+    def __init__(
+        self,
+        channels: int,
+        class_count: int,
+        lif: Optional[LIFConfig] = None,
+    ) -> None:
         super().__init__()
         if channels <= 0 or class_count <= 0:
             raise ValueError("channels and class_count must be positive")
-        self.classifier = nn.Linear(channels, class_count)
+        self.synapse = nn.Linear(channels, class_count, bias=False)
+        self.neuron = HardwareLIF(class_count, lif)
 
-    def forward(self, features: Tensor, rois: Tensor) -> Tensor:
-        return self.classifier(roi_spike_count_pool(features, rois))
+    def reset(self) -> None:
+        self.neuron.reset()
+
+    def forward_attention(self, features: Tensor, attention: Tensor) -> Tensor:
+        """Emit TNK class spikes from attended feature-spike events."""
+
+        counts = attention_gated_spike_counts(features, attention)
+        emitted = []
+        for step in counts:
+            current = self.synapse(step).unsqueeze(-1).unsqueeze(-1)
+            emitted.append(self.neuron(current).squeeze(-1).squeeze(-1))
+        return torch.stack(emitted)

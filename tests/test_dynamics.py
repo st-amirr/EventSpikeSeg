@@ -60,6 +60,25 @@ def test_homeostasis_rises_after_spike_then_decays_toward_zero() -> None:
     assert neuron.adaptation.item() == 0.0
 
 
+def test_homeostasis_detects_one_spike_on_a_large_sparse_feature_map() -> None:
+    neuron = HardwareLIF(
+        1,
+        LIFConfig(
+            threshold=0.25,
+            adaptation_increment=0.0625,
+            adaptation_decay=0.03125,
+            f_inst_enabled=False,
+        ),
+    )
+    current = torch.zeros((1, 1, 90, 120))
+    current[0, 0, 40, 50] = 1.0
+    neuron(current)
+    assert neuron.adaptation.item() == 0.0625
+    neuron.membrane.zero_()
+    neuron(torch.zeros_like(current))
+    assert neuron.adaptation.item() == 0.03125
+
+
 def test_reset_clears_membrane_and_adaptation() -> None:
     neuron = HardwareLIF(1, LIFConfig(adaptation_increment=0.5))
     neuron(torch.tensor([[[[2.0]]]]))

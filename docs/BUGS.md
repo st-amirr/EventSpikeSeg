@@ -70,11 +70,57 @@ subsequent commit; this run did not rewrite or undo the concurrent commit.
 - Fix: resolve the dataset root once at training entry.
 - Regression: the 1,024-step run saved `mevdt_baseline_1024.pt` successfully.
 
-## Open — learned objectness does not yet form useful MEVDT boxes
+## Superseded architecture — learned objectness did not form useful MEVDT boxes
 
 - Reproduction: the 1,024-step baseline has held-out best-proposal mean IoU `0.06236`
   and recall@0.5 `0.0` on 64 positive frames.
 - Diagnosis: connected components are small and fragmented; dense filled-box map loss
   is poorly aligned with sparse event-edge activity and component decoding.
-- Status: classification training is functional, but proposal performance blocks claims
-  of end-to-end detection or tracking accuracy.
+- Resolution: replace filled-box objectness/ROI inference with event-supported pixel
+  attention, predicted-attention classification, and centroid tracking. Regression tests
+  cover the new mechanics. Real-data quality remains unmeasured until a new checkpoint
+  is trained; the old checkpoint was deleted as an incompatible generated artifact.
+
+## Resolved — attention loss made the 50-step target unreachable
+
+- Reproduction: user-run v1 attention checkpoint had recall `0.002084` and only 28.1%
+  positive windows emitted attention.
+- Root cause: a binary any-time target of 1.0 was compared with mean spike rate, whose
+  first nonzero value over 50 steps is 0.02; background loss favored total silence.
+- Fix: clamped window-spike presence, sparse-positive balancing, Conv1 support loss,
+  variance-scaled initialization, and threshold 0.25.
+- Regression: window-presence and sparse-support tests; repaired 1,024-step `f_inst`
+  checkpoint measures pixel IoU `0.536611` and 100% centroid detection.
+
+## Resolved — bounded training was biased by dataset order
+
+- Reproduction: the original bounded selector alternated the first positive and negative
+  records without shuffling.
+- Root cause: official CSV ordering concentrated a bounded run in early sequences.
+- Fix: seeded within-class shuffle followed by deterministic balancing; checkpoint stores
+  the policy and exact selected records.
+- Regression: selection is repeatable, balanced, and differs from prefix order.
+
+## Resolved — f_long vanished on large sparse maps
+
+- Reproduction: one spike on a 90×120 map contributed `1/10800`, less than one adaptation
+  decay step.
+- Root cause: spatial mean normalization conflicted with sparse per-map homeostasis.
+- Fix: per-channel any-spike reduction and threshold-relative increment/decay, serialized
+  in checkpoints.
+- Regression: a single spike on a large map raises adaptation by the configured increment.
+
+## Resolved — class-level f_inst starved the vehicle output neuron
+
+- Reproduction: train the fully spiking readout for 1,024 balanced samples with `f_inst`
+  inherited by the two class LIF neurons. Held-out classification was `0.5234375`; on a
+  32-positive diagnostic slice, mean class spikes were `4.0625` for background and
+  `0.71875` for vehicle.
+- Root cause: spatial backbone competition is useful for feature sparsity, but applying
+  winner-take-all inhibition across independent semantic class accumulators suppresses
+  the weaker class before the window-level decision.
+- Fix: retain `f_inst` in the backbone and make class LIF neurons independent; apply
+  competition once through deterministic spike-count argmax after the temporal window.
+- Regression: unit tests freeze disabled class `f_inst/f_long`; the repaired 1,024-step
+  checkpoint reaches `0.828125` held-out predicted-attention classification and `1.0`
+  oracle-attention classification.

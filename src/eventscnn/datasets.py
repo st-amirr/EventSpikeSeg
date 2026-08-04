@@ -2,6 +2,7 @@
 
 import csv
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -180,6 +181,39 @@ def load_mevdt_boxes(path: Path) -> tuple[MEVDTBox, ...]:
     return tuple(boxes)
 
 
+@lru_cache(maxsize=64)
+def _load_mevdt_event_stream(path: Path) -> tuple[np.ndarray, ...]:
+    """Parse one sequence CSV once and cache compact, sorted event columns."""
+
+    timestamps: list[int] = []
+    xs: list[int] = []
+    ys: list[int] = []
+    polarities: list[int] = []
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != ["ts", "x", "y", "p"]:
+            raise ValueError(f"MEVDT event CSV must have header ts,x,y,p: {path}")
+        previous_timestamp = -1
+        for row in reader:
+            timestamp = int(row["ts"])
+            polarity = int(row["p"])
+            if timestamp < previous_timestamp:
+                raise ValueError(f"MEVDT event timestamps are not sorted: {path}")
+            if polarity not in {0, 1}:
+                raise ValueError(f"invalid MEVDT polarity {polarity}")
+            previous_timestamp = timestamp
+            timestamps.append(timestamp)
+            xs.append(int(row["x"]))
+            ys.append(int(row["y"]))
+            polarities.append(polarity)
+    return (
+        np.asarray(timestamps, dtype=np.int64),
+        np.asarray(xs, dtype=np.int16),
+        np.asarray(ys, dtype=np.int16),
+        np.asarray(polarities, dtype=np.bool_),
+    )
+
+
 def load_mevdt_window(
     record: MEVDTFrameRecord,
     *,
@@ -199,29 +233,17 @@ def load_mevdt_window(
         raise ValueError("window_steps must be positive")
     end_ns = record.timestamp_ns
     start_ns = end_ns - window_steps * config.bin_duration_us * MEVDT_TIMESTAMP_UNITS_PER_US
-    events: list[Event] = []
-    with record.event_csv_path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames != ["ts", "x", "y", "p"]:
-            raise ValueError(
-                f"MEVDT event CSV must have header ts,x,y,p: {record.event_csv_path}"
-            )
-        for row in reader:
-            timestamp_ns = int(row["ts"])
-            if timestamp_ns < start_ns:
-                continue
-            if timestamp_ns >= end_ns:
-                break
-            polarity = int(row["p"])
-            if polarity not in {0, 1}:
-                raise ValueError(f"invalid MEVDT polarity {polarity}")
-            events.append(
-                Event(
-                    timestamp_us=(timestamp_ns - start_ns) // MEVDT_TIMESTAMP_UNITS_PER_US,
-                    x=int(row["x"]),
-                    y=int(row["y"]),
-                    polarity=bool(polarity),
-                )
-            )
+    timestamps, xs, ys, polarities = _load_mevdt_event_stream(record.event_csv_path)
+    first = int(np.searchsorted(timestamps, start_ns, side="left"))
+    last = int(np.searchsorted(timestamps, end_ns, side="left"))
+    events = [
+        Event(
+            timestamp_us=int((timestamps[index] - start_ns) // MEVDT_TIMESTAMP_UNITS_PER_US),
+            x=int(xs[index]),
+            y=int(ys[index]),
+            polarity=bool(polarities[index]),
+        )
+        for index in range(first, last)
+    ]
     tensor = bin_events(events, config, num_bins=window_steps, start_us=0)
     return MEVDTSample(tensor, load_mevdt_boxes(record.label_path), record)

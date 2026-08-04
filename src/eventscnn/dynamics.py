@@ -66,7 +66,10 @@ class HardwareLIF(nn.Module):
 
         if self.config.f_long_enabled:
             decayed = torch.clamp(self.adaptation - self.config.adaptation_decay, min=0.0)
-            activity = emitted.detach().mean(dim=(0, 2, 3))
+            # One feature-map activity event per channel and timestep. A spatial mean
+            # makes sparse maps effectively zero and changes with resolution; an OR is
+            # deterministic, batch-size independent, and maps to a hardware reduction.
+            activity = emitted.detach().amax(dim=(0, 2, 3))
             self.adaptation = decayed + self.config.adaptation_increment * activity
         return emitted
 

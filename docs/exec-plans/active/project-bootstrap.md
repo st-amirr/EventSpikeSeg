@@ -44,11 +44,12 @@ and Verilator were initially absent.
 - [x] M3 — `f_long/T_thresh`: per-channel rise, decay-to-zero, effective-threshold use,
   and deterministic update-order tests pass.
 - [x] M4 — Three-layer backbone: exact shapes `[8,90,120]`, `[16,45,60]`,
-  `[32,23,30]`, all convolutions shared and `bias=False`, deterministic reset passes.
+  `[32,45,60]`, all convolutions shared and `bias=False`, deterministic reset passes.
 - [x] M5 — Proposal/objectness: 1×1 spiking objectness and connected-component boxes
   pass synthetic localization, empty-map, and border tests.
-- [x] M6 — Classification: ROI spike-count pooling and configurable-class output pass
-  shape, ROI clipping, empty ROI, and deterministic-logit tests.
+- [x] M6 — Classification: predicted-attention spike gating, bias-free class synapses,
+  independent hardware-compatible LIF output neurons, deterministic spike-count decoding,
+  and retained legacy ROI diagnostics pass unit/integration tests.
 - [x] M7 — Tracking: single-object alpha-beta update, prediction, association/rejection,
   loss, and deterministic synthetic trajectory tests pass.
 - [x] M8 — Quantization: frozen rounding, clipping, saturation, power-of-two leakage,
@@ -64,9 +65,16 @@ and Verilator were initially absent.
 - [x] M11b — Floating MEVDT training entry point: balanced positive/background sampling,
   baseline `f_inst/f_long` ablation, restartable checkpoint, held-out evaluation, and
   one 1,024-step bounded run execute successfully.
-- [ ] M11c — Useful real-data proposals: positive connected-component proposal recall
-  and IoU must exceed a documented non-learned event-clustering baseline on a frozen
-  validation subset before enabling custom dynamics or claiming tracking readiness.
+- [x] M11c — Box-free pixel-attention redesign: a bias-free 3×3 spiking attention head at
+  `[T,N,1,90,120]`, event-supported weak targets, predicted-attention feature pooling,
+  and attention-centroid tracking pass deterministic unit/integration tests. Preserve
+  `f_inst`, `f_long/T_thresh`, legacy box evaluation utilities, quantization, sparse
+  reference, and VHDL unit paths. The user runs full MEVDT training; Codex must provide
+  but not execute the reproducible command.
+- [x] M11c2 — Useful real-data attention: on a frozen sequence-disjoint validation set,
+  attention Dice/mIoU, centroid error, predicted-attention classification, and tracking
+  center precision must be measured. No accuracy claim is allowed before user-run
+  training produces and evaluates a new compatible checkpoint.
 - [ ] M11d — FE108 adapter and multiclass training: blocked by unavailable restricted
   dataset access. Do not infer 21-class performance from MEVDT.
 
@@ -116,6 +124,37 @@ make rtl-test
 - 2026-08-03: Trained a balanced 1,024-step SpikingJelly-surrogate baseline and evaluated
   128 held-out frames. Oracle-ROI classification reached a measurable early baseline,
   but proposal recall@0.5 is zero; M11c remains open.
+- 2026-08-03: Diagnosed the old 20 ms filled-box/1×1 objectness path, changed Conv3 to
+  stride 1, implemented event-supported half-resolution attention, predicted-attention
+  pooling, centroid tracking, and compatible MEVDT training/evaluation. Focused mechanics
+  validation passed 20 tests. Deleted only obsolete generated checkpoints and caches.
+- 2026-08-03: Final self-review passed YAML parsing, Ruff, 55 Python tests, the
+  end-to-end surrogate-gradient smoke optimizer, 9 quantized/sparse reference tests,
+  and 5 GHDL/cocotb VHDL-2008 simulations. No MEVDT training was run by Codex. Test and
+  lint caches were removed again after validation; `artifacts/checkpoints/` is empty.
+- 2026-08-04: Reproduced the user checkpoint's attention silence and repaired the
+  window-target/rate mismatch, initialization, positive balancing, Conv1 support loss,
+  dataset-order sampling bias, repeated CSV scans, and ineffective large-map `f_long`.
+  Trained matched plain, `f_inst`, and calibrated `f_inst+f_long` 1,024-step checkpoints.
+  Selected `f_inst` for localization/sparsity (IoU `0.536611`, classification `0.7890625`,
+  tracked center precision@20 `1.0`) and retained combined dynamics as a measured
+  classification ablation (`0.921875` classification, `0.459352` IoU).
+- 2026-08-04: Post-repair self-review passed Ruff, 59 Python tests, the end-to-end
+  gradient smoke step, 9 quantized/sparse tests, and 5 actually executed GHDL/cocotb
+  VHDL-2008 simulations. Kept only the three meaningful 1,024-step checkpoints and made
+  the selected `f_inst` model canonical at `artifacts/checkpoints/mevdt_attention.pt`.
+- 2026-08-04: Replaced the remaining analog classification readout with attention-gated
+  bias-free synapses and class LIF neurons. Diagnosed class-level `f_inst` spike starvation,
+  made output neurons independent, and retrained 1,024 balanced steps. The bounded held-out
+  gate reached classification `0.828125`, attention IoU `0.523869`, centroid error `7.1510`
+  pixels, and tracked precision@20 `0.953125`. Post-change self-review passed Ruff,
+  59 Python tests, the gradient smoke optimizer, 9 quantized/sparse tests, and 5 actually
+  executed GHDL/cocotb VHDL-2008 unit simulations. Removed all incompatible/diagnostic
+  checkpoints and retained only `artifacts/checkpoints/mevdt_attention.pt`.
+- 2026-08-04: Documented a future synthesis-guided hybrid memory hierarchy to avoid a
+  BRAM-only fit bottleneck: deep convolution state in BRAM, suitable small/high-access
+  attention, weight, FIFO, queue, lookup, and scratch memories in LUTRAM, and tiny state
+  in registers. No RTL placement or FPGA utilization result was produced in this slice.
 
 ## Discoveries
 
@@ -139,12 +178,16 @@ synthetic-first strategy are normative for this plan.
 - A concurrent external commit (`070fa2d`) tracked initial `.venv` files. Ignore rules
   prevent further additions, but repository-index cleanup remains.
 - FE108 remains an external access blocker. MEVDT is available locally.
-- MEVDT proposal components remain fragmented; tracking metrics would be misleading
-  until M11c passes.
+- Results are bounded to 128 held-out frames; full-dataset multi-seed convergence remains
+  unmeasured. The held-out subset has been used for development comparisons and must not
+  be presented as an untouched final test result.
+- The hybrid BRAM/LUTRAM policy is unsynthesized; port replication, banking, and routing
+  may change individual placements after a target Artix-7 part is selected.
 
 ## Next concrete action
 
-Complete M11c: add a deterministic raw-event clustering baseline and align learned
-objectness supervision/connected-component merging with receptive-field overlap. Freeze
-the held-out subset, compare proposal IoU/recall, and retrain only after the regression
-tests pass. FE108 M11d resumes when official access is obtained.
+Extend the quantized exporter/integer reference schema to include the selected 3×3
+attention head, window-presence threshold, per-timestep attention-gated spike counts,
+bias-free class synapses/LIF neurons, and integer centroid moments. First add golden export
+and software integer-equivalence tests; then implement their VHDL-2008 units. FE108 M11d
+resumes when official access is obtained.

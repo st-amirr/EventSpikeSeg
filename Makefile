@@ -24,7 +24,7 @@ train-mevdt-smoke:
 
 eval-mevdt-smoke:
 	$(PYTHON) -m eventscnn.evaluate_mevdt --root "$(MEVDT_ROOT)" \
-		--checkpoint artifacts/checkpoints/mevdt_baseline_1024.pt --max-samples 64
+		--checkpoint artifacts/checkpoints/mevdt_attention.pt --max-samples 64
 
 validate-reference:
 	$(PYTEST) -q tests/test_quantization.py tests/test_sparse_conv.py

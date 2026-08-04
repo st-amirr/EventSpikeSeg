@@ -4,6 +4,9 @@ from dataclasses import dataclass, replace
 from math import hypot
 from typing import Optional
 
+import torch
+from torch import Tensor
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -20,6 +23,119 @@ class TrackState(Detection):
     vx: float = 0.0
     vy: float = 0.0
     missed: int = 0
+
+
+@dataclass(frozen=True)
+class AttentionObservation:
+    """Centroid and spread measured directly from attended pixels."""
+
+    x: float
+    y: float
+    spread_x: float
+    spread_y: float
+    confidence: float
+    class_id: int
+
+
+@dataclass(frozen=True)
+class AttentionTrackState(AttentionObservation):
+    vx: float = 0.0
+    vy: float = 0.0
+    missed: int = 0
+
+
+def attention_observation(
+    activity: Tensor,
+    *,
+    class_id: int,
+    class_confidence: float,
+    scale_x: float = 1.0,
+    scale_y: float = 1.0,
+) -> Optional[AttentionObservation]:
+    """Convert one non-negative attention map to centroid/spread statistics."""
+
+    if activity.ndim != 2 or (activity < 0).any():
+        raise ValueError("activity must be a non-negative 2-D map")
+    total = activity.sum()
+    if float(total) <= 0.0:
+        return None
+    height, width = activity.shape
+    xs = (torch.arange(width, device=activity.device, dtype=activity.dtype) + 0.5) * scale_x
+    ys = (torch.arange(height, device=activity.device, dtype=activity.dtype) + 0.5) * scale_y
+    x = (activity * xs.view(1, -1)).sum() / total
+    y = (activity * ys.view(-1, 1)).sum() / total
+    variance_x = (activity * (xs.view(1, -1) - x).square()).sum() / total
+    variance_y = (activity * (ys.view(-1, 1) - y).square()).sum() / total
+    density = total / float(height * width)
+    return AttentionObservation(
+        x=float(x),
+        y=float(y),
+        spread_x=float(torch.sqrt(variance_x)),
+        spread_y=float(torch.sqrt(variance_y)),
+        confidence=float(density) * class_confidence,
+        class_id=class_id,
+    )
+
+
+class AttentionCentroidTracker:
+    """Single-target alpha-beta tracker over attention centroids, without box ROIs."""
+
+    def __init__(
+        self,
+        *,
+        alpha: float = 0.8,
+        beta: float = 0.2,
+        max_distance: float = 30.0,
+        max_missed: int = 3,
+    ) -> None:
+        if not (0.0 <= alpha <= 1.0 and 0.0 <= beta <= 1.0):
+            raise ValueError("alpha and beta must be in [0,1]")
+        self.alpha = alpha
+        self.beta = beta
+        self.max_distance = max_distance
+        self.max_missed = max_missed
+        self.state: Optional[AttentionTrackState] = None
+
+    def reset(self) -> None:
+        self.state = None
+
+    def update(
+        self, observation: Optional[AttentionObservation]
+    ) -> Optional[AttentionTrackState]:
+        if self.state is None:
+            if observation is None:
+                return None
+            self.state = AttentionTrackState(**observation.__dict__)
+            return self.state
+        predicted_x = self.state.x + self.state.vx
+        predicted_y = self.state.y + self.state.vy
+        if observation is None or observation.class_id != self.state.class_id:
+            missed = self.state.missed + 1
+            if missed > self.max_missed:
+                self.state = None
+            else:
+                self.state = replace(
+                    self.state, x=predicted_x, y=predicted_y, missed=missed
+                )
+            return self.state
+        innovation_x = observation.x - predicted_x
+        innovation_y = observation.y - predicted_y
+        if hypot(innovation_x, innovation_y) > self.max_distance:
+            return self.update(None)
+        self.state = AttentionTrackState(
+            x=predicted_x + self.alpha * innovation_x,
+            y=predicted_y + self.alpha * innovation_y,
+            spread_x=self.state.spread_x
+            + self.alpha * (observation.spread_x - self.state.spread_x),
+            spread_y=self.state.spread_y
+            + self.alpha * (observation.spread_y - self.state.spread_y),
+            vx=self.state.vx + self.beta * innovation_x,
+            vy=self.state.vy + self.beta * innovation_y,
+            confidence=observation.confidence,
+            class_id=observation.class_id,
+            missed=0,
+        )
+        return self.state
 
 
 def _center(box: Detection) -> tuple[float, float]:

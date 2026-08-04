@@ -1,19 +1,26 @@
 """Integrated trainable outputs and deterministic decoded inference path."""
 
-from math import ceil, floor
+from dataclasses import replace
 from typing import Optional
 
-import torch
 from torch import Tensor, nn
 
 from .config import BackboneConfig
-from .heads import ClassificationHead, ObjectnessHead, connected_component_proposals
+from .heads import ClassificationHead, PixelAttentionHead, connected_component_proposals
 from .models import EventSCNNBackbone
-from .tracking import Detection, SingleObjectTracker, TrackState
+from .tracking import (
+    AttentionCentroidTracker,
+    AttentionObservation,
+    AttentionTrackState,
+    Detection,
+    SingleObjectTracker,
+    TrackState,
+    attention_observation,
+)
 
 
 class EventSCNNSystem(nn.Module):
-    """Connect backbone, objectness, ROI classification, and single-object tracking."""
+    """Connect backbone, pixel attention, classification, and centroid tracking."""
 
     def __init__(
         self,
@@ -23,29 +30,80 @@ class EventSCNNSystem(nn.Module):
     ) -> None:
         super().__init__()
         self.backbone = EventSCNNBackbone(backbone_config)
-        self.objectness = ObjectnessHead(8, self.backbone.config.lif)
-        self.classification = ClassificationHead(32, class_count)
+        self.attention = PixelAttentionHead(8, self.backbone.config.lif)
+        class_lif = replace(
+            self.backbone.config.lif,
+            f_inst_enabled=False,
+            f_long_enabled=False,
+        )
+        self.classification = ClassificationHead(32, class_count, class_lif)
         self.tracker = SingleObjectTracker()
+        self.attention_tracker = AttentionCentroidTracker()
+
+    @property
+    def objectness(self) -> PixelAttentionHead:
+        """Compatibility name for older proposal tests and checkpoints."""
+
+        return self.attention
 
     def reset(self, *, reset_tracker: bool = True) -> None:
         self.backbone.reset()
-        self.objectness.reset()
+        self.attention.reset()
+        self.classification.reset()
         if reset_tracker:
             self.tracker.reset()
+            self.attention_tracker.reset()
 
-    def trainable_outputs(self, sequence: Tensor, feature_rois: Tensor) -> dict[str, Tensor]:
-        """Return differentiable tensors; ROI coordinates refer to Conv3 feature space."""
+    def trainable_outputs(self, sequence: Tensor) -> dict[str, Tensor]:
+        """Return differentiable spike outputs and class spike-count scores."""
 
         activations = self.backbone(sequence, return_all=True)
-        objectness = self.objectness(activations[0])
-        logits = self.classification(activations[2], feature_rois)
+        attention = self.attention(activations[0])
+        classification_attention = attention.detach() if self.training else attention
+        class_spikes = self.classification.forward_attention(
+            activations[2], classification_attention
+        )
         return {
             "conv1_spikes": activations[0],
             "conv2_spikes": activations[1],
             "conv3_spikes": activations[2],
-            "objectness_spikes": objectness,
-            "classification_logits": logits,
+            "attention_spikes": attention,
+            "objectness_spikes": attention,
+            "classification_spikes": class_spikes,
+            "classification_scores": class_spikes.sum(dim=0),
         }
+
+    def decode_attention_single(
+        self, outputs: dict[str, Tensor]
+    ) -> tuple[Optional[AttentionObservation], Optional[AttentionTrackState]]:
+        """Decode predicted pixels into a centroid observation and tracking state."""
+
+        attention = outputs["attention_spikes"]
+        scores = outputs["classification_scores"]
+        if attention.shape[1] != 1 or scores.shape[0] != 1:
+            raise ValueError("decode_attention_single requires batch size one")
+        winning_count, class_index = scores[0].detach().max(0)
+        total_count = scores[0].detach().sum()
+        confidence = float(winning_count / total_count.clamp_min(1.0))
+        if float(total_count) == 0.0:
+            confidence = 1.0
+        observation = attention_observation(
+            attention[:, 0, 0].sum(dim=0),
+            class_id=int(class_index),
+            class_confidence=confidence,
+            scale_x=2.0,
+            scale_y=2.0,
+        )
+        return observation, self.attention_tracker.update(observation)
+
+    def infer_attention_single(
+        self, sequence: Tensor
+    ) -> tuple[Optional[AttentionObservation], Optional[AttentionTrackState]]:
+        """Run the primary box-free attention/classification/tracking path."""
+
+        if sequence.shape[1] != 1:
+            raise ValueError("infer_attention_single requires batch size one")
+        return self.decode_attention_single(self.trainable_outputs(sequence))
 
     def decode_single(
         self,
@@ -56,8 +114,8 @@ class EventSCNNSystem(nn.Module):
         """Decode batch-size-one outputs into detections and one tracking update."""
 
         objectness = outputs["objectness_spikes"]
-        logits = outputs["classification_logits"]
-        if objectness.shape[1] != 1 or logits.shape[0] != 1:
+        scores = outputs["classification_scores"]
+        if objectness.shape[1] != 1 or scores.shape[0] != 1:
             raise ValueError("decode_single requires batch size one")
         activity = objectness[:, 0, 0].sum(dim=0)
         proposals = connected_component_proposals(
@@ -68,8 +126,9 @@ class EventSCNNSystem(nn.Module):
         )
         if not proposals:
             return [], self.tracker.update([])
-        probabilities = torch.softmax(logits[0].detach(), dim=0)
-        class_confidence, class_index = probabilities.max(dim=0)
+        winning_count, class_index = scores[0].detach().max(dim=0)
+        total_count = scores[0].detach().sum().clamp_min(1.0)
+        class_confidence = winning_count / total_count
         detections = [
             Detection(
                 float(proposal.x),
@@ -89,47 +148,10 @@ class EventSCNNSystem(nn.Module):
         *,
         activity_threshold: float = 1.0,
     ) -> tuple[list[Detection], Optional[TrackState]]:
-        """Run proposal-driven ROI classification and tracking for batch size one."""
+        """Run box-free spike-attention classification/tracking for batch size one."""
 
         if sequence.shape[1] != 1:
             raise ValueError("infer_single requires batch size one")
-        activations = self.backbone(sequence, return_all=True)
-        objectness = self.objectness(activations[0])
-        activity = objectness[:, 0, 0].sum(dim=0)
-        proposals = connected_component_proposals(
-            activity,
-            threshold=activity_threshold,
-            scale_x=2,
-            scale_y=2,
+        return self.decode_single(
+            self.trainable_outputs(sequence), activity_threshold=activity_threshold
         )
-        if not proposals:
-            return [], self.tracker.update([])
-
-        feature_height, feature_width = activations[2].shape[-2:]
-        model_height, model_width = activity.shape[0] * 2, activity.shape[1] * 2
-        feature_rois = []
-        for proposal in proposals:
-            x0 = floor(proposal.x * feature_width / model_width)
-            y0 = floor(proposal.y * feature_height / model_height)
-            x1 = ceil((proposal.x + proposal.width) * feature_width / model_width)
-            y1 = ceil((proposal.y + proposal.height) * feature_height / model_height)
-            feature_rois.append([x0, y0, max(1, x1 - x0), max(1, y1 - y0)])
-        repeated_features = activations[2].expand(-1, len(proposals), -1, -1, -1)
-        logits = self.classification(
-            repeated_features,
-            torch.tensor(feature_rois, device=sequence.device),
-        )
-        detections = []
-        for proposal, proposal_logits in zip(proposals, logits):
-            class_confidence, class_index = torch.softmax(proposal_logits.detach(), dim=0).max(0)
-            detections.append(
-                Detection(
-                    float(proposal.x),
-                    float(proposal.y),
-                    float(proposal.width),
-                    float(proposal.height),
-                    proposal.confidence * float(class_confidence),
-                    int(class_index),
-                )
-            )
-        return detections, self.tracker.update(detections)

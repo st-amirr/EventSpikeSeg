@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import random
 from dataclasses import asdict, dataclass
 from math import ceil, floor
 from pathlib import Path
@@ -27,11 +28,30 @@ class MEVDTTrainingResult:
     checkpoint: str
 
 
+def balanced_training_records(records, max_samples: int, *, seed: int = 17):
+    """Select a seeded, class-balanced subset without dataset-order bias."""
+
+    positive = [record for record in records if record.label_path.stat().st_size]
+    negative = [record for record in records if not record.label_path.stat().st_size]
+    generator = random.Random(seed)
+    generator.shuffle(positive)
+    generator.shuffle(negative)
+    selected = []
+    for index in range(max(len(positive), len(negative))):
+        if index < len(positive):
+            selected.append(positive[index])
+        if index < len(negative):
+            selected.append(negative[index])
+        if len(selected) >= max_samples:
+            return selected[:max_samples]
+    return selected
+
+
 def box_to_feature_roi(
     box: MEVDTBox,
     *,
-    feature_width: int = 30,
-    feature_height: int = 23,
+    feature_width: int = 60,
+    feature_height: int = 45,
 ) -> Tensor:
     """Project a native 240x180 XYXY box to a clipped Conv3 XYWH ROI."""
 
@@ -55,12 +75,90 @@ def objectness_target(boxes: tuple[MEVDTBox, ...], height: int, width: int) -> T
     return target
 
 
+def event_supported_attention_target(
+    events: Tensor,
+    boxes: tuple[MEVDTBox, ...],
+    height: int,
+    width: int,
+    *,
+    dilation: int = 1,
+) -> Tensor:
+    """Create weak pixel attention from event support inside annotated boxes."""
+
+    if events.ndim != 5 or events.shape[2:] != (2, 180, 240):
+        raise ValueError("events must have shape [T,N,2,180,240]")
+    if dilation < 0:
+        raise ValueError("dilation cannot be negative")
+    event_activity = events.sum(dim=(0, 2), keepdim=False) > 0
+    box_mask = torch.zeros_like(event_activity)
+    for box in boxes:
+        x0, y0 = floor(box.x_min), floor(box.y_min)
+        x1, y1 = ceil(box.x_max), ceil(box.y_max)
+        box_mask[:, y0:y1, x0:x1] = True
+    supported = (event_activity & box_mask).float().unsqueeze(1)
+    target = torch.nn.functional.adaptive_max_pool2d(supported, (height, width))
+    if dilation:
+        kernel = 2 * dilation + 1
+        target = torch.nn.functional.max_pool2d(
+            target, kernel_size=kernel, stride=1, padding=dilation
+        )
+    return target
+
+
+def window_spike_presence(spikes: Tensor) -> Tensor:
+    """Reduce TNCHW spikes to differentiable window-level NCHW presence."""
+
+    if spikes.ndim != 5:
+        raise ValueError("spikes must have shape [T,N,C,H,W]")
+    return spikes.sum(dim=0).clamp(max=1.0)
+
+
+def event_activity_target(events: Tensor, height: int, width: int) -> Tensor:
+    """Reduce all event support to a locally dilated N1HW feature-support target."""
+
+    if events.ndim != 5 or events.shape[2:] != (2, 180, 240):
+        raise ValueError("events must have shape [T,N,2,180,240]")
+    support = (events.sum(dim=(0, 2)) > 0).float().unsqueeze(1)
+    support = torch.nn.functional.adaptive_max_pool2d(support, (height, width))
+    return torch.nn.functional.max_pool2d(support, kernel_size=3, stride=1, padding=1)
+
+
+def dice_loss(prediction: Tensor, target: Tensor) -> Tensor:
+    """Compute a stable soft Dice loss, with empty/empty treated as a match."""
+
+    intersection = (prediction * target).sum()
+    return 1.0 - (2.0 * intersection + 1e-6) / (
+        prediction.sum() + target.sum() + 1e-6
+    )
+
+
+def attention_centroid_loss(activity: Tensor, boxes: tuple[MEVDTBox, ...]) -> Tensor:
+    """Supervise attention centroid without making a box part of inference."""
+
+    if activity.shape[0:2] != (1, 1) or not boxes:
+        return activity.sum() * 0.0
+    box = max(boxes, key=lambda candidate: candidate.area)
+    height, width = activity.shape[-2:]
+    xs = torch.arange(width, device=activity.device, dtype=activity.dtype) + 0.5
+    ys = torch.arange(height, device=activity.device, dtype=activity.dtype) + 0.5
+    total = activity.sum() + 1e-6
+    predicted_x = (activity[0, 0] * xs.view(1, -1)).sum() / total
+    predicted_y = (activity[0, 0] * ys.view(-1, 1)).sum() / total
+    target_x = ((box.x_min + box.x_max) * 0.5) * width / 240.0
+    target_y = ((box.y_min + box.y_max) * 0.5) * height / 180.0
+    return ((predicted_x - target_x) / width).square() + (
+        (predicted_y - target_y) / height
+    ).square()
+
+
 def run_mevdt_training(
     root: Path,
     *,
     max_samples: int = 1,
-    window_steps: int = 20,
+    window_steps: int = 50,
     learning_rate: float = 1e-3,
+    f_inst_enabled: bool = False,
+    f_long_enabled: bool = False,
     checkpoint_path: Path = Path("artifacts/checkpoints/mevdt_smoke.pt"),
 ) -> MEVDTTrainingResult:
     """Train on a bounded set of positive MEVDT frames and save a restartable checkpoint."""
@@ -70,28 +168,36 @@ def run_mevdt_training(
     root = root.expanduser().resolve()
     torch.manual_seed(17)
     indexed_records = discover_mevdt_frames(root, split="train")
-    positive_records = [record for record in indexed_records if record.label_path.stat().st_size]
-    negative_records = [
-        record for record in indexed_records if not record.label_path.stat().st_size
-    ]
-    records = []
-    for index in range(max(len(positive_records), len(negative_records))):
-        if index < len(positive_records):
-            records.append(positive_records[index])
-        if index < len(negative_records):
-            records.append(negative_records[index])
-        if len(records) >= max_samples:
-            records = records[:max_samples]
-            break
+    records = balanced_training_records(indexed_records, max_samples, seed=17)
     if not records:
         raise ValueError("MEVDT training split contains no indexed samples")
 
     config = EventBinningConfig(bin_duration_us=1_000)
-    baseline_lif = LIFConfig(f_inst_enabled=False, f_long_enabled=False)
+    training_threshold = 0.25
+    baseline_lif = LIFConfig(
+        threshold=training_threshold,
+        f_inst_enabled=f_inst_enabled,
+        f_long_enabled=f_long_enabled,
+        adaptation_increment=training_threshold / 16.0,
+        adaptation_decay=training_threshold / 32.0,
+    )
     system = EventSCNNSystem(
         class_count=2,
         backbone_config=BackboneConfig(lif=baseline_lif),
     )
+    with torch.no_grad():
+        for block in system.backbone.blocks:
+            torch.nn.init.kaiming_normal_(
+                block.conv.weight, mode="fan_in", nonlinearity="relu"
+            )
+        torch.nn.init.kaiming_normal_(
+            system.attention.conv.weight, mode="fan_in", nonlinearity="relu"
+        )
+        torch.nn.init.kaiming_normal_(
+            system.classification.synapse.weight,
+            mode="fan_in",
+            nonlinearity="relu",
+        )
     optimizer = torch.optim.AdamW(system.parameters(), lr=learning_rate, weight_decay=1e-4)
     initial_conv1 = system.backbone.blocks[0].conv.weight.detach().clone()
     losses: list[float] = []
@@ -103,32 +209,48 @@ def run_mevdt_training(
     for record in records:
         sample = load_mevdt_window(record, config=config, window_steps=window_steps)
         if sample.boxes:
-            target_box = max(sample.boxes, key=lambda box: box.area)
-            if target_box.class_id != 1:
-                raise ValueError(f"unsupported MEVDT class id: {target_box.class_id}")
-            roi = box_to_feature_roi(target_box)
+            if any(box.class_id != 1 for box in sample.boxes):
+                raise ValueError("MEVDT attention baseline supports vehicle class id 1")
             class_target = torch.tensor([1], dtype=torch.long)
             positive_samples += 1
         else:
-            roi = torch.tensor([[0, 0, 30, 23]])
             class_target = torch.tensor([0], dtype=torch.long)
             negative_samples += 1
         sequence = sample.events.float()
         total_input_events += int(sequence.sum())
         system.reset()
-        outputs = system.trainable_outputs(sequence, roi)
-        activity = outputs["objectness_spikes"].mean(dim=0)
-        target = objectness_target(sample.boxes, activity.shape[-2], activity.shape[-1])
-        # Foreground boxes occupy a small fraction of the 90x120 map. A bounded
-        # positive weight prevents the all-background solution without destabilizing
-        # sparse samples whose boxes cover only a handful of feature locations.
-        proposal_weights = 1.0 + 9.0 * target
-        proposal_loss = ((activity - target).square() * proposal_weights).mean()
+        outputs = system.trainable_outputs(sequence)
+        activity = window_spike_presence(outputs["attention_spikes"])
+        target = event_supported_attention_target(
+            sequence, sample.boxes, activity.shape[-2], activity.shape[-1]
+        )
+        attention_weights = 1.0 + 31.0 * target
+        weighted_mse = ((activity - target).square() * attention_weights).mean()
+        attention_dice_loss = dice_loss(activity, target)
+        positive_recall_loss = ((1.0 - activity) * target).sum() / target.sum().clamp_min(1.0)
+        centroid_loss = attention_centroid_loss(activity, sample.boxes)
+        conv1_presence = window_spike_presence(outputs["conv1_spikes"]).amax(
+            dim=1, keepdim=True
+        )
+        conv1_target = event_activity_target(
+            sequence, conv1_presence.shape[-2], conv1_presence.shape[-1]
+        )
+        feature_support_loss = dice_loss(conv1_presence, conv1_target)
+        proposal_loss = (
+            weighted_mse
+            + attention_dice_loss
+            + 0.25 * positive_recall_loss
+            + 0.25 * centroid_loss
+            + 0.1 * feature_support_loss
+        )
+        classification_rate_logits = (
+            4.0 * outputs["classification_scores"] / float(window_steps)
+        )
         classification_loss = torch.nn.functional.cross_entropy(
-            outputs["classification_logits"], class_target
+            classification_rate_logits, class_target
         )
         spike_regularization = sum(
-            outputs[name].mean()
+            torch.relu(outputs[name].mean() - 0.05)
             for name in ("conv1_spikes", "conv2_spikes", "conv3_spikes")
         )
         loss = proposal_loss + classification_loss + 0.001 * spike_regularization
@@ -167,9 +289,22 @@ def run_mevdt_training(
             "bin_duration_us": config.bin_duration_us,
             "window_steps": window_steps,
             "seed": 17,
-            "f_inst_enabled": False,
-            "f_long_enabled": False,
+            "architecture": "fully_spiking_attention_v1",
+            "backbone_strides": [[2, 2], [2, 2], [1, 1]],
+            "attention_kernel": [3, 3],
+            "lif_threshold": baseline_lif.threshold,
+            "adaptation_increment": baseline_lif.adaptation_increment,
+            "adaptation_decay": baseline_lif.adaptation_decay,
+            "attention_activity": "window_spike_presence",
+            "classification_readout": "bias_free_synapse_lif_spike_count",
+            "classification_f_inst_enabled": False,
+            "classification_f_long_enabled": False,
+            "classification_training_rate_scale": 4.0,
+            "classification_attention_gradient": "detached",
+            "f_inst_enabled": f_inst_enabled,
+            "f_long_enabled": f_long_enabled,
             "training_records": [str(record.label_path.relative_to(root)) for record in records],
+            "sampling": "seeded_balanced_shuffle",
         },
         checkpoint_path,
     )
@@ -180,10 +315,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--max-samples", type=int, default=1)
-    parser.add_argument("--window-steps", type=int, default=20)
+    parser.add_argument("--window-steps", type=int, default=50)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--f-inst", action="store_true")
+    parser.add_argument("--f-long", action="store_true")
     parser.add_argument(
-        "--checkpoint", type=Path, default=Path("artifacts/checkpoints/mevdt_smoke.pt")
+        "--checkpoint", type=Path, default=Path("artifacts/checkpoints/mevdt_attention.pt")
     )
     args = parser.parse_args()
     result = run_mevdt_training(
@@ -191,6 +328,8 @@ def main() -> None:
         max_samples=args.max_samples,
         window_steps=args.window_steps,
         learning_rate=args.learning_rate,
+        f_inst_enabled=args.f_inst,
+        f_long_enabled=args.f_long,
         checkpoint_path=args.checkpoint,
     )
     print(json.dumps(asdict(result), indent=2, sort_keys=True))
