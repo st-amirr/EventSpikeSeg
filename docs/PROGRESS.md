@@ -2,6 +2,8 @@
 
 ## Current state
 
+- The canonical backbone has been widened from `2→8→16→32` to `2→32→64→128` while preserving the existing kernels, strides, spatial resolutions, neuron dynamics, attention head, and decoding path. Code and configuration tests now target the wider model.
+- All checkpoints and validation metrics recorded before 2026-08-05 are historical results for the smaller backbone. A new 32/64/128 training cycle has not yet been completed, so no accuracy improvement is claimed and the current milestone is retraining plus resource re-estimation.
 - Fixed-duration timestamp binning produces deterministic integer `[T,N,2,180,240]`
   tensors and preserves repeated events.
 - A SpikingJelly-surrogate, bias-free Conv-LIF slice and canonical three-layer backbone

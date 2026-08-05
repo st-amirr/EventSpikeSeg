@@ -6,9 +6,9 @@ from eventscnn.model import BackboneConfig, EventBinningConfig, LIFConfig
 def test_canonical_configuration() -> None:
     config = BackboneConfig()
     assert [(layer.in_channels, layer.out_channels) for layer in config.layers] == [
-        (2, 8),
-        (8, 16),
-        (16, 32),
+        (2, 32),
+        (32, 64),
+        (64, 128),
     ]
     assert LIFConfig(beta_shift=4).beta == 0.9375
 

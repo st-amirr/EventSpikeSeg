@@ -45,6 +45,16 @@ The dataset volume is named `eventscnn-fpga-mevdt`; checkpoints remain on the ho
 `.env` for each evidence run. Delete only the Docker copy of the dataset with
 `docker volume rm eventscnn-fpga-mevdt`; this never deletes the host dataset.
 
+
+## Current model capacity
+
+The canonical three-layer spiking backbone is `2→32→64→128`: Conv1 uses a 5×5
+stride-2 kernel, Conv2 uses a 3×3 stride-2 kernel, and Conv3 uses a 3×3 stride-1
+kernel. This replaces the historical `2→8→16→32` baseline. Existing checkpoints from
+the smaller backbone cannot be loaded into the wider model without an explicit weight
+migration, and all previously recorded metrics remain historical until the wider model
+is retrained and evaluated.
+
 ## Optional native setup
 
 Python 3.9–3.12 is supported. From the repository root:

@@ -263,3 +263,24 @@ separate.
 after which the four previous modules were deleted. They must not be recreated. Existing
 state-dict checkpoint keys are unaffected because module attributes inside
 `EventSCNNSystem` were preserved; only Python import paths changed.
+
+
+## 2026-08-05 — Increase the canonical backbone to 32→64→128
+
+**Decision:** Replace the default `2→8→16→32` convolutional channel progression with
+`2→32→64→128`. Keep all three kernel sizes, strides, padding, LIF behavior, attention
+head topology, temporal context, classifier decoding, and tracking post-processing
+unchanged.
+
+**Reason:** The binary vehicle/background baseline established that the complete spiking
+path trains and produces non-zero validation metrics, but the intended direction includes
+finer-grained object classes. The earlier 8/16/32 feature budget is unnecessarily narrow
+for that extension. Increasing channel capacity before multiclass work gives the backbone
+more independent spatiotemporal features while retaining the established sparse-convolution
+and hardware-compatible neuron design.
+
+**Consequences:** Earlier checkpoints and their metrics are historical 8/16/32 results and
+are not directly loadable into the wider network. The three-seed gate for the former
+configuration is superseded; training and evaluation must restart for the 32/64/128
+configuration. FPGA memory, bandwidth, latency, and resource estimates must be rerun before
+claiming deployability. The change is a capacity decision, not evidence of improved accuracy.

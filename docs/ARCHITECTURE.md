@@ -5,8 +5,9 @@ binning produces the canonical integer-count tensor `[T, N, 2, 180, 240]`, with 
 at channel 0 and ON at channel 1. Repeated events are repeated integer additions.
 
 The software backbone is a SpikingJelly-compatible PyTorch model with three shared,
-bias-free convolutions: `2→8, 5×5, stride 2`, `8→16, 3×3, stride 2`, and
-`16→32, 3×3, stride 1`. Each is followed by the same explicit state transition:
+bias-free convolutions: `2→32, 5×5, stride 2`, `32→64, 3×3, stride 2`, and
+`64→128, 3×3, stride 1`. The spatial resolutions remain `90×120`, `45×60`, and
+`45×60`; only feature capacity changes. Each is followed by the same explicit state transition:
 
 1. `leaked = membrane - membrane / 2**beta_shift`
 2. `candidate = leaked + convolution_current`
@@ -56,7 +57,7 @@ The hardware backend will not use a BRAM-only policy. Its starting placement is 
 - distributed LUTRAM for suitable small, frequently accessed memories such as the
   attention membrane, quantized shared weights, short event FIFOs, touched-address
   queues, accumulator tiles, and small lookup tables;
-- registers for the two class-neuron states, per-channel homeostasis values, counters,
+- registers for the class-neuron states, per-channel homeostasis values, counters,
   and pipeline control.
 
 This division is a design policy, not an implemented or synthesized result. Memory-port
@@ -87,3 +88,18 @@ It owns `HardwareLIF`, `ConvLIFBlock`, `EventSCNNBackbone`, attention and classi
 heads, pooling helpers, and `EventSCNNSystem`. `tracking.py` owns deterministic decoding
 and tracking algorithms. The former `dynamics.py`, `models.py`, `heads.py`, and
 `system.py` modules were removed; all model symbols are imported from `eventscnn.model`.
+
+
+## 2026-08-05 backbone-capacity revision
+
+The canonical backbone width is now `32→64→128`, replacing the earlier `8→16→32`
+baseline. Kernel sizes, strides, padding, LIF dynamics, attention resolution, temporal
+windowing, and output decoding are unchanged. This revision increases semantic feature
+capacity for future finer-grained classification while preserving the same three-stage
+spatial pipeline.
+
+The wider model is checkpoint-incompatible with earlier `8→16→32` state dictionaries.
+Historical validation numbers in `RESULTS.md` and earlier progress entries belong to the
+smaller baseline unless explicitly rerun and relabeled. FPGA BRAM/LUTRAM estimates must
+be regenerated because convolution weights, membrane state, adaptation state, and sparse
+accumulator traffic all increase materially.

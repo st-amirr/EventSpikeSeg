@@ -91,9 +91,9 @@ class LayerConfig:
 
 def _default_layers() -> tuple[LayerConfig, ...]:
     return (
-        LayerConfig(2, 8, (5, 5), (2, 2), (2, 2)),
-        LayerConfig(8, 16, (3, 3), (2, 2), (1, 1)),
-        LayerConfig(16, 32, (3, 3), (1, 1), (1, 1)),
+        LayerConfig(2, 32, (5, 5), (2, 2), (2, 2)),
+        LayerConfig(32, 64, (3, 3), (2, 2), (1, 1)),
+        LayerConfig(64, 128, (3, 3), (1, 1), (1, 1)),
     )
 
 
