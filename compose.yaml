@@ -17,8 +17,8 @@ x-eventscnn: &eventscnn
       target: /workspace
       read_only: true
     - type: bind
-      source: ./artifacts/checkpoints
-      target: /workspace/artifacts/checkpoints
+      source: ./artifacts
+      target: /workspace/artifacts
 
 x-eventscnn-data: &eventscnn-data
   <<: *eventscnn
@@ -28,8 +28,8 @@ x-eventscnn-data: &eventscnn-data
       target: /workspace
       read_only: true
     - type: bind
-      source: ./artifacts/checkpoints
-      target: /workspace/artifacts/checkpoints
+      source: ./artifacts
+      target: /workspace/artifacts
     - type: volume
       source: mevdt-data
       target: /datasets/mevdt
@@ -58,7 +58,7 @@ services:
 
   train-smoke:
     <<: *eventscnn
-    command: ["python", "-m", "eventscnn.smoke_train"]
+    command: ["python", "-m", "eventscnn.train", "--smoke"]
 
   validate-reference:
     <<: *eventscnn
@@ -70,19 +70,19 @@ services:
 
   train-mevdt-smoke:
     <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.train_mevdt", "--root", "/datasets/mevdt", "--max-samples", "2", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt"]
+    command: ["python", "-m", "eventscnn.train", "--root", "/datasets/mevdt", "--max-samples", "2", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt"]
 
   eval-mevdt-smoke:
     <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.evaluate_mevdt", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt", "--split", "validation", "--max-samples", "2"]
+    command: ["python", "-m", "eventscnn.evaluate", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt", "--split", "validation", "--max-samples", "2"]
 
   train-mevdt:
     <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.train_mevdt", "--root", "/datasets/mevdt", "--window-steps", "${TRAIN_WINDOW_STEPS:-50}", "--max-samples", "${TRAIN_SAMPLES:-4096}", "--f-inst", "--seed", "${TRAIN_SEED:-101}", "--progress-every", "128", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_seed101_scale32_4096.pt}"]
+    command: ["python", "-m", "eventscnn.train", "--root", "/datasets/mevdt", "--window-steps", "${TRAIN_WINDOW_STEPS:-50}", "--max-samples", "${TRAIN_SAMPLES:-4096}", "--f-inst", "--seed", "${TRAIN_SEED:-101}", "--progress-every", "128", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_seed101_scale32_4096.pt}"]
 
   eval-mevdt:
     <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.evaluate_mevdt", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_seed101_scale32_4096.pt}", "--split", "validation", "--require-nonzero-core-metrics"]
+    command: ["python", "-m", "eventscnn.evaluate", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_seed101_scale32_4096.pt}", "--split", "validation", "--visualization-count", "8", "--visualization-dir", "artifacts/Validation", "--require-nonzero-core-metrics"]
 
   diagnose-classification:
     <<: *eventscnn-data

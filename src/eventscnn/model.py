@@ -467,14 +467,16 @@ class EventSCNNSystem(nn.Module):
     ) -> None:
         super().__init__()
         self.backbone = EventSCNNBackbone(backbone_config)
-        self.attention = PixelAttentionHead(8, self.backbone.config.lif)
+        attention_channels = self.backbone.config.layers[0].out_channels
+        classification_channels = self.backbone.config.layers[-1].out_channels
+        self.attention = PixelAttentionHead(attention_channels, self.backbone.config.lif)
         class_lif = replace(
             self.backbone.config.lif,
             f_inst_enabled=False,
             f_long_enabled=False,
         )
         self.classification = ClassificationHead(
-            32,
+            classification_channels,
             class_count,
             class_lif,
             current_scale_shift=classification_current_scale_shift,

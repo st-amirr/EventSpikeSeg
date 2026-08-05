@@ -284,3 +284,18 @@ are not directly loadable into the wider network. The three-seed gate for the fo
 configuration is superseded; training and evaluation must restart for the 32/64/128
 configuration. FPGA memory, bandwidth, latency, and resource estimates must be rerun before
 claiming deployability. The change is a capacity decision, not evidence of improved accuracy.
+
+## 2026-08-05 — Derive task-head widths from the backbone
+
+**Decision:** construct the attention head from the first backbone layer's output width
+and the classification head from the final layer's output width. For the canonical
+32→64→128 backbone these are 32 and 128 channels.
+
+**Reason:** fixed legacy values of 8 and 32 became dimensionally invalid after widening
+the backbone. Deriving them from configuration prevents the same failure during future
+capacity changes.
+
+**Scope clarification:** the model emits one shared attention map, not one map per
+object. Connected components may expose multiple separated proposals, but nearby vehicles
+can merge and the primary centroid/classification/tracking path remains single-object.
+

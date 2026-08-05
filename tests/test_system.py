@@ -43,3 +43,9 @@ def test_integrated_reset_is_deterministic() -> None:
     system.reset()
     second = system.trainable_outputs(sequence)
     assert all(torch.equal(first[key], second[key]) for key in first)
+
+
+def test_system_heads_follow_backbone_channel_configuration() -> None:
+    system = EventSCNNSystem(class_count=2)
+    assert system.attention.conv.in_channels == 32
+    assert system.classification.synapse.in_features == 128

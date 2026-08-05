@@ -103,3 +103,14 @@ Historical validation numbers in `RESULTS.md` and earlier progress entries belon
 smaller baseline unless explicitly rerun and relabeled. FPGA BRAM/LUTRAM estimates must
 be regenerated because convolution weights, membrane state, adaptation state, and sparse
 accumulator traffic all increase materially.
+
+## Head connections and object separation
+
+The attention head is connected to Conv1 output `[T,N,32,90,120]` to retain spatial
+precision. The classification head is connected to Conv3 output
+`[T,N,128,45,60]`. Both channel dimensions are derived from `BackboneConfig`, not
+hard-coded. One scene-level attention spike map is emitted. Disconnected regions may be
+converted into multiple connected-component proposals, but close or touching objects may
+merge. The canonical centroid decoder and tracker remain single-object and return one
+dominant center, spread, class decision, and track state.
+

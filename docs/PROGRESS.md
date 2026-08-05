@@ -71,3 +71,13 @@ Training/evaluation services use a named MEVDT volume after an explicit one-time
 the verified 2.0 GB volume now contains the 10,067 indexed source frames. The generated
 native `.venv`, temporary checkpoints/caches, CUDA image, and unused Docker build cache
 were removed.
+
+## 2026-08-05 — Widened-head integration repaired
+
+- Attention input is now derived from Conv1 output: 32 channels.
+- Classification input is now derived from Conv3 output: 128 channels.
+- Added a regression test for the two head dimensions.
+- Clarified that current output is one shared scene attention map and one dominant
+  centroid track. Multiple disconnected proposals are optional post-processing; close or
+  touching vehicles may merge and are not independently classified or tracked yet.
+

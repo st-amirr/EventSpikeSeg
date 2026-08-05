@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from math import hypot
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from .model import BackboneConfig, EventBinningConfig, LIFConfig
@@ -183,6 +184,144 @@ def _detection_iou(left: Detection, right: Detection) -> float:
     return intersection_over_union(left, right)
 
 
+def _evenly_spaced_indices(total: int, count: int) -> set[int]:
+    if total <= 0 or count <= 0:
+        return set()
+    count = min(total, count)
+    if count == total:
+        return set(range(total))
+    return {round(index * (total - 1) / max(1, count - 1)) for index in range(count)}
+
+
+def _event_activity_image(sequence: torch.Tensor) -> np.ndarray:
+    sample = sequence[:, 0].detach().cpu()
+    positive = sample[:, 1].sum(dim=0).numpy()
+    negative = sample[:, 0].sum(dim=0).numpy()
+    activity = positive + negative
+    return activity.astype(np.float32)
+
+
+def _attention_activity_image(attention_spikes: torch.Tensor) -> np.ndarray:
+    activity = attention_spikes[:, 0, 0].detach().cpu().sum(dim=0).numpy().astype(np.float32)
+    return activity
+
+
+def _upsample_attention(attention: np.ndarray, target_height: int = 180, target_width: int = 240) -> np.ndarray:
+    scale_y = max(1, target_height // attention.shape[0])
+    scale_x = max(1, target_width // attention.shape[1])
+    upsampled = np.repeat(np.repeat(attention, scale_y, axis=0), scale_x, axis=1)
+    return upsampled[:target_height, :target_width]
+
+
+def _normalize_image(image: np.ndarray) -> np.ndarray:
+    image = image.astype(np.float32)
+    maximum = float(image.max())
+    if maximum <= 0.0:
+        return np.zeros_like(image, dtype=np.float32)
+    return image / maximum
+
+
+def _save_validation_visualization(
+    output_dir: Path,
+    record: MEVDTFrameRecord,
+    sequence: torch.Tensor,
+    outputs: dict[str, torch.Tensor],
+    sample: object,
+    *,
+    predicted_class: int,
+    class_id: int,
+    activity_threshold: float,
+    observation,
+    tracked,
+    proposals: list[Proposal],
+    image_index: int,
+) -> None:
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib import patches
+    except ImportError as error:  # pragma: no cover - optional runtime dependency
+        raise RuntimeError(
+            "matplotlib is required for validation visualizations; install it in the project environment"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    event_activity = _event_activity_image(sequence)
+    attention_activity = _attention_activity_image(outputs["attention_spikes"])
+    attention_full = _upsample_attention(attention_activity, event_activity.shape[0], event_activity.shape[1])
+    event_norm = _normalize_image(event_activity)
+    attention_norm = _normalize_image(attention_full)
+    scores = outputs["classification_scores"][0].detach().cpu().numpy()
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=150)
+    ax_event, ax_attention, ax_overlay, ax_text = axes.ravel()
+
+    ax_event.imshow(event_norm, cmap="gray", origin="upper")
+    ax_event.set_title("Input event activity")
+    ax_event.axis("off")
+
+    attention_im = ax_attention.imshow(attention_norm, cmap="magma", origin="upper")
+    ax_attention.set_title("Accumulated attention map")
+    ax_attention.axis("off")
+    fig.colorbar(attention_im, ax=ax_attention, fraction=0.046, pad=0.04)
+
+    ax_overlay.imshow(event_norm, cmap="gray", origin="upper")
+    ax_overlay.imshow(attention_norm, cmap="jet", origin="upper", alpha=0.45)
+    for box in sample.boxes:
+        rect = patches.Rectangle((box.x_min, box.y_min), box.x_max - box.x_min, box.y_max - box.y_min, fill=False, linewidth=1.5, edgecolor="lime")
+        ax_overlay.add_patch(rect)
+    for proposal in proposals:
+        rect = patches.Rectangle((proposal.x, proposal.y), proposal.width, proposal.height, fill=False, linewidth=1.0, linestyle="--", edgecolor="cyan")
+        ax_overlay.add_patch(rect)
+    if observation is not None:
+        ax_overlay.plot(observation.x, observation.y, marker="x", markersize=8, color="yellow", markeredgewidth=2)
+        spread_width = max(2.0, 2.0 * observation.spread_x)
+        spread_height = max(2.0, 2.0 * observation.spread_y)
+        ellipse = patches.Ellipse((observation.x, observation.y), spread_width, spread_height, fill=False, linewidth=1.2, edgecolor="yellow")
+        ax_overlay.add_patch(ellipse)
+    if tracked is not None:
+        ax_overlay.plot(tracked.x, tracked.y, marker="o", markersize=5, color="white")
+    ax_overlay.set_title("Overlay: attention + GT + centroid")
+    ax_overlay.axis("off")
+
+    class_names = ["background", "vehicle"]
+    predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else str(predicted_class)
+    target_name = class_names[class_id] if class_id < len(class_names) else str(class_id)
+    lines = [
+        f"record: {record.scene}/{record.sequence}/{record.timestamp_ns}",
+        f"ground truth class: {target_name}",
+        f"predicted class: {predicted_name}",
+        f"class spike counts: {np.array2string(scores, precision=2)}",
+        f"attention threshold: {activity_threshold:.3f}",
+        f"proposal count: {len(proposals)}",
+    ]
+    if observation is not None:
+        lines.extend([
+            f"observation center: ({observation.x:.1f}, {observation.y:.1f})",
+            f"observation spread: ({observation.spread_x:.1f}, {observation.spread_y:.1f})",
+            f"observation confidence: {observation.confidence:.3f}",
+        ])
+    else:
+        lines.append("observation: none")
+    if tracked is not None:
+        lines.extend([
+            f"tracked center: ({tracked.x:.1f}, {tracked.y:.1f})",
+            f"tracked velocity: ({tracked.vx:.2f}, {tracked.vy:.2f})",
+            f"tracked spread: ({tracked.spread_x:.1f}, {tracked.spread_y:.1f})",
+        ])
+    else:
+        lines.append("tracked state: none")
+    ax_text.axis("off")
+    ax_text.set_title("Classification and tracking summary")
+    ax_text.text(0.0, 1.0, "\n".join(lines), va="top", ha="left", family="monospace", fontsize=9)
+
+    fig.tight_layout()
+    file_name = f"{image_index:02d}_{record.scene}_{record.sequence}_{record.timestamp_ns}.jpg"
+    fig.savefig(output_dir / file_name, format="jpg", quality=92)
+    plt.close(fig)
+
+
 def evaluate_mevdt_checkpoint(
     root: Path,
     checkpoint_path: Path,
@@ -194,6 +333,8 @@ def evaluate_mevdt_checkpoint(
     activity_threshold: float = 0.04,
     box_spread_scale_x: float = 4.0,
     box_spread_scale_y: float = 4.0,
+    visualization_count: int = 0,
+    visualization_dir: Path | None = None,
 ) -> MEVDTEvaluationResult:
     """Measure chronological classification, attention, SOT, and MOT quality."""
 
@@ -265,9 +406,12 @@ def evaluate_mevdt_checkpoint(
     sequence_generation: dict[tuple[str, str], int] = {}
     config = EventBinningConfig(bin_duration_us=int(checkpoint["bin_duration_us"]))
     activity_height = activity_width = 0
+    visualization_indices = _evenly_spaced_indices(len(records), visualization_count)
+    visualization_dir = (visualization_dir or Path("artifacts") / "Validation").expanduser().resolve()
+    visualization_saved = 0
 
     with torch.no_grad():
-        for record in records:
+        for record_index, record in enumerate(records):
             key = (record.scene, record.sequence)
             sample = load_mevdt_window(record, config=config, window_steps=window_steps)
             class_id = int(bool(sample.boxes))
@@ -372,6 +516,23 @@ def evaluate_mevdt_checkpoint(
                 negative_empty += int(not predicted.any())
                 negative_active_pixels += int(predicted.sum())
 
+            if record_index in visualization_indices:
+                visualization_saved += 1
+                _save_validation_visualization(
+                    visualization_dir,
+                    record,
+                    sequence,
+                    outputs,
+                    sample,
+                    predicted_class=predicted_class,
+                    class_id=class_id,
+                    activity_threshold=activity_threshold,
+                    observation=observation,
+                    tracked=tracked,
+                    proposals=proposals,
+                    image_index=visualization_saved,
+                )
+
     precision_denominator = true_positive_pixels + false_positive_pixels
     recall_denominator = true_positive_pixels + false_negative_pixels
     dice_denominator = 2 * true_positive_pixels + false_positive_pixels + false_negative_pixels
@@ -442,6 +603,12 @@ def main() -> None:
     parser.add_argument("--box-spread-scale-x", type=float, default=4.0)
     parser.add_argument("--box-spread-scale-y", type=float, default=4.0)
     parser.add_argument("--require-nonzero-core-metrics", action="store_true")
+    parser.add_argument("--visualization-count", type=int, default=8)
+    parser.add_argument(
+        "--visualization-dir",
+        type=Path,
+        default=Path("artifacts") / "Validation",
+    )
     args = parser.parse_args()
     result = evaluate_mevdt_checkpoint(
         args.root,
@@ -453,6 +620,8 @@ def main() -> None:
         activity_threshold=args.activity_threshold,
         box_spread_scale_x=args.box_spread_scale_x,
         box_spread_scale_y=args.box_spread_scale_y,
+        visualization_count=args.visualization_count,
+        visualization_dir=args.visualization_dir,
     )
     print(json.dumps(asdict(result), indent=2, sort_keys=True))
     if args.require_nonzero_core_metrics:
