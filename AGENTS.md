@@ -247,21 +247,7 @@ ports, timing, and packing efficiency.
 
 ## Dataset plan
 
-Primary algorithm dataset:
-
-```text
-FE108 with FE240hz annotations
-```
-
-Use it for:
-
-* event-supported pixel-attention supervision derived from annotated regions;
-* multiclass classification;
-* single-object tracking.
-
-Map DAVIS346 coordinates to the canonical 240×180 model resolution using a documented deterministic transform.
-
-Hardware-validation dataset:
+Current algorithm and hardware-validation dataset:
 
 ```text
 MEVDT
@@ -269,10 +255,32 @@ MEVDT
 
 Use it for:
 
-* native DAVIS240C event replay;
-* vehicle pixel attention and optional derived proposals;
-* vehicle tracking;
-* FPGA event-rate and throughput analysis.
+* event-supported pixel-attention supervision derived from annotated regions;
+* vehicle/background fully spiking classification;
+* chronological single- and multi-object tracking metrics;
+* native DAVIS240C event replay.
+
+Create a deterministic, scene-stratified validation partition from complete official
+training sequences. Freeze the sequence lists in every checkpoint, select models only on
+validation, process complete sequences chronologically, repeat key runs with at least
+three seeds, and reserve the official test sequences for final reporting.
+
+Later general-object dataset:
+
+```text
+EventVOT
+```
+
+Use it for:
+
+* diverse event-only single-object tracking;
+* target-conditioned attention and classification; and
+* general-object evaluation after the MEVDT protocol is stable.
+
+EventVOT is deferred and must begin with a tiny raw-event fixture. Preserve aspect ratio
+when mapping 1280×720 to 240×180: resize to 240×135, then pad vertically. FE108 remains
+historical literature context because its public download was inaccessible; do not make
+current milestones depend on it.
 
 Before downloading large datasets, implement and test loaders using:
 
@@ -297,9 +305,10 @@ Follow this order unless evidence justifies a documented change:
 8. Event-supported pixel-attention output.
 9. Predicted-attention, bias-free synapse/LIF classification output.
 10. Simple attention-centroid single-object tracking.
-11. FE108/FE240hz loader.
-12. MEVDT loader.
-13. Floating-point training baseline.
+11. MEVDT loader and deterministic sequence-level validation partition.
+12. Floating-point training baseline over at least three seeds.
+13. Chronological complete-sequence evaluation with success AUC, precision@20, HOTA,
+    MOTA, IDF1, classification F1, and pixel-attention IoU.
 14. Quantization and integer reference.
 15. Sparse event-scatter software reference.
 16. RTL neuron.
@@ -307,6 +316,7 @@ Follow this order unless evidence justifies a documented change:
 18. RTL competition and adaptation.
 19. Multilayer RTL integration.
 20. Dataset replay, synthesis, and measured evaluation.
+21. EventVOT target-conditioned general-object extension after current milestones pass.
 
 ## Testing requirements
 
@@ -424,3 +434,12 @@ At the end of every Codex run, report:
 * remaining failures;
 * active blocker, if any;
 * next exact milestone.
+
+### Model source ownership
+
+The complete trainable neural model is implemented in `src/eventscnn/model.py`. This
+includes neuron dynamics, convolutional blocks/backbone, attention and classification
+heads, pooling helpers, and `EventSCNNSystem`. Keep deterministic tracking in
+`tracking.py`. The former `dynamics.py`, `models.py`, `heads.py`, and `system.py` files
+were removed. Import model symbols directly from `eventscnn.model`; do not recreate those
+modules, compatibility wrappers, or parallel model definitions.

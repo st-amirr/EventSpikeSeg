@@ -1,8 +1,8 @@
 document:
   title: Hardware-Oriented Event-Camera Spiking CNN for Pixel Attention, Classification, and Tracking
   short_name: EventSCNN-FPGA
-  version: 0.5.1
-  status: fully_spiking_mevdt_attention_measured
+  version: 0.7.0
+  status: mevdt_sequence_validation_and_multiseed_evaluation_in_progress
   created_date: '2026-08-02'
   intended_uses:
   - Software and FPGA implementation specification
@@ -45,14 +45,14 @@ decision_history:
     prevent custom dynamics or pixel-attention interfaces, or add more integration cost than a focused VHDL implementation.
 - step: 6
   issue: Dataset selection
-  decision: Use FE108/FE240hz as primary and MEVDT for hardware validation
-  reason: FE108/FE240hz provides multiclass single-object tracking with raw DAVIS346 events and high-rate boxes. MEVDT
-    provides native DAVIS240C 240x180 events, vehicle boxes, and track IDs for exact-resolution FPGA replay.
+  decision: Use MEVDT as the primary training, validation, tracking, and hardware-replay dataset
+  reason: MEVDT is locally available and provides native DAVIS240C 240x180 events, vehicle boxes, track IDs, and
+    authoritative splits for executable end-to-end evidence at the exact FPGA model resolution.
 - step: 7
-  issue: FE108 access unavailable while MEVDT is locally available
-  decision: Train a sequence-disjoint MEVDT vehicle/background baseline without replacing FE108 as the multiclass target
-  reason: MEVDT permits immediate validation of real event ingestion, proposals, binary classification, and tracking at
-    the canonical resolution. Its single vehicle category cannot support the planned 21-class claim.
+  issue: MEVDT classification scope
+  decision: Define the primary learned task as vehicle-versus-background classification with single-vehicle tracking
+  reason: The available MEVDT annotations support an executable binary classification and tracking contract. Do not claim
+    unsupported multiclass accuracy; any later general-object extension is a separate future milestone.
 - step: 8
   issue: Filled-box objectness and box ROI inference underperform on sparse MEVDT events
   decision: Use event-supported pixel attention, predicted-attention classification, and centroid tracking as the primary path
@@ -71,6 +71,18 @@ decision_history:
   reason: Large deep convolution membrane arrays suit BRAM, while small high-access-rate attention state, shared weights,
     short FIFOs, address queues, scratch tiles, and lookup tables can use LUTRAM without consuming scarce BRAM blocks.
     Tiny channel/class state belongs in registers. Physical placement may change only if bit-exact behavior is preserved.
+- step: 11
+  issue: Future general-object development
+  decision: Use EventVOT only as a later target-conditioned general-object development path
+  reason: EventVOT is a publicly described event-only visual object tracking dataset with diverse object categories and
+    raw events. It is deferred until the MEVDT protocol is sound because it requires target-conditioned single-object
+    tracking and a documented 1280x720 to 240x180 transform.
+- step: 12
+  issue: Earlier bounded MEVDT results reused official test frames for development
+  decision: Freeze a deterministic scene-stratified sequence-level validation partition inside the official train split
+  reason: Architecture, thresholds, checkpoints, and ablations must be selected on validation sequences only. Evaluate
+    complete sequences chronologically, repeat training with at least three seeds, and touch the official test split only
+    after selecting the final configuration.
 research_problem:
   problem_statement: Event cameras generate sparse asynchronous brightness-change events, but trainable deep-SNN frameworks
     typically execute convolution as dense tensor operations. FPGA SNN generators provide efficient neuron implementations
@@ -230,8 +242,7 @@ scope:
   - Bit-accurate Python reference
   - Project-specific VHDL-2008 FPGA backend with optional selective reuse of compatible framework components
   - ZCU104 FPGA inference
-  - FE108/FE240hz primary training and evaluation
-  - MEVDT native-resolution FPGA validation
+  - MEVDT primary training, validation, tracking evaluation, and native-resolution FPGA replay
   version_1_out_of_scope:
   - Exact continuous-time decay from every DAVIS timestamp
   - Clockless asynchronous FPGA logic
@@ -267,12 +278,6 @@ sensor_and_input:
     - Provides a manageable logical-neuron and FPGA state-memory footprint.
     - Preserves useful spatial detail for moving-object proposals, classification, and tracking.
   supported_event_sources:
-  - source: FE108 raw DAVIS346 events
-    native_resolution_wh:
-    - 346
-    - 260
-    input_mapping: deterministic coordinate remap to 240x180 during preprocessing
-    role: primary multiclass single-object training and evaluation
   - source: MEVDT DAVIS240C events
     native_resolution_wh:
     - 240
@@ -480,6 +485,10 @@ model:
     reduction: Per-timestep predicted-attention gating of feature spikes after max/OR resolution matching, followed by
       integer spike-count accumulation per channel
     classifier: bias-free class synapses followed by independent hardware-compatible LIF output neurons
+    synaptic_current_scale:
+      operation: arithmetic right shift by 5 after class-synapse accumulation
+      divisor: 32
+      reason: Keep per-timestep class currents near the LIF threshold and prevent both outputs saturating at the temporal spike ceiling.
     class_count: dataset_dependent
     decoding: emitted class-spike count argmax; silence ties resolve deterministically to background class zero
     analog_readout_allowed: false
@@ -499,6 +508,10 @@ model:
     - confidence
     - class_id
     measurement: weighted centroid and spread of predicted attention plus class confidence
+    evaluation_box_decoder:
+      width: clamp(4 * spread_x, 2, 240)
+      height: clamp(4 * spread_y, 2, 180)
+      selection_evidence: Retained pending a decoder scale that improves HOTA across all repaired seeds
     motion_model: fixed_point_alpha_beta_filter
     association: centroid distance plus class consistency
     roi_policy:
@@ -566,7 +579,7 @@ training:
   sequence:
   - Prepare raw events and sequence-level annotations
   - Create fixed-duration polarity event-count tensors
-  - Run the MEVDT vehicle/background baseline while FE108 access is pending
+  - Run the MEVDT vehicle/background baseline with a frozen sequence-disjoint validation partition
   - Train a floating-point baseline without f_inst/f_long
   - Add f_inst and measure accuracy, proposal precision/recall, feature diversity, and sparsity
   - Add f_long/T_thresh and measure utilization and robustness
@@ -575,6 +588,29 @@ training:
   - Export integer weights and neuron parameters
   - Validate the bit-accurate event-scatter model
   - Generate and verify RTL
+  experiment_protocol:
+    current_dataset: MEVDT
+    partition: deterministic scene-stratified complete-sequence validation split from the official train split
+    validation_fraction: 0.2
+    partition_seed: 20260804
+    model_seeds: [17, 101, 2026]
+    evaluation_order: chronological_complete_sequences
+    selection_split: validation_only
+    final_reporting_split: official_test_after_configuration_selection
+    required_metrics:
+    - tracking_success_AUC
+    - center_precision_at_20_pixels
+    - HOTA
+    - MOTA
+    - IDF1
+    - classification_F1
+    - pixel_attention_IoU
+    capacity_ablation_gate: Run only after the three-seed baseline and diagnose the deficient metric.
+    targeted_capacity_order:
+    - Fuse Conv1 spatial spikes with Conv2/Conv3 semantic spikes in the attention head.
+    - Add a small depthwise-separable spiking refinement block.
+    - Add temporal attention supervision across adjacent labeled samples.
+    - Add a fourth downsampled Conv-LIF layer only if semantic classification remains deficient.
   losses:
     pixel_attention:
       type: positive_weighted_rate_error_plus_dice_on_event_supported_pixels
@@ -858,43 +894,9 @@ fpga_target:
   - Minimal or zero DSP use in the spiking backbone
   - Clock enable during inactive periods
 datasets:
-  selection_rationale: No single public dataset perfectly serves multiclass tracking, exact DAVIS240 FPGA replay,
-    and future multi-object evaluation. The project therefore uses a staged two-dataset core plus a later benchmark.
-  primary:
-    name: FE108 with FE240hz event-domain annotations
-    role: Main model training, architecture selection, classification, proposal, and single-object tracking evaluation
-    sensor: DAVIS346
-    native_resolution_wh:
-    - 346
-    - 260
-    model_resolution_wh:
-    - 240
-    - 180
-    coordinate_remap:
-      x: floor(x_native * 240 / 346)
-      y: floor(y_native * 180 / 260)
-      reason: The aspect ratios are nearly identical, so deterministic resizing introduces minimal geometric distortion.
-    sequence_count: 108
-    target_class_count: 21
-    annotation_rate_hz: 240
-    event_format: AEDAT4 raw events
-    tasks:
-    - single-object region proposal
-    - multiclass target classification
-    - single-object tracking
-    - fast-motion and challenging-light evaluation
-    - f_inst and f_long/T_thresh ablations
-    supervision_mapping:
-      attention_positive_pixels: event-active locations inside the target box, with configurable local dilation
-      attention_negative_pixels: non-target event support and background locations
-      classification_label: target class associated with the sequence or object
-      tracking_target: target center derived from the annotation; boxes are not required at inference
-    limitations:
-    - Single-object rather than native multi-object tracking
-    - Requires coordinate remapping to the 240x180 hardware baseline
-    - High-rate annotations must be synchronized to the selected SNN timesteps
-    source_url: https://zhangjiqing.com/dataset/
-  hardware_validation:
+  selection_rationale: MEVDT is the sole primary executable dataset because it supports training, sequence-level
+    validation, tracking metrics, and exact-resolution DAVIS240C FPGA replay. EventVOT is a deferred future extension.
+  primary_training_and_hardware_validation:
     name: MEVDT
     role: Native-resolution FPGA replay, traffic proposals, vehicle tracking, throughput, FIFO, latency, and power
       evaluation
@@ -922,7 +924,7 @@ datasets:
     - event-rate burst characterization
     - latency, FIFO occupancy, throughput, and power measurement
     classification_scope: vehicle versus background or a single general vehicle class
-    current_software_baseline_role: Initial real-data training and held-out evaluation while FE108 access is pending
+    current_software_baseline_role: Primary real-data training, complete-sequence validation, and final held-out evaluation
     sequence_event_format:
       file: sequences/{split}/{scene}/{sequence}/{sequence}_events.csv
       columns: [ts, x, y, p]
@@ -931,12 +933,39 @@ datasets:
     detection_label_format: class_id x_min y_min x_max y_max in absolute 240x180 coordinates
     authoritative_split_index: data_splits/MEVDT_org_rate_{train,test}.csv
     limitations:
-    - Not suitable as the sole multiclass classification dataset
+    - Supports vehicle-versus-background classification rather than general multiclass recognition
     - Static roadside camera and limited scene diversity
     - Some visible non-vehicle objects may be unlabeled
     source_urls:
     - https://arxiv.org/abs/2407.20446
     - https://sar-lab.net/?page_id=858
+    validation_protocol:
+      source_split: official train
+      unit: complete sequence
+      stratification: scene
+      fraction: 0.2
+      partition_seed: 20260804
+      frozen_in_checkpoint: true
+      chronological_evaluation: true
+      official_test_policy: final evaluation only after validation-based model selection
+  future_general_object_dataset:
+    name: EventVOT
+    role: Later event-only general-object single-object tracking and target-conditioned classification development
+    status: deferred_not_downloaded
+    native_resolution_wh: [1280, 720]
+    model_resolution_wh: [240, 180]
+    coordinate_remap:
+      method: aspect_preserving_resize_then_vertical_pad
+      resized_resolution_wh: [240, 135]
+      vertical_padding_pixels: [22, 23]
+    published_sequence_count: 1141
+    modality: raw event streams with single-object tracking annotations
+    required_model_extension: target-conditioned template or first-frame target encoding
+    limitations:
+    - A category-agnostic tracker still needs explicit target conditioning when several objects are active.
+    - Resolution conversion and raw-event parsing require fixture validation before full download use.
+    - Do not infer EventVOT performance from MEVDT vehicle results.
+    source_url: https://eventvot.github.io/
   development_sanity_dataset:
     name: synthetic moving shapes or ball events
     role: Debug routing, neuron equations, proposal behavior, fixed-point equivalence, and RTL before full dataset
@@ -996,12 +1025,11 @@ evaluation:
   - confusion_matrix
   tracking_metrics:
   - success_AUC
-  - center_precision
+  - center_precision_at_20_pixels
   - normalized_precision
   - failure_count
   - reacquisition_time
   - attention_center_precision
-  future_multi_object_metrics:
   - HOTA
   - MOTA
   - IDF1
@@ -1303,16 +1331,16 @@ open_decisions:
   item: f_long decay implementation
   recommended_default: Triangular or countdown adaptation per feature map for the first FPGA.
 - priority: high
-  item: FE108 class mapping and official train/validation/test sequence split
-  recommended_default: Preserve official splits when available; otherwise create sequence-disjoint stratified splits
-    and publish the exact lists.
+  item: EventVOT target conditioning and official split integration
+  recommended_default: Encode the annotated first-frame target without a box ROI at inference, preserve official splits,
+    and validate the raw-event coordinate transform on a tiny fixture before full training.
 - priority: medium
   item: Pixel-attention decoding
   recommended_default: Use predicted half-resolution attention directly for pooling and centroid tracking; derive boxes
     with connected components only for comparison metrics.
 - priority: medium
   item: Live camera
-  recommended_default: Recorded FE108 and MEVDT development; DAVIS346 AER live hardware if accessible.
+  recommended_default: Recorded MEVDT and later EventVOT development; DAVIS346 AER live hardware if accessible.
 - priority: medium
   item: Tracker placement
   recommended_default: Zynq PS first, programmable logic after the SCNN datapath is stable.

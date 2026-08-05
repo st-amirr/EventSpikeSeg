@@ -1,14 +1,18 @@
 import numpy as np
 import pytest
 
-from eventscnn.config import EventBinningConfig
-from eventscnn.datasets import (
+from eventscnn.model import EventBinningConfig
+from eventscnn.data import (
+    MEVDTFrameRecord,
     _load_mevdt_event_stream,
+    chronological_mevdt_records,
     discover_mevdt_frames,
     load_event_npz,
     load_mevdt_boxes,
+    load_mevdt_tracking_sequence,
     load_mevdt_window,
     remap_davis346_coordinate,
+    split_mevdt_train_sequences,
 )
 
 
@@ -109,3 +113,58 @@ def test_mevdt_clips_only_floating_point_border_noise(tmp_path) -> None:
     label = tmp_path / "border.txt"
     label.write_text("1 200 10 240.00000000000003 30\n", encoding="utf-8")
     assert load_mevdt_boxes(label)[0].x_max == 240.0
+
+
+def test_mevdt_validation_partition_is_sequence_disjoint_and_deterministic(tmp_path) -> None:
+    records = []
+    for scene in ("Scene_A", "Scene_B"):
+        for sequence_index in range(5):
+            sequence = str(sequence_index)
+            for timestamp in (2, 1):
+                path = tmp_path / f"{scene}-{sequence}-{timestamp}.txt"
+                path.write_text("", encoding="utf-8")
+                records.append(
+                    MEVDTFrameRecord(
+                        "train", scene, sequence, timestamp, tmp_path / "events.csv", path
+                    )
+                )
+    training, validation = split_mevdt_train_sequences(records, seed=7)
+    repeated = split_mevdt_train_sequences(records, seed=7)
+    training_keys = {(record.scene, record.sequence) for record in training}
+    validation_keys = {(record.scene, record.sequence) for record in validation}
+    assert training_keys.isdisjoint(validation_keys)
+    assert repeated == (training, validation)
+    assert {record.scene for record in validation} == {"Scene_A", "Scene_B"}
+    ordered = chronological_mevdt_records(list(reversed(validation)))
+    assert ordered == sorted(
+        validation, key=lambda record: (record.scene, record.sequence, record.timestamp_ns)
+    )
+
+
+def test_mevdt_tracking_coco_loads_timestamp_identity_and_xywh(tmp_path) -> None:
+    path = (
+        tmp_path
+        / "labels"
+        / "tracking_labels"
+        / "test"
+        / "Scene_A"
+        / "123"
+    )
+    path.mkdir(parents=True)
+    (path / "123-coco.json").write_text(
+        '{"images":[{"id":7,"file_name":"456.png"}],'
+        '"annotations":[{"image_id":7,"category_id":1,"track_id":"car-a",'
+        '"bbox":[10,20,30,40]}]}',
+        encoding="utf-8",
+    )
+    annotations = load_mevdt_tracking_sequence(
+        tmp_path, split="test", scene="Scene_A", sequence="123"
+    )
+    item = annotations[456][0]
+    assert item.track_id == "car-a"
+    assert (item.box.x_min, item.box.y_min, item.box.x_max, item.box.y_max) == (
+        10.0,
+        20.0,
+        40.0,
+        60.0,
+    )

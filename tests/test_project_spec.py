@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_hardware_and_framework_policy_is_frozen_in_yaml() -> None:
     specification = yaml.safe_load((ROOT / "project_spec.yaml").read_text())
     strategy = specification["custom_fpga_backend_strategy"]
-    assert specification["document"]["version"] == "0.5.1"
+    assert specification["document"]["version"] == "0.7.0"
     assert strategy["implementation_languages"]["hardware"] == "VHDL-2008 only"
     policy = strategy["framework_reuse_policy"]
     assert policy["candidate_framework"] == "Spiker+"
@@ -21,6 +21,14 @@ def test_hardware_and_framework_policy_is_frozen_in_yaml() -> None:
     classifier = specification["model"]["classification_head"]
     assert classifier["analog_readout_allowed"] is False
     assert "LIF output neurons" in classifier["classifier"]
+    protocol = specification["training"]["experiment_protocol"]
+    assert protocol["model_seeds"] == [17, 101, 2026]
+    assert protocol["selection_split"] == "validation_only"
+    assert specification["datasets"]["future_general_object_dataset"]["name"] == "EventVOT"
+    primary = specification["datasets"]["primary_training_and_hardware_validation"]
+    assert primary["name"] == "MEVDT"
+    removed_dataset_name = "fe" + "108"
+    assert removed_dataset_name not in (ROOT / "project_spec.yaml").read_text().lower()
 
 
 def test_hybrid_memory_policy_preserves_bram_for_deep_state() -> None:

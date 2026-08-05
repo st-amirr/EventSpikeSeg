@@ -124,3 +124,66 @@ subsequent commit; this run did not rewrite or undo the concurrent commit.
 - Regression: unit tests freeze disabled class `f_inst/f_long`; the repaired 1,024-step
   checkpoint reaches `0.828125` held-out predicted-attention classification and `1.0`
   oracle-attention classification.
+
+## Workaround active - native Windows cocotb/GHDL VPI load failure
+
+- Reproduction: run `make rtl-test` with WinGet GHDL 6.0.0 and the Windows Python 3.11
+  environment; VHDL analysis/elaboration succeeds, then GHDL cannot load
+  `cocotbvpi_ghdl.dll` (an isolated probe reports a side-by-side configuration error).
+- Root cause boundary: the failure is in the native Windows simulator/VPI runtime ABI,
+  not in VHDL analysis or the five testbench assertions.
+- Workaround: on Windows run `scripts/run_rtl_tests_docker.ps1` (or use
+  `make rtl-test-docker` where GNU Make is installed); the repository is mounted
+  read-only into a Debian container with GHDL and cocotb.
+- Regression: all five simulations pass in Docker with GHDL 2.0.0/cocotb 1.9.2.
+- Status: native execution remains unresolved; Docker is the verified RTL path on this
+  machine.
+
+## Resolved - seed-sensitive spiking classifier saturated and collapsed to background
+
+- Reproduction: train the fully spiking `f_inst` baseline for 4,096 balanced MEVDT
+  samples with seed 101, then evaluate all frozen validation sequences.
+- Evidence: attention IoU is `0.735156`, but predicted and oracle-attention
+  classification F1 are both `0.0`; no vehicle predictions or tracks are emitted.
+- Root cause evidence: matched trace exports show this is saturation, not output silence.
+  On positive frames, the failed seed averages `48.125` background and `46.125` vehicle
+  spikes over 50 timesteps. Its mean class currents are approximately `5.640` and
+  `0.565`, while its peak candidate membranes reach approximately `100.486` and `8.208`
+  against a `0.25` threshold. One subtractive reset per timestep cannot drain that
+  accumulated current, so both neurons remain near their 50-spike ceiling and background
+  wins narrowly. Oracle attention reproduces the failure, excluding the attention head.
+- Fix: scale the bias-free classification synaptic current
+  by the exactly hardware-mappable power-of-two divisor 32 (five-bit arithmetic shift),
+  preserve independent output LIF neurons and spike-count decoding, and retrain seed 101.
+- Regression: the repaired 4,096-sample seed-101 checkpoint completed all 10 validation
+  sequences with classification F1 `0.929260`, HOTA `0.469137`, and tracking success AUC
+  `0.567106`; all three automated gate conditions pass. Preserve
+  `mevdt_seed101_4096.pt` as the frozen failed checkpoint.
+- Status: resolved. Retain the mandatory loop below as the workflow for any future zero
+  core metric.
+- Mandatory fix loop:
+  1. Reproduce the zero metrics with the frozen checkpoint and complete validation split.
+  2. Export per-class synaptic current, peak membrane, threshold crossing, and spike-count
+     traces for matched positive and negative samples from seeds 17 and 101.
+  3. Add a regression test for the identified saturation/root-cause condition.
+  4. Apply the smallest training-side fix that preserves bias-free synapses and
+     spike-count inference; do not hide saturation with a different argmax tie rule.
+  5. Retrain the failed seed and run complete chronological validation.
+  6. Repeat until classification F1, HOTA, and tracking success AUC are all nonzero, then
+     continue the unchanged third-seed run and compare all three seeds.
+- Automated gate: full `docker compose run --rm eval-mevdt` evaluation uses
+  `--require-nonzero-core-metrics` and exits nonzero when any of those three metrics is
+  zero, routing the active milestone back to this loop.
+
+## Workaround active - native Windows cocotb/GHDL VPI load failure
+
+- Reproduction: run `make rtl-test` with WinGet GHDL 6.0.0 and the Windows Python 3.11
+  environment; VHDL analysis/elaboration succeeds, then GHDL cannot load
+  `cocotbvpi_ghdl.dll` (an isolated probe reports a side-by-side configuration error).
+- Root cause boundary: the failure is in the native Windows simulator/VPI runtime ABI,
+  not in VHDL analysis or the five testbench assertions.
+- Workaround: run `make rtl-test-docker`; the repository is mounted read-only into a
+  Debian container with GHDL and cocotb.
+- Regression: all five simulations pass in Docker with GHDL 2.0.0/cocotb 1.9.2.
+- Status: native execution remains unresolved; Docker is the verified RTL path on this
+  machine.

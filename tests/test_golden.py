@@ -2,7 +2,7 @@ import json
 
 import numpy as np
 
-from eventscnn.golden import export_lif_golden_vectors
+from eventscnn.hardware import export_lif_golden_vectors
 
 
 def test_golden_vectors_are_reproducible_and_describe_order(tmp_path) -> None:

@@ -1,5 +1,6 @@
 """Run RTL equivalence only when a real simulator is available."""
 
+import platform
 import shutil
 import subprocess
 import sys
@@ -8,7 +9,16 @@ from pathlib import Path
 
 def main() -> int:
     if shutil.which("ghdl") is None:
-        print("BLOCKED: GHDL is unavailable. Install with: brew install ghdl")
+        install_hint = {
+            "Darwin": "brew install ghdl",
+            "Windows": "winget install --exact --id ghdl.ghdl.ucrt64.mcode",
+        }.get(platform.system(), "install GHDL with your system package manager")
+        print(f"BLOCKED: GHDL is unavailable. Suggested setup: {install_hint}")
+        if platform.system() == "Windows":
+            print(
+                "If native cocotb cannot load its GHDL VPI DLL, use "
+                "`make rtl-test-docker`."
+            )
         return 2
     root = Path(__file__).resolve().parents[1]
     return subprocess.call(

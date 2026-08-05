@@ -4,7 +4,7 @@ import torch
 
 from .config import EventBinningConfig
 from .events import bin_events, synthetic_events
-from .system import EventSCNNSystem
+from .model import EventSCNNSystem
 
 
 def run_smoke_step() -> tuple[float, float]:

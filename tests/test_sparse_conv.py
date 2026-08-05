@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch.nn import functional as functional
 
-from eventscnn.sparse_conv import event_scatter_conv2d
+from eventscnn.hardware import event_scatter_conv2d
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,6 @@
 import torch
 
-from eventscnn.quantization import (
+from eventscnn.hardware import (
     IntegerFormat,
     arithmetic_shift_right,
     integer_lif_step,

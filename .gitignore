@@ -5,6 +5,7 @@ literature_review/**/** */
 *.egg-info/
 __pycache__/
 .pytest_cache/
+.env
 sim_build/
 data/**
 !data/README.md

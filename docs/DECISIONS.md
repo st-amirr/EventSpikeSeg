@@ -33,8 +33,7 @@ hardware; per-neuron adaptation remains an ablation.
 ## 2026-08-02 — Synthetic-first validation
 
 All algorithmic and equivalence work uses deterministic synthetic fixtures before any
-FE108 or MEVDT download. Dataset acquisition and measured accuracy are separate future
-milestones.
+MEVDT download. Dataset acquisition and measured accuracy are separate milestones.
 
 ## 2026-08-03 — VHDL-2008 is the canonical RTL language
 
@@ -75,10 +74,10 @@ equivalent future modules. No release or commit is pinned until a component is a
 selected. Evidence: [official repository](https://github.com/smilies-polito/Spiker) and
 [Spiker+ paper](https://arxiv.org/abs/2401.01141).
 
-## 2026-08-03 — MEVDT-first binary training while FE108 access is blocked
+## 2026-08-03 — MEVDT vehicle/background training
 
-Keep FE108 as the multiclass target, but use the locally available MEVDT download for
-the first real floating-point vehicle/background baseline. MEVDT CSV timestamps are
+Use the locally available MEVDT download as the primary real floating-point
+vehicle/background dataset. MEVDT CSV timestamps are
 nanoseconds, detection text uses absolute XYXY coordinates, and the published
 `MEVDT_org_rate_{train,test}.csv` files are authoritative. Train and test sequences must
 remain disjoint. APS images are indexing aids only and are not model inputs.
@@ -176,3 +175,91 @@ BRAM-heavy and balanced synthesis configurations for the chosen device, record p
 and port costs per memory, and select the smallest mapping that meets timing without
 changing bit-exact behavior. No utilization improvement is claimed until synthesis is
 actually executed.
+
+## 2026-08-04 — Defer EventVOT general-object extension
+
+MEVDT is the sole primary executable dataset. Use EventVOT only as a later event-only
+general-object path. EventVOT is deferred until the current MEVDT protocol is stable because multiple
+candidate objects require explicit target conditioning. The first implementation must
+validate a tiny raw-event fixture and map 1280×720 to 240×180 without distortion by
+resizing to 240×135 and padding vertically. No EventVOT result is inferred from MEVDT.
+
+## 2026-08-04 — Sequence-level MEVDT validation before capacity ablations
+
+The earlier 128-frame official-test subset was used repeatedly during development and is
+not an untouched test set. Derive a deterministic 20% scene-stratified validation split
+from complete official training sequences using partition seed `20260804`, freeze the
+exact train/validation sequence lists in each checkpoint, and evaluate records in
+chronological order. Use seeds `17`, `101`, and `2026`; select only on validation and
+reserve the official test split until the configuration is frozen.
+
+The required report is tracking success AUC, center precision@20, HOTA, MOTA, IDF1,
+classification F1, and pixel-attention IoU. Only after those three runs may capacity be
+added, in this order and only for a diagnosed deficiency: multiscale Conv1/Conv2/Conv3
+spike fusion, a depthwise-separable spiking refinement block, adjacent-sample temporal
+attention supervision, then a fourth downsampled Conv-LIF layer if semantic
+classification remains inadequate. `f_inst` and `f_long/T_thresh` remain available.
+
+## 2026-08-04 - Use a CPU-only Docker Compose environment across hosts
+
+Use one Python 3.11 Debian image for Python tests, training/evaluation, quantized
+reference checks, and GHDL/cocotb RTL tests. Mount source read-only and persist only
+ignored checkpoints to the host. Import MEVDT into an optional named Docker volume for
+training because direct Windows/macOS CSV bind mounts are too slow for this loader.
+
+Do not retain CUDA dependencies for the current trainer. A measured two-sample probe was
+substantially slower on CUDA because the model executes many small operations across 50
+sequential timesteps; the CUDA image and experimental device-routing code were removed.
+Reconsider GPU execution only after batching or timestep vectorization is implemented
+and benchmarked. The CPU container remains architecture-portable through Docker Desktop.
+
+## 2026-08-04 — Make MEVDT the sole primary dataset
+
+MEVDT is the only primary dataset for training, deterministic validation, tracking
+evaluation, and native-resolution FPGA replay. Its learned classification contract is
+vehicle versus background; no unsupported multiclass claim is part of the current
+project. EventVOT remains a separately deferred general-object extension.
+
+Zero classification F1, HOTA, or tracking success AUC is a benchmark regression. The
+full evaluation command must fail its acceptance gate and return the active milestone to
+the documented diagnosis/fix/retrain loop instead of allowing work to advance silently.
+
+## 2026-08-04 — Scale classification synaptic current by an exact power of two
+
+Apply a five-bit right-shift equivalent (divide by 32) between the bias-free class
+synapses and independent output LIF neurons. Seed-101 traces showed both outputs
+saturating near the 50-timestep spike ceiling because unscaled currents exceeded the
+`0.25` threshold by orders of magnitude. A 1,024-sample repaired checkpoint passed the
+complete-validation nonzero gate with classification F1 `0.918100`, HOTA `0.328636`, and
+tracking success AUC `0.398309`.
+
+This preserves spike-count decoding, introduces no bias or analog classifier, and maps
+directly to fixed-point arithmetic. Threshold retuning and output competition were
+rejected because they either obscure the excessive-current cause or reintroduce the
+previously measured cross-class starvation failure.
+
+## 2026-08-04 — Do not adopt three attention-spread units globally
+
+A training-only sweep favored `3 × spread_x/y` over the original scale 4. On held-out
+seed 2026 it improved HOTA from `0.474080` to `0.485307`, but on repaired seed 101 it
+reduced HOTA from `0.469137` to `0.461110`. Several secondary seed-101 metrics improved,
+including MOTA, IDF1, and center precision, so scale 3 remains a useful ablation but is
+not a universal HOTA improvement.
+
+Retain scale 4 as the global default until all three repaired seeds are available. Do
+not freeze a decoder scale from one seed when the cross-seed HOTA direction changes.
+
+## Single-file neural model source
+
+**Decision:** Keep the complete neural model in `src/eventscnn/model.py`.
+
+**Reason:** The previous split across `dynamics.py`, `models.py`, `heads.py`, and
+`system.py` obscured the end-to-end architecture and retained overlapping current and
+compatibility interfaces. A single source makes the full spiking path reviewable while
+leaving dataset, tracking, metrics, quantization, sparse reference, and RTL concerns
+separate.
+
+**Migration:** All repository imports and tests were changed to use `eventscnn.model`,
+after which the four previous modules were deleted. They must not be recreated. Existing
+state-dict checkpoint keys are unaffected because module attributes inside
+`EventSCNNSystem` were preserved; only Python import paths changed.

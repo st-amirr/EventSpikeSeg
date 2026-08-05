@@ -1,6 +1,6 @@
 import torch
 
-from eventscnn.system import EventSCNNSystem
+from eventscnn.model import EventSCNNSystem
 
 
 def _configured_system() -> EventSCNNSystem:

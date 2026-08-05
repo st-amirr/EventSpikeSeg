@@ -75,8 +75,20 @@ and Verilator were initially absent.
   attention Dice/mIoU, centroid error, predicted-attention classification, and tracking
   center precision must be measured. No accuracy claim is allowed before user-run
   training produces and evaluates a new compatible checkpoint.
-- [ ] M11d — FE108 adapter and multiclass training: blocked by unavailable restricted
-  dataset access. Do not infer 21-class performance from MEVDT.
+- [x] M11c3 — Evaluation protocol: deterministic scene-stratified complete-sequence
+  validation partition, checkpoint-frozen membership, chronological evaluation, and
+  tested success AUC, precision@20, HOTA, MOTA, IDF1, classification F1, and attention
+  IoU are implemented.
+- [ ] M11c4 — Three-seed MEVDT evidence: train substantially more samples with seeds
+  `17`, `101`, and `2026`; evaluate complete validation sequences; diagnose failures;
+  select the configuration without touching official test; then run one final complete
+  official-test evaluation.
+  Acceptance gate: classification F1, HOTA, and tracking success AUC must each be
+  nonzero for every candidate seed. A zero value is a benchmark regression, not a valid
+  completed run. Follow the BUGS.md reproduce/instrument/regress/fix/retrain/re-evaluate
+  loop until the gate passes before advancing to capacity ablations or final test.
+- [ ] M11d — EventVOT target-conditioned general-object extension: deferred until M11c4
+  passes and the dataset is downloaded. MEVDT remains the sole primary dataset.
 
 ## Validation commands
 
@@ -89,6 +101,7 @@ make train-mevdt-smoke
 make eval-mevdt-smoke
 make validate-reference
 make rtl-test
+make rtl-test-docker
 ```
 
 ## Progress log
@@ -155,12 +168,33 @@ make rtl-test
   BRAM-only fit bottleneck: deep convolution state in BRAM, suitable small/high-access
   attention, weight, FIFO, queue, lookup, and scratch memories in LUTRAM, and tiny state
   in registers. No RTL placement or FPGA utilization result was produced in this slice.
+- 2026-08-04: Recovered the project on Windows with a clean Python 3.11 environment and
+  the external Desktop dataset. The full 65-test suite and Ruff pass. Native GHDL 6.0.0
+  reaches elaboration but cannot load cocotb's Windows VPI DLL; a read-only Docker route
+  passes all 5 VHDL-2008 simulations using GHDL 2.0.0/cocotb 1.9.2.
+- 2026-08-04: Recovered the completed seed-17 4,096-step checkpoint and its full
+  10-sequence/1,424-frame validation metrics.
+- 2026-08-04: Made CPU-only Docker Compose the canonical Windows/macOS environment for
+  tests, training/evaluation, reference checks, and RTL simulation. Python (65), Ruff,
+  and RTL (5) services pass from the 1.85 GB slim image. The large CUDA experiment, native
+  virtual environments, temporary checkpoints, and unused build cache were removed.
+  Imported and verified the 2.0 GB MEVDT named volume for subsequent training runs.
+- 2026-08-04: Re-ran seed 101 to completion in Docker (4,096 balanced steps) and
+  evaluated all 1,424 validation frames. Attention IoU reached `0.735156`, but both
+  predicted/oracle classification collapsed to background (F1 `0.0`) and produced no
+  tracks. Preserved the checkpoint and recorded the regression; seed 2026 remains.
+- 2026-08-04: Completed the zero-metric fix loop. Matched class traces identified
+  seed-101 output saturation, not silence. Added trace export, a nonzero benchmark gate,
+  and a five-bit class-current scale. The repaired 4,096-step seed-101 checkpoint passed
+  all 1,424 validation frames with classification F1 `0.929260`, HOTA `0.469137`,
+  tracking success AUC `0.567106`, and attention IoU `0.759312`.
 
 ## Discoveries
 
 - The required `AGENTS.md` was absent; the full instructions were supplied as
   `agent.md`. A compatibility pointer is part of M0.
-- The initial environment has no Python ML/test dependencies and no RTL simulator.
+- Native Windows GHDL cannot load cocotb's VPI DLL; Docker is the verified local RTL
+  execution path.
 
 ## Decisions
 
@@ -177,17 +211,16 @@ synthetic-first strategy are normative for this plan.
   for long-term reproducibility, although GHDL 6.0.0 executed successfully in this run.
 - A concurrent external commit (`070fa2d`) tracked initial `.venv` files. Ignore rules
   prevent further additions, but repository-index cleanup remains.
-- FE108 remains an external access blocker. MEVDT is available locally.
-- Results are bounded to 128 held-out frames; full-dataset multi-seed convergence remains
-  unmeasured. The held-out subset has been used for development comparisons and must not
-  be presented as an untouched final test result.
+- EventVOT is the documented later general-object path but is intentionally deferred;
+  MEVDT is the sole primary dataset and is available locally.
+- Two seeds now have complete validation results and the seed-101 classifier collapse is
+  repaired. Seed 2026 remains unmeasured. The old 128-frame official-test subset was used
+  for development and must not be presented as an untouched final test result.
 - The hybrid BRAM/LUTRAM policy is unsynthesized; port replication, banking, and routing
   may change individual placements after a target Artix-7 part is selected.
 
 ## Next concrete action
 
-Extend the quantized exporter/integer reference schema to include the selected 3×3
-attention head, window-presence threshold, per-timestep attention-gated spike counts,
-bias-free class synapses/LIF neurons, and integer centroid moments. First add golden export
-and software integer-equivalence tests; then implement their VHDL-2008 units. FE108 M11d
-resumes when official access is obtained.
+Run seed 2026 with the frozen five-bit classification-current scale, complete the same
+chronological validation, and compare all three seeds. Return to the zero-metric bug loop
+if any core gate fails. Do not evaluate the official test split for model selection.

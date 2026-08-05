@@ -1,6 +1,8 @@
 """Dataset adapters for tiny fixtures and native MEVDT event streams."""
 
 import csv
+import json
+import random
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -13,6 +15,7 @@ from .config import EventBinningConfig
 from .events import Event, bin_events
 
 MEVDT_TIMESTAMP_UNITS_PER_US = 1_000
+MEVDT_VALIDATION_PARTITION_SEED = 20260804
 
 
 @dataclass(frozen=True)
@@ -68,8 +71,63 @@ class MEVDTSample:
     record: MEVDTFrameRecord
 
 
+@dataclass(frozen=True)
+class MEVDTTrackAnnotation:
+    """One timestamped COCO tracking box with a persistent sequence-local identity."""
+
+    timestamp_ns: int
+    track_id: str
+    box: MEVDTBox
+
+
+def split_mevdt_train_sequences(
+    records: list[MEVDTFrameRecord],
+    *,
+    validation_fraction: float = 0.2,
+    seed: int = MEVDT_VALIDATION_PARTITION_SEED,
+) -> tuple[list[MEVDTFrameRecord], list[MEVDTFrameRecord]]:
+    """Create deterministic, scene-stratified train/validation sequence partitions."""
+
+    if not 0.0 < validation_fraction < 1.0:
+        raise ValueError("validation_fraction must be between zero and one")
+    by_scene: dict[str, list[str]] = {}
+    for record in records:
+        if record.split != "train":
+            raise ValueError("only official training records may be partitioned")
+        by_scene.setdefault(record.scene, []).append(record.sequence)
+    generator = random.Random(seed)
+    validation_keys: set[tuple[str, str]] = set()
+    for scene, scene_sequences in sorted(by_scene.items()):
+        sequences = sorted(set(scene_sequences))
+        if len(sequences) < 2:
+            raise ValueError(f"scene {scene} needs at least two sequences for validation")
+        generator.shuffle(sequences)
+        validation_count = max(
+            1,
+            min(len(sequences) - 1, round(len(sequences) * validation_fraction)),
+        )
+        validation_keys.update((scene, sequence) for sequence in sequences[:validation_count])
+    training = [
+        record for record in records if (record.scene, record.sequence) not in validation_keys
+    ]
+    validation = [
+        record for record in records if (record.scene, record.sequence) in validation_keys
+    ]
+    if not training or not validation:
+        raise ValueError("MEVDT train/validation partition is empty")
+    return training, validation
+
+
+def chronological_mevdt_records(
+    records: list[MEVDTFrameRecord],
+) -> list[MEVDTFrameRecord]:
+    """Sort records by scene, sequence, and exact annotation timestamp."""
+
+    return sorted(records, key=lambda record: (record.scene, record.sequence, record.timestamp_ns))
+
+
 def remap_davis346_coordinate(x: int, y: int) -> tuple[int, int]:
-    """Apply the frozen FE108 DAVIS346→240×180 floor transform."""
+    """Apply the frozen generic DAVIS346-to-240x180 floor transform."""
 
     if not (0 <= x < 346 and 0 <= y < 260):
         raise ValueError("DAVIS346 coordinate out of bounds")
@@ -179,6 +237,62 @@ def load_mevdt_boxes(path: Path) -> tuple[MEVDTBox, ...]:
             except ValueError as error:
                 raise ValueError(f"{error} at {path}:{line_number}") from error
     return tuple(boxes)
+
+
+@lru_cache(maxsize=128)
+def _load_mevdt_tracking_coco(path: Path) -> dict[int, tuple[MEVDTTrackAnnotation, ...]]:
+    """Load one sequence's COCO tracking annotations keyed by exact timestamp."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    image_timestamps: dict[int, int] = {}
+    for image in payload.get("images", []):
+        try:
+            image_timestamps[int(image["id"])] = int(Path(image["file_name"]).stem)
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"invalid MEVDT tracking image row: {path}") from error
+    grouped: dict[int, list[MEVDTTrackAnnotation]] = {}
+    for annotation in payload.get("annotations", []):
+        try:
+            timestamp_ns = image_timestamps[int(annotation["image_id"])]
+            x, y, width, height = (float(value) for value in annotation["bbox"])
+            box = MEVDTBox(
+                int(annotation["category_id"]), x, y, x + width, y + height
+            )
+            track_id = str(annotation["track_id"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"invalid MEVDT tracking annotation: {path}") from error
+        grouped.setdefault(timestamp_ns, []).append(
+            MEVDTTrackAnnotation(timestamp_ns, track_id, box)
+        )
+    return {
+        timestamp: tuple(sorted(items, key=lambda item: item.track_id))
+        for timestamp, items in grouped.items()
+    }
+
+
+def load_mevdt_tracking_sequence(
+    root: Path,
+    *,
+    split: str,
+    scene: str,
+    sequence: str,
+) -> dict[int, tuple[MEVDTTrackAnnotation, ...]]:
+    """Load official MEVDT tracking identities for one train or test sequence."""
+
+    if split not in {"train", "test"}:
+        raise ValueError("MEVDT tracking split must be 'train' or 'test'")
+    path = (
+        root.expanduser().resolve()
+        / "labels"
+        / "tracking_labels"
+        / split
+        / scene
+        / sequence
+        / f"{sequence}-coco.json"
+    )
+    if not path.is_file():
+        raise FileNotFoundError(f"missing MEVDT tracking annotations: {path}")
+    return _load_mevdt_tracking_coco(path)
 
 
 @lru_cache(maxsize=64)

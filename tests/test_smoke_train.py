@@ -1,4 +1,4 @@
-from eventscnn.smoke_train import run_smoke_step
+from eventscnn.train import run_smoke_step
 
 
 def test_surrogate_gradient_updates_shared_convolution_weights() -> None:

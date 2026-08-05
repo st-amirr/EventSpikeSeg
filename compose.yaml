@@ -1,0 +1,93 @@
+name: eventscnn-fpga
+
+x-eventscnn: &eventscnn
+  build:
+    context: .
+    dockerfile: docker/app/Dockerfile
+  image: eventscnn-fpga:py311-bookworm
+  platform: ${DOCKER_PLATFORM:-linux/amd64}
+  working_dir: /workspace
+  environment:
+    PYTHONPATH: /workspace/src
+    PYTEST_ADDOPTS: -p no:cacheprovider
+    RUFF_CACHE_DIR: /tmp/ruff-cache
+  volumes:
+    - type: bind
+      source: .
+      target: /workspace
+      read_only: true
+    - type: bind
+      source: ./artifacts/checkpoints
+      target: /workspace/artifacts/checkpoints
+
+x-eventscnn-data: &eventscnn-data
+  <<: *eventscnn
+  volumes:
+    - type: bind
+      source: .
+      target: /workspace
+      read_only: true
+    - type: bind
+      source: ./artifacts/checkpoints
+      target: /workspace/artifacts/checkpoints
+    - type: volume
+      source: mevdt-data
+      target: /datasets/mevdt
+
+services:
+  dataset-import:
+    image: alpine:3.20
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    volumes:
+      - type: bind
+        source: ${MEVDT_HOST_ROOT:-./data/mevdt}
+        target: /source
+        read_only: true
+      - type: volume
+        source: mevdt-data
+        target: /datasets/mevdt
+    command: ["sh", "-c", "test -d /source/sequences && test -d /source/labels && cp -a /source/. /datasets/mevdt/"]
+
+  test:
+    <<: *eventscnn
+    command: ["python", "-m", "pytest", "-q"]
+
+  lint:
+    <<: *eventscnn
+    command: ["python", "-m", "ruff", "check", "src", "tests", "scripts", "verification/cocotb"]
+
+  train-smoke:
+    <<: *eventscnn
+    command: ["python", "-m", "eventscnn.smoke_train"]
+
+  validate-reference:
+    <<: *eventscnn
+    command: ["python", "-m", "pytest", "-q", "tests/test_quantization.py", "tests/test_sparse_conv.py"]
+
+  rtl-test:
+    <<: *eventscnn
+    command: ["python", "scripts/run_rtl_tests.py"]
+
+  train-mevdt-smoke:
+    <<: *eventscnn-data
+    command: ["python", "-m", "eventscnn.train_mevdt", "--root", "/datasets/mevdt", "--max-samples", "2", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt"]
+
+  eval-mevdt-smoke:
+    <<: *eventscnn-data
+    command: ["python", "-m", "eventscnn.evaluate_mevdt", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt", "--split", "validation", "--max-samples", "2"]
+
+  train-mevdt:
+    <<: *eventscnn-data
+    command: ["python", "-m", "eventscnn.train_mevdt", "--root", "/datasets/mevdt", "--window-steps", "${TRAIN_WINDOW_STEPS:-50}", "--max-samples", "${TRAIN_SAMPLES:-4096}", "--f-inst", "--seed", "${TRAIN_SEED:-101}", "--progress-every", "128", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_seed101_scale32_4096.pt}"]
+
+  eval-mevdt:
+    <<: *eventscnn-data
+    command: ["python", "-m", "eventscnn.evaluate_mevdt", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_seed101_scale32_4096.pt}", "--split", "validation", "--require-nonzero-core-metrics"]
+
+  diagnose-classification:
+    <<: *eventscnn-data
+    command: ["python", "scripts/diagnose_classification.py", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/mevdt_seed17_4096.pt", "--checkpoint", "artifacts/checkpoints/mevdt_seed101_4096.pt", "--samples-per-class", "8"]
+
+volumes:
+  mevdt-data:
+    name: eventscnn-fpga-mevdt

@@ -25,7 +25,9 @@ annotated boxes with local dilation; a filled rectangle is not the target. Predi
 attention is max/OR reduced to Conv3 resolution and weights spike-count classification.
 At every timestep the resulting binary map gates Conv3 feature spikes. Their channel
 counts drive bias-free class synapses followed by independent hardware-compatible LIF
-output neurons. Classification is the deterministic argmax of emitted class-spike counts;
+output neurons. A frozen five-bit arithmetic right shift scales accumulated class current
+before the output LIF update, preventing both neurons from saturating at one spike per
+timestep. Classification is the deterministic argmax of emitted class-spike counts;
 there is no analog linear/softmax readout in the learned inference path. Output class
 neurons intentionally omit `f_inst` and `f_long`: lateral inhibition across mutually
 exclusive class accumulators caused non-background spike starvation, while final argmax
@@ -70,3 +72,18 @@ MEVDT sequence CSV timestamps are nanoseconds and are filtered at nanosecond pre
 before conversion to relative microseconds. Detection rows are
 `class x_min y_min x_max y_max`; only sub-micro-pixel floating-point border noise is
 clipped. The official `data_splits/MEVDT_org_rate_{split}.csv` files define membership.
+
+For model development, official MEVDT training sequences are partitioned once by scene
+into disjoint training and validation sequence lists. A checkpoint stores those lists,
+the partition seed, and the model seed. Evaluation consumes complete sequences in
+`scene → sequence → timestamp` order. The attention centroid supplies the box-free SOT
+observation; a deterministic attention-spread box is evaluation metadata only, allowing
+comparison with all annotated identities for HOTA/MOTA/IDF1 without changing inference.
+
+## Canonical source ownership
+
+The neural architecture has one implementation source: `src/eventscnn/model.py`.
+It owns `HardwareLIF`, `ConvLIFBlock`, `EventSCNNBackbone`, attention and classification
+heads, pooling helpers, and `EventSCNNSystem`. `tracking.py` owns deterministic decoding
+and tracking algorithms. The former `dynamics.py`, `models.py`, `heads.py`, and
+`system.py` modules were removed; all model symbols are imported from `eventscnn.model`.

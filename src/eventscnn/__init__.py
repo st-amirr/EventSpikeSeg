@@ -1,14 +1,18 @@
-"""EventSCNN-FPGA software and reference models."""
+"""EventSCNN-FPGA public software API."""
 
-from .config import BackboneConfig, EventBinningConfig, LayerConfig, LIFConfig
-from .events import Event, bin_events, synthetic_events
+from .data import Event, bin_events, synthetic_events
+from .model import (
+    BackboneConfig,
+    EventBinningConfig,
+    EventSCNNBackbone,
+    EventSCNNSystem,
+    HardwareLIF,
+    LayerConfig,
+    LIFConfig,
+)
 
 __all__ = [
-    "BackboneConfig",
-    "Event",
-    "EventBinningConfig",
-    "LIFConfig",
-    "LayerConfig",
-    "bin_events",
-    "synthetic_events",
+    "BackboneConfig", "Event", "EventBinningConfig", "EventSCNNBackbone",
+    "EventSCNNSystem", "HardwareLIF", "LIFConfig", "LayerConfig",
+    "bin_events", "synthetic_events",
 ]

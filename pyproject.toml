@@ -11,6 +11,7 @@ requires-python = ">=3.9,<3.13"
 dependencies = [
   "numpy>=1.24,<2.0",
   "PyYAML>=6.0,<7",
+  "scipy>=1.10,<1.14",
   "torch>=2.0,<2.3",
   "spikingjelly==0.0.0.0.14",
 ]

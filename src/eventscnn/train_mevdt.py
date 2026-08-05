@@ -3,6 +3,7 @@
 import argparse
 import json
 import random
+import sys
 from dataclasses import asdict, dataclass
 from math import ceil, floor
 from pathlib import Path
@@ -11,8 +12,14 @@ import torch
 from torch import Tensor
 
 from .config import BackboneConfig, EventBinningConfig, LIFConfig
-from .datasets import MEVDTBox, discover_mevdt_frames, load_mevdt_window
-from .system import EventSCNNSystem
+from .datasets import (
+    MEVDT_VALIDATION_PARTITION_SEED,
+    MEVDTBox,
+    discover_mevdt_frames,
+    load_mevdt_window,
+    split_mevdt_train_sequences,
+)
+from .model import EventSCNNSystem
 
 
 @dataclass(frozen=True)
@@ -159,16 +166,27 @@ def run_mevdt_training(
     learning_rate: float = 1e-3,
     f_inst_enabled: bool = False,
     f_long_enabled: bool = False,
+    seed: int = 17,
+    validation_fraction: float = 0.2,
+    partition_seed: int = MEVDT_VALIDATION_PARTITION_SEED,
+    progress_every: int = 0,
     checkpoint_path: Path = Path("artifacts/checkpoints/mevdt_smoke.pt"),
 ) -> MEVDTTrainingResult:
     """Train on a bounded set of positive MEVDT frames and save a restartable checkpoint."""
 
     if max_samples <= 0:
         raise ValueError("max_samples must be positive")
+    if progress_every < 0:
+        raise ValueError("progress_every cannot be negative")
     root = root.expanduser().resolve()
-    torch.manual_seed(17)
+    torch.manual_seed(seed)
     indexed_records = discover_mevdt_frames(root, split="train")
-    records = balanced_training_records(indexed_records, max_samples, seed=17)
+    training_records, validation_records = split_mevdt_train_sequences(
+        indexed_records,
+        validation_fraction=validation_fraction,
+        seed=partition_seed,
+    )
+    records = balanced_training_records(training_records, max_samples, seed=seed)
     if not records:
         raise ValueError("MEVDT training split contains no indexed samples")
 
@@ -184,6 +202,7 @@ def run_mevdt_training(
     system = EventSCNNSystem(
         class_count=2,
         backbone_config=BackboneConfig(lif=baseline_lif),
+        classification_current_scale_shift=5,
     )
     with torch.no_grad():
         for block in system.backbone.blocks:
@@ -206,7 +225,7 @@ def run_mevdt_training(
     negative_samples = 0
 
     system.train()
-    for record in records:
+    for step, record in enumerate(records, start=1):
         sample = load_mevdt_window(record, config=config, window_steps=window_steps)
         if sample.boxes:
             if any(box.class_id != 1 for box in sample.boxes):
@@ -260,6 +279,19 @@ def run_mevdt_training(
         loss.backward()
         optimizer.step()
         losses.append(float(loss.detach()))
+        if progress_every and (step % progress_every == 0 or step == len(records)):
+            print(
+                json.dumps(
+                    {
+                        "progress_step": step,
+                        "progress_total": len(records),
+                        "running_mean_loss": sum(losses) / len(losses),
+                    },
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
 
     if not losses:
         raise RuntimeError("MEVDT training produced no optimizer steps")
@@ -288,7 +320,7 @@ def run_mevdt_training(
             "training_result": asdict(result),
             "bin_duration_us": config.bin_duration_us,
             "window_steps": window_steps,
-            "seed": 17,
+            "seed": seed,
             "architecture": "fully_spiking_attention_v1",
             "backbone_strides": [[2, 2], [2, 2], [1, 1]],
             "attention_kernel": [3, 3],
@@ -300,10 +332,19 @@ def run_mevdt_training(
             "classification_f_inst_enabled": False,
             "classification_f_long_enabled": False,
             "classification_training_rate_scale": 4.0,
+            "classification_current_scale_shift": 5,
             "classification_attention_gradient": "detached",
             "f_inst_enabled": f_inst_enabled,
             "f_long_enabled": f_long_enabled,
             "training_records": [str(record.label_path.relative_to(root)) for record in records],
+            "training_sequences": sorted(
+                {f"{record.scene}/{record.sequence}" for record in training_records}
+            ),
+            "validation_sequences": sorted(
+                {f"{record.scene}/{record.sequence}" for record in validation_records}
+            ),
+            "validation_fraction": validation_fraction,
+            "partition_seed": partition_seed,
             "sampling": "seeded_balanced_shuffle",
         },
         checkpoint_path,
@@ -319,6 +360,9 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--f-inst", action="store_true")
     parser.add_argument("--f-long", action="store_true")
+    parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--validation-fraction", type=float, default=0.2)
+    parser.add_argument("--progress-every", type=int, default=0)
     parser.add_argument(
         "--checkpoint", type=Path, default=Path("artifacts/checkpoints/mevdt_attention.pt")
     )
@@ -330,6 +374,9 @@ def main() -> None:
         learning_rate=args.learning_rate,
         f_inst_enabled=args.f_inst,
         f_long_enabled=args.f_long,
+        seed=args.seed,
+        validation_fraction=args.validation_fraction,
+        progress_every=args.progress_every,
         checkpoint_path=args.checkpoint,
     )
     print(json.dumps(asdict(result), indent=2, sort_keys=True))

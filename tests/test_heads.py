@@ -1,6 +1,6 @@
 import torch
 
-from eventscnn.heads import (
+from eventscnn.model import (
     ClassificationHead,
     ObjectnessHead,
     PixelAttentionHead,
@@ -75,3 +75,27 @@ def test_attention_classification_is_bias_free_spiking_and_deterministic() -> No
     spikes = head.forward_attention(features, attention)
     assert spikes.shape == (1, 1, 2)
     assert spikes.tolist() == [[[1.0, 0.0]]]
+
+
+def test_classification_trace_exposes_current_candidate_and_spikes() -> None:
+    head = ClassificationHead(2, 2)
+    with torch.no_grad():
+        head.synapse.weight.copy_(torch.tensor([[1.0, 0.0], [0.0, 0.0]]))
+    features = torch.tensor([[[[[1.0]], [[0.0]]]]])
+    attention = torch.ones((1, 1, 1, 2, 2))
+    trace = head.forward_attention_trace(features, attention)
+    assert set(trace) == {"currents", "candidate_membranes", "spikes"}
+    assert trace["currents"].tolist() == [[[1.0, 0.0]]]
+    assert trace["candidate_membranes"].tolist() == [[[1.0, 0.0]]]
+    assert trace["spikes"].tolist() == [[[1.0, 0.0]]]
+
+
+def test_classification_current_uses_power_of_two_scale() -> None:
+    head = ClassificationHead(2, 2, current_scale_shift=2)
+    with torch.no_grad():
+        head.synapse.weight.copy_(torch.tensor([[1.0, 0.0], [0.0, 0.0]]))
+    features = torch.tensor([[[[[1.0]], [[0.0]]]]])
+    attention = torch.ones((1, 1, 1, 2, 2))
+    trace = head.forward_attention_trace(features, attention)
+    assert trace["currents"].tolist() == [[[0.25, 0.0]]]
+    assert trace["spikes"].tolist() == [[[0.0, 0.0]]]

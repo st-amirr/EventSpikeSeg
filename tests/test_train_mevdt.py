@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import torch
 
-from eventscnn.datasets import MEVDTBox
-from eventscnn.train_mevdt import (
+from eventscnn.data import MEVDTBox
+from eventscnn.train import (
     attention_centroid_loss,
     balanced_training_records,
     box_to_feature_roi,

@@ -1,7 +1,7 @@
 import torch
 
-from eventscnn.config import LIFConfig
-from eventscnn.dynamics import HardwareLIF
+from eventscnn.model import LIFConfig
+from eventscnn.model import HardwareLIF
 
 
 def test_f_inst_selects_highest_channel_and_decrements_candidate_loser() -> None:

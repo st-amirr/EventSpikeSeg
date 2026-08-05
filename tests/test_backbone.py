@@ -1,6 +1,6 @@
 import torch
 
-from eventscnn.models import EventSCNNBackbone
+from eventscnn.model import EventSCNNBackbone
 
 
 def test_canonical_backbone_shapes_bias_and_deterministic_reset() -> None:

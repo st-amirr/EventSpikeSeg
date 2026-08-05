@@ -31,6 +31,17 @@
 - A future hybrid FPGA-memory policy is documented: large convolution state defaults to
   BRAM, suitable attention/weight/FIFO/scratch structures to LUTRAM, and tiny state to
   registers. It has not yet been implemented or synthesized.
+- A deterministic scene-stratified MEVDT train/validation partition, checkpoint-frozen
+  sequence lists, chronological evaluator, and standard success AUC, precision@20,
+  HOTA, MOTA, IDF1, classification F1, and attention-IoU calculations are implemented.
+  Seed-17 and seed-101 4,096-step runs and complete 1,424-frame validations are recorded.
+  The original seed-101 model established a saturation regression (classification F1,
+  HOTA, and tracking AUC all `0.0`). A five-bit class-current scaling repair now passes
+  complete validation with classification F1 `0.929260`, HOTA `0.469137`, tracking AUC
+  `0.567106`, and attention IoU `0.759312`. Seed 2026 has not started, so the three-seed
+  robustness gate remains open.
+- MEVDT is the sole primary dataset. EventVOT is documented only as a deferred
+  general-object extension; no EventVOT data or result is present.
 
 ## Reproduction
 
@@ -46,3 +57,15 @@ The fully spiking post-change self-review passed Ruff, 59 Python tests, the grad
 smoke optimizer, 9 quantized/sparse reference tests, and 5 actually executed
 GHDL/cocotb VHDL-2008 simulations. The only retained checkpoint is the compatible
 fully spiking model at `artifacts/checkpoints/mevdt_attention.pt`.
+
+After the macOS-to-Windows recovery, a clean Python 3.11 environment indexes the local
+dataset as 8,643 training frames and 1,424 validation frames. The full suite passes 65
+tests and Ruff. Native Windows GHDL 6.0.0 analyzes the VHDL but cannot load cocotb's VPI
+DLL; the read-only Docker fallback passes all 5 RTL simulations with GHDL 2.0.0.
+
+The canonical host-independent environment is now a CPU-only Docker Compose image. Its
+read-only-source services pass 65 Python tests, Ruff, and all 5 GHDL/cocotb simulations.
+Training/evaluation services use a named MEVDT volume after an explicit one-time import;
+the verified 2.0 GB volume now contains the 10,067 indexed source frames. The generated
+native `.venv`, temporary checkpoints/caches, CUDA image, and unused Docker build cache
+were removed.

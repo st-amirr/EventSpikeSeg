@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from eventscnn.config import EventBinningConfig
-from eventscnn.events import Event, bin_events, synthetic_events
+from eventscnn.model import EventBinningConfig
+from eventscnn.data import Event, bin_events, synthetic_events
 
 
 def test_canonical_shape_polarity_repetition_and_boundaries() -> None:

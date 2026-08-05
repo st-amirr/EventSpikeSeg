@@ -1,6 +1,6 @@
 import pytest
 
-from eventscnn.config import BackboneConfig, EventBinningConfig, LIFConfig
+from eventscnn.model import BackboneConfig, EventBinningConfig, LIFConfig
 
 
 def test_canonical_configuration() -> None:
