@@ -91,10 +91,10 @@ selection uses validation; official test sequences are reserved for final report
 Run a bounded development job with:
 
 ```bash
-.venv/bin/python -m eventscnn.train_mevdt --root data/mevdt \
+.venv/bin/python -m eventscnn.train --root data/mevdt \
   --window-steps 50 --max-samples 1024 --f-inst --seed 17 \
   --checkpoint artifacts/checkpoints/mevdt_attention.pt
-.venv/bin/python -m eventscnn.evaluate_mevdt --root data/mevdt \
+.venv/bin/python -m eventscnn.evaluate --root data/mevdt \
   --checkpoint artifacts/checkpoints/mevdt_attention.pt \
   --split validation --max-sequences 1
 ```
