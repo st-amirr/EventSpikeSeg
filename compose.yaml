@@ -1,16 +1,17 @@
-name: eventscnn-fpga
+name: eventspikeseg-fpga
 
-x-eventscnn: &eventscnn
+x-app: &app
   build:
     context: .
     dockerfile: docker/app/Dockerfile
-  image: eventscnn-fpga:py311-bookworm
+  image: eventspikeseg-fpga:py311-bookworm
   platform: ${DOCKER_PLATFORM:-linux/amd64}
   working_dir: /workspace
   environment:
     PYTHONPATH: /workspace/src
     PYTEST_ADDOPTS: -p no:cacheprovider
     RUFF_CACHE_DIR: /tmp/ruff-cache
+    PYTHONUNBUFFERED: "1"
   volumes:
     - type: bind
       source: .
@@ -20,8 +21,8 @@ x-eventscnn: &eventscnn
       source: ./artifacts
       target: /workspace/artifacts
 
-x-eventscnn-data: &eventscnn-data
-  <<: *eventscnn
+x-ddd17: &ddd17
+  <<: *app
   volumes:
     - type: bind
       source: .
@@ -30,64 +31,72 @@ x-eventscnn-data: &eventscnn-data
     - type: bind
       source: ./artifacts
       target: /workspace/artifacts
-    - type: volume
-      source: mevdt-data
-      target: /datasets/mevdt
+    - type: bind
+      # Embedded host dataset folder; do not point this at a parent "search" directory.
+      source: ${DDD17_HOST_ROOT:-C:/Users/stamir/Desktop/Dataset/DDD17}
+      target: /datasets/DDD17
+      read_only: true
 
 services:
-  dataset-import:
-    image: alpine:3.20
-    platform: ${DOCKER_PLATFORM:-linux/amd64}
-    volumes:
-      - type: bind
-        source: ${MEVDT_HOST_ROOT:-./data/mevdt}
-        target: /source
-        read_only: true
-      - type: volume
-        source: mevdt-data
-        target: /datasets/mevdt
-    command: ["sh", "-c", "test -d /source/sequences && test -d /source/labels && cp -a /source/. /datasets/mevdt/"]
+  inspect-datasets:
+    <<: *ddd17
+    command: ["sh", "-lc", "echo 'Mounted DDD17:' && find /datasets/DDD17 -maxdepth 2 -type d -print | sort | head -100"]
 
   test:
-    <<: *eventscnn
+    <<: *app
     command: ["python", "-m", "pytest", "-q"]
 
   lint:
-    <<: *eventscnn
-    command: ["python", "-m", "ruff", "check", "src", "tests", "scripts", "verification/cocotb"]
+    <<: *app
+    command: ["python", "-m", "ruff", "check", "src", "tests"]
 
-  train-smoke:
-    <<: *eventscnn
-    command: ["python", "-m", "eventscnn.train"]
+  inspect-ddd17:
+    <<: *ddd17
+    command: ["python", "-m", "eventscnn.train", "inspect", "--root", "/datasets/DDD17"]
 
-  validate-reference:
-    <<: *eventscnn
-    command: ["python", "-m", "pytest", "-q", "tests/test_quantization.py", "tests/test_sparse_conv.py"]
+  train-ddd17-smoke:
+    <<: *ddd17
+    command:
+      ["python", "-m", "eventscnn.train", "single", "--root", "/datasets/DDD17",
+       "--architecture", "${DDD17_ARCHITECTURE:-v10_fpga_hybrid}", "--seed", "${DDD17_SEED:-17}",
+       "--epochs", "1", "--batch-size", "1",
+       "--time-steps", "${DDD17_SMOKE_TIME_STEPS:-4}",
+       "--height", "${DDD17_SMOKE_HEIGHT:-32}",
+       "--width", "${DDD17_SMOKE_WIDTH:-32}",
+       "--train-samples", "2", "--validation-samples", "2", "--checkpoint-dir", "artifacts/checkpoints"]
 
-  rtl-test:
-    <<: *eventscnn
-    command: ["python", "scripts/run_rtl_tests.py"]
+  train-ddd17:
+    <<: *ddd17
+    command:
+      ["python", "-m", "eventscnn.train", "single", "--root", "/datasets/DDD17",
+       "--architecture", "${DDD17_ARCHITECTURE:-v10_fpga_hybrid}", "--seed", "${DDD17_SEED:-17}",
+       "--epochs", "${DDD17_EPOCHS:-70}", "--batch-size", "${DDD17_BATCH_SIZE:-4}",
+       "--time-steps", "${DDD17_TIME_STEPS:-20}",
+       "--height", "${DDD17_HEIGHT:-64}", "--width", "${DDD17_WIDTH:-64}", "--train-samples", "${DDD17_TRAIN_SAMPLES:-0}",
+       "--validation-samples", "${DDD17_VALIDATION_SAMPLES:-0}", "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}",
+       "--checkpoint-dir", "artifacts/checkpoints"]
 
-  train-mevdt-smoke:
-    <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.train", "--root", "/datasets/mevdt", "--max-samples", "2", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt"]
+  benchmark-ddd17:
+    <<: *ddd17
+    command:
+      ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
+       "--seed", "${DDD17_SEED:-17}", "--epochs", "${BENCHMARK_EPOCHS:-10}",
+       "--batch-size", "${DDD17_BATCH_SIZE:-4}", "--time-steps", "${DDD17_TIME_STEPS:-20}",
+       "--height", "${DDD17_HEIGHT:-64}", "--width", "${DDD17_WIDTH:-64}",
+       "--train-samples", "${BENCHMARK_TRAIN_SAMPLES:-2048}",
+       "--validation-samples", "${BENCHMARK_VALIDATION_SAMPLES:-512}",
+       "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}", "--output-dir", "artifacts/ablation"]
 
-  eval-mevdt-smoke:
-    <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.evaluate", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/mevdt_smoke.pt", "--split", "validation", "--max-samples", "2"]
+  promote-winner:
+    <<: *app
+    command:
+      ["python", "-m", "eventscnn.train", "promote", "--summary", "artifacts/ablation/summary.json",
+       "--destination", "artifacts/checkpoints/ddd17_best.pt"]
 
-  train-mevdt:
-    <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.train", "--root", "/datasets/mevdt", "--window-steps", "${TRAIN_WINDOW_STEPS:-50}", "--max-samples", "${TRAIN_SAMPLES:-4096}", "--f-inst", "--seed", "${TRAIN_SEED:-101}", "--progress-every", "128", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_wide_seed101_scale32_4096.pt}"]
-
-  eval-mevdt:
-    <<: *eventscnn-data
-    command: ["python", "-m", "eventscnn.evaluate", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/${TRAIN_CHECKPOINT:-mevdt_wide_seed101_scale32_4096.pt}", "--split", "validation", "--box-spread-scale-x", "${BOX_SPREAD_SCALE_X:-4.0}", "--box-spread-scale-y", "${BOX_SPREAD_SCALE_Y:-4.0}", "--visualization-count", "8", "--visualization-dir", "artifacts/Validation", "--require-nonzero-core-metrics"]
-
-  diagnose-classification:
-    <<: *eventscnn-data
-    command: ["python", "scripts/diagnose_classification.py", "--root", "/datasets/mevdt", "--checkpoint", "artifacts/checkpoints/mevdt_seed17_4096.pt", "--checkpoint", "artifacts/checkpoints/mevdt_seed101_4096.pt", "--samples-per-class", "8"]
-
-volumes:
-  mevdt-data:
-    name: eventscnn-fpga-mevdt
+  eval-ddd17:
+    <<: *ddd17
+    command:
+      ["python", "-m", "eventscnn.evaluate", "--root", "/datasets/DDD17",
+       "--checkpoint", "${DDD17_CHECKPOINT:-artifacts/checkpoints/ddd17_best.pt}",
+       "--split", "${DDD17_EVAL_SPLIT:-test}", "--batch-size", "${DDD17_BATCH_SIZE:-4}",
+       "--visualizations", "8", "--visualization-dir", "artifacts/Validation"]

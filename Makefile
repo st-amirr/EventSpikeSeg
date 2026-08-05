@@ -8,9 +8,13 @@ endif
 
 PYTEST := $(PYTHON) -m pytest
 RUFF := $(PYTHON) -m ruff
-MEVDT_ROOT ?= data/mevdt
+DDD17_ROOT ?= C:/Users/stamir/Desktop/Dataset/DDD17
+DDD17_SEED ?= 17
+DDD17_ARCHITECTURE ?= v10_fpga_hybrid
+DDD17_HEIGHT ?= 64
+DDD17_WIDTH ?= 64
 
-.PHONY: setup test lint train-smoke train-mevdt-smoke eval-mevdt-smoke validate-reference rtl-test rtl-test-docker
+.PHONY: setup test lint inspect-ddd17 train-ddd17-smoke train-ddd17 benchmark-ddd17 promote-winner eval-ddd17
 
 setup:
 	$(VENV_CREATE)
@@ -18,27 +22,40 @@ setup:
 	$(PYTHON) -m pip install -e '.[dev,rtl]'
 
 test:
-	$(PYTEST)
+	$(PYTEST) -q
 
 lint:
-	$(RUFF) check src tests scripts verification/cocotb
+	$(RUFF) check src tests
 
-train-smoke:
-	$(PYTHON) -m eventscnn.train --smoke
+inspect-ddd17:
+	$(PYTHON) -m eventscnn.train inspect --root "$(DDD17_ROOT)"
 
-train-mevdt-smoke:
-	$(PYTHON) -m eventscnn.train --root "$(MEVDT_ROOT)" --max-samples 2 \
-		--checkpoint artifacts/checkpoints/mevdt_smoke.pt
+train-ddd17-smoke:
+	$(PYTHON) -m eventscnn.train single --root "$(DDD17_ROOT)" \
+		--architecture "$(DDD17_ARCHITECTURE)" --seed $(DDD17_SEED) \
+		--epochs 1 --batch-size 1 --time-steps 20 --height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
+		--train-samples 2 --validation-samples 2 \
+		--checkpoint-dir artifacts/checkpoints
 
-eval-mevdt-smoke: train-mevdt-smoke
-	$(PYTHON) -m eventscnn.evaluate --root "$(MEVDT_ROOT)" \
-		--checkpoint artifacts/checkpoints/mevdt_smoke.pt --split validation --max-samples 2
+train-ddd17:
+	$(PYTHON) -m eventscnn.train single --root "$(DDD17_ROOT)" \
+		--architecture "$(DDD17_ARCHITECTURE)" --seed $(DDD17_SEED) \
+		--epochs 70 --batch-size 4 --time-steps 20 --height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
+		--checkpoint-dir artifacts/checkpoints
 
-validate-reference:
-	$(PYTEST) -q tests/test_quantization.py tests/test_sparse_conv.py
+benchmark-ddd17:
+	$(PYTHON) -m eventscnn.train benchmark --root "$(DDD17_ROOT)" \
+		--seed $(DDD17_SEED) --epochs 10 --batch-size 4 --time-steps 20 --height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
+		--train-samples 2048 --validation-samples 512 \
+		--output-dir artifacts/ablation
 
-rtl-test:
-	$(PYTHON) scripts/run_rtl_tests.py
+promote-winner:
+	$(PYTHON) -m eventscnn.train promote \
+		--summary artifacts/ablation/summary.json \
+		--destination artifacts/checkpoints/ddd17_best.pt
 
-rtl-test-docker:
-	docker compose run --build --rm rtl-test
+eval-ddd17:
+	$(PYTHON) -m eventscnn.evaluate --root "$(DDD17_ROOT)" \
+		--checkpoint artifacts/checkpoints/ddd17_best.pt \
+		--split test --batch-size 4 --visualizations 8 \
+		--visualization-dir artifacts/Validation

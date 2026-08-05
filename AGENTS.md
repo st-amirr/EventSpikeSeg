@@ -1,445 +1,74 @@
-# EventSCNN-FPGA Agent Instructions
+# EventSpikeSeg-FPGA Agent Instructions
 
 ## Mission
 
-Build the system specified in `project_spec.yaml`:
+Build and validate a lightweight SNN for semantic segmentation using the Ev-SegNet semantic extension of DDD17, then map the winning architecture to a sparse fixed-point FPGA design.
 
-* event-only DAVIS input;
-* fixed-duration event timesteps;
-* SpikingJelly training;
-* three-layer hardware-compatible convolutional SNN;
-* custom `f_inst` competition;
-* custom `f_long` / `T_thresh` homeostasis;
-* event-supported pixel attention and optional derived region proposals;
-* fully spiking learned classification (bias-free synapses followed by output LIF neurons);
-* single-object tracking;
-* quantized bit-accurate inference;
-* VHDL-2008 FPGA RTL implementation.
+## Current input contract
 
-Existing software and FPGA-SNN frameworks, including SpikingJelly and Spiker+, may be
-used, extended, or adapted when evidence shows that they satisfy the project contracts
-and reduce implementation or verification risk. Framework use is optional, not a goal
-by itself. Keep project-specific custom VHDL where a framework cannot preserve sparse
-shared-kernel convolution, exact operation ordering, `f_inst`, `f_long/T_thresh`, or
-the attention/classification/tracking interfaces. Record each adoption or rejection in
-`docs/DECISIONS.md` with the evaluated alternative and evidence.
-
-Sources of truth
-
-Read these before changing the system:
-
-1. project_spec.yaml
-2. AGENTS.md
-3. docs/ARCHITECTURE.md, if it exists
-4. docs/DECISIONS.md, if it exists
-5. The active execution plan under docs/exec-plans/active/, if one exists
-6. Tests and executable validation scripts
-
-If required documentation is missing, create it from the YAML specification before implementing major features.
-
-When these disagree, use the YAML specification unless a newer decision is explicitly recorded in `docs/DECISIONS.md`.
-
-Do not silently reinterpret the project specification. Record material deviations and their justification.
-
-## Working method
-
-For every milestone, repeat this loop:
-
-1. Inspect the current repository state.
-2. Identify the smallest missing vertical slice.
-3. Write or update the active execution plan.
-4. Implement only that slice.
-5. Add or update tests.
-6. Run the relevant validation commands.
-7. Inspect failures and logs.
-8. Fix root causes rather than suppressing symptoms.
-9. Repeat validation until it passes.
-10. Update progress, decisions, known limitations, and reproduction instructions.
-11. Continue to the next unblocked milestone.
-
-Do not stop merely because the first implementation compiles or one test passes.
-
-Continue until:
-
-* the milestone acceptance criteria pass; or
-* a genuine external blocker exists, such as unavailable data, unavailable licensed software, missing physical hardware, or missing credentials.
-
-When blocked, complete all work that does not depend on the blocker and record:
-
-* the exact blocker;
-* evidence establishing it;
-* what remains;
-* the precise command or action required to resume.
-
-## Execution plans
-
-For significant features or refactors, maintain a self-contained execution plan under:
+The downloaded Ev-SegNet dataset stores one six-channel event-statistic image per sample:
 
 ```text
-docs/exec-plans/active/
+[N, 6, H, W]
 ```
 
-The plan must include:
-
-* objective;
-* relevant specification sections;
-* current repository state;
-* assumptions;
-* milestones;
-* acceptance criteria;
-* validation commands;
-* progress checklist;
-* discoveries;
-* decisions;
-* unresolved risks;
-* next concrete action.
-
-Move completed plans to:
+The six channels represent polarity histograms, normalized timestamp means, and normalized timestamp standard deviations. For direct SNN training, repeat this fixed current over the configured internal timestep count:
 
 ```text
-docs/exec-plans/completed/
+[T, N, 6, H, W]
 ```
 
-The active plan must always be sufficient for a new Codex session to resume without relying on chat history.
+Do not claim that these are raw chronological event bins. Raw asynchronous DDD17 replay is a later milestone requiring the original recordings and label alignment.
 
-## Progress records
-
-Maintain:
+## Output contract
 
 ```text
-docs/PROGRESS.md
-docs/DECISIONS.md
-docs/BUGS.md
-docs/RESULTS.md
+[T, N, 6, H, W] class spikes
+[N, 6, H, W] accumulated class logits
 ```
 
-`PROGRESS.md` must state what works now, not merely what was attempted.
-
-`DECISIONS.md` must record important architectural decisions and alternatives rejected.
-
-`BUGS.md` must contain reproducible failures, root causes, status, and regression tests.
-
-`RESULTS.md` must contain measured results only. Never invent accuracy, latency, resource use, power, or throughput.
-
-## Architectural constraints
-
-### Input
-
-The canonical software input is:
+Classes are:
 
 ```text
-[T, N, 2, 180, 240]
+flat, construction+sky, object, nature, human, vehicle
 ```
 
-The two channels represent ON and OFF events.
+Ignore label is `255`.
 
-The initial timestep duration is 1 ms, but it must remain configurable.
+## Architecture search
 
-Multiple events at the same coordinate in one timestep must be represented by an integer event count or equivalent repeated additions.
+Maintain exactly ten temporary presets until a winner is demonstrated. Every benchmark run must freeze seed, records, shuffle order, resolution, class weights, optimizer, loss, and timestep count.
 
-### SNN backbone
+Choose by validation mIoU. Within 0.5 percentage points, prefer fewer parameters, then lower output spike rate.
 
-Initial backbone:
+Do not delete the preset registry after a smoke run. Finalize only after a high-resolution check and at least three winner seeds.
 
-```text
-Conv 2→8, kernel 5×5, stride 2
-LIF + f_inst + f_long
-
-Conv 8→16, kernel 3×3, stride 2
-LIF + f_inst + f_long
-
-Conv 16→32, kernel 3×3, stride 1
-LIF + f_inst + f_long
-```
-
-All convolutions must use:
-
-```text
-bias=False
-```
-
-Avoid inference-time operations that lack a clear fixed-point FPGA mapping.
-
-The learned inference path must remain fully spike-driven wherever a neuron/synapse
-mapping is sensible: pixel attention gates binary feature spikes; bias-free class
-synapses feed independent output LIF neurons; class decisions use emitted spike counts.
-Do not add an analog linear/softmax classifier to the primary path. Deterministic
-centroid measurement, class argmax, confidence calculation, and alpha-beta tracking are
-digital decoding/post-processing and need not be represented as neurons.
-
-### Neuron
-
-The initial neuron must implement a discrete-time hardware-compatible LIF model.
-
-Use a constrained decay:
-
-```text
-beta = 1 - 2^(-q)
-```
-
-so the FPGA can implement leakage with subtraction and arithmetic shifting.
-
-Use subtractive reset unless an explicitly documented experiment changes it.
-
-The software and RTL order of operations must be identical and documented.
-
-### f_inst
-
-`f_inst` is cross-channel competition among neurons at the same spatial coordinate.
-
-The initial implementation is:
-
-* find candidate output channels above threshold;
-* select the channel with the highest candidate membrane;
-* permit only that channel to emit a spike;
-* optionally decrement competing membrane states by a configurable amount.
-
-Include an ablation where `f_inst` is disabled.
-
-### f_long and T_thresh
-
-The initial hardware-efficient implementation is feature-map-level adaptive thresholding.
-
-Maintain adaptation per output channel rather than per spatial neuron unless running the explicit paper-fidelity ablation.
-
-The implementation must be integer-friendly and deterministic.
-
-### FPGA interpretation
-
-All project RTL must be written in VHDL-2008. Do not add Verilog or SystemVerilog
-implementations. C++ may accelerate a software reference or be evaluated for HLS only
-under a separately documented decision; it does not replace the canonical VHDL RTL.
-
-Software training may use dense `Conv2d`.
-
-The hardware backbone must be designed as sparse spike-address accumulation:
-
-```text
-active spike
-→ shared-kernel weight lookup
-→ affected output address generation
-→ weight addition to state/current memory
-```
-
-Do not flatten convolution into a large fully connected matrix.
-
-Do not describe the FPGA as clockless or fully asynchronous. It is a clocked, sparse, event-addressed implementation of a discrete-time SNN.
-
-### FPGA memory balance
-
-Do not assume that every persistent value belongs in block RAM. The future backend must
-use a synthesis-guided hybrid BRAM/LUTRAM/register mapping so that BRAM capacity does not
-become the only device-fit constraint:
-
-* keep large, deep Conv1/Conv2/Conv3 membrane arrays in BRAM by default;
-* evaluate small, shallow, or high-access-rate structures for distributed LUTRAM,
-  especially attention state, quantized shared weights, short event FIFOs, touched-address
-  queues, small accumulator tiles, and control lookup tables;
-* keep class-neuron state, per-channel `f_long` state, counters, and pipeline control in
-  registers when smaller than a practical inferred memory primitive;
-* do not force a structure into LUTRAM if replication for ports, routing, or timing costs
-  more than the BRAM it saves;
-* preserve bit-exact behavior regardless of the selected physical memory primitive.
-
-Treat these placements as planning defaults, not measured utilization. Freeze the final
-mapping only after synthesis for the selected FPGA part, and record BRAM, LUTRAM/LUT,
-ports, timing, and packing efficiency.
-
-## Dataset plan
-
-Current algorithm and hardware-validation dataset:
-
-```text
-MEVDT
-```
-
-Use it for:
-
-* event-supported pixel-attention supervision derived from annotated regions;
-* vehicle/background fully spiking classification;
-* chronological single- and multi-object tracking metrics;
-* native DAVIS240C event replay.
-
-Create a deterministic, scene-stratified validation partition from complete official
-training sequences. Freeze the sequence lists in every checkpoint, select models only on
-validation, process complete sequences chronologically, repeat key runs with at least
-three seeds, and reserve the official test sequences for final reporting.
-
-Later general-object dataset:
-
-```text
-EventVOT
-```
-
-Use it for:
-
-* diverse event-only single-object tracking;
-* target-conditioned attention and classification; and
-* general-object evaluation after the MEVDT protocol is stable.
-
-EventVOT is deferred and must begin with a tiny raw-event fixture. Preserve aspect ratio
-when mapping 1280×720 to 240×180: resize to 240×135, then pad vertically. FE108 remains
-historical literature context because its public download was inaccessible; do not make
-current milestones depend on it.
-
-Before downloading large datasets, implement and test loaders using:
-
-* metadata;
-* a tiny fixture;
-* synthetic event sequences; or
-* a user-provided sample.
-
-Do not commit datasets, generated checkpoints, or large recordings to Git.
-
-## Implementation order
-
-Follow this order unless evidence justifies a documented change:
-
-1. Repository scaffold and reproducible environment.
-2. Synthetic event generator and event-bin representation.
-3. Hardware-compatible LIF neuron.
-4. `f_inst` unit tests.
-5. `f_long` / `T_thresh` unit tests.
-6. Single convolutional SNN layer.
-7. Three-layer backbone.
-8. Event-supported pixel-attention output.
-9. Predicted-attention, bias-free synapse/LIF classification output.
-10. Simple attention-centroid single-object tracking.
-11. MEVDT loader and deterministic sequence-level validation partition.
-12. Floating-point training baseline over at least three seeds.
-13. Chronological complete-sequence evaluation with success AUC, precision@20, HOTA,
-    MOTA, IDF1, classification F1, and pixel-attention IoU.
-14. Quantization and integer reference.
-15. Sparse event-scatter software reference.
-16. RTL neuron.
-17. RTL event-convolution layer.
-18. RTL competition and adaptation.
-19. Multilayer RTL integration.
-20. Dataset replay, synthesis, and measured evaluation.
-21. EventVOT target-conditioned general-object extension after current milestones pass.
-
-## Testing requirements
-
-Use fast tests first, then progressively wider validation.
-
-At minimum provide:
-
-* configuration-schema tests;
-* event-binning tests;
-* neuron-equation tests;
-* reset and saturation edge cases;
-* `f_inst` winner and tie cases;
-* `f_long` rise and decay cases;
-* convolution shape and weight-sharing tests;
-* state-reset tests;
-* deterministic synthetic tracking tests;
-* event-supported attention-target and attention-pooling tests;
-* attention centroid/spread and box-free tracking tests;
-* quantized versus floating-point comparison;
-* sparse event-scatter versus dense convolution comparison;
-* exported golden vectors;
-* RTL versus integer-reference comparison when RTL exists.
-
-Use `pytest` for Python tests.
-
-Use type checking and formatting when configured.
-
-Use GHDL and cocotb for RTL verification when available.
-
-If a tool is unavailable, detect that explicitly and provide a documented setup command. Do not mark the corresponding milestone complete.
-
-## Debugging rules
-
-When validation fails:
-
-* reproduce the smallest failing case;
-* preserve the failure as a regression test;
-* inspect shapes, state reset, timestep ordering, integer rounding, saturation, and threshold/reset ordering;
-* compare intermediate layer states;
-* do not weaken assertions merely to make tests pass;
-* do not introduce unexplained tolerances;
-* do not replace failing functionality with placeholders.
-
-For software/RTL mismatches, compare in this order:
-
-1. input event sequence;
-2. event counts;
-3. convolutional current;
-4. pre-threshold membrane;
-5. adaptive threshold;
-6. candidate spikes;
-7. `f_inst` winner;
-8. reset membrane;
-9. emitted spike addresses.
-
-## Code quality
+## Hardware constraints
 
 Prefer:
 
-* small modules;
-* explicit tensor shapes;
-* typed configuration objects;
-* deterministic behavior;
-* dependency injection;
-* testable pure functions;
-* docstrings that describe equations and tensor dimensions;
-* configuration-driven architecture;
-* reproducible command-line entry points.
+- depthwise + pointwise convolution
+- additive skips
+- nearest-neighbor upsampling followed by convolution
+- foldable affine gains
+- residual membrane paths
+- integer-friendly LIF leak and adaptive thresholds
 
-Avoid:
+Treat BatchNorm, GAP/sigmoid gating, and parallel multiscale branches as measured ablations, not assumed FPGA choices.
 
-* hidden global state;
-* hard-coded local paths;
-* undocumented tensor transpositions;
-* broad exception swallowing;
-* placeholder implementations presented as complete;
-* premature optimization before correctness;
-* hardware code without a bit-accurate software reference.
+Avoid transformer attention, transposed convolution, concatenation-heavy decoders, and operations without a clear fixed-point mapping unless an accuracy gain justifies them.
 
-## Commands
+## Required records
 
-Create a single documented entry point for each operation, such as:
+Keep these synchronized:
 
 ```text
-make setup
-make test
-make lint
-make train-smoke
-make validate-reference
-make rtl-test
+docs/ARCHITECTURE.md
+docs/DECISIONS.md
+docs/PROGRESS.md
+docs/RESULTS.md
+docs/BUGS.md
+docs/exec-plans/active/ddd17-semantic-ablation.md
 ```
 
-Equivalent scripts are acceptable when `make` is not appropriate.
-
-Keep `README.md` synchronized with commands that actually work.
-
-## Completion definition
-
-A feature is complete only when:
-
-* implementation exists;
-* tests cover normal and edge cases;
-* validation passes;
-* documentation is updated;
-* configuration is reproducible;
-* no known silent mismatch remains;
-* measured results are recorded where applicable.
-
-At the end of every Codex run, report:
-
-* files changed;
-* behavior implemented;
-* commands executed;
-* passing checks;
-* remaining failures;
-* active blocker, if any;
-* next exact milestone.
-
-### Model source ownership
-
-The complete trainable neural model is implemented in `src/eventscnn/model.py`. This
-includes neuron dynamics, convolutional blocks/backbone, attention and classification
-heads, pooling helpers, and `EventSCNNSystem`. Keep deterministic tracking in
-`tracking.py`. The former `dynamics.py`, `models.py`, `heads.py`, and `system.py` files
-were removed. Import model symbols directly from `eventscnn.model`; do not recreate those
-modules, compatibility wrappers, or parallel model definitions.
+Never record unmeasured accuracy, power, latency, FPGA utilization, or throughput.

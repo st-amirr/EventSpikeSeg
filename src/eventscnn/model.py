@@ -1,71 +1,58 @@
-"""Complete EventSCNN neural model and compatibility inference interface.
+"""Configurable lightweight spiking semantic-segmentation architectures.
 
-This module is the single source of truth for the trainable SNN: hardware-compatible
-LIF dynamics, convolutional backbone, attention and classification heads, and the
-integrated EventSCNN system. Tracking algorithms remain in ``tracking.py`` because they
-are deterministic post-processing rather than part of the neural model.
+The trainable interface is ``[T, N, 6, H, W]`` for the Ev-SegNet six-channel
+DDD17 representation, and the primary output is a per-pixel class spike tensor
+``[T, N, C, H, W]``.  The implementation keeps the
+hardware-oriented leak/reset ordering from the previous project, but removes all
+tracking, box decoding, attention-centroid, and global classification code.
 """
 
-from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
-from typing import Optional
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, replace
+from typing import Literal
 
 import torch
-from spikingjelly.activation_based import surrogate
 from torch import Tensor, nn
 
-from .tracking import (
-    AttentionCentroidTracker,
-    AttentionObservation,
-    AttentionTrackState,
-    Detection,
-    SingleObjectTracker,
-    TrackState,
-    attention_observation,
-)
+try:
+    from spikingjelly.activation_based import surrogate
+except ImportError:  # lightweight test environments; Docker installs SpikingJelly
+    class _ATanSpike(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, input_tensor: Tensor) -> Tensor:
+            ctx.save_for_backward(input_tensor)
+            return (input_tensor >= 0).to(input_tensor.dtype)
 
+        @staticmethod
+        def backward(ctx, grad_output: Tensor) -> Tensor:
+            (input_tensor,) = ctx.saved_tensors
+            return grad_output / (1.0 + input_tensor.square())
 
+    class _ATanModule(nn.Module):
+        def forward(self, input_tensor: Tensor) -> Tensor:
+            return _ATanSpike.apply(input_tensor)
 
-# ---------------------------------------------------------------------------
-# Model and event configuration
-# ---------------------------------------------------------------------------
+    class _SurrogateNamespace:
+        ATan = _ATanModule
 
-@dataclass(frozen=True)
-class EventBinningConfig:
-    """Fixed-duration event binning configuration, using microsecond timestamps."""
+    surrogate = _SurrogateNamespace()
+from torch.nn import functional as F
 
-    width: int = 240
-    height: int = 180
-    bin_duration_us: int = 1_000
-
-    def __post_init__(self) -> None:
-        if self.width <= 0 or self.height <= 0:
-            raise ValueError("event resolution must be positive")
-        if self.bin_duration_us <= 0:
-            raise ValueError("bin_duration_us must be positive")
+NormKind = Literal["none", "affine", "bn"]
+ContextKind = Literal["none", "dilated", "multiscale"]
+SkipKind = Literal["one", "two"]
 
 
 @dataclass(frozen=True)
 class LIFConfig:
-    """Hardware-compatible LIF and competition/homeostasis parameters."""
-
     beta_shift: int = 4
-    threshold: float = 1.0
-    f_inst_enabled: bool = True
-    competitor_decrement: float = 0.25
+    threshold: float = 0.5
+    f_inst_enabled: bool = False
+    competitor_decrement: float = 0.0
     f_long_enabled: bool = True
-    adaptation_increment: float = 0.0625
-    adaptation_decay: float = 1.0 / 32.0
-
-    def __post_init__(self) -> None:
-        if self.beta_shift < 1:
-            raise ValueError("beta_shift must be at least one")
-        if self.threshold <= 0:
-            raise ValueError("threshold must be positive")
-        if self.competitor_decrement < 0:
-            raise ValueError("competitor_decrement cannot be negative")
-        if self.adaptation_increment < 0 or self.adaptation_decay < 0:
-            raise ValueError("adaptation parameters cannot be negative")
+    adaptation_increment: float = 1.0 / 64.0
+    adaptation_decay: float = 1.0 / 128.0
 
     @property
     def beta(self) -> float:
@@ -73,55 +60,77 @@ class LIFConfig:
 
 
 @dataclass(frozen=True)
-class LayerConfig:
-    in_channels: int
-    out_channels: int
-    kernel_size: tuple[int, int]
-    stride: tuple[int, int]
-    padding: tuple[int, int]
+class SegmentationArchitecture:
+    name: str
+    base_channels: int = 24
+    depthwise: bool = True
+    context: ContextKind = "multiscale"
+    context_dilations: tuple[int, ...] = (1, 2, 4)
+    norm: NormKind = "affine"
+    gap_gate: bool = False
+    auxiliary_head: bool = False
+    skip_kind: SkipKind = "two"
+    residual: bool = True
+    adaptive_threshold: bool = True
+    output_rate_scale: float = 6.0
 
-    def __post_init__(self) -> None:
-        if self.in_channels <= 0 or self.out_channels <= 0:
-            raise ValueError("channel counts must be positive")
-        if any(value <= 0 for value in self.kernel_size + self.stride):
-            raise ValueError("kernel and stride dimensions must be positive")
-        if any(value < 0 for value in self.padding):
-            raise ValueError("padding cannot be negative")
-
-
-def _default_layers() -> tuple[LayerConfig, ...]:
-    return (
-        LayerConfig(2, 32, (5, 5), (2, 2), (2, 2)),
-        LayerConfig(32, 64, (3, 3), (2, 2), (1, 1)),
-        LayerConfig(64, 128, (3, 3), (1, 1), (1, 1)),
-    )
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
-@dataclass(frozen=True)
-class BackboneConfig:
-    layers: tuple[LayerConfig, ...] = field(default_factory=_default_layers)
-    lif: LIFConfig = field(default_factory=LIFConfig)
+ARCHITECTURE_PRESETS: dict[str, SegmentationArchitecture] = {
+    "v01_std_unet_light": SegmentationArchitecture(
+        name="v01_std_unet_light", depthwise=False, context="none", norm="none",
+        auxiliary_head=False, residual=False, adaptive_threshold=False,
+    ),
+    "v02_dw_light": SegmentationArchitecture(
+        name="v02_dw_light", context="none", norm="none", residual=False,
+        adaptive_threshold=False,
+    ),
+    "v03_dw_dilated": SegmentationArchitecture(
+        name="v03_dw_dilated", context="dilated", context_dilations=(2,), norm="none",
+        residual=True, adaptive_threshold=False,
+    ),
+    "v04_dw_multiscale": SegmentationArchitecture(
+        name="v04_dw_multiscale", context="multiscale", norm="none",
+        residual=True, adaptive_threshold=False,
+    ),
+    "v05_dw_multiscale_affine": SegmentationArchitecture(
+        name="v05_dw_multiscale_affine", context="multiscale", norm="affine",
+        residual=True, adaptive_threshold=False,
+    ),
+    "v06_dw_multiscale_bn": SegmentationArchitecture(
+        name="v06_dw_multiscale_bn", context="multiscale", norm="bn",
+        residual=True, adaptive_threshold=False,
+    ),
+    "v07_dw_multiscale_gap": SegmentationArchitecture(
+        name="v07_dw_multiscale_gap", context="multiscale", norm="affine",
+        gap_gate=True, residual=True, adaptive_threshold=False,
+    ),
+    "v08_dw_multiscale_aux": SegmentationArchitecture(
+        name="v08_dw_multiscale_aux", context="multiscale", norm="affine",
+        auxiliary_head=True, residual=True, adaptive_threshold=False,
+    ),
+    "v09_dw_single_skip": SegmentationArchitecture(
+        name="v09_dw_single_skip", context="multiscale", norm="affine",
+        skip_kind="one", residual=True, adaptive_threshold=True,
+    ),
+    "v10_fpga_hybrid": SegmentationArchitecture(
+        name="v10_fpga_hybrid", context="multiscale", norm="affine",
+        auxiliary_head=True, skip_kind="two", residual=True, adaptive_threshold=True,
+    ),
+}
 
-    def __post_init__(self) -> None:
-        if len(self.layers) != 3:
-            raise ValueError("the version-1 backbone requires exactly three layers")
-        for previous, current in zip(self.layers, self.layers[1:]):
-            if previous.out_channels != current.in_channels:
-                raise ValueError("adjacent layer channel counts do not match")
+DEFAULT_ARCHITECTURE = "v10_fpga_hybrid"
+
 
 class HardwareLIF(nn.Module):
-    """Stateful LIF with top-1 competition and per-channel homeostasis.
+    """Discrete-time LIF with optional local competition and channel homeostasis."""
 
-    Input/current and membrane tensors use NCHW. Forward ordering is frozen as leak,
-    current, threshold, competition, subtractive reset, spike, adaptation.
-    """
-
-    def __init__(self, channels: int, config: Optional[LIFConfig] = None) -> None:
+    def __init__(self, channels: int, config: LIFConfig) -> None:
         super().__init__()
-        if channels <= 0:
-            raise ValueError("channels must be positive")
         self.channels = channels
-        self.config = config or LIFConfig()
+        self.config = config
         self.spike_function = surrogate.ATan()
         self.register_buffer("membrane", torch.empty(0), persistent=False)
         self.register_buffer("adaptation", torch.zeros(channels), persistent=False)
@@ -134,468 +143,390 @@ class HardwareLIF(nn.Module):
         if self.membrane.shape != current.shape:
             self.membrane = torch.zeros_like(current)
         if self.adaptation.device != current.device or self.adaptation.dtype != current.dtype:
-            self.adaptation = self.adaptation.to(device=current.device, dtype=current.dtype)
+            self.adaptation = self.adaptation.to(current)
 
     def forward(self, current: Tensor) -> Tensor:
         if current.ndim != 4 or current.shape[1] != self.channels:
-            raise ValueError(f"expected N,{self.channels},H,W current")
+            raise ValueError(f"expected [N,{self.channels},H,W] current")
         self._ensure_state(current)
         leaked = self.membrane - self.membrane / float(1 << self.config.beta_shift)
         candidate = leaked + current
-        effective = self.config.threshold + self.adaptation
-        threshold = effective.view(1, -1, 1, 1)
-        raw_spikes = self.spike_function(candidate - threshold)
+        threshold = (self.config.threshold + self.adaptation).view(1, -1, 1, 1)
+        raw = self.spike_function(candidate - threshold)
         above = candidate >= threshold
-
         if self.config.f_inst_enabled:
             masked = candidate.masked_fill(~above, -torch.inf)
-            winner_index = masked.argmax(dim=1, keepdim=True)
-            gate = torch.zeros_like(above).scatter_(1, winner_index, True)
+            winner = masked.argmax(dim=1, keepdim=True)
+            gate = torch.zeros_like(above).scatter_(1, winner, True)
             gate &= above.any(dim=1, keepdim=True)
-            emitted = raw_spikes * gate.to(raw_spikes.dtype)
+            spikes = raw * gate.to(raw.dtype)
         else:
             gate = above
-            # The surrogate already has the exact hard-spike forward value. Avoid a
-            # second detached threshold mask, which would erase subthreshold gradients.
-            emitted = raw_spikes
-
-        winner_reset = gate.to(candidate.dtype) * threshold
-        loser_mask = above & ~gate
-        loser_decrement = loser_mask.to(candidate.dtype) * self.config.competitor_decrement
-        self.membrane = candidate - winner_reset - loser_decrement
-
+            spikes = raw
+        reset = gate.to(candidate.dtype) * threshold
+        loser = (above & ~gate).to(candidate.dtype) * self.config.competitor_decrement
+        self.membrane = candidate - reset - loser
         if self.config.f_long_enabled:
             decayed = torch.clamp(self.adaptation - self.config.adaptation_decay, min=0.0)
-            # One feature-map activity event per channel and timestep. A spatial mean
-            # makes sparse maps effectively zero and changes with resolution; an OR is
-            # deterministic, batch-size independent, and maps to a hardware reduction.
-            activity = emitted.detach().amax(dim=(0, 2, 3))
+            activity = spikes.detach().amax(dim=(0, 2, 3))
             self.adaptation = decayed + self.config.adaptation_increment * activity
-        return emitted
-
-    def state(self) -> tuple[Optional[Tensor], Tensor]:
-        membrane = None if self.membrane.numel() == 0 else self.membrane
-        return membrane, self.adaptation
+        return spikes
 
 
-class ConvLIFBlock(nn.Module):
-    """Bias-free shared convolution followed by hardware-ordered LIF dynamics."""
+class ChannelAffine(nn.Module):
+    """Per-channel gain without batch statistics; foldable into convolution weights."""
 
-    def __init__(self, layer: LayerConfig, lif: Optional[LIFConfig] = None) -> None:
+    def __init__(self, channels: int) -> None:
         super().__init__()
-        self.layer_config = layer
-        self.conv = nn.Conv2d(
-            layer.in_channels,
-            layer.out_channels,
-            layer.kernel_size,
-            stride=layer.stride,
-            padding=layer.padding,
-            bias=False,
-        )
-        self.neuron = HardwareLIF(layer.out_channels, lif)
+        self.gain = nn.Parameter(torch.ones(channels))
 
-    def reset(self) -> None:
-        self.neuron.reset()
-
-    def forward(self, sequence: Tensor) -> Tensor:
-        if sequence.ndim != 5 or sequence.shape[2] != self.layer_config.in_channels:
-            raise ValueError("expected TNCHW sequence with configured input channels")
-        return torch.stack([self.neuron(self.conv(step.float())) for step in sequence])
+    def forward(self, x: Tensor) -> Tensor:
+        return x * self.gain.view(1, -1, 1, 1)
 
 
-class EventSCNNBackbone(nn.Module):
-    """Canonical three-layer 2→8→16→32 spiking convolutional backbone."""
+class ChannelGate(nn.Module):
+    """SLTNet-inspired GAP channel gate used only in the dedicated ablation.
 
-    def __init__(self, config: Optional[BackboneConfig] = None) -> None:
-        super().__init__()
-        config = config or BackboneConfig()
-        self.config = config
-        self.blocks = nn.ModuleList(
-            [ConvLIFBlock(layer, config.lif) for layer in config.layers]
-        )
-
-    def reset(self) -> None:
-        for block in self.blocks:
-            block.reset()
-
-    def forward(self, sequence: Tensor, *, return_all: bool = False):
-        activations: list[Tensor] = []
-        output = sequence
-        for block in self.blocks:
-            output = block(output)
-            activations.append(output)
-        return activations if return_all else output
-
-
-def assert_hardware_compatible_convolutions(modules: Sequence[nn.Module]) -> None:
-    """Reject convolution bias, which would require updates without input spikes."""
-
-    for module in modules:
-        if isinstance(module, nn.Conv2d) and module.bias is not None:
-            raise ValueError("spiking backbone convolutions must use bias=False")
-
-
-@dataclass(frozen=True)
-class Proposal:
-    x: int
-    y: int
-    width: int
-    height: int
-    confidence: float
-
-
-class ObjectnessHead(nn.Module):
-    """Bias-free 1×1 spiking objectness head."""
-
-    def __init__(self, in_channels: int, lif: Optional[LIFConfig] = None) -> None:
-        super().__init__()
-        self.conv = nn.Conv2d(in_channels, 1, kernel_size=1, bias=False)
-        self.neuron = HardwareLIF(1, lif)
-
-    def reset(self) -> None:
-        self.neuron.reset()
-
-    def forward(self, sequence: Tensor) -> Tensor:
-        if sequence.ndim != 5:
-            raise ValueError("expected TNCHW features")
-        return torch.stack([self.neuron(self.conv(step)) for step in sequence])
-
-
-class PixelAttentionHead(nn.Module):
-    """Bias-free local spiking attention at the Conv1 spatial resolution."""
-
-    def __init__(self, in_channels: int, lif: Optional[LIFConfig] = None) -> None:
-        super().__init__()
-        self.conv = nn.Conv2d(in_channels, 1, kernel_size=3, padding=1, bias=False)
-        self.neuron = HardwareLIF(1, lif)
-
-    def reset(self) -> None:
-        self.neuron.reset()
-
-    def forward(self, sequence: Tensor) -> Tensor:
-        if sequence.ndim != 5:
-            raise ValueError("expected TNCHW features")
-        return torch.stack([self.neuron(self.conv(step)) for step in sequence])
-
-
-def connected_component_proposals(
-    activity: Tensor,
-    *,
-    threshold: float = 1.0,
-    scale_x: int = 1,
-    scale_y: int = 1,
-) -> list[Proposal]:
-    """Extract deterministic 4-connected boxes from one 2-D activity map."""
-
-    if activity.ndim != 2:
-        raise ValueError("activity must be a 2-D map")
-    if threshold <= 0 or scale_x <= 0 or scale_y <= 0:
-        raise ValueError("threshold and scales must be positive")
-    active = activity.detach().cpu() >= threshold
-    height, width = active.shape
-    visited = torch.zeros_like(active)
-    proposals: list[Proposal] = []
-    for y in range(height):
-        for x in range(width):
-            if not active[y, x] or visited[y, x]:
-                continue
-            stack = [(x, y)]
-            visited[y, x] = True
-            points: list[tuple[int, int]] = []
-            score = 0.0
-            while stack:
-                px, py = stack.pop()
-                points.append((px, py))
-                score += float(activity[py, px])
-                for nx, ny in ((px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)):
-                    in_bounds = 0 <= nx < width and 0 <= ny < height
-                    if in_bounds and active[ny, nx] and not visited[ny, nx]:
-                        visited[ny, nx] = True
-                        stack.append((nx, ny))
-            xs = [point[0] for point in points]
-            ys = [point[1] for point in points]
-            min_x, max_x = min(xs), max(xs)
-            min_y, max_y = min(ys), max(ys)
-            proposals.append(
-                Proposal(
-                    min_x * scale_x,
-                    min_y * scale_y,
-                    (max_x - min_x + 1) * scale_x,
-                    (max_y - min_y + 1) * scale_y,
-                    score / len(points),
-                )
-            )
-    return proposals
-
-
-def roi_spike_count_pool(features: Tensor, rois: Tensor) -> Tensor:
-    """Sum TNCHW spike features inside one clipped ``x,y,w,h`` ROI per batch."""
-
-    if features.ndim != 5:
-        raise ValueError("features must be TNCHW")
-    if rois.shape != (features.shape[1], 4):
-        raise ValueError("rois must have shape [N,4]")
-    _, batch, channels, height, width = features.shape
-    pooled = torch.zeros((batch, channels), device=features.device, dtype=features.dtype)
-    for index in range(batch):
-        x, y, roi_width, roi_height = (int(value) for value in rois[index].tolist())
-        x0, y0 = max(0, x), max(0, y)
-        x1, y1 = min(width, x + roi_width), min(height, y + roi_height)
-        if x1 > x0 and y1 > y0:
-            pooled[index] = features[:, index, :, y0:y1, x0:x1].sum(dim=(0, 2, 3))
-    return pooled
-
-
-def attention_weighted_spike_pool(features: Tensor, attention: Tensor) -> Tensor:
-    """Pool TNCHW features using predicted TN1HW binary or rate attention.
-
-    Attention may have a higher integer-multiple spatial resolution than the features;
-    it is reduced with max/OR pooling, which has a direct FPGA mapping.
+    This is a hybrid analog gate.  It is intentionally isolated so its value can be
+    measured against the simpler FPGA-friendly affine alternative.
     """
 
-    if features.ndim != 5 or attention.ndim != 5:
-        raise ValueError("features and attention must be TNCHW")
-    if features.shape[:2] != attention.shape[:2] or attention.shape[2] != 1:
-        raise ValueError("attention must have shape [T,N,1,H,W] matching T and N")
-    feature_height, feature_width = features.shape[-2:]
-    attention_height, attention_width = attention.shape[-2:]
-    if attention_height % feature_height or attention_width % feature_width:
-        raise ValueError("attention resolution must be an integer multiple of features")
-    ratio_y = attention_height // feature_height
-    ratio_x = attention_width // feature_width
-    if ratio_y > 1 or ratio_x > 1:
-        time, batch = attention.shape[:2]
-        attention = torch.nn.functional.max_pool2d(
-            attention.flatten(0, 1),
-            kernel_size=(ratio_y, ratio_x),
-            stride=(ratio_y, ratio_x),
-        ).view(time, batch, 1, feature_height, feature_width)
-    numerator = (features * attention).sum(dim=(0, 3, 4))
-    denominator = attention.sum(dim=(0, 3, 4)).clamp_min(1.0)
-    return numerator / denominator
+    def __init__(self, channels: int, reduction: int = 4) -> None:
+        super().__init__()
+        hidden = max(4, channels // reduction)
+        self.reduce = nn.Conv2d(channels, hidden, 1, bias=True)
+        self.expand = nn.Conv2d(hidden, channels, 1, bias=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        pooled = x.mean(dim=(2, 3), keepdim=True)
+        gate = torch.sigmoid(self.expand(F.relu(self.reduce(pooled))))
+        return x * gate
 
 
-def attention_gated_spike_counts(features: Tensor, attention: Tensor) -> Tensor:
-    """Return per-timestep TNC counts of feature spikes selected by attention spikes."""
+class CurrentTransform(nn.Module):
+    def __init__(self, channels: int, kind: NormKind) -> None:
+        super().__init__()
+        if kind == "none":
+            self.op: nn.Module = nn.Identity()
+        elif kind == "affine":
+            self.op = ChannelAffine(channels)
+        elif kind == "bn":
+            self.op = nn.BatchNorm2d(channels)
+        else:  # pragma: no cover
+            raise ValueError(f"unknown norm kind: {kind}")
 
-    if features.ndim != 5 or attention.ndim != 5:
-        raise ValueError("features and attention must be TNCHW")
-    if features.shape[:2] != attention.shape[:2] or attention.shape[2] != 1:
-        raise ValueError("attention must have shape [T,N,1,H,W] matching T and N")
-    feature_height, feature_width = features.shape[-2:]
-    attention_height, attention_width = attention.shape[-2:]
-    if attention_height % feature_height or attention_width % feature_width:
-        raise ValueError("attention resolution must be an integer multiple of features")
-    ratio_y = attention_height // feature_height
-    ratio_x = attention_width // feature_width
-    if ratio_y > 1 or ratio_x > 1:
-        time, batch = attention.shape[:2]
-        attention = torch.nn.functional.max_pool2d(
-            attention.flatten(0, 1),
-            kernel_size=(ratio_y, ratio_x),
-            stride=(ratio_y, ratio_x),
-        ).view(time, batch, 1, feature_height, feature_width)
-    return (features * attention).sum(dim=(3, 4))
+    def forward(self, x: Tensor) -> Tensor:
+        return self.op(x)
 
 
-class ClassificationHead(nn.Module):
-    """Bias-free class synapses followed by stateful class LIF neurons."""
+class SpikingStage(nn.Module):
+    """One convolution/current transform/LIF stage over a TNCHW sequence."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        *,
+        kernel_size: int,
+        stride: int = 1,
+        dilation: int = 1,
+        groups: int = 1,
+        norm: NormKind = "none",
+        lif: LIFConfig,
+    ) -> None:
+        super().__init__()
+        padding = dilation * (kernel_size // 2)
+        self.conv = nn.Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            bias=False,
+        )
+        self.transform = CurrentTransform(out_channels, norm)
+        self.neuron = HardwareLIF(out_channels, lif)
+
+    def reset(self) -> None:
+        self.neuron.reset()
+
+    def forward(self, sequence: Tensor) -> Tensor:
+        return torch.stack(
+            [self.neuron(self.transform(self.conv(step.float()))) for step in sequence]
+        )
+
+
+class SpikingConvBlock(nn.Module):
+    """Standard or depthwise/pointwise spiking convolution block."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        *,
+        stride: int = 1,
+        dilation: int = 1,
+        depthwise: bool,
+        norm: NormKind,
+        lif: LIFConfig,
+        residual: bool = False,
+    ) -> None:
+        super().__init__()
+        self.residual = residual and stride == 1 and in_channels == out_channels
+        if depthwise:
+            self.depthwise = SpikingStage(
+                in_channels,
+                in_channels,
+                kernel_size=3,
+                stride=stride,
+                dilation=dilation,
+                groups=in_channels,
+                norm=norm,
+                lif=lif,
+            )
+            self.pointwise = SpikingStage(
+                in_channels,
+                out_channels,
+                kernel_size=1,
+                norm=norm,
+                lif=lif,
+            )
+            self.standard = None
+        else:
+            self.standard = SpikingStage(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                stride=stride,
+                dilation=dilation,
+                norm=norm,
+                lif=lif,
+            )
+            self.depthwise = None
+            self.pointwise = None
+
+    def reset(self) -> None:
+        for module in (self.standard, self.depthwise, self.pointwise):
+            if module is not None:
+                module.reset()
+
+    def forward(self, sequence: Tensor) -> Tensor:
+        if self.standard is not None:
+            output = self.standard(sequence)
+        else:
+            assert self.depthwise is not None and self.pointwise is not None
+            output = self.pointwise(self.depthwise(sequence))
+        if self.residual:
+            output = torch.clamp(output + sequence, 0.0, 1.0)
+        return output
+
+
+class MultiScaleContext(nn.Module):
+    """Parallel dilated depthwise branches followed by pointwise spiking fusion."""
 
     def __init__(
         self,
         channels: int,
-        class_count: int,
-        lif: Optional[LIFConfig] = None,
-        current_scale_shift: int = 0,
+        dilations: tuple[int, ...],
+        *,
+        norm: NormKind,
+        lif: LIFConfig,
+        gap_gate: bool,
     ) -> None:
         super().__init__()
-        if channels <= 0 or class_count <= 0:
-            raise ValueError("channels and class_count must be positive")
-        if current_scale_shift < 0:
-            raise ValueError("current_scale_shift cannot be negative")
-        self.synapse = nn.Linear(channels, class_count, bias=False)
-        self.neuron = HardwareLIF(class_count, lif)
-        self.current_scale_shift = current_scale_shift
-
-    def _synaptic_current(self, step: Tensor) -> Tensor:
-        return self.synapse(step) / float(1 << self.current_scale_shift)
+        self.branches = nn.ModuleList(
+            [
+                SpikingStage(
+                    channels,
+                    channels,
+                    kernel_size=3,
+                    dilation=dilation,
+                    groups=channels,
+                    norm=norm,
+                    lif=lif,
+                )
+                for dilation in dilations
+            ]
+        )
+        self.fuse = SpikingStage(
+            channels,
+            channels,
+            kernel_size=1,
+            norm=norm,
+            lif=lif,
+        )
+        self.gate = ChannelGate(channels) if gap_gate else None
 
     def reset(self) -> None:
-        self.neuron.reset()
+        for branch in self.branches:
+            branch.reset()
+        self.fuse.reset()
 
-    def forward_attention(self, features: Tensor, attention: Tensor) -> Tensor:
-        """Emit TNK class spikes from attended feature-spike events."""
-
-        counts = attention_gated_spike_counts(features, attention)
-        emitted = []
-        for step in counts:
-            current = self._synaptic_current(step).unsqueeze(-1).unsqueeze(-1)
-            emitted.append(self.neuron(current).squeeze(-1).squeeze(-1))
-        return torch.stack(emitted)
-
-    def forward_attention_trace(self, features: Tensor, attention: Tensor) -> dict[str, Tensor]:
-        """Emit class spikes plus differentiable current and pre-reset membrane traces."""
-
-        counts = attention_gated_spike_counts(features, attention)
-        currents = []
-        candidates = []
-        emitted = []
-        for step in counts:
-            current = self._synaptic_current(step).unsqueeze(-1).unsqueeze(-1)
-            membrane, _ = self.neuron.state()
-            prior = torch.zeros_like(current) if membrane is None else membrane
-            leaked = prior - prior / float(1 << self.neuron.config.beta_shift)
-            candidates.append((leaked + current).squeeze(-1).squeeze(-1))
-            currents.append(current.squeeze(-1).squeeze(-1))
-            emitted.append(self.neuron(current).squeeze(-1).squeeze(-1))
-        return {
-            "currents": torch.stack(currents),
-            "candidate_membranes": torch.stack(candidates),
-            "spikes": torch.stack(emitted),
-        }
+    def forward(self, sequence: Tensor) -> Tensor:
+        branch_outputs = [branch(sequence) for branch in self.branches]
+        merged = torch.stack(branch_outputs).mean(dim=0)
+        if self.gate is not None:
+            merged = torch.stack([self.gate(step) for step in merged])
+        return self.fuse(merged)
 
 
-class EventSCNNSystem(nn.Module):
-    """Connect backbone, pixel attention, classification, and centroid tracking."""
+class SpikingClassHead(nn.Module):
+    def __init__(self, in_channels: int, class_count: int, lif: LIFConfig) -> None:
+        super().__init__()
+        output_lif = replace(lif, f_inst_enabled=True, f_long_enabled=False)
+        self.stage = SpikingStage(
+            in_channels,
+            class_count,
+            kernel_size=1,
+            norm="none",
+            lif=output_lif,
+        )
+
+    def reset(self) -> None:
+        self.stage.reset()
+
+    def forward(self, sequence: Tensor) -> Tensor:
+        return self.stage(sequence)
+
+
+class EventSpikeSeg(nn.Module):
+    """Lightweight event-only spiking encoder/decoder for DDD17 segmentation."""
 
     def __init__(
         self,
         *,
-        class_count: int,
-        backbone_config: Optional[BackboneConfig] = None,
-        classification_current_scale_shift: int = 0,
+        class_count: int = 6,
+        input_channels: int = 6,
+        architecture: str | SegmentationArchitecture = DEFAULT_ARCHITECTURE,
+        lif: LIFConfig | None = None,
     ) -> None:
         super().__init__()
-        self.backbone = EventSCNNBackbone(backbone_config)
-        attention_channels = self.backbone.config.layers[0].out_channels
-        classification_channels = self.backbone.config.layers[-1].out_channels
-        self.attention = PixelAttentionHead(attention_channels, self.backbone.config.lif)
-        class_lif = replace(
-            self.backbone.config.lif,
-            f_inst_enabled=False,
-            f_long_enabled=False,
+        if isinstance(architecture, str):
+            if architecture not in ARCHITECTURE_PRESETS:
+                raise KeyError(f"unknown architecture {architecture!r}")
+            architecture = ARCHITECTURE_PRESETS[architecture]
+        self.architecture = architecture
+        base_lif = lif or LIFConfig(f_long_enabled=architecture.adaptive_threshold)
+        c1 = architecture.base_channels
+        c2 = c1 * 2
+        c3 = c1 * 4
+
+        self.input_channels = input_channels
+        self.stem = SpikingStage(
+            input_channels,
+            c1,
+            kernel_size=3,
+            norm=architecture.norm,
+            lif=base_lif,
         )
-        self.classification = ClassificationHead(
-            classification_channels,
-            class_count,
-            class_lif,
-            current_scale_shift=classification_current_scale_shift,
+        self.enc1 = SpikingConvBlock(
+            c1, c1, depthwise=architecture.depthwise, norm=architecture.norm,
+            lif=base_lif, residual=architecture.residual,
         )
-        self.tracker = SingleObjectTracker()
-        self.attention_tracker = AttentionCentroidTracker()
-
-    @property
-    def objectness(self) -> PixelAttentionHead:
-        """Compatibility name for older proposal tests and checkpoints."""
-
-        return self.attention
-
-    def reset(self, *, reset_tracker: bool = True) -> None:
-        self.backbone.reset()
-        self.attention.reset()
-        self.classification.reset()
-        if reset_tracker:
-            self.tracker.reset()
-            self.attention_tracker.reset()
-
-    def trainable_outputs(self, sequence: Tensor) -> dict[str, Tensor]:
-        """Return differentiable spike outputs and class spike-count scores."""
-
-        activations = self.backbone(sequence, return_all=True)
-        attention = self.attention(activations[0])
-        classification_attention = attention.detach() if self.training else attention
-        class_spikes = self.classification.forward_attention(
-            activations[2], classification_attention
+        self.down2 = SpikingConvBlock(
+            c1, c2, stride=2, depthwise=architecture.depthwise,
+            norm=architecture.norm, lif=base_lif,
         )
-        return {
-            "conv1_spikes": activations[0],
-            "conv2_spikes": activations[1],
-            "conv3_spikes": activations[2],
-            "attention_spikes": attention,
-            "objectness_spikes": attention,
-            "classification_spikes": class_spikes,
-            "classification_scores": class_spikes.sum(dim=0),
-        }
-
-    def decode_attention_single(
-        self, outputs: dict[str, Tensor]
-    ) -> tuple[Optional[AttentionObservation], Optional[AttentionTrackState]]:
-        """Decode predicted pixels into a centroid observation and tracking state."""
-
-        attention = outputs["attention_spikes"]
-        scores = outputs["classification_scores"]
-        if attention.shape[1] != 1 or scores.shape[0] != 1:
-            raise ValueError("decode_attention_single requires batch size one")
-        winning_count, class_index = scores[0].detach().max(0)
-        total_count = scores[0].detach().sum()
-        confidence = float(winning_count / total_count.clamp_min(1.0))
-        if float(total_count) == 0.0:
-            confidence = 1.0
-        observation = attention_observation(
-            attention[:, 0, 0].sum(dim=0),
-            class_id=int(class_index),
-            class_confidence=confidence,
-            scale_x=2.0,
-            scale_y=2.0,
+        self.enc2 = SpikingConvBlock(
+            c2, c2, depthwise=architecture.depthwise, norm=architecture.norm,
+            lif=base_lif, residual=architecture.residual,
         )
-        return observation, self.attention_tracker.update(observation)
-
-    def infer_attention_single(
-        self, sequence: Tensor
-    ) -> tuple[Optional[AttentionObservation], Optional[AttentionTrackState]]:
-        """Run the primary box-free attention/classification/tracking path."""
-
-        if sequence.shape[1] != 1:
-            raise ValueError("infer_attention_single requires batch size one")
-        return self.decode_attention_single(self.trainable_outputs(sequence))
-
-    def decode_single(
-        self,
-        outputs: dict[str, Tensor],
-        *,
-        activity_threshold: float = 1.0,
-    ) -> tuple[list[Detection], Optional[TrackState]]:
-        """Decode batch-size-one outputs into detections and one tracking update."""
-
-        objectness = outputs["objectness_spikes"]
-        scores = outputs["classification_scores"]
-        if objectness.shape[1] != 1 or scores.shape[0] != 1:
-            raise ValueError("decode_single requires batch size one")
-        activity = objectness[:, 0, 0].sum(dim=0)
-        proposals = connected_component_proposals(
-            activity,
-            threshold=activity_threshold,
-            scale_x=2,
-            scale_y=2,
+        self.down3 = SpikingConvBlock(
+            c2, c3, stride=2, depthwise=architecture.depthwise,
+            norm=architecture.norm, lif=base_lif,
         )
-        if not proposals:
-            return [], self.tracker.update([])
-        winning_count, class_index = scores[0].detach().max(dim=0)
-        total_count = scores[0].detach().sum().clamp_min(1.0)
-        class_confidence = winning_count / total_count
-        detections = [
-            Detection(
-                float(proposal.x),
-                float(proposal.y),
-                float(proposal.width),
-                float(proposal.height),
-                proposal.confidence * float(class_confidence),
-                int(class_index),
+        self.enc3 = SpikingConvBlock(
+            c3, c3, depthwise=architecture.depthwise, norm=architecture.norm,
+            lif=base_lif, residual=architecture.residual,
+        )
+        if architecture.context == "none":
+            self.context: nn.Module = nn.Identity()
+        else:
+            dilations = architecture.context_dilations
+            if architecture.context == "dilated":
+                dilations = (dilations[0],)
+            self.context = MultiScaleContext(
+                c3, dilations, norm=architecture.norm, lif=base_lif,
+                gap_gate=architecture.gap_gate,
             )
-            for proposal in proposals
-        ]
-        return detections, self.tracker.update(detections)
 
-    def infer_single(
-        self,
-        sequence: Tensor,
-        *,
-        activity_threshold: float = 1.0,
-    ) -> tuple[list[Detection], Optional[TrackState]]:
-        """Run box-free spike-attention classification/tracking for batch size one."""
-
-        if sequence.shape[1] != 1:
-            raise ValueError("infer_single requires batch size one")
-        return self.decode_single(
-            self.trainable_outputs(sequence), activity_threshold=activity_threshold
+        self.project3 = SpikingStage(c3, c2, kernel_size=1, norm=architecture.norm, lif=base_lif)
+        self.refine2 = SpikingConvBlock(
+            c2, c2, depthwise=architecture.depthwise, norm=architecture.norm,
+            lif=base_lif, residual=architecture.residual,
         )
+        self.project2 = SpikingStage(c2, c1, kernel_size=1, norm=architecture.norm, lif=base_lif)
+        self.refine1 = SpikingConvBlock(
+            c1, c1, depthwise=architecture.depthwise, norm=architecture.norm,
+            lif=base_lif, residual=architecture.residual,
+        )
+        self.head = SpikingClassHead(c1, class_count, base_lif)
+        self.aux_head = (
+            SpikingClassHead(c2, class_count, base_lif)
+            if architecture.auxiliary_head
+            else None
+        )
+        self.class_count = class_count
+
+    @staticmethod
+    def _upsample(sequence: Tensor, size: tuple[int, int]) -> Tensor:
+        t, n, c, _, _ = sequence.shape
+        up = F.interpolate(sequence.flatten(0, 1), size=size, mode="nearest")
+        return up.view(t, n, c, *size)
+
+    def reset(self) -> None:
+        for module in self.modules():
+            if module is self:
+                continue
+            reset = getattr(module, "reset", None)
+            if callable(reset) and not isinstance(module, EventSpikeSeg):
+                reset()
+
+    def forward(self, sequence: Tensor) -> dict[str, Tensor]:
+        if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
+            raise ValueError(
+                f"expected [T,N,{self.input_channels},H,W] direct-encoded event sequence"
+            )
+        x1 = self.enc1(self.stem(sequence))
+        x2 = self.enc2(self.down2(x1))
+        x3 = self.enc3(self.down3(x2))
+        z3 = self.context(x3) if not isinstance(self.context, nn.Identity) else x3
+        d2 = self._upsample(self.project3(z3), x2.shape[-2:])
+        if self.architecture.skip_kind == "two":
+            d2 = torch.clamp(d2 + x2, 0.0, 1.0)
+        d2 = self.refine2(d2)
+        aux_spikes = self.aux_head(d2) if self.aux_head is not None else None
+        d1 = self._upsample(self.project2(d2), x1.shape[-2:])
+        d1 = torch.clamp(d1 + x1, 0.0, 1.0)
+        d1 = self.refine1(d1)
+        class_spikes = self.head(d1)
+        logits = class_spikes.sum(dim=0) * (
+            self.architecture.output_rate_scale / float(sequence.shape[0])
+        )
+        result = {
+            "segmentation_spikes": class_spikes,
+            "segmentation_logits": logits,
+            "enc1_spikes": x1,
+            "enc2_spikes": x2,
+            "enc3_spikes": x3,
+            "decoder_spikes": d1,
+        }
+        if aux_spikes is not None:
+            result["auxiliary_spikes"] = aux_spikes
+            result["auxiliary_logits"] = aux_spikes.sum(dim=0) * (
+                self.architecture.output_rate_scale / float(sequence.shape[0])
+            )
+        return result
+
+    def parameter_count(self) -> int:
+        return sum(parameter.numel() for parameter in self.parameters() if parameter.requires_grad)
+
+
+def build_model(
+    name: str = DEFAULT_ARCHITECTURE, *, class_count: int = 6, input_channels: int = 6
+) -> EventSpikeSeg:
+    return EventSpikeSeg(
+        class_count=class_count, input_channels=input_channels, architecture=name
+    )
