@@ -21,8 +21,7 @@ from .data import (
     resolve_ddd17_root,
 )
 from .metrics import ConfusionMatrix
-from .model import build_model
-from .train import temporal_collate
+from .train import build_experiment_model, temporal_collate
 
 _PALETTE = np.array(
     [
@@ -101,7 +100,10 @@ def evaluate(
         resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         resolved_device = torch.device(device)
-    model = build_model(architecture, class_count=DDD17_CLASS_COUNT).to(resolved_device)
+    suite = str(checkpoint.get("model_suite", "auto"))
+    model = build_experiment_model(
+        architecture, class_count=DDD17_CLASS_COUNT, suite=suite
+    ).to(resolved_device)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     model.eval()
     confusion = ConfusionMatrix(DDD17_CLASS_COUNT)

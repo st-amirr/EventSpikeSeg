@@ -1,36 +1,1003 @@
-project:
-  name: EventSpikeSeg-FPGA
-  task: event-camera semantic segmentation
-  dataset: Ev-SegNet semantic extension of DDD17
-input:
-  stored_shape: [N, 6, H, W]
-  model_shape: [T, N, 6, H, W]
-  representation:
-    - polarity histogram pair
-    - normalized timestamp mean pair
-    - normalized timestamp standard-deviation pair
-  encoding: repeat fixed six-channel current over internal SNN timesteps
-  warning: not raw chronological event bins
-classes:
-  names: [flat, construction+sky, object, nature, human, vehicle]
-  ignore_index: 255
-search:
-  variants: 10
+document:
+  title: Hardware-Oriented Event-Camera Spiking Neural Network for Semantic Segmentation
+  short_name: EventSpikeSeg-FPGA
+  version: 1.0.0
+  status: round_one_complete_round_two_top_five_ready
+  created_date: '2026-08-06'
+  supersedes:
+    - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
+    - minimal semantic-segmentation project_spec.yaml created during repository cleanup
+  intended_uses:
+    - Executable software and FPGA implementation specification
+    - Source of truth for architecture search and experiment tracking
+    - Interface contract between SpikingJelly/PyTorch training, integer reference, and custom VHDL backend
+    - Foundation for a future article on lightweight event-based SNN semantic segmentation on FPGA
+  central_interpretation: >-
+    The active DDD17 benchmark uses Ev-SegNet's six-channel event-statistic representation,
+    not a raw chronological event tensor. Each sample contains histogram, timestamp mean,
+    and timestamp standard deviation for both polarities. The SNN applies recurrent LIF
+    updates for a configurable number of internal timesteps by direct-current encoding.
+    These internal timesteps are neural update cycles and do not represent a fixed number
+    of milliseconds unless a future raw-event configuration explicitly defines that
+    mapping. The future FPGA input path will replay raw events sparsely by address and
+    accumulate shared convolution-kernel weights only for active events or spikes.
+  preservation_policy:
+    retained_from_previous_specification:
+      - Hardware-compatible LIF equations and power-of-two leakage
+      - f_inst cross-channel competition
+      - f_long/T_thresh feature-map homeostasis
+      - Sparse shared-kernel event-address accumulation
+      - Fixed-point formats, saturation, and bit-accurate equivalence requirements
+      - Custom VHDL-2008 backend and ZCU104 target
+      - SpikingJelly surrogate-gradient training strategy
+      - Synthetic fixtures, golden vectors, and staged hardware verification
+      - Synthesis-guided BRAM/LUTRAM/register memory mapping
+      - Measured-only reporting policy
+      - Spiker+ as related work and implementation inspiration, not a dependency
+    replaced_by_current_project:
+      - Region proposal head
+      - Global vehicle/background classification head
+      - Bounding-box spread decoder
+      - Attention-centroid tracking
+      - MEVDT as the active training dataset
+      - FE108 and DSEC-MOT as active milestones
+    historical_material_location: legacy_tracking_context
+
+project_goal:
+  primary_goal: >-
+    Design, train, compare, quantize, and eventually deploy a lightweight fully spiking
+    semantic-segmentation network for event-camera data, with an architecture chosen for
+    an efficient sparse FPGA implementation rather than GPU efficiency alone.
+  primary_research_question: >-
+    Which combination of lightweight convolution, multi-scale context, normalization,
+    skip fusion, recurrent spiking dynamics, and auxiliary supervision provides the best
+    DDD17 semantic-segmentation accuracy while retaining a clear fixed-point FPGA mapping?
+  hardware_research_question: >-
+    Can the selected model be mapped to a bit-accurate VHDL accelerator that exploits
+    spike/event sparsity through shared-kernel additions and avoids dense matrix
+    multiplication, while preserving useful semantic-segmentation accuracy?
+  secondary_questions:
+    - How many internal SNN timesteps are necessary before mIoU saturates?
+    - Does depthwise-pointwise convolution preserve accuracy while reducing parameters and synaptic additions?
+    - Does multi-scale dilation justify its addressing and buffering cost?
+    - Does a foldable per-channel affine gain provide most of BatchNorm's benefit without batch-statistic dependence?
+    - Does GAP/sigmoid channel gating improve accuracy enough to justify non-spiking global reduction and multiplication?
+    - Do adaptive thresholds improve firing balance and multi-seed stability?
+    - Is one encoder skip sufficient, or are two additive skips required for boundaries and small classes?
+    - What accuracy is lost after weight, membrane, threshold, and accumulator quantization?
+    - Which operations dominate BRAM, LUTRAM, routing, and event throughput on FPGA?
+  working_hypotheses:
+    - Depthwise-pointwise blocks greatly reduce parameters and weight memory but require pointwise channel mixing.
+    - Additive skips recover spatial detail with less memory and bandwidth than concatenation.
+    - A shallow decoder is sufficient for sparse event statistics and is preferable to a symmetric U-Net.
+    - Per-channel affine scaling will be more robust and hardware-friendly than inference-time BatchNorm.
+    - Four to eight internal timesteps may preserve most accuracy while reducing temporal compute versus twenty steps.
+    - Adaptive feature-map thresholds can reduce dominant channels with very small state overhead.
+    - Sparse hardware cost will correlate more strongly with measured spike rate than with dense FLOP counts.
+
+framework:
+  training_stack:
+    language: Python
+    tensor_library: PyTorch
+    snn_framework: SpikingJelly_activation_based
+    use_in_current_code:
+      - SpikingJelly ATan surrogate gradient when installed
+      - Custom HardwareLIF for exact leak, threshold, reset, f_inst, and f_long behavior
+      - PyTorch Conv2d and interpolation for trainable dense software execution
+    fallback: A local differentiable ATan-style surrogate is permitted for lightweight tests when SpikingJelly is unavailable.
+  custom_framework_decision:
+    decision: Do not build a custom autograd or training framework.
+    reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, and data loading.
+  hardware_backend:
+    type: independent_project_specific_VHDL_2008_backend
+    reason: >-
+      The intended accelerator requires sparse shared-kernel spatial convolution,
+      deterministic membrane-state ordering, custom competition/homeostasis, segmentation
+      map emission, fixed-point saturation, and explicit memory banking.
+  spiker_plus:
+    implementation_status: literature_and_design_inspiration_only
+    retained_takeaways:
+      - Fixed-point LIF arithmetic
+      - Power-of-two leakage
+      - Parameterized VHDL generation concepts
+      - Structured software/RTL verification
+      - Resource-aware accelerator design
+    prohibited_claim: The project must not claim to use, extend, or depend on Spiker+ unless that decision is later implemented and documented.
+
+active_dataset:
+  name: DDD17_semantic_segmentation_Ev-SegNet_codification
+  source_project: Ev-SegNet
+  source_url: https://github.com/Shathe/Ev-SegNet
+  task: six_class_semantic_segmentation
+  root_inside_container: /datasets/DDD17
+  expected_modality_first_layout:
+    events:
+      train: /datasets/DDD17/events/train
+      test: /datasets/DDD17/events/test
+    labels:
+      train: /datasets/DDD17/labels/train
+      test: /datasets/DDD17/labels/test
+    ignored_visualization_data:
+      - event_images
+      - images
+  accepted_alternate_layout:
+    - /datasets/DDD17/train/events
+    - /datasets/DDD17/train/labels
+    - /datasets/DDD17/test/events
+    - /datasets/DDD17/test/labels
+  stored_sample:
+    expected_shape: [6, H, W]
+    batched_shape: [N, 6, H, W]
+    dtype: floating_point_or_numeric_npy
+    channels:
+      - polarity_0_histogram
+      - polarity_1_histogram
+      - polarity_0_normalized_timestamp_mean
+      - polarity_1_normalized_timestamp_mean
+      - polarity_0_normalized_timestamp_standard_deviation
+      - polarity_1_normalized_timestamp_standard_deviation
+    warning: >-
+      These channels are summary statistics of an event interval. They must not be
+      reinterpreted as three chronological two-polarity timesteps.
+  labels:
+    ignore_index: 255
+    class_count: 6
+    class_mapping:
+      0: flat
+      1: construction_and_sky
+      2: object
+      3: nature
+      4: human
+      5: vehicle
+  split_policy:
+    provided_splits: [train, test]
+    validation: deterministic_fraction_from_training_records
+    default_validation_fraction: 0.2
+    seed_controls_split: true
+    official_test_policy: Reserve the provided test records for final reporting after architecture selection.
+    leakage_warning: A future sequence-aware split should replace random-record splitting if sequence identifiers are available.
+  discovery_requirements:
+    - Do not recursively enumerate unrelated folders such as event_images.
+    - Use bounded directory checks and os.scandir for large Windows bind mounts.
+    - Pair event and label lists deterministically using the dataset's established sorted ordering.
+    - Report event count, label count, selected folders, and mismatch errors explicitly.
+    - Training must fail clearly when events/train exists without labels/train.
+  current_input_limitation: >-
+    The active benchmark is event-derived but not raw asynchronous replay. It is valid for
+    comparing SNN architectures and segmentation quality, but FPGA event-address sparsity
+    claims must later be validated on raw events.
+
+future_datasets:
+  raw_event_segmentation:
+    objective: Validate chronological event binning and truly sparse event-address inference.
+    candidates:
+      - DDD17 raw recordings aligned with semantic labels where accessible
+      - DSEC-Semantic
+    required_fields: [timestamp, x, y, polarity, semantic_label_alignment]
+    role: final_algorithm_and_hardware_validation
+  legacy_mevdt:
+    role: optional_future_detection_and_tracking_extension
+    status: inactive_for_current_semantic_segmentation_project
+    preserved_reason: Native DAVIS240C 240x180 raw events remain useful for FPGA throughput and tracking experiments.
+
+input_and_time:
+  software_interface:
+    model_shape: [T, N, 6, H, W]
+    T: internal_recurrent_SNN_update_count
+    N: software_batch_of_independent_samples
+    C: 6
+    deployment_batch: 1
+  direct_encoding:
+    method: repeat_the_same_six_channel_sample_as_current_for_each_internal_timestep
+    meaning: The membrane integrates repeated current and emits spikes over T recurrent updates.
+    not_equivalent_to:
+      - T frames per second
+      - T milliseconds
+      - T chronological event bins
+  default_search_time_steps: 20
+  recommended_fast_search_time_steps: 4
+  timestep_ablation: [1, 2, 4, 8, 16, 20]
+  selection_rule: Select the smallest T within 0.5 mIoU percentage points of the best validated T, unless spike-rate or stability evidence requires more steps.
+  raw_event_future_contract:
+    layout: [T, N, 2, H, W]
+    baseline_bin_duration_us: 1000
+    candidate_bin_duration_us: [500, 1000, 2000, 5000]
+    binning_rule: Every event contributes one count at polarity, y, x; repeated events produce repeated additions.
+    timestep_barrier:
+      - Accumulate input events for timestep t
+      - Complete each layer's synaptic-current updates
+      - Apply leak and membrane update
+      - Compare adaptive thresholds
+      - Apply f_inst competition
+      - Emit spikes and perform subtractive reset
+      - Update f_long state
+      - Advance to timestep t+1
+
+neuron:
+  name: HardwareLIF
+  equation: V[t] = V[t-1] - V[t-1] / 2^q + I[t]
+  beta_equivalent: beta = 1 - 2^(-q)
+  default_beta_shift_q: 4
+  default_beta: 0.9375
+  threshold_default: 0.5
+  reset: subtractive
+  surrogate_gradient: ATan
+  inference_surrogate_effect: none
+  bias_policy:
+    convolution_bias: false_preferred
+    reason: A free bias injects current where no event/spike evidence exists and weakens sparse execution.
+  state_reset:
+    between_independent_samples: true
+    between_batches: true
+    within_sample_timesteps: false
+  operation_order_must_match:
+    - leak_previous_membrane
+    - add_current
+    - form_effective_threshold
+    - compute_candidate_spikes
+    - apply_f_inst_if_enabled
+    - subtract_threshold_for_emitted_spikes
+    - optionally_decrement_competing_membranes
+    - update_f_long_adaptation
+
+custom_spiking_dynamics:
+  f_inst:
+    concept: instantaneous cross-channel competition at the same spatial coordinate
+    lineage: Event-Based Trajectory Prediction Using Spiking Neural Networks, 2021
+    rule:
+      - Determine channels above their effective threshold.
+      - Select the channel with the highest candidate membrane.
+      - Allow only that channel to emit a spike.
+      - Optionally decrement other above-threshold membranes.
+    current_default_enabled: false_for_most_architecture_presets
+    reason_for_ablation: It may improve feature diversity and sparsity but can harm dense semantic recall.
+    sweep:
+      enabled: [false, true]
+      competitor_decrement_relative_to_threshold: [0.0, 0.125, 0.25, 0.5]
+  f_long_T_thresh:
+    concept: slow channel-level homeostatic threshold adaptation
+    lineage: Event-Based Trajectory Prediction Using Spiking Neural Networks, 2021
+    scope: per_output_feature_map
+    state: adaptation[channel]
+    effective_threshold: theta[channel] = theta_base + adaptation[channel]
+    current_defaults:
+      enabled_in_adaptive_presets: true
+      adaptation_increment: 0.015625
+      adaptation_decay: 0.0078125
+    expected_effects:
+      - Reduce permanently dominant channels
+      - Improve channel utilization
+      - Control firing rate under changing input density
+      - Add negligible state compared with spatial membrane maps
+    limitation: It does not replace activation normalization during training.
+
+architecture_family:
+  model_class: EventSpikeSeg
+  design_principles:
+    - Fully spiking learned feature and class-map path
+    - Shallow encoder-decoder rather than full symmetric U-Net
+    - Additive skips rather than concatenation
+    - Nearest-neighbor upsampling rather than transposed convolution where possible
+    - Depthwise spatial filtering plus pointwise channel mixing for lightweight variants
+    - Per-channel affine scaling as the preferred foldable normalization
+    - GAP/sigmoid attention only as an ablation because it introduces global reduction and multiplication
+    - Auxiliary heads used for training may be removed from inference
+    - No bounding-box, attention-centroid, classification-only, or tracking head in the active model
+  default_base_channels: 24
+  output:
+    temporal_spikes_shape: [T, N, 6, H, W]
+    accumulated_activity: sum_or_rate_over_T
+    decoded_semantic_map: argmax_over_class_activity
+    ignore_index: 255
+  common_encoder_decoder:
+    conceptual_stages:
+      - six_channel_spiking_stem
+      - high_resolution_encoder_stage
+      - downsampled_encoder_stage
+      - low_resolution_semantic_context_stage
+      - lightweight_upsampling_decoder
+      - one_or_two_additive_encoder_skips
+      - per_pixel_six_class_spiking_head
+    exact_channels_and_shapes: configuration_and_input_resolution_dependent
+
+architecture_search:
+  fairness_contract:
+    - Same training and validation records
+    - Same deterministic seed
+    - Same initialization procedure
+    - Same optimizer, learning-rate schedule, loss, class weights, resolution, and timesteps
+    - Same maximum sample counts
+    - No architecture-specific manual tuning during the first ranking
+  presets:
+    v01_std_unet_light:
+      purpose: standard_convolution_reference
+      depthwise: false
+      context: none
+      normalization: none
+      residual: false
+      adaptive_threshold: false
+      auxiliary_head: false
+    v02_dw_light:
+      purpose: depthwise_pointwise_minimal_baseline
+      depthwise: true
+      context: none
+      normalization: none
+      residual: false
+      adaptive_threshold: false
+    v03_dw_dilated:
+      purpose: single_dilated_context_ablation
+      depthwise: true
+      context: dilation_2
+      normalization: none
+      residual: true
+      adaptive_threshold: false
+    v04_dw_multiscale:
+      purpose: parallel_multi_scale_context_without_normalization
+      depthwise: true
+      context_dilations: [1, 2, 4]
+      normalization: none
+      residual: true
+      adaptive_threshold: false
+    v05_dw_multiscale_affine:
+      purpose: preferred_foldable_channel_calibration
+      depthwise: true
+      context_dilations: [1, 2, 4]
+      normalization: per_channel_gain
+      residual: true
+      adaptive_threshold: false
+    v06_dw_multiscale_bn:
+      purpose: batch_normalization_accuracy_ablation
+      depthwise: true
+      context_dilations: [1, 2, 4]
+      normalization: BatchNorm2d
+      deployment_rule: Fold frozen BN into preceding convolution before quantization.
+      residual: true
+      adaptive_threshold: false
+    v07_dw_multiscale_gap:
+      purpose: SLTNet_style_channel_attention_ablation
+      depthwise: true
+      context_dilations: [1, 2, 4]
+      normalization: per_channel_gain
+      gap_sigmoid_channel_gate: true
+      residual: true
+      adaptive_threshold: false
+      hardware_warning: Requires global accumulation, nonlinear gate approximation, and channel multiplication.
+    v08_dw_multiscale_aux:
+      purpose: auxiliary_supervision_ablation
+      depthwise: true
+      context_dilations: [1, 2, 4]
+      normalization: per_channel_gain
+      residual: true
+      auxiliary_head: true
+      inference_rule: Auxiliary head may be removed after training.
+    v09_dw_single_skip:
+      purpose: lower_memory_decoder_ablation
+      depthwise: true
+      context_dilations: [1, 2, 4]
+      normalization: per_channel_gain
+      residual: true
+      skip_count: 1
+      adaptive_threshold: true
+    v10_fpga_hybrid:
+      purpose: combined_hardware_oriented_candidate
+      depthwise: true
+      context_dilations: [1, 2, 4]
+      normalization: per_channel_gain
+      residual: true
+      skip_count: 2
+      adaptive_threshold: true
+      auxiliary_head: true
+  default_architecture_before_selection: v10_fpga_hybrid
+  winner_selection:
+    primary_metric: validation_mIoU
+    tie_window_mIoU_percentage_points: 0.5
+    tie_breaker_order:
+      - lower_parameter_count
+      - lower_output_spike_rate
+      - lower_estimated_synaptic_additions
+    minimum_confirmation_seeds: [17, 101, 2026]
+    promotion_rule: >-
+      Do not delete the nine losing presets until the leading architecture has completed
+      the staged benchmark, higher-fidelity confirmation, and multi-seed validation.
+      After promotion, preserve the ablation table and preset definitions in experiment
+      records even if the runtime model is simplified to one canonical architecture.
+
+training:
+  task: supervised_semantic_segmentation
+  optimizer:
+    name: AdamW
+    default_learning_rate: 0.001
+    default_weight_decay: 0.0001
+  scheduler: cosine_annealing
+  loss:
+    primary: pixelwise_cross_entropy_on_temporally_accumulated_class_activity
+    ignore_index: 255
+    class_balancing: training_split_class_weights
+    auxiliary_head_weight: configuration_dependent
+    optional_future_regularizers:
+      spike_rate: 0.001
+      channel_utilization_balance: 0.001
+  deterministic_seed_default: 17
+  default_full_search:
+    epochs: 10
+    internal_timesteps: 20
+    resolution_hw: [64, 64]
+    max_train_samples: 2048
+    max_validation_samples: configuration_dependent
+    batch_size: 1
+    note: Accurate but slow on CPU and not required for the first ranking pass.
+  recommended_staged_search:
+    stage_1_all_ten:
+      purpose: coarse_architecture_ranking
+      epochs: 3
+      internal_timesteps: 4
+      resolution_hw: [48, 48]
+      max_train_samples: 512
+      max_validation_samples: 128
+      batch_size_cpu: 1_or_4_after_measurement
+      seed: 17
+    stage_2_top_three:
+      epochs: 8_to_10
+      internal_timesteps: 8
+      resolution_hw: [64, 64]
+      max_train_samples: 2048
+      max_validation_samples: 512
+      seed: 17
+    stage_3_winner:
+      internal_timestep_sweep: [1, 2, 4, 8, 16, 20]
+      resolution_progression:
+        - [64, 64]
+        - [112, 176]
+        - [224, 352]
+      seeds: [17, 101, 2026]
+      dataset_scope: full_available_training_split_when_practical
+  runtime_optimization_rules:
+    approximate_cost_proportional_to:
+      - number_of_samples
+      - epochs
+      - internal_timesteps
+      - image_height_times_width
+      - architecture_synaptic_cost
+    GPU:
+      use_when_available: true
+      batch_size_sweep: [4, 8, 16]
+    CPU:
+      avoid_assuming_more_threads_is_faster: true
+      measure_before_changing_torch_thread_count: true
+      preferred_first_speed_reductions:
+        - fewer_internal_timesteps
+        - fewer_samples
+        - lower_resolution
+        - staged_architecture_elimination
+  checkpoint_contract:
+    required_fields:
+      - architecture_name_and_config
+      - model_state
+      - optimizer_or_training_metadata
+      - seed
+      - class_mapping
+      - validation_split_indices_or_record_identifiers
+      - input_resolution
+      - internal_timesteps
+      - normalization_mode
+      - dataset_representation_version
+
+normalization_and_scaling:
+  none:
+    benefit: cleanest hardware interpretation
+    risk: dead or saturated channels and greater seed sensitivity
+  per_channel_affine:
+    selected_preferred_method: true
+    equation: current[c] = gain[c] * convolution_current[c]
+    bias_default: false
+    reason_no_bias: Preserve zero current in inactive regions.
+    deployment: Fold gain into output-channel convolution weights.
+  BatchNorm:
+    role: training_ablation
+    training_behavior: Normalize per output channel using batch and spatial statistics, then apply learned gamma and beta.
+    inference_behavior: Use frozen running statistics.
+    deployment: Fold BN into convolution weights and bias before quantization.
+    warning: BatchNorm effects must never simply disappear at inference.
+  GAP_channel_gate:
+    role: accuracy_ablation_inspired_by_SLTNet
+    pipeline:
+      - global_average_pool_each_channel
+      - learned_channel_score
+      - sigmoid_or_approximation
+      - channelwise_scaling
+    FPGA_costs:
+      - whole_feature_map_reduction
+      - gate_storage
+      - multiplication_or_shift_approximation
+      - global synchronization
+
+operation_rationale:
+  standard_convolution:
+    benefit: strongest direct spatial_and_channel mixing
+    cost: weights_and_MACs_scale_as_Kh_times_Kw_times_Cin_times_Cout
+  depthwise_convolution:
+    benefit: cheap_per_channel_spatial_filtering
+    cost: weak_cross_channel_interaction
+  pointwise_convolution:
+    benefit: mixes_channels_after_depthwise_filtering_and_controls_channel_width
+    cost: can_dominate_weight_count_at_high_channel_width
+  dilated_convolution:
+    benefit: larger_receptive_field_without_downsampling_or_more_kernel_weights
+    cost: irregular_addressing_and_possible_gridding_artifacts
+  multiscale_context:
+    benefit: combines_local_medium_and_broad_context_for_objects_of_different_sizes
+    cost: branch_buffers_and_more_synaptic_operations
+  additive_skip:
+    benefit: recovers_high_resolution_boundaries_without_doubling_channels
+    cost: requires_shape_and_channel_alignment
+  nearest_neighbor_upsampling:
+    benefit: deterministic_no_weight_low_control_cost
+    cost: relies_on_following_convolution_for_refinement
+  residual_membrane_or_feature_path:
+    benefit: preserves_subthreshold_information_and_gradient_flow
+    cost: extra_buffer_or_read_port
+  auxiliary_head:
+    benefit: improves_gradient_delivery_to_intermediate_decoder_features
+    cost: training_only_compute_and_loss_memory
+  adaptive_threshold:
+    benefit: dynamic_firing_rate_control_and_channel_balance
+    cost: one_small_state_value_per_channel
+
+metrics:
+  primary_segmentation:
+    - mean_IoU
+    - per_class_IoU
+    - pixel_accuracy
+    - mean_class_accuracy
+    - confusion_matrix
+  model_efficiency:
+    - parameter_count
+    - checkpoint_size
+    - dense_operation_estimate
+    - estimated_synaptic_additions
+    - peak_training_memory
+    - samples_per_second
+  SNN:
+    - spike_rate_per_layer
+    - output_spike_rate
+    - silent_channel_fraction
+    - dominant_channel_fraction
+    - channel_utilization
+    - membrane_saturation_fraction
+    - internal_timestep_accuracy_curve
+  robustness:
+    - mean_and_standard_deviation_across_seeds
+    - minimum_seed_mIoU
+    - class_specific_seed_variance
+  FPGA_future:
+    - LUT
+    - FF
+    - BRAM
+    - URAM
+    - distributed_LUTRAM
+    - DSP
+    - maximum_clock_frequency
+    - latency_per_input_interval
+    - sustained_events_per_second
+    - 99th_percentile_FIFO_occupancy
+    - dynamic_power
+    - energy_per_event
+    - energy_per_semantic_output
+  reporting_rule: Only measured values may be placed in RESULTS.md; estimates must be labeled explicitly as estimates.
+
+quantization:
+  objective: Match an addition, shift, comparison, saturation, and address-generation FPGA datapath.
+  initial_formats:
+    weights: signed_int8
+    membrane: signed_int16
+    current_accumulator: signed_int24
+    base_threshold: signed_int16
+    adaptive_threshold: unsigned_int16
+    spike: 1_bit
+    pixel_class: unsigned_3_bit
+    coordinate_x: unsigned_width_dependent
+    coordinate_y: unsigned_height_dependent
+    timestep: unsigned_int16_or_int32
+  mandatory_rules:
+    - Prefer bias-free convolutions.
+    - Use power-of-two-compatible leak.
+    - Fold per-channel affine and BatchNorm before hardware export.
+    - Use deterministic rounding and saturating arithmetic.
+    - Freeze clipping and overflow behavior.
+    - Quantize after architecture and timestep selection.
+  experiments:
+    weight_bits: [4, 6, 8]
+    membrane_bits: [12, 16, 20]
+    accumulator_guard_bits: sweep
+    process:
+      - floating_point_baseline
+      - post_training_quantization
+      - quantization_aware_fine_tuning
+      - bit_exact_integer_export
+      - layerwise_equivalence_replay
+
+fpga_execution:
+  algorithmic_model: discrete_time_spiking_semantic_segmentation_network
+  physical_model: clocked_sparse_event_or_spike_address_processing
+  first_software_reference: dense_PyTorch_convolution
+  future_sparse_reference:
+    synaptic_rule: For each active presynaptic event/spike, add the corresponding shared-kernel weight to every affected output accumulator.
+    hidden_spike_multiplication: not_required_for_binary_spikes
+    first_layer_statistics_mode: six_channel_values_require_quantized_current_multiplication_or_preencoded_events
+    raw_event_mode: repeated_event_addresses_cause_repeated_weight_additions
+  semantic_output_options:
+    - accumulate_class_spikes_in_memory_then_argmax
+    - stream_class_spikes_and_maintain_per_pixel_counts
+    - expose_low_resolution_class_map_and_upsample_on_processing_system
+  exactness_requirement: Dense software, sparse software, integer reference, RTL simulation, and FPGA output must match under the exported fixed-point contract.
+  memory_mapping_policy:
+    BRAM_or_URAM:
+      - large_spatial_membrane_maps
+      - large_current_accumulator_maps
+      - deep_feature_buffers
+    distributed_LUTRAM_candidates:
+      - small_weight_tables
+      - short_event_FIFOs
+      - touched_address_queues
+      - small_line_buffers
+      - shallow_high_access_feature_maps
+    registers:
+      - per_channel_adaptation
+      - thresholds_and_scales
+      - class_counters
+      - pipeline_control
+      - small_address_state
+    rule: Final placement must be frozen only after synthesis and port/timing analysis.
+  active_state_strategies:
+    baseline: full_or_tiled_state_sweep_for_exactness
+    optimization_candidates:
+      - active_neuron_list
+      - touched_address_list
+      - lazy_decay_with_last_update_timestamp
+    warning: Do not adopt lazy decay until bit-exact equivalence and overflow behavior are defined.
+  parallelism_sweep:
+    processing_elements: [1, 4, 8, 16]
+    strategies:
+      - parallel_output_channels
+      - parallel_kernel_offsets
+      - banked_state_memory
+      - ping_pong_event_and_spike_FIFOs
+  deadline_rule: processing_cycles_per_input_interval_must_not_exceed_available_cycles_without_bounded_FIFO_backlog
+
+fpga_target:
+  board: Xilinx_ZCU104
+  RTL_language: VHDL_2008
+  initial_clock_target_mhz: 100
+  reasons:
+    - Existing user experience with ZCU104
+    - Suitable BRAM, URAM, and programmable-logic capacity
+    - ARM processing system supports replay, logging, and staged software post-processing
+  interfaces:
+    offline_first: DDR_or_host_stream
+    live_later: event_camera_AER_or_USB_bridge_to_AXI_Stream
+    control: AXI_Lite
+    output: AXI_Stream_or_memory_mapped_semantic_map
+  priorities:
+    - state_memory_capacity_and_banking
+    - memory_port_conflicts
+    - event_address_generation
+    - LUT_adders_comparators_and_control
+    - bounded_FIFO_capacity
+    - low_DSP_usage_for_binary_spiking_layers
+    - clock_enable_during_inactivity
+
+export_contract:
+  artifacts:
+    - model_spec.yaml
+    - selected_architecture.yaml
+    - quantized_weights.npz
+    - quantized_parameters.json
+    - class_mapping.json
+    - golden_input_samples.npz
+    - golden_layer_currents.npz
+    - golden_layer_membranes.npz
+    - golden_layer_spikes.npz
+    - golden_semantic_outputs.npz
+  model_spec_must_include:
+    - layer_order
+    - tensor_shapes
+    - convolution_parameters
+    - normalization_folding
+    - LIF_parameters
+    - f_inst_parameters
+    - f_long_parameters
+    - quantization_formats
+    - saturation_and_rounding
+    - timestep_count
+    - class_mapping
+  equivalence_requirement: All exported golden tests must match exactly in the integer reference and RTL simulation.
+
+validation_and_testing:
+  required_fast_tests:
+    - configuration_schema
+    - DDD17_modality_first_and_split_first_discovery
+    - event_label_pairing_and_mismatch_detection
+    - six_channel_shape_and_order
+    - ignore_index_handling
+    - deterministic_validation_split
+    - temporal_direct_encoding
+    - LIF_leak_threshold_reset_order
+    - state_reset
+    - f_inst_winner_and_ties
+    - f_long_rise_and_decay
+    - standard_and_depthwise_convolution_shapes
+    - pointwise_channel_mixing
+    - dilation_and_multiscale_shapes
+    - additive_skip_alignment
+    - all_ten_architecture_forward_and_gradient_paths
+    - checkpoint_round_trip
+    - deterministic_winner_selection
+  wider_validation:
+    - smoke_train_on_real_DDD17
+    - all_architecture_same_seed_benchmark
+    - top_three_higher_fidelity_retraining
+    - winner_timestep_ablation
+    - winner_multi_seed_confirmation
+    - full_test_split_evaluation
+    - quantized_vs_float_comparison
+    - sparse_vs_dense_reference_comparison
+    - RTL_vs_integer_reference_when_available
+  tools:
+    Python_tests: pytest
+    lint: ruff
+    RTL_simulation: GHDL_and_cocotb
+  failure_policy:
+    - Reproduce the smallest failing case.
+    - Preserve each fixed defect as a regression test.
+    - Never weaken assertions solely to make tests pass.
+    - Report missing tools as blockers rather than claiming validation.
+
+repository_contract:
+  active_python_package: src/eventscnn
+  active_source_files:
+    - model.py
+    - data.py
+    - train.py
+    - evaluate.py
+    - metrics.py
+    - hardware.py
+    - __init__.py
+  required_documents:
+    - README.md
+    - project_spec.yaml
+    - AGENTS.md
+    - docs/ARCHITECTURE.md
+    - docs/DECISIONS.md
+    - docs/PROGRESS.md
+    - docs/BUGS.md
+    - docs/RESULTS.md
+  clean_repository_rules:
+    - Tracking-era files must not remain in active imports or tests.
+    - Retired material may be archived outside the active package but must not be executed.
+    - Dataset files and large checkpoints must not be committed.
+    - README commands must correspond to working Compose or CLI entry points.
+    - The project specification must be updated before major architectural changes.
+
+workflow:
+  milestone_order:
+    - Validate DDD17 discovery and complete training-label availability.
+    - Complete a small real-data smoke training run.
+    - Preserve the completed ten-architecture benchmark with seed 17.
+    - Run the spike-native top-five benchmark with PLIF, f_long/T_thresh, and selected f_inst.
+    - Diagnose rare-class collapse before final promotion.
+    - Sweep timesteps for the leading architecture.
+    - Confirm the winner with seeds 17, 101, and 2026.
+    - Promote the winner to the canonical model while preserving ablation results.
+    - Evaluate on the reserved DDD17 test split.
+    - Add post-training quantization and QAT.
+    - Build a bit-accurate integer reference.
+    - Add sparse event/spike scatter reference.
+    - Implement VHDL LIF and convolution primitives.
+    - Integrate multilayer segmentation RTL.
+    - Synthesize on ZCU104 and record measured resources, timing, power, and latency.
+    - Validate raw-event input on DDD17 or DSEC-Semantic.
+  architecture_cleanup_rule: >-
+    The ten-preset implementation is temporary experiment infrastructure. Do not remove it
+    before the winner is confirmed. After confirmation, simplify the active model to the
+    winning architecture, keep benchmark results and configuration records, and remove
+    only redundant runtime branches and obsolete files.
+  completion_definition:
+    - Implementation exists.
+    - Tests cover normal and edge behavior.
+    - Validation commands pass.
+    - Documentation and YAML are synchronized.
+    - Configuration and splits are reproducible.
+    - No known silent data or tensor mismatch remains.
+    - Claimed metrics are measured and recorded.
+
+literature_review:
+  current_algorithm_references:
+    - id: spiking_edn
+      contribution: Adaptive event encoding, searched multi-resolution encoder, spiking ASPP, and event semantic segmentation.
+      project_use: Accuracy and adaptive-threshold reference; do not copy irregular NAS graph or heavy ASPP directly.
+    - id: evseg_snn
+      contribution: Reduced U-shaped PLIF semantic segmentation for event data.
+      project_use: Evidence that sparse event input can use a shallower U-Net than RGB segmentation.
+    - id: sltnet
+      contribution: Lightweight depthwise/dilated blocks, GAP channel attention, additive skips, auxiliary supervision, and spike-driven global context.
+      project_use: Main source of lightweight component ablations; transformer and GAP gate remain optional due to FPGA cost.
+  preserved_hardware_and_neuron_references:
+    - id: berner2013_sparse_sensor
+      contribution: DAVIS240 sparse ON/OFF event sensor lineage.
+    - id: acharya2019_rpn
+      contribution: Local event activity, LIF convolution, and spatial proposal clustering.
+      status: historical_tracking_context_only
+    - id: debat2021_trajectory
+      contribution: Three-layer convolutional SNN, f_inst, f_long/T_thresh, STDP, and motion-selective features.
+      status: f_inst_and_f_long_lineage_retained
+    - id: fang2023_spikingjelly
+      contribution: Trainable SNN infrastructure and surrogate-gradient execution.
+    - id: carpegna2024_spiker_plus
+      contribution: Fixed-point FPGA SNN accelerator generation and verification concepts.
+      status: related_work_only
+    - id: firefly_v2
+      contribution: High-throughput FPGA acceleration methods for modern SNN operations.
+      status: hardware_comparison_reference
+  identified_gap: >-
+    Event-based SNN semantic-segmentation models exist, and generic FPGA SNN accelerators
+    exist, but a lightweight event-semantic-segmentation SNN with a deliberately simple
+    sparse shared-kernel FPGA mapping, bit-accurate verification, and measured end-to-end
+    board results remains a meaningful integration and evaluation gap.
+
+legacy_tracking_context:
+  status: preserved_but_inactive
+  previous_task: event_camera_region_proposal_vehicle_classification_and_tracking
+  previous_active_dataset: MEVDT
+  previous_model_elements:
+    - three_layer_32_64_128_spiking_encoder
+    - event_supported_attention_map
+    - vehicle_background_spiking_classifier
+    - deterministic_attention_to_box_decoder
+    - alpha_beta_or_component_tracker
+  preserved_results_policy: Historical results remain valid only for their original checkpoints and task.
+  reason_for_transition: >-
+    MEVDT provides boxes and tracking identities but no semantic masks. DDD17-Seg supplies
+    pixel-level labels needed to train and evaluate true class-wise semantic maps.
+  possible_future_reuse:
+    - derive_instances_from_semantic_components
+    - add_center_or_offset_head_for_instance_separation
+    - associate semantic components temporally
+    - validate raw_event_sparse_backend_on_MEVDT
+  prohibition: Do not mix legacy tracking metrics or checkpoint assumptions into the active DDD17 semantic benchmark.
+
+decision_history:
+  - step: 1
+    issue: Exact continuous-time event decay
+    decision: Deferred
+    reason: Initial goal is a reproducible discrete-time, multiplier-minimized FPGA design.
+  - step: 2
+    issue: Dense software convolution versus sparse hardware execution
+    decision: Accept dense PyTorch/SpikingJelly training and require a mathematically equivalent sparse address-accumulation reference for hardware.
+  - step: 3
+    issue: Custom training framework
+    decision: Rejected
+    reason: PyTorch and SpikingJelly provide the necessary training stack.
+  - step: 4
+    issue: Existing FPGA SNN generator versus custom backend
+    decision: Custom VHDL-2008 backend retained
+    reason: Spatial convolution, segmentation maps, custom dynamics, memory banking, and exact ordering require project-specific control.
+  - step: 5
+    issue: Detection/tracking versus semantic segmentation
+    decision: Active task changed to DDD17 six-class semantic segmentation.
+    reason: Pixel-level labels permit true class-wise region learning and remove the untrained box-scale decoder.
+  - step: 6
+    issue: Raw event stream versus Ev-SegNet codification
+    decision: Use six-channel codification for current architecture search; require raw-event validation later.
+    reason: The downloaded dataset provides ready semantic labels and event-derived statistics but no chronological T dimension.
+  - step: 7
+    issue: Full symmetric U-Net versus lightweight decoder
+    decision: Use shallow encoder-decoder with additive skips.
+    reason: Lower state memory and simpler FPGA mapping while retaining spatial detail.
+  - step: 8
+    issue: Single architecture selected by intuition versus controlled comparison
+    decision: Benchmark ten predefined combinations with identical seed and training budget.
+    reason: Component value must be determined experimentally.
+  - step: 9
+    issue: Twenty internal timesteps for every architecture
+    decision: Use a staged benchmark and later timestep sweep.
+    reason: Internal timesteps are recurrent compute, not camera frames per second; unnecessary steps can multiply runtime without adding information.
+  - step: 10
+    issue: Delete ablation code immediately after one run
+    decision: Delay deletion until higher-fidelity and multi-seed confirmation.
+    reason: A single low-budget seed is insufficient to establish the canonical architecture.
+
+experiment_code_layout:
+  canonical_model_file:
+    path: src/eventscnn/model.py
+    rule: Contains one production architecture only; no experimental preset registry.
+    current_architecture: v10_fpga_hybrid
+    status: round_one_incumbent_pending_round_two_confirmation
+  shared_components_file:
+    path: src/eventscnn/model_components.py
+    contents:
+      - standard_and_depthwise_pointwise_spiking_convolution
+      - multiscale_and_dilated_context
+      - additive_decoder
+      - HardwareLIF
+      - ParametricLIF
+      - f_inst
+      - f_long_and_T_thresh
+  round_one_file:
+    path: src/eventscnn/top_ten_models.py
+    purpose: Preserve the exact completed ten-model definitions and checkpoint compatibility.
+  round_two_file:
+    path: src/eventscnn/top_five_models.py
+    purpose: Isolate the active neuromorphic contenders from the canonical model.
+
+round_one_measured_results:
+  date: '2026-08-06'
   seed: 17
-  primary_metric: validation_mIoU
-  tie_breakers: [parameter_count, output_spike_rate]
-  finalize_after_seeds: 3
-hardware:
-  target: sparse fixed-point FPGA inference
-  preferred:
-    - depthwise_pointwise_convolution
-    - additive_skip_connections
-    - nearest_neighbor_upsampling
-    - foldable_channel_affine
-    - integer_lif
-    - adaptive_threshold
-  ablations:
-    - batch_normalization
-    - gap_sigmoid_channel_gate
-    - multiscale_dilation
-    - auxiliary_head
+  epochs: 10
+  train_samples: 2048
+  held_out_samples: 512
+  resolution_hw: [64, 64]
+  internal_timesteps: 20
+  batch_size: 4
+  source_summary: artifacts/ablation/summary.json
+  ranking_by_mIoU:
+    - {rank: 1, architecture: v10_fpga_hybrid, mIoU: 0.3130307198, parameters: 44016, spike_rate: 0.1411708792}
+    - {rank: 2, architecture: v03_dw_dilated, mIoU: 0.2970095277, parameters: 40824, spike_rate: 0.1125130773}
+    - {rank: 3, architecture: v02_dw_light, mIoU: 0.2849613726, parameters: 30744, spike_rate: 0.1305065870}
+    - {rank: 4, architecture: v08_dw_multiscale_aux, mIoU: 0.2591362894, parameters: 44016, spike_rate: 0.1050513466}
+    - {rank: 5, architecture: v04_dw_multiscale, mIoU: 0.2444102764, parameters: 42552, spike_rate: 0.1188160578}
+  incumbent:
+    architecture: v10_fpga_hybrid
+    pixel_accuracy: 0.7870869637
+    per_class_iou:
+      flat: 0.6082547903
+      construction_plus_sky: 0.8021190763
+      object: 0.0
+      nature: 0.1509719491
+      human: 0.0
+      vehicle: 0.3168385327
+  interpretation:
+    - v10 is the structural incumbent, not a satisfactory final six-class model.
+    - v03 shows that one dilated block can outperform heavier parallel multiscale context.
+    - v02 is the most parameter-efficient leading structure.
+    - v08 supports retaining auxiliary supervision as a contender component.
+    - BatchNorm lowered training loss but did not improve held-out mIoU in this run.
+  open_problem: Object and human classes collapsed to zero IoU and require data/prediction diagnostics.
+
+round_two_top_five:
+  status: implemented_not_measured
+  output_directory: artifacts/ablation/top_five
+  fairness_contract: Reuse the round-one seed, data budget, resolution, timesteps, optimizer, class weighting, and loss for the first comparison.
+  common_neuromorphic_features:
+    neuron: PLIF
+    f_long: feature_map_adaptive_threshold
+    T_thresh_internal_steps: 4
+    note: PLIF retention remains continuous during training and must be quantized before FPGA deployment.
+  contenders:
+    f01_v10_plif_long:
+      structural_sources: [v10_fpga_hybrid]
+      f_inst_hidden: false
+      purpose: Isolate PLIF plus f_long/T_thresh on the incumbent structure.
+    f02_v10_plif_inst_long:
+      structural_sources: [v10_fpga_hybrid]
+      f_inst_hidden: true
+      purpose: Measure the additional effect and sparsity cost of hidden winner-take-all competition.
+    f03_v03_dilated_plif_long:
+      structural_sources: [v03_dw_dilated]
+      f_inst_hidden: false
+      purpose: Test the strongest lower-cost context structure with adaptive temporal dynamics.
+    f04_v02_light_plif_inst_long:
+      structural_sources: [v02_dw_light]
+      f_inst_hidden: true
+      purpose: Test the smallest leading structure with the full competition/homeostasis pair.
+    f05_dilated_aux_plif_long:
+      structural_sources: [v03_dw_dilated, v08_dw_multiscale_aux, v10_fpga_hybrid]
+      f_inst_hidden: false
+      purpose: Combine efficient dilation, affine calibration, and auxiliary supervision.
+  promotion_requirements:
+    - Complete all five with no contender-specific tuning.
+    - Record per-class IoU and rare-class diagnostics.
+    - Confirm the leader with seeds 17, 101, and 2026.
+    - Sweep internal timesteps.
+    - Quantize PLIF retention to a hardware-compatible leak and revalidate.
+    - Replace only the canonical architecture in model.py after acceptance.
+

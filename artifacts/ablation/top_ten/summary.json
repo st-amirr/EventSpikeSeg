@@ -1,0 +1,226 @@
+{
+  "selection_rule": "highest test mIoU; within 0.5 percentage points choose fewer parameters then lower spike rate",
+  "seed": 17,
+  "results": [
+    {
+      "architecture": "v01_std_unet_light",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 193824,
+      "mean_iou": 0.2395639270544052,
+      "pixel_accuracy": 0.8005461692810059,
+      "mean_spike_rate": 0.08486816883087159,
+      "checkpoint": "artifacts/ablation/checkpoints/v01_std_unet_light_seed17.pt",
+      "per_class_iou": [
+        0.6048835515975952,
+        0.8242303133010864,
+        0.00826967041939497,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "architecture": "v02_dw_light",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 30744,
+      "mean_iou": 0.28496137261390686,
+      "pixel_accuracy": 0.7807550430297852,
+      "mean_spike_rate": 0.13050658702850343,
+      "checkpoint": "artifacts/ablation/checkpoints/v02_dw_light_seed17.pt",
+      "per_class_iou": [
+        0.6180698275566101,
+        0.7965365052223206,
+        0.0,
+        0.06885436922311783,
+        0.03048231452703476,
+        0.1958252340555191
+      ]
+    },
+    {
+      "architecture": "v03_dw_dilated",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 40824,
+      "mean_iou": 0.29700952768325806,
+      "pixel_accuracy": 0.7711272239685059,
+      "mean_spike_rate": 0.11251307725906372,
+      "checkpoint": "artifacts/ablation/checkpoints/v03_dw_dilated_seed17.pt",
+      "per_class_iou": [
+        0.5482785701751709,
+        0.8049651384353638,
+        0.0,
+        0.12530340254306793,
+        0.0,
+        0.3035101294517517
+      ]
+    },
+    {
+      "architecture": "v04_dw_multiscale",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 42552,
+      "mean_iou": 0.24441027641296387,
+      "pixel_accuracy": 0.7556338310241699,
+      "mean_spike_rate": 0.11881605784098308,
+      "checkpoint": "artifacts/ablation/checkpoints/v04_dw_multiscale_seed17.pt",
+      "per_class_iou": [
+        0.5187243223190308,
+        0.7888940572738647,
+        0.0,
+        0.1588432490825653,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "architecture": "v05_dw_multiscale_affine",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 43728,
+      "mean_iou": 0.2014756053686142,
+      "pixel_accuracy": 0.7688336372375488,
+      "mean_spike_rate": 0.07863492965698242,
+      "checkpoint": "artifacts/ablation/checkpoints/v05_dw_multiscale_affine_seed17.pt",
+      "per_class_iou": [
+        0.39196282625198364,
+        0.8110291361808777,
+        0.0,
+        0.005853394512087107,
+        0.0,
+        8.251233339251485e-06
+      ]
+    },
+    {
+      "architecture": "v06_dw_multiscale_bn",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 44904,
+      "mean_iou": 0.17296697199344635,
+      "pixel_accuracy": 0.48553037643432617,
+      "mean_spike_rate": 0.12707074085871378,
+      "checkpoint": "artifacts/ablation/checkpoints/v06_dw_multiscale_bn_seed17.pt",
+      "per_class_iou": [
+        0.4874933063983917,
+        0.4388294219970703,
+        0.0,
+        0.11147920042276382,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "architecture": "v07_dw_multiscale_gap",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 48456,
+      "mean_iou": 0.21818171441555023,
+      "pixel_accuracy": 0.7774949073791504,
+      "mean_spike_rate": 0.09328060944875081,
+      "checkpoint": "artifacts/ablation/checkpoints/v07_dw_multiscale_gap_seed17.pt",
+      "per_class_iou": [
+        0.4754262864589691,
+        0.8224547505378723,
+        0.011209305375814438,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "architecture": "v08_dw_multiscale_aux",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 44016,
+      "mean_iou": 0.25913628935813904,
+      "pixel_accuracy": 0.7487549781799316,
+      "mean_spike_rate": 0.10505134661992391,
+      "checkpoint": "artifacts/ablation/checkpoints/v08_dw_multiscale_aux_seed17.pt",
+      "per_class_iou": [
+        0.45137226581573486,
+        0.7881609201431274,
+        0.0,
+        0.14840146899223328,
+        0.0,
+        0.16688309609889984
+      ]
+    },
+    {
+      "architecture": "v09_dw_single_skip",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 43728,
+      "mean_iou": 0.23918960988521576,
+      "pixel_accuracy": 0.7521276473999023,
+      "mean_spike_rate": 0.11681708892186483,
+      "checkpoint": "artifacts/ablation/checkpoints/v09_dw_single_skip_seed17.pt",
+      "per_class_iou": [
+        0.5100935697555542,
+        0.7908814549446106,
+        0.011787746101617813,
+        0.12237481027841568,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "architecture": "v10_fpga_hybrid",
+      "seed": 17,
+      "epochs": 10,
+      "train_samples": 2048,
+      "validation_samples": 512,
+      "parameter_count": 44016,
+      "mean_iou": 0.3130307197570801,
+      "pixel_accuracy": 0.7870869636535645,
+      "mean_spike_rate": 0.14117087920506796,
+      "checkpoint": "artifacts/ablation/checkpoints/v10_fpga_hybrid_seed17.pt",
+      "per_class_iou": [
+        0.6082547903060913,
+        0.8021190762519836,
+        0.0,
+        0.15097194910049438,
+        0.0,
+        0.3168385326862335
+      ]
+    }
+  ],
+  "winner": {
+    "architecture": "v10_fpga_hybrid",
+    "seed": 17,
+    "epochs": 10,
+    "train_samples": 2048,
+    "validation_samples": 512,
+    "parameter_count": 44016,
+    "mean_iou": 0.3130307197570801,
+    "pixel_accuracy": 0.7870869636535645,
+    "mean_spike_rate": 0.14117087920506796,
+    "checkpoint": "artifacts/ablation/checkpoints/v10_fpga_hybrid_seed17.pt",
+    "per_class_iou": [
+      0.6082547903060913,
+      0.8021190762519836,
+      0.0,
+      0.15097194910049438,
+      0.0,
+      0.3168385326862335
+    ]
+  }
+}

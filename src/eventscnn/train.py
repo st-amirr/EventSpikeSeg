@@ -1,4 +1,4 @@
-"""Train one DDD17 segmentation model or benchmark the ten architecture presets."""
+"""Train the final DDD17 model or benchmark isolated architecture suites."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch import Tensor
+from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
@@ -27,7 +27,60 @@ from .data import (
     resolve_ddd17_root,
 )
 from .metrics import ConfusionMatrix
-from .model import ARCHITECTURE_PRESETS, DEFAULT_ARCHITECTURE, EventSpikeSeg, build_model
+from .model import FINAL_ARCHITECTURE_NAME, build_model as build_final_model
+from .top_five_models import (
+    TOP_FIVE_PRESETS,
+    build_top_five_model,
+)
+from .top_ten_models import (
+    TOP_TEN_PRESETS,
+    build_top_ten_model,
+)
+
+
+def architecture_presets(suite: str) -> dict[str, object]:
+    if suite == "top-ten":
+        return TOP_TEN_PRESETS
+    if suite == "top-five":
+        return TOP_FIVE_PRESETS
+    if suite == "final":
+        return {FINAL_ARCHITECTURE_NAME: object()}
+    raise ValueError(f"unknown model suite {suite!r}")
+
+
+def infer_model_suite(architecture: str) -> str:
+    if architecture in TOP_TEN_PRESETS:
+        return "top-ten"
+    if architecture in TOP_FIVE_PRESETS:
+        return "top-five"
+    if architecture == FINAL_ARCHITECTURE_NAME:
+        return "final"
+    raise KeyError(f"unknown architecture {architecture!r}")
+
+
+def build_experiment_model(
+    architecture: str,
+    *,
+    class_count: int = DDD17_CLASS_COUNT,
+    input_channels: int = 6,
+    suite: str = "auto",
+) -> nn.Module:
+    resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
+    if resolved_suite == "top-ten":
+        return build_top_ten_model(
+            architecture, class_count=class_count, input_channels=input_channels
+        )
+    if resolved_suite == "top-five":
+        return build_top_five_model(
+            architecture, class_count=class_count, input_channels=input_channels
+        )
+    if resolved_suite == "final":
+        if architecture != FINAL_ARCHITECTURE_NAME:
+            raise KeyError(f"final architecture is {FINAL_ARCHITECTURE_NAME!r}")
+        return build_final_model(
+            class_count=class_count, input_channels=input_channels
+        )
+    raise ValueError(f"unknown model suite {resolved_suite!r}")
 
 
 @dataclass(frozen=True)
@@ -132,7 +185,7 @@ def _prepare_datasets(
 
 
 def evaluate_model(
-    model: EventSpikeSeg,
+    model: nn.Module,
     loader: DataLoader,
     *,
     device: torch.device,
@@ -160,6 +213,7 @@ def train_architecture(
     root: Path,
     *,
     architecture: str,
+    suite: str = "auto",
     seed: int,
     epochs: int,
     batch_size: int,
@@ -202,7 +256,10 @@ def train_architecture(
         )
     else:
         resolved_device = torch.device(device)
-    model = build_model(architecture, class_count=DDD17_CLASS_COUNT).to(resolved_device)
+    resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
+    model = build_experiment_model(
+        architecture, class_count=DDD17_CLASS_COUNT, suite=resolved_suite
+    ).to(resolved_device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
     class_weights = estimate_class_weights(train_dataset).to(resolved_device)
@@ -270,6 +327,7 @@ def train_architecture(
         {
             "model_state_dict": model.state_dict(),
             "architecture": architecture,
+            "model_suite": resolved_suite,
             "architecture_config": model.architecture.to_dict(),
             "class_names": DDD17_CLASS_NAMES,
             "seed": seed,
@@ -295,10 +353,12 @@ def select_winner(results: list[TrainResult]) -> TrainResult:
 
 def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
     root = resolve_ddd17_root(args.root)
+    presets = architecture_presets(args.suite)
     results = [
         train_architecture(
             root,
             architecture=name,
+            suite=args.suite,
             seed=args.seed,
             epochs=args.epochs,
             batch_size=args.batch_size,
@@ -310,7 +370,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             output_size=(args.height, args.width),
             device=args.device,
         )
-        for name in ARCHITECTURE_PRESETS
+        for name in presets
     ]
     winner = select_winner(results)
     summary = {
@@ -318,6 +378,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             "highest test mIoU; within 0.5 percentage points choose "
             "fewer parameters then lower spike rate"
         ),
+        "suite": args.suite,
         "seed": args.seed,
         "results": [result.to_dict() for result in results],
         "winner": winner.to_dict(),
@@ -377,13 +438,23 @@ def main() -> None:
     _common_training_arguments(single)
     single.add_argument(
         "--architecture",
-        choices=ARCHITECTURE_PRESETS,
-        default=DEFAULT_ARCHITECTURE,
+        choices=(
+            tuple(TOP_TEN_PRESETS)
+            + tuple(TOP_FIVE_PRESETS)
+            + (FINAL_ARCHITECTURE_NAME,)
+        ),
+        default=FINAL_ARCHITECTURE_NAME,
+    )
+    single.add_argument(
+        "--suite", choices=("auto", "top-ten", "top-five", "final"), default="auto"
     )
     single.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
 
     benchmark = subparsers.add_parser("benchmark")
     _common_training_arguments(benchmark)
+    benchmark.add_argument(
+        "--suite", choices=("top-ten", "top-five"), default="top-five"
+    )
     benchmark.add_argument("--output-dir", type=Path, default=Path("artifacts/ablation"))
 
     promote = subparsers.add_parser("promote")
@@ -406,6 +477,7 @@ def main() -> None:
         result = train_architecture(
             root,
             architecture=args.architecture,
+            suite=args.suite,
             seed=args.seed,
             epochs=args.epochs,
             batch_size=args.batch_size,

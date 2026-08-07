@@ -2,73 +2,52 @@
 
 ## Mission
 
-Build and validate a lightweight SNN for semantic segmentation using the Ev-SegNet semantic extension of DDD17, then map the winning architecture to a sparse fixed-point FPGA design.
+Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, identify the best spike-native architecture, and map the confirmed model to sparse fixed-point VHDL.
 
-## Current input contract
+## Source-of-truth order
 
-The downloaded Ev-SegNet dataset stores one six-channel event-statistic image per sample:
+1. `project_spec.yaml`
+2. `AGENTS.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/DECISIONS.md`
+5. active execution plan
+6. tests and executable commands
 
-```text
-[N, 6, H, W]
-```
-
-The six channels represent polarity histograms, normalized timestamp means, and normalized timestamp standard deviations. For direct SNN training, repeat this fixed current over the configured internal timestep count:
-
-```text
-[T, N, 6, H, W]
-```
-
-Do not claim that these are raw chronological event bins. Raw asynchronous DDD17 replay is a later milestone requiring the original recordings and label alignment.
-
-## Output contract
+## Model-file contract
 
 ```text
-[T, N, 6, H, W] class spikes
-[N, 6, H, W] accumulated class logits
+model.py              canonical architecture only
+top_ten_models.py     frozen completed round-one definitions
+top_five_models.py    active round-two contenders
+model_components.py   shared tested primitives
 ```
 
-Classes are:
+Do not add experimental preset registries back into `model.py`.
 
-```text
-flat, construction+sky, object, nature, human, vehicle
-```
+## Current experiment state
 
-Ignore label is `255`.
+Round one is complete. `v10_fpga_hybrid` is the incumbent at mIoU 0.3130, but object and human IoU are zero. Round two compares five PLIF models combining the strongest v10/v03/v02/v08 structures with `f_long`, explicit `T_thresh`, and selected `f_inst`.
 
-## Architecture search
+Run top-five experiments with identical data, seed, resolution, timesteps, optimizer, loss, class weights, and sample budgets. Record the suite name in checkpoints. Do not overwrite the preserved top-ten results.
 
-Maintain exactly ten temporary presets until a winner is demonstrated. Every benchmark run must freeze seed, records, shuffle order, resolution, class weights, optimizer, loss, and timestep count.
+## Neuron requirements
 
-Choose by validation mIoU. Within 0.5 percentage points, prefer fewer parameters, then lower output spike rate.
+- `HardwareLIF`: power-of-two leak, subtractive reset
+- `ParametricLIF`: learnable per-channel retention for software ablation
+- `f_inst`: one winning channel per spatial location when enabled
+- `f_long`: per-feature-map adaptive threshold
+- `T_thresh`: hold timer before adaptive-threshold decay
 
-Do not delete the preset registry after a smoke run. Finalize only after a high-resolution check and at least three winner seeds.
+PLIF is not hardware-final until its retention is quantized and revalidated against the floating model.
 
-## Hardware constraints
+## Finalization
 
-Prefer:
+Do not replace the canonical model based on one seed. Require:
 
-- depthwise + pointwise convolution
-- additive skips
-- nearest-neighbor upsampling followed by convolution
-- foldable affine gains
-- residual membrane paths
-- integer-friendly LIF leak and adaptive thresholds
+- complete top-five benchmark
+- rare-class diagnostics
+- confirmation with seeds 17, 101, and 2026
+- timestep sensitivity check
+- quantized-leak validation for a PLIF winner
 
-Treat BatchNorm, GAP/sigmoid gating, and parallel multiscale branches as measured ablations, not assumed FPGA choices.
-
-Avoid transformer attention, transposed convolution, concatenation-heavy decoders, and operations without a clear fixed-point mapping unless an accuracy gain justifies them.
-
-## Required records
-
-Keep these synchronized:
-
-```text
-docs/ARCHITECTURE.md
-docs/DECISIONS.md
-docs/PROGRESS.md
-docs/RESULTS.md
-docs/BUGS.md
-docs/exec-plans/active/ddd17-semantic-ablation.md
-```
-
-Never record unmeasured accuracy, power, latency, FPGA utilization, or throughput.
+Keep `README.md`, `project_spec.yaml`, `ARCHITECTURE.md`, `DECISIONS.md`, `PROGRESS.md`, `RESULTS.md`, `BUGS.md`, and the active execution plan synchronized.

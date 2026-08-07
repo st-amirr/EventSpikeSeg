@@ -1,30 +1,35 @@
 # EventSpikeSeg-FPGA
 
-Lightweight spiking semantic segmentation for the Ev-SegNet semantic extension of DDD17, with a later sparse FPGA implementation target.
+Lightweight spiking semantic segmentation for the Ev-SegNet semantic extension of DDD17, with a later sparse fixed-point FPGA implementation target.
 
-The former MEVDT attention/classification/tracking pipeline is no longer part of the active package. MEVDT can remain beside DDD17 as a separate dataset, but current training and evaluation use DDD17 semantic labels only.
+## Current model organization
 
-## Dataset used now
-
-Expected host layout (embedded path `Desktop/Dataset/DDD17`):
+The experiment and production code are now separated:
 
 ```text
-DDD17/
-├── events/
-│   ├── train/
-│   └── test/
-├── labels/
-│   ├── train/
-│   └── test/
-├── images/
-└── events_images/   # ignored preview folder
+src/eventscnn/model.py              canonical model only
+src/eventscnn/model_components.py   shared convolution, decoder, LIF, PLIF, f_inst, f_long
+src/eventscnn/top_ten_models.py     frozen round-one ten-model definitions
+src/eventscnn/top_five_models.py    active round-two neuromorphic contenders
 ```
 
-The loader uses these folders directly. Event and label files are paired by matching
-stems. Preview folders such as `events_images` and `labels/test_colored` are ignored.
-Training uses `train`; architecture selection and evaluation use official `test`.
+`model.py` currently contains the measured round-one winner, `v10_fpga_hybrid`. It must not accumulate experimental presets again. After the top-five round is confirmed, replace only the canonical architecture in `model.py`.
 
-The active loader follows the official Ev-SegNet layout. Each `events/*.npy` sample is a six-channel event representation:
+## Dataset
+
+Host layout:
+
+```text
+C:/Users/stamir/Desktop/Dataset/DDD17/
+├── events/{train,test}/*.npy
+├── labels/{train,test}/*.png
+├── images/
+└── events_images/       # previews, ignored
+```
+
+Docker mounts this directory at `/datasets/DDD17`.
+
+Each event sample is a fixed six-channel statistic image:
 
 ```text
 2 polarity histograms
@@ -32,219 +37,137 @@ The active loader follows the official Ev-SegNet layout. Each `events/*.npy` sam
 2 normalized timestamp standard deviations
 ```
 
-It is one event-statistic image per labeled sample, not a raw asynchronous `[timestamp, x, y, polarity]` stream. The SNN benchmark uses **direct encoding**: the same six-channel current is presented during each internal SNN timestep. The six channels are never reinterpreted as six timesteps.
+The training tensor is `[T,N,6,H,W]`. Direct encoding repeats the same six-channel sample for `T` internal LIF/PLIF updates. `T` is not a physical camera rate and does not mean timesteps per second.
 
-Classes:
+Classes are `flat`, `construction+sky`, `object`, `nature`, `human`, and `vehicle`; label `255` is ignored.
 
-```text
-0 flat
-1 construction+sky
-2 object
-3 nature
-4 human
-5 vehicle
-255 ignore
-```
-
-The Ev-SegNet labels are approximate semantic labels generated for selected DDD17 intervals, not native DDD17 ground truth.
-
-## Configure the path
-
-The DDD17 root is embedded for this machine:
-
-```text
-C:/Users/stamir/Desktop/Dataset/DDD17
-```
-
-Docker mounts that folder read-only at `/datasets/DDD17`. Override only if needed:
-
-```text
-DDD17_HOST_ROOT=C:/Users/stamir/Desktop/Dataset/DDD17
-```
-
-The default architecture-search resolution is deliberately small:
-
-```text
-DDD17_HEIGHT=64
-DDD17_WIDTH=64
-```
-
-The original Ev-SegNet training resolution was `224 × 352`. Use that only after selecting finalists or when sufficient GPU memory is available:
-
-```text
-DDD17_HEIGHT=224
-DDD17_WIDTH=352
-```
-
-## Build and inspect
-
-```bash
-docker compose build
-docker compose run --rm inspect-datasets
-docker compose run --rm inspect-ddd17
-```
-
-`inspect-datasets` must show `/datasets/DDD17` with `events` and `labels` underneath.
-The DDD17 inspector should then report train/test records and an Ev-SegNet six-channel
-representation. If `labels/train` is missing from the download, inspection reports that
-explicitly; re-download the Ev-SegNet package before training.
-
-To verify the resolved Windows bind source before running a container:
+## Build, inspect, and test
 
 ```powershell
-docker compose config | Select-String -Pattern "DDD17_HOST_ROOT|source:|target: /datasets" -Context 0,1
-```
-
-## Run tests
-
-```bash
-docker compose run --rm test
+docker compose build
+docker compose run --rm inspect-ddd17
 docker compose run --rm lint
+docker compose run --rm test
 ```
 
-## Smoke test
+## Round-one benchmark: completed top ten
 
-```bash
-docker compose run --rm train-ddd17-smoke
+The preserved benchmark is in:
+
+```text
+artifacts/ablation/summary.json
 ```
 
-This verifies loading, forward/backward propagation, checkpoint writing, and validation on two samples.
+The measured ranking by mIoU was:
 
-## Compare the ten architectures on the same seed
+| rank | architecture | mIoU | parameters | spike rate |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | `v10_fpga_hybrid` | 0.3130 | 44,016 | 0.1412 |
+| 2 | `v03_dw_dilated` | 0.2970 | 40,824 | 0.1125 |
+| 3 | `v02_dw_light` | 0.2850 | 30,744 | 0.1305 |
+| 4 | `v08_dw_multiscale_aux` | 0.2591 | 44,016 | 0.1051 |
+| 5 | `v04_dw_multiscale` | 0.2444 | 42,552 | 0.1188 |
 
-```bash
+The full ten definitions remain in `top_ten_models.py` for reproducibility. They are no longer mixed into `model.py`.
+
+The round-one results also showed class collapse: class `object` had zero IoU for nearly all models and class `human` had zero IoU for all ten. Treat `v10` as the structural incumbent, not a finished six-class model. Before final publication, inspect ground-truth class counts, images containing each class, predicted class counts, and the confusion matrix.
+
+## Round-two top five
+
+The active contenders combine the strongest round-one structures with spike-native neuron mechanisms:
+
+```text
+f01_v10_plif_long
+  v10 structure + PLIF + f_long + T_thresh; no hidden f_inst
+
+f02_v10_plif_inst_long
+  f01 plus hidden cross-channel f_inst competition
+
+f03_v03_dilated_plif_long
+  efficient v03 single-dilation context + PLIF + f_long/T_thresh
+
+f04_v02_light_plif_inst_long
+  smallest v02 structure + PLIF + f_inst + f_long/T_thresh
+
+f05_dilated_aux_plif_long
+  v03-style dilated context + v08/v10 auxiliary supervision + affine gain + PLIF + f_long
+```
+
+All five use PLIF. `f_long` raises feature-map thresholds after firing. `T_thresh=4` holds the adaptive threshold before decay. `f_inst` is tested only in two contenders because forcing a single winning channel at every pixel can improve sparsity but may remove semantic feature combinations.
+
+Run the active second round:
+
+```powershell
+docker compose run --rm benchmark-top-five
+```
+
+`benchmark-ddd17` is an alias for the same active top-five run:
+
+```powershell
 docker compose run --rm benchmark-ddd17
 ```
-
-All variants use the same:
-
-- seed and initialization policy
-- deterministic training records and official Ev-SegNet test as held-out set
-- shuffle order
-- class weights
-- optimizer and learning-rate schedule
-- direct-encoding timestep count
-- input/output resolution
-- loss and evaluation code
 
 Outputs:
 
 ```text
-artifacts/ablation/
-├── summary.json
-└── checkpoints/
+artifacts/ablation/top_five/summary.json
+artifacts/ablation/top_five/checkpoints/
 ```
 
-Selection rule:
-
-1. highest validation mIoU
-2. within 0.5 percentage points, fewer parameters
-3. if still tied, lower output spike rate
-
-### Ten combinations
-
-```text
-v01_std_unet_light
-  Standard convolutions, two additive skips, no context module.
-  Accuracy-oriented reference; highest convolution cost.
-
-v02_dw_light
-  Depthwise spatial convolution + pointwise channel mixing.
-  Smallest plain convolutional baseline.
-
-v03_dw_dilated
-  Depthwise/pointwise blocks plus one dilated context block.
-  Tests larger receptive field without parallel branches.
-
-v04_dw_multiscale
-  Parallel depthwise dilation 1/2/4 context.
-  Tests local, medium, and broad event context.
-
-v05_dw_multiscale_affine
-  v04 plus foldable per-channel gain.
-  Hardware-friendly alternative to BatchNorm.
-
-v06_dw_multiscale_bn
-  v04 plus BatchNorm.
-  Training-stability reference; BN must be folded before deployment.
-
-v07_dw_multiscale_gap
-  v05 plus GAP/sigmoid channel recalibration.
-  Tests whether global channel selection offsets depthwise isolation.
-
-v08_dw_multiscale_aux
-  v05 plus an auxiliary decoder head.
-  Tests deeper supervision and gradient stability.
-
-v09_dw_single_skip
-  v05 with only the high-resolution skip and adaptive thresholds.
-  Lower feature-buffer and decoder cost.
-
-v10_fpga_hybrid
-  Multiscale depthwise context, foldable affine gain, two additive skips,
-  residual paths, adaptive thresholds, and auxiliary supervision.
-```
-
-## Train one selected architecture
-
-Default:
-
-```bash
-docker compose run --rm train-ddd17
-```
-
-PowerShell override:
+The old suite can be reproduced separately:
 
 ```powershell
-$env:DDD17_ARCHITECTURE="v05_dw_multiscale_affine"
-$env:DDD17_SEED="17"
+docker compose run --rm benchmark-top-ten
+```
+
+## Train one model
+
+Canonical current model:
+
+```powershell
+$env:DDD17_MODEL_SUITE="final"
+$env:DDD17_ARCHITECTURE="v10_fpga_hybrid"
 docker compose run --rm train-ddd17
 ```
 
-## Promote and evaluate the benchmark winner
+A top-five contender:
 
-```bash
+```powershell
+$env:DDD17_MODEL_SUITE="top-five"
+$env:DDD17_ARCHITECTURE="f01_v10_plif_long"
+docker compose run --rm train-ddd17
+```
+
+Reset temporary PowerShell variables with:
+
+```powershell
+Remove-Item Env:DDD17_MODEL_SUITE -ErrorAction SilentlyContinue
+Remove-Item Env:DDD17_ARCHITECTURE -ErrorAction SilentlyContinue
+```
+
+## Promote and evaluate
+
+Do not promote until the top-five run is complete and the leading model is checked across seeds 17, 101, and 2026.
+
+```powershell
 docker compose run --rm promote-winner
 docker compose run --rm eval-ddd17
 ```
 
-The promoted checkpoint is:
+The promotion command reads `artifacts/ablation/top_five/summary.json` by default.
+
+## Hardware interpretation
+
+The intended FPGA path remains:
 
 ```text
-artifacts/checkpoints/ddd17_best.pt
+active spike address
+→ shared-kernel weight lookup
+→ affected output-address generation
+→ weight addition to current/membrane state
+→ leak
+→ adaptive threshold and optional f_inst
+→ spike and subtractive reset
 ```
 
-Visual validation is written to:
-
-```text
-artifacts/Validation/
-```
-
-Each image contains:
-
-1. the two event-histogram channels
-2. ground-truth semantic mask
-3. predicted semantic mask
-4. maximum class-spike confidence
-
-## Final architecture cleanup
-
-Do not delete the ten presets after one short run. First:
-
-1. run all ten on the same seed
-2. retrain the top candidates at higher resolution
-3. reproduce the winner with at least two additional seeds
-4. freeze the result in `docs/RESULTS.md`
-
-After those checks, remove the losing presets and checkpoints, replace `DEFAULT_ARCHITECTURE` with the winner, and keep only the winner's layers in `model.py`.
-
-## Active source tree
-
-```text
-src/eventscnn/model.py     ten temporary SNN segmentation variants
-src/eventscnn/data.py      Ev-SegNet DDD17 loader (train/test; test = held-out)
-src/eventscnn/train.py     smoke, single-model, benchmark, and promotion commands
-src/eventscnn/evaluate.py  mIoU evaluation and visual summaries
-src/eventscnn/metrics.py   confusion matrix, mIoU, and pixel accuracy
-src/eventscnn/hardware.py  fixed-point helpers for the later FPGA stage
-```
+PLIF is trained with a continuous per-channel retention value. It is not yet directly hardware-exact; after selection, its learned retention must be quantized to a power-of-two leak or another documented fixed-point form and revalidated.

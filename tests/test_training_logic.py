@@ -1,5 +1,11 @@
 from eventscnn.data import discover_ddd17_records
-from eventscnn.train import TrainResult, _prepare_datasets, select_winner
+from eventscnn.train import (
+    TrainResult,
+    _prepare_datasets,
+    architecture_presets,
+    infer_model_suite,
+    select_winner,
+)
 
 
 def _result(name: str, miou: float, parameters: int, spike_rate: float) -> TrainResult:
@@ -58,3 +64,10 @@ def test_prepare_datasets_uses_train_and_test(tmp_path) -> None:
     assert len(held_out) == 3
     assert all(record.split == "test" for record in held_out.records)
     assert len(discover_ddd17_records(tmp_path, "train")) == 4
+
+
+def test_architecture_suites_are_isolated() -> None:
+    assert len(architecture_presets("top-ten")) == 10
+    assert len(architecture_presets("top-five")) == 5
+    assert infer_model_suite("f01_v10_plif_long") == "top-five"
+    assert infer_model_suite("v03_dw_dilated") == "top-ten"
