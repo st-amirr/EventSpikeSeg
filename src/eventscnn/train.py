@@ -36,7 +36,8 @@ from .top_ten_models import (
     TOP_TEN_PRESETS,
     build_top_ten_model,
 )
-
+torch.set_num_threads(10)
+torch.set_num_interop_threads(1)
 
 def architecture_presets(suite: str) -> dict[str, object]:
     if suite == "top-ten":
@@ -96,10 +97,16 @@ class TrainResult:
     mean_spike_rate: float
     checkpoint: str
     per_class_iou: tuple[float, ...]
+    ground_truth_pixels: tuple[int, ...]
+    predicted_pixels: tuple[int, ...]
+    layer_spike_rates: dict[str, float]
+    neuron_diagnostics: dict[str, float]
 
     def to_dict(self) -> dict[str, object]:
         data = asdict(self)
         data["per_class_iou"] = list(self.per_class_iou)
+        data["ground_truth_pixels"] = list(self.ground_truth_pixels)
+        data["predicted_pixels"] = list(self.predicted_pixels)
         return data
 
 
@@ -148,16 +155,46 @@ def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
     return 1.0 - (numerator / denominator).mean()
 
 
-def estimate_class_weights(dataset: DDD17Dataset, maximum: int = 256) -> Tensor:
+def estimate_class_weights(dataset: DDD17Dataset, maximum: int | None = None) -> Tensor:
+    """Estimate weights from the complete selected training subset by default."""
     counts = torch.zeros(DDD17_CLASS_COUNT, dtype=torch.float64)
-    for index in range(min(len(dataset), maximum)):
+    limit = len(dataset) if maximum is None else min(len(dataset), maximum)
+    for index in range(limit):
         _, mask = dataset[index]
         valid = mask != IGNORE_INDEX
         counts += torch.bincount(mask[valid], minlength=DDD17_CLASS_COUNT)
     frequencies = counts / counts.sum().clamp_min(1.0)
-    weights = 1.0 / torch.sqrt(frequencies.clamp_min(1e-5))
-    weights /= weights.mean()
-    return weights.float().clamp(max=6.0)
+    weights = 1.0 / torch.sqrt(frequencies.clamp_min(1e-6))
+    weights /= weights.mean().clamp_min(1e-8)
+    return weights.float().clamp(max=8.0)
+
+
+def focal_cross_entropy(
+    logits: Tensor,
+    target: Tensor,
+    class_weights: Tensor,
+    *,
+    gamma: float = 1.5,
+) -> Tensor:
+    valid = target != IGNORE_INDEX
+    safe_target = target.masked_fill(~valid, 0)
+    log_probability = F.log_softmax(logits, dim=1)
+    selected = log_probability.gather(1, safe_target.unsqueeze(1)).squeeze(1)
+    probability = selected.exp()
+    focal = -(1.0 - probability).pow(gamma) * selected
+    focal = focal * class_weights[safe_target]
+    return focal[valid].mean() if valid.any() else logits.sum() * 0.0
+
+
+def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
+    hidden_keys = ("enc1_spikes", "enc2_spikes", "enc3_spikes", "decoder_spikes")
+    hidden_rates = torch.stack([outputs[key].mean() for key in hidden_keys])
+    output_rate = outputs["segmentation_spikes"].mean()
+    dead_hidden = torch.relu(0.005 - hidden_rates).mean()
+    excessive_hidden = torch.relu(hidden_rates - 0.25).mean()
+    dead_output = torch.relu(0.01 - output_rate)
+    excessive_output = torch.relu(output_rate - 0.25)
+    return 0.10 * dead_hidden + 0.01 * excessive_hidden + 0.50 * dead_output + 0.01 * excessive_output
 
 
 def _prepare_datasets(
@@ -189,11 +226,13 @@ def evaluate_model(
     loader: DataLoader,
     *,
     device: torch.device,
-) -> tuple[dict[str, object], float]:
+) -> tuple[dict[str, object], float, dict[str, float]]:
     model.eval()
     confusion = ConfusionMatrix(DDD17_CLASS_COUNT, IGNORE_INDEX)
-    spike_sum = 0.0
-    spike_elements = 0
+    layer_sums = {key: 0.0 for key in (
+        "enc1_spikes", "enc2_spikes", "enc3_spikes", "decoder_spikes", "segmentation_spikes"
+    )}
+    layer_elements = {key: 0 for key in layer_sums}
     with torch.no_grad():
         for sequence, target in loader:
             sequence = sequence.to(device)
@@ -202,11 +241,15 @@ def evaluate_model(
             outputs = model(sequence)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
-            spikes = outputs["segmentation_spikes"]
-            spike_sum += float(spikes.sum())
-            spike_elements += spikes.numel()
+            for key in layer_sums:
+                spikes = outputs[key]
+                layer_sums[key] += float(spikes.sum())
+                layer_elements[key] += spikes.numel()
     metrics = confusion.compute().to_dict()
-    return metrics, spike_sum / max(1, spike_elements)
+    rates = {
+        key: layer_sums[key] / max(1, layer_elements[key]) for key in layer_sums
+    }
+    return metrics, rates["segmentation_spikes"], rates
 
 
 def train_architecture(
@@ -260,12 +303,84 @@ def train_architecture(
     model = build_experiment_model(
         architecture, class_count=DDD17_CLASS_COUNT, suite=resolved_suite
     ).to(resolved_device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    base_neuron_tokens = ("beta_logit", "threshold_logit")
+    mechanism_tokens = (
+        "adaptation_tau_logit", "adaptation_strength_logit", "target_rate_logit",
+        "inhibition_strength_logit", "threshold_adaptation_strength_logit", "adaptation_duration_logit",
+    )
+    base_neuron_parameters = []
+    mechanism_parameters = []
+    weight_parameters = []
+    for name, parameter in model.named_parameters():
+        if any(token in name for token in mechanism_tokens):
+            mechanism_parameters.append(parameter)
+        elif any(token in name for token in base_neuron_tokens):
+            base_neuron_parameters.append(parameter)
+        else:
+            weight_parameters.append(parameter)
+    parameter_groups = [
+        {"params": weight_parameters, "lr": learning_rate, "weight_decay": 1e-4}
+    ]
+    if base_neuron_parameters:
+        parameter_groups.append(
+            {"params": base_neuron_parameters, "lr": learning_rate * 2.0, "weight_decay": 0.0}
+        )
+    if mechanism_parameters:
+        # fInst/fLong/TThresh-like parameters alter recurrent dynamics directly;
+        # use the base LR so they do not outrun feature learning early on.
+        parameter_groups.append(
+            {"params": mechanism_parameters, "lr": learning_rate, "weight_decay": 0.0}
+        )
+    optimizer = torch.optim.AdamW(parameter_groups)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
     class_weights = estimate_class_weights(train_dataset).to(resolved_device)
 
+    architecture_config = getattr(model, "architecture", None)
+    mechanism_round = bool(
+        architecture_config is not None
+        and (
+            getattr(architecture_config, "homeostasis_kind", "legacy") == "triangular_threshold"
+            or getattr(architecture_config, "inhibition_kind", "gate") == "peer_membrane"
+            or str(getattr(architecture_config, "name", "")).startswith("f01p_")
+        )
+    )
+    warmup_epochs = max(2, int(round(epochs * (0.50 if mechanism_round else 0.30))))
     for epoch in range(1, epochs + 1):
         model.train()
+        if mechanism_round:
+            # Start exactly as the stable PLIF/threshold model, then introduce
+            # triangular threshold adaptation smoothly over half the run.
+            if epoch == 1:
+                homeostasis_scale = 0.0
+            else:
+                homeostasis_scale = min(
+                    1.0, (epoch - 1) / float(max(1, warmup_epochs - 1))
+                )
+            # Keep mutually-exclusive semantic class WTA active from the start.
+            # ``peer_membrane`` is safe to enable immediately because its membrane
+            # decrement is multiplied by homeostasis_scale.  ``winner_peer``
+            # has a discrete winner gate, so delay only that hidden mechanism
+            # until the PLIF/threshold representation has stabilized.
+            competition_enabled = True
+            winner_peer_inhibition = bool(
+                architecture_config is not None
+                and getattr(architecture_config, "inhibition_kind", "gate")
+                == "winner_peer"
+            )
+            hidden_inhibition_enabled = (not winner_peer_inhibition) or epoch > warmup_epochs
+        else:
+            homeostasis_scale = min(1.0, epoch / float(warmup_epochs))
+            competition_enabled = epoch > warmup_epochs
+            hidden_inhibition_enabled = competition_enabled
+        set_homeostasis = getattr(model, "set_homeostasis_scale", None)
+        if callable(set_homeostasis):
+            set_homeostasis(homeostasis_scale)
+        set_competition = getattr(model, "set_competition_enabled", None)
+        if callable(set_competition):
+            set_competition(competition_enabled)
+        set_hidden_inhibition = getattr(model, "set_hidden_inhibition_enabled", None)
+        if callable(set_hidden_inhibition):
+            set_hidden_inhibition(hidden_inhibition_enabled)
         running_loss = 0.0
         for sequence, target in train_loader:
             sequence = sequence.to(resolved_device)
@@ -274,16 +389,18 @@ def train_architecture(
             outputs = model(sequence)
             logits = outputs["segmentation_logits"]
             ce = F.cross_entropy(logits, target, weight=class_weights, ignore_index=IGNORE_INDEX)
+            focal = focal_cross_entropy(logits, target, class_weights)
             dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
-            spike_rate = outputs["segmentation_spikes"].mean()
-            loss = ce + 0.5 * dice + 0.001 * torch.relu(spike_rate - 0.10)
+            loss = 0.5 * ce + 0.5 * focal + 0.75 * dice + _activity_regularizer(outputs)
             if "auxiliary_logits" in outputs:
                 auxiliary = F.interpolate(
                     outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
                 )
-                loss = loss + 0.3 * F.cross_entropy(
+                auxiliary_ce = F.cross_entropy(
                     auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
                 )
+                auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
+                loss = loss + 0.15 * auxiliary_ce + 0.15 * auxiliary_focal
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite loss for {architecture} at epoch {epoch}")
             optimizer.zero_grad(set_to_none=True)
@@ -299,15 +416,26 @@ def train_architecture(
                     "epoch": epoch,
                     "epochs": epochs,
                     "mean_loss": running_loss / max(1, len(train_loader)),
+                    "homeostasis_scale": homeostasis_scale,
+                    "competition_enabled": competition_enabled,
+                    "hidden_inhibition_enabled": hidden_inhibition_enabled,
                 },
                 sort_keys=True,
             ),
             flush=True,
         )
 
-    metrics, mean_spike_rate = evaluate_model(
+    set_homeostasis = getattr(model, "set_homeostasis_scale", None)
+    if callable(set_homeostasis):
+        set_homeostasis(1.0)
+    set_competition = getattr(model, "set_competition_enabled", None)
+    if callable(set_competition):
+        set_competition(True)
+    metrics, mean_spike_rate, layer_spike_rates = evaluate_model(
         model, validation_loader, device=resolved_device
     )
+    diagnostics_fn = getattr(model, "neuron_diagnostics", None)
+    neuron_diagnostics = diagnostics_fn() if callable(diagnostics_fn) else {}
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = output_dir / f"{architecture}_seed{seed}.pt"
     result = TrainResult(
@@ -322,6 +450,10 @@ def train_architecture(
         mean_spike_rate=mean_spike_rate,
         checkpoint=str(checkpoint_path),
         per_class_iou=tuple(float(value) for value in metrics["per_class_iou"]),
+        ground_truth_pixels=tuple(int(value) for value in metrics["ground_truth_pixels"]),
+        predicted_pixels=tuple(int(value) for value in metrics["predicted_pixels"]),
+        layer_spike_rates=layer_spike_rates,
+        neuron_diagnostics=neuron_diagnostics,
     )
     torch.save(
         {

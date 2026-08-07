@@ -56,13 +56,13 @@ benchmark-top-five:
 		--suite top-five --seed $(DDD17_SEED) --epochs 10 --batch-size 4 --time-steps 20 \
 		--height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
 		--train-samples 2048 --validation-samples 512 \
-		--output-dir artifacts/ablation/top_five
+		--output-dir artifacts/ablation/top_five_v2
 
 benchmark-ddd17: benchmark-top-five
 
 promote-winner:
 	$(PYTHON) -m eventscnn.train promote \
-		--summary artifacts/ablation/top_five/summary.json \
+		--summary artifacts/ablation/top_five_v2/summary.json \
 		--destination artifacts/checkpoints/ddd17_best.pt
 
 eval-ddd17:

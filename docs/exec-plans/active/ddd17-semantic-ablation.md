@@ -2,43 +2,50 @@
 
 ## Objective
 
-Preserve the completed ten-model benchmark and run a second controlled five-model comparison focused on spike-native temporal and homeostatic mechanisms.
+Preserve the completed top-ten and failed top-five-v1 experiments, then run a revised five-model comparison that fixes the measured neuron-dynamics failures.
 
-## Completed round one
+## Preserved evidence
 
-- ten architectures completed with seed 17
-- winner: `v10_fpga_hybrid`, mIoU 0.3130
-- definitions moved to `top_ten_models.py`
-- measured results preserved in `artifacts/ablation/summary.json`
-- object and human class collapse identified as an open issue
+- top-ten winner: `v10_fpga_hybrid`, mIoU 0.3130
+- top-five-v1 winner: `f01_v10_plif_long`, mIoU 0.2464
+- v1 lightweight `f04` output spike rate: 0.0000
+- old results remain in `artifacts/ablation/top_five/`
 
-## Active round two
+## Revised contenders
 
-Compare exactly these five definitions from `top_five_models.py`:
+- `f01r_v10_plif_threshold`
+- `f02r_v10_plif_ratehomeo`
+- `f03r_v10_plif_grouped_inst`
+- `f04r_v03_dilated_plif_ratehomeo`
+- `f05r_v02_light_recovered`
 
-- `f01_v10_plif_long`
-- `f02_v10_plif_inst_long`
-- `f03_v03_dilated_plif_long`
-- `f04_v02_light_plif_inst_long`
-- `f05_dilated_aux_plif_long`
+## Corrections under test
 
-All use PLIF and `f_long/T_thresh`; two isolate hidden-layer `f_inst`.
+- learnable per-channel base threshold in addition to PLIF beta
+- learnable continuous adaptation tau replacing integer `T_thresh`
+- rate-based bidirectional homeostasis using mean spike rate
+- learnable adaptation strength and target firing rate
+- independent output class spikes; final temporal argmax only
+- grouped top-2 scoped f_inst instead of global WTA
+- dynamics warm-up and higher learning rate for neuron parameters
+- complete-subset class weights, focal/CE/Dice loss, and activity-floor regularization
 
-## Fairness contract
+## Reproducibility contract
 
-- same seed, records, shuffle order, resolution, timesteps, optimizer, schedule, class weights, and loss
-- no contender-specific tuning during the first top-five pass
-- output to `artifacts/ablation/top_five/`
-- select by mIoU; within 0.5 points prefer fewer parameters then lower spike rate
+- same seed 17, 2,048 train samples, 512 held-out samples, 64×64, 20 steps, 10 epochs
+- all five share the same revised training protocol
+- output only to `artifacts/ablation/top_five_v2/`
+- preserve old checkpoints and summaries
 
 ## Acceptance criteria
 
 - Docker lint and tests pass
-- all five finish without non-finite loss
-- summary contains per-class IoU for every contender
-- class-frequency and prediction-count diagnostics are run before promotion
-- leading model is repeated with seeds 101 and 2026
-- PLIF winner is checked with a quantized power-of-two leak
+- all five complete without non-finite loss
+- no contender has zero output spike rate
+- summary records per-class IoU, class support/predictions, per-layer rates, and learned beta/threshold/tau
+- leader beats or meaningfully approaches mIoU 0.3130 without rare-class regression
+- leader is repeated with seeds 101 and 2026 before promotion
+- learned dynamics are quantized and revalidated before FPGA claims
 
 ## Commands
 
@@ -50,4 +57,4 @@ docker compose run --rm benchmark-top-five
 
 ## Next concrete action
 
-Run the top-five benchmark using the completed round-one budget, then inspect whether PLIF/homeostasis improves object, human, and vehicle IoU rather than only aggregate mIoU.
+Run the revised benchmark and inspect whether object, human, and vehicle predictions increase rather than only flat/construction accuracy.

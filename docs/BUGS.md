@@ -29,3 +29,19 @@ uses `test` as the held-out set. Preview folders such as `events_images` and
 **Possible causes:** severe class imbalance, too few class-containing samples in the fixed subset, loss weighting limits, disappearance of small regions at 64×64, or class-prediction collapse.
 
 **Required diagnostic:** record ground-truth pixels per class, samples containing each class, post-resize class counts, predicted pixels per class, and the full confusion matrix before final architecture promotion.
+
+## 2026-08-07 — Resolved design flaw: binary feature-map homeostasis
+
+**Former behavior:** `amax` reduced a complete feature map to 0/1, so one spike and dense firing caused the same threshold increment. A fixed integer timer repeatedly held the threshold high.
+
+**Correction:** revised contenders use mean spike rate and learnable continuous adaptation tau, strength, and target rate. Silent channels can lower their threshold; overactive channels raise it.
+
+## 2026-08-07 — Resolved design flaw: global hard f_inst
+
+**Former behavior:** one winning channel per pixel was enforced through all hidden stages, causing feature loss and complete collapse in the lightweight contender.
+
+**Correction:** revised competition is grouped top-2 and scoped to encoder or stem only. Competition is disabled during the first 30% of training.
+
+## 2026-08-07 — Open: revised real-data outcome
+
+The revised mechanisms pass unit and synthetic training tests but have not yet demonstrated improved DDD17 mIoU. Promotion remains blocked until the real benchmark and multi-seed confirmation finish.

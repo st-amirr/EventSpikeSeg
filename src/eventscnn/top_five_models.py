@@ -1,16 +1,17 @@
-"""Second-round neuromorphic contenders derived from the top-ten benchmark."""
+"""Current five neuromorphic DDD17 semantic-segmentation contenders."""
 
 from __future__ import annotations
 
 from .model_components import EventSpikeSegBase, SegmentationArchitecture
 
-# The completed round-one ranking was v10, v03, v02, v08, then v04 by mIoU.
-# These contenders combine those structural strengths with PLIF, f_long/T_thresh,
-# and selected f_inst competition.  Ordinary BatchNorm and GAP are excluded from
-# this round because the goal is a more spike-native, FPGA-oriented comparison.
+
+# The mechanism names describe their actual operation:
+# - threshold_adaptation: local triangular rise/fall threshold penalty
+# - winner_peer: one retinotopic winner spikes; peer feature membranes are inhibited
+# - peer_membrane: simultaneous spikes are preserved; peer feature membranes are inhibited
 TOP_FIVE_PRESETS: dict[str, SegmentationArchitecture] = {
-    "f01_v10_plif_long": SegmentationArchitecture(
-        name="f01_v10_plif_long",
+    "f01_v10_plif_threshold_wta": SegmentationArchitecture(
+        name="f01_v10_plif_threshold_wta",
         context="multiscale",
         norm="affine",
         auxiliary_head=True,
@@ -18,11 +19,12 @@ TOP_FIVE_PRESETS: dict[str, SegmentationArchitecture] = {
         residual=True,
         adaptive_threshold=False,
         neuron_kind="plif",
-        f_long_enabled=True,
-        t_thresh_steps=4,
+        learnable_threshold=True,
+        f_long_enabled=False,
+        output_f_inst_enabled=True,
     ),
-    "f02_v10_plif_inst_long": SegmentationArchitecture(
-        name="f02_v10_plif_inst_long",
+    "f02_v10_plif_threshold_adaptation": SegmentationArchitecture(
+        name="f02_v10_plif_threshold_adaptation",
         context="multiscale",
         norm="affine",
         auxiliary_head=True,
@@ -30,12 +32,37 @@ TOP_FIVE_PRESETS: dict[str, SegmentationArchitecture] = {
         residual=True,
         adaptive_threshold=False,
         neuron_kind="plif",
+        learnable_threshold=True,
+        f_long_enabled=True,
+        f_long_scope="encoder",
+        homeostasis_kind="triangular_threshold",
+        threshold_adaptation_strength_init=0.30,
+        adaptation_duration_init=6.0,
+        output_f_inst_enabled=True,
+    ),
+    "f03_v10_plif_winner_peer_inhibition": SegmentationArchitecture(
+        name="f03_v10_plif_winner_peer_inhibition",
+        context="multiscale",
+        norm="affine",
+        auxiliary_head=True,
+        skip_kind="two",
+        residual=True,
+        adaptive_threshold=False,
+        neuron_kind="plif",
+        learnable_threshold=True,
         f_inst_enabled=True,
+        f_inst_scope="encoder",
+        inhibition_kind="winner_peer",
+        inhibition_strength_init=0.20,
         f_long_enabled=True,
-        t_thresh_steps=4,
+        f_long_scope="encoder",
+        homeostasis_kind="triangular_threshold",
+        threshold_adaptation_strength_init=0.25,
+        adaptation_duration_init=6.0,
+        output_f_inst_enabled=True,
     ),
-    "f03_v03_dilated_plif_long": SegmentationArchitecture(
-        name="f03_v03_dilated_plif_long",
+    "f04_v03_dilated_threshold_adaptation": SegmentationArchitecture(
+        name="f04_v03_dilated_threshold_adaptation",
         context="dilated",
         context_dilations=(2,),
         norm="none",
@@ -44,38 +71,38 @@ TOP_FIVE_PRESETS: dict[str, SegmentationArchitecture] = {
         residual=True,
         adaptive_threshold=False,
         neuron_kind="plif",
+        learnable_threshold=True,
         f_long_enabled=True,
-        t_thresh_steps=4,
+        f_long_scope="encoder",
+        homeostasis_kind="triangular_threshold",
+        threshold_adaptation_strength_init=0.25,
+        adaptation_duration_init=5.0,
+        output_f_inst_enabled=True,
     ),
-    "f04_v02_light_plif_inst_long": SegmentationArchitecture(
-        name="f04_v02_light_plif_inst_long",
+    "f05_v02_light_peer_membrane_inhibition": SegmentationArchitecture(
+        name="f05_v02_light_peer_membrane_inhibition",
         context="none",
-        norm="none",
-        auxiliary_head=False,
-        skip_kind="two",
-        residual=False,
-        adaptive_threshold=False,
-        neuron_kind="plif",
-        f_inst_enabled=True,
-        f_long_enabled=True,
-        t_thresh_steps=4,
-    ),
-    "f05_dilated_aux_plif_long": SegmentationArchitecture(
-        name="f05_dilated_aux_plif_long",
-        context="dilated",
-        context_dilations=(2,),
         norm="affine",
         auxiliary_head=True,
         skip_kind="two",
         residual=True,
         adaptive_threshold=False,
         neuron_kind="plif",
+        learnable_threshold=True,
+        f_inst_enabled=True,
+        f_inst_scope="stem",
+        inhibition_kind="peer_membrane",
+        inhibition_strength_init=0.20,
         f_long_enabled=True,
-        t_thresh_steps=4,
+        f_long_scope="encoder",
+        homeostasis_kind="triangular_threshold",
+        threshold_adaptation_strength_init=0.20,
+        adaptation_duration_init=5.0,
+        output_f_inst_enabled=True,
     ),
 }
 
-TOP_FIVE_DEFAULT = "f01_v10_plif_long"
+TOP_FIVE_DEFAULT = "f02_v10_plif_threshold_adaptation"
 
 
 def build_top_five_model(

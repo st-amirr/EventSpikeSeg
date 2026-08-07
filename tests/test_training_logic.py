@@ -21,6 +21,10 @@ def _result(name: str, miou: float, parameters: int, spike_rate: float) -> Train
         mean_spike_rate=spike_rate,
         checkpoint=f"{name}.pt",
         per_class_iou=(miou,) * 6,
+        ground_truth_pixels=(1,) * 6,
+        predicted_pixels=(1,) * 6,
+        layer_spike_rates={"segmentation_spikes": spike_rate},
+        neuron_diagnostics={},
     )
 
 
@@ -45,20 +49,13 @@ def test_prepare_datasets_uses_train_and_test(tmp_path) -> None:
         events_dir.mkdir(parents=True)
         labels_dir.mkdir(parents=True)
         for index in range(count):
-            np.save(
-                events_dir / f"{split}_{index}.npy",
-                np.zeros((24, 32, 6), dtype=np.float32),
-            )
+            np.save(events_dir / f"{split}_{index}.npy", np.zeros((24, 32, 6), dtype=np.float32))
             Image.fromarray(np.zeros((24, 32), dtype=np.uint8)).save(
                 labels_dir / f"{split}_{index}.png"
             )
 
     train_dataset, held_out = _prepare_datasets(
-        tmp_path,
-        seed=17,
-        train_samples=0,
-        validation_samples=0,
-        output_size=(32, 32),
+        tmp_path, seed=17, train_samples=0, validation_samples=0, output_size=(32, 32)
     )
     assert len(train_dataset) == 4
     assert len(held_out) == 3
@@ -69,5 +66,6 @@ def test_prepare_datasets_uses_train_and_test(tmp_path) -> None:
 def test_architecture_suites_are_isolated() -> None:
     assert len(architecture_presets("top-ten")) == 10
     assert len(architecture_presets("top-five")) == 5
-    assert infer_model_suite("f01_v10_plif_long") == "top-five"
+    assert infer_model_suite("f01_v10_plif_threshold_wta") == "top-five"
+    assert infer_model_suite("f03_v10_plif_winner_peer_inhibition") == "top-five"
     assert infer_model_suite("v03_dw_dilated") == "top-ten"

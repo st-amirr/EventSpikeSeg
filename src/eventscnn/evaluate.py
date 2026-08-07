@@ -90,7 +90,8 @@ def evaluate(
     records = deterministic_record_subset(
         discover_ddd17_records(root, split),
         maximum=maximum_samples,
-        seed=int(checkpoint["seed"]) + 2,
+        # Match train.py's held-out benchmark subset exactly.
+        seed=int(checkpoint["seed"]) + 1,
     )
     output_size = tuple(int(value) for value in checkpoint.get("output_size", [64, 64]))
     dataset = DDD17Dataset(root, split=split, records=records, output_size=output_size)
@@ -153,7 +154,13 @@ def main() -> None:
         default=DEFAULT_DDD17_ROOT,
         help=f"DDD17 root (default: embedded {DEFAULT_DDD17_ROOT})",
     )
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        action="append",
+        required=True,
+        help="checkpoint to evaluate; repeat this option to compare several",
+    )
     parser.add_argument("--split", choices=("train", "test"), default="test")
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--max-samples", type=int, default=0)
@@ -161,17 +168,44 @@ def main() -> None:
     parser.add_argument("--visualization-dir", type=Path, default=Path("artifacts/Validation"))
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
-    result = evaluate(
-        resolve_ddd17_root(args.root),
-        args.checkpoint,
-        split=args.split,
-        batch_size=args.batch_size,
-        maximum_samples=args.max_samples,
-        visualizations=args.visualizations,
-        visualization_dir=args.visualization_dir,
-        device=args.device,
+    root = resolve_ddd17_root(args.root)
+    results: list[dict[str, object]] = []
+    for checkpoint_path in args.checkpoint:
+        destination = args.visualization_dir
+        if len(args.checkpoint) > 1:
+            destination = destination / checkpoint_path.stem
+        results.append(
+            evaluate(
+                root,
+                checkpoint_path,
+                split=args.split,
+                batch_size=args.batch_size,
+                maximum_samples=args.max_samples,
+                visualizations=args.visualizations,
+                visualization_dir=destination,
+                device=args.device,
+            )
+        )
+    if len(results) == 1:
+        print(json.dumps(results[0], indent=2))
+        return
+    ranked = sorted(results, key=lambda item: float(item["mean_iou"]), reverse=True)
+    print(
+        json.dumps(
+            {
+                "results": results,
+                "ranking": [
+                    {
+                        "architecture": item["architecture"],
+                        "mean_iou": item["mean_iou"],
+                        "pixel_accuracy": item["pixel_accuracy"],
+                    }
+                    for item in ranked
+                ],
+            },
+            indent=2,
+        )
     )
-    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

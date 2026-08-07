@@ -1001,3 +1001,71 @@ round_two_top_five:
     - Quantize PLIF retention to a hardware-compatible leak and revalidate.
     - Replace only the canonical architecture in model.py after acceptance.
 
+
+revised_top_five_v2:
+  status: implemented_not_yet_measured_on_real_ddd17
+  reason:
+    - first_top_five_best_miou_0_2464_below_incumbent_0_3130
+    - fixed_t_thresh_4_was_nondifferentiable_and_repeatedly_held_thresholds_high
+    - amax_homeostasis_treated_one_spike_like_dense_activity
+    - global_hard_f_inst_destroyed_distributed_semantic_features
+    - lightweight_f04_collapsed_to_zero_output_spikes
+  preserved_v1:
+    definitions: src/eventscnn/top_five_models.py::TOP_FIVE_V1_PRESETS
+    results: artifacts/ablation/top_five/summary.json
+  active_output: artifacts/ablation/top_five_v2
+  neuron_dynamics:
+    plif:
+      learnable_per_channel_beta: true
+      learnable_per_channel_base_threshold: true
+    rate_homeostasis:
+      activity_measure: mean_over_batch_height_width
+      bidirectional: true
+      update: "a[t] = exp(-1/tau) * a[t-1] + strength * (rate[t] - target_rate)"
+      learnable_per_channel:
+        - tau
+        - strength
+        - target_rate
+      replaces_integer_t_thresh: true
+      hardware_followup: quantize_tau_retention_strength_target_and_threshold
+    competition:
+      hard_global_wta: forbidden_for_active_v2
+      allowed: grouped_top_2
+      scopes:
+        - encoder_only
+        - stem_only
+      training_warmup_fraction: 0.30
+    output_head:
+      independent_class_spikes: true
+      temporal_spike_count_argmax: true
+      analog_linear_classifier: false
+  training_protocol_changes:
+    class_weights: complete_selected_training_subset
+    loss:
+      - weighted_cross_entropy
+      - focal_cross_entropy
+      - soft_dice
+      - dead_and_excessive_spike_activity_regularization
+    neuron_parameter_learning_rate_multiplier: 3.0
+    neuron_parameter_weight_decay: 0.0
+    diagnostics:
+      - ground_truth_pixels_per_class
+      - predicted_pixels_per_class
+      - per_layer_spike_rate
+      - mean_beta
+      - mean_base_threshold
+      - mean_adaptation_tau
+      - mean_adaptation_strength
+      - mean_target_rate
+  contenders:
+    - f01r_v10_plif_threshold
+    - f02r_v10_plif_ratehomeo
+    - f03r_v10_plif_grouped_inst
+    - f04r_v03_dilated_plif_ratehomeo
+    - f05r_v02_light_recovered
+  promotion_gate:
+    incumbent_miou: 0.3130307197570801
+    required_seeds: [17, 101, 2026]
+    require_nonzero_output_spike_rate: true
+    require_rare_class_diagnostics: true
+    canonical_model_file_unchanged_until_pass: true

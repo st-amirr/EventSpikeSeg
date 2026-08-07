@@ -14,6 +14,8 @@ class SegmentationMetrics:
     pixel_accuracy: float
     per_class_iou: tuple[float, ...]
     valid_classes: int
+    ground_truth_pixels: tuple[int, ...]
+    predicted_pixels: tuple[int, ...]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -21,6 +23,8 @@ class SegmentationMetrics:
             "pixel_accuracy": self.pixel_accuracy,
             "per_class_iou": list(self.per_class_iou),
             "valid_classes": self.valid_classes,
+            "ground_truth_pixels": list(self.ground_truth_pixels),
+            "predicted_pixels": list(self.predicted_pixels),
         }
 
 
@@ -56,4 +60,6 @@ class ConfusionMatrix:
             pixel_accuracy=accuracy,
             per_class_iou=tuple(float(value) for value in iou),
             valid_classes=int(valid.sum()),
+            ground_truth_pixels=tuple(int(value) for value in self.matrix.sum(dim=1)),
+            predicted_pixels=tuple(int(value) for value in self.matrix.sum(dim=0)),
         )

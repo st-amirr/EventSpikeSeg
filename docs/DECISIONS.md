@@ -31,3 +31,27 @@ PLIF learns continuous per-channel retention. The eventual FPGA model must quant
 ## 2026-08-06 — Round-one zero-IoU classes are an open data/training issue
 
 Object and human class performance cannot be solved by architecture ranking alone. Before final selection, record class pixel counts, image-presence counts, prediction counts, and confusion matrices at the benchmark resolution.
+
+## 2026-08-07 — Reject the first PLIF/homeostasis top five as final models
+
+The first round-two winner reached only mIoU 0.2464 versus the incumbent 0.3130, and the lightweight `f04` emitted zero output spikes. Preserve the definitions/checkpoints for diagnosis but do not promote them.
+
+## 2026-08-07 — Replace fixed T_thresh with learnable continuous adaptation persistence
+
+A discrete integer hold timer cannot receive useful gradients through standard backpropagation. Revised rate homeostasis learns a bounded continuous `tau`, with retention `exp(-1/tau)`, plus per-channel adaptation strength and target firing rate. Quantize these only after architecture selection.
+
+## 2026-08-07 — Make homeostasis bidirectional and rate-based
+
+Use spatial mean spike rate instead of feature-map `amax`. Threshold adaptation may become negative for silent channels and positive for overactive channels, bounded around the learnable base threshold.
+
+## 2026-08-07 — Remove hard class-head WTA from revised contenders
+
+Independent output class neurons accumulate spikes and compete only through final temporal argmax. This preserves a fully spiking learned output while allowing gradients to reach rare classes.
+
+## 2026-08-07 — Restrict f_inst rather than apply it globally
+
+Only grouped top-2 competition is allowed, and only in the encoder or stem of selected contenders. Global one-winner competition caused severe information loss and dead-layer behavior.
+
+## 2026-08-07 — Separate revised results from failed top-five results
+
+Write the rerun to `artifacts/ablation/top_five_v2/`. Keep `artifacts/ablation/top_five/` unchanged for reproducibility.

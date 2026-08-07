@@ -36,18 +36,52 @@ NormKind = Literal["none", "affine", "bn"]
 ContextKind = Literal["none", "dilated", "multiscale"]
 SkipKind = Literal["one", "two"]
 NeuronKind = Literal["lif", "plif"]
+HomeostasisKind = Literal["legacy", "rate", "triangular_threshold"]
+InhibitionKind = Literal["gate", "peer_membrane", "winner_peer"]
+CompetitionScope = Literal["none", "stem", "encoder", "all"]
+HomeostasisScope = Literal["none", "encoder", "all"]
 
 
 @dataclass(frozen=True)
 class LIFConfig:
     beta_shift: int = 4
     threshold: float = 0.5
+    threshold_min: float = 0.15
+    threshold_max: float = 1.25
+    learnable_threshold: bool = False
     f_inst_enabled: bool = False
+    f_inst_top_k: int = 1
+    f_inst_group_size: int = 0
     competitor_decrement: float = 0.0
+    inhibition_kind: InhibitionKind = "gate"
+    inhibition_strength_init: float = 0.35
+    inhibition_strength_min: float = 0.0
+    inhibition_strength_max: float = 4.0
     f_long_enabled: bool = True
+    homeostasis_kind: HomeostasisKind = "legacy"
     adaptation_increment: float = 1.0 / 64.0
     adaptation_decay: float = 1.0 / 128.0
     t_thresh_steps: int = 0
+    target_rate: float = 0.08
+    target_rate_min: float = 0.01
+    target_rate_max: float = 0.20
+    adaptation_tau_init: float = 4.0
+    adaptation_tau_min: float = 1.0
+    adaptation_tau_max: float = 20.0
+    adaptation_strength_init: float = 0.05
+    adaptation_strength_min: float = 0.001
+    adaptation_strength_max: float = 0.25
+    adaptation_clip: float = 0.35
+    # Debat et al. (2021)-inspired membrane-energy inhibition/homeostasis.
+    # The published fInst/fLong/TThresh values were optimized as layer-level
+    # hyperparameters.  Here their continuous counterparts are learnable.
+    threshold_adaptation_strength_init: float = 0.35
+    threshold_adaptation_strength_min: float = 0.0
+    threshold_adaptation_strength_max: float = 4.0
+    adaptation_duration_init: float = 6.0
+    adaptation_duration_min: float = 1.0
+    adaptation_duration_max: float = 16.0
+    membrane_energy_clip: float = 1.5
 
     @property
     def beta(self) -> float:
@@ -68,9 +102,23 @@ class SegmentationArchitecture:
     residual: bool = True
     adaptive_threshold: bool = True
     neuron_kind: NeuronKind = "lif"
+    learnable_threshold: bool = False
     f_inst_enabled: bool = False
+    f_inst_scope: CompetitionScope = "all"
+    f_inst_top_k: int = 1
+    f_inst_group_size: int = 0
+    inhibition_kind: InhibitionKind = "gate"
+    inhibition_strength_init: float = 0.35
     f_long_enabled: bool = False
+    f_long_scope: HomeostasisScope = "all"
+    homeostasis_kind: HomeostasisKind = "legacy"
+    homeostasis_target_rate: float = 0.08
+    homeostasis_tau_init: float = 4.0
+    homeostasis_strength_init: float = 0.05
+    threshold_adaptation_strength_init: float = 0.35
+    adaptation_duration_init: float = 6.0
     t_thresh_steps: int = 0
+    output_f_inst_enabled: bool = True
     output_rate_scale: float = 6.0
 
     def to_dict(self) -> dict[str, object]:
@@ -78,7 +126,26 @@ class SegmentationArchitecture:
 
 
 class HardwareLIF(nn.Module):
-    """Discrete-time LIF with optional local competition and channel homeostasis."""
+    """Discrete-time LIF with optional competition and adaptive threshold state.
+
+    Three modes are retained deliberately:
+
+    * ``legacy`` preserves the completed round-one/two checkpoints.
+    * ``rate`` preserves the first v2 rate-homeostasis experiment.
+    * ``custom`` uses the project retinotopic inhibition and triangular threshold adaptation derived from Debat et al. (2021): inhibition and threshold penalty are
+      driven by the local mean squared membrane potential ``UPropInh``.  The
+      published inverted-V threshold response is implemented directly as a
+      triangular rise/fall process with a learnable continuous TThresh-like time
+      scale.  UPropInh follows the supplementary equation as the local RMS of
+      membrane potential after subtracting the active threshold adaptation.
+
+    The source mechanism is asynchronous: the first neuron to spike prevents retinotopic
+    peers from spiking and reduces their membrane by UInst.  ``winner_peer``
+    emulates that winner/inhibition rule inside a synchronous timestep;
+    ``peer_membrane`` keeps simultaneous spikes but still applies the UInst-like
+    membrane decrement.  Keeping both lets dense semantic segmentation test the
+    published rule against a less destructive adaptation.
+    """
 
     def __init__(self, channels: int, config: LIFConfig) -> None:
         super().__init__()
@@ -90,11 +157,161 @@ class HardwareLIF(nn.Module):
         self.register_buffer(
             "threshold_timer", torch.zeros(channels, dtype=torch.long), persistent=False
         )
+        self.register_buffer("homeostasis_scale", torch.tensor(1.0), persistent=False)
+        # Threshold-adaptation state follows every retinotopic neuron. Each spiking
+        # neuron owns one triangular ULong process; all active processes at the
+        # same (x,y) are summed to form the shared UAT threshold penalty.
+        self.register_buffer("threshold_adaptation_age", torch.empty(0), persistent=False)
+        self.register_buffer("threshold_adaptation_amplitude", torch.empty(0), persistent=False)
+        self.register_buffer("threshold_adaptation_penalty", torch.empty(0), persistent=False)
+        self.competition_enabled = True
+
+        if config.f_long_enabled and config.homeostasis_kind == "rate":
+            self.adaptation_tau_logit = nn.Parameter(
+                self._bounded_logit(
+                    config.adaptation_tau_init,
+                    config.adaptation_tau_min,
+                    config.adaptation_tau_max,
+                    channels,
+                )
+            )
+            self.adaptation_strength_logit = nn.Parameter(
+                self._bounded_logit(
+                    config.adaptation_strength_init,
+                    config.adaptation_strength_min,
+                    config.adaptation_strength_max,
+                    channels,
+                )
+            )
+            self.target_rate_logit = nn.Parameter(
+                self._bounded_logit(
+                    config.target_rate,
+                    config.target_rate_min,
+                    config.target_rate_max,
+                    channels,
+                )
+            )
+        else:
+            self.register_parameter("adaptation_tau_logit", None)
+            self.register_parameter("adaptation_strength_logit", None)
+            self.register_parameter("target_rate_logit", None)
+
+        if config.f_inst_enabled and config.inhibition_kind in {"peer_membrane", "winner_peer"}:
+            self.inhibition_strength_logit = nn.Parameter(
+                self._bounded_logit(
+                    config.inhibition_strength_init,
+                    config.inhibition_strength_min,
+                    config.inhibition_strength_max,
+                    1,
+                )
+            )
+        else:
+            self.register_parameter("inhibition_strength_logit", None)
+
+        if config.f_long_enabled and config.homeostasis_kind == "triangular_threshold":
+            self.threshold_adaptation_strength_logit = nn.Parameter(
+                self._bounded_logit(
+                    config.threshold_adaptation_strength_init,
+                    config.threshold_adaptation_strength_min,
+                    config.threshold_adaptation_strength_max,
+                    1,
+                )
+            )
+            self.adaptation_duration_logit = nn.Parameter(
+                self._bounded_logit(
+                    config.adaptation_duration_init,
+                    config.adaptation_duration_min,
+                    config.adaptation_duration_max,
+                    1,
+                )
+            )
+        else:
+            self.register_parameter("threshold_adaptation_strength_logit", None)
+            self.register_parameter("adaptation_duration_logit", None)
+
+    @staticmethod
+    def _bounded_logit(value: float, minimum: float, maximum: float, channels: int) -> Tensor:
+        fraction = (value - minimum) / max(maximum - minimum, 1e-8)
+        fraction = min(max(fraction, 1e-4), 1.0 - 1e-4)
+        return torch.full((channels,), torch.logit(torch.tensor(fraction)).item())
+
+    @staticmethod
+    def _bounded(parameter: Tensor, minimum: float, maximum: float) -> Tensor:
+        return minimum + (maximum - minimum) * torch.sigmoid(parameter)
+
+    @property
+    def adaptation_tau(self) -> Tensor | None:
+        if self.adaptation_tau_logit is None:
+            return None
+        return self._bounded(
+            self.adaptation_tau_logit,
+            self.config.adaptation_tau_min,
+            self.config.adaptation_tau_max,
+        )
+
+    @property
+    def adaptation_strength(self) -> Tensor | None:
+        if self.adaptation_strength_logit is None:
+            return None
+        return self._bounded(
+            self.adaptation_strength_logit,
+            self.config.adaptation_strength_min,
+            self.config.adaptation_strength_max,
+        )
+
+    @property
+    def target_rate(self) -> Tensor | None:
+        if self.target_rate_logit is None:
+            return None
+        return self._bounded(
+            self.target_rate_logit,
+            self.config.target_rate_min,
+            self.config.target_rate_max,
+        )
+
+    @property
+    def inhibition_strength(self) -> Tensor | None:
+        if self.inhibition_strength_logit is None:
+            return None
+        return self._bounded(
+            self.inhibition_strength_logit,
+            self.config.inhibition_strength_min,
+            self.config.inhibition_strength_max,
+        )
+
+    @property
+    def threshold_adaptation_strength(self) -> Tensor | None:
+        if self.threshold_adaptation_strength_logit is None:
+            return None
+        return self._bounded(
+            self.threshold_adaptation_strength_logit,
+            self.config.threshold_adaptation_strength_min,
+            self.config.threshold_adaptation_strength_max,
+        )
+
+    @property
+    def adaptation_duration(self) -> Tensor | None:
+        if self.adaptation_duration_logit is None:
+            return None
+        return self._bounded(
+            self.adaptation_duration_logit,
+            self.config.adaptation_duration_min,
+            self.config.adaptation_duration_max,
+        )
 
     def reset(self) -> None:
         self.membrane = torch.empty(0, device=self.adaptation.device)
-        self.adaptation.zero_()
+        self.adaptation = torch.zeros_like(self.adaptation).detach()
         self.threshold_timer.zero_()
+        self.threshold_adaptation_age = torch.empty(0, device=self.adaptation.device)
+        self.threshold_adaptation_amplitude = torch.empty(0, device=self.adaptation.device)
+        self.threshold_adaptation_penalty = torch.empty(0, device=self.adaptation.device)
+
+    def set_homeostasis_scale(self, value: float) -> None:
+        self.homeostasis_scale.fill_(float(value))
+
+    def set_competition_enabled(self, enabled: bool) -> None:
+        self.competition_enabled = bool(enabled)
 
     def _ensure_state(self, current: Tensor) -> None:
         if self.membrane.shape != current.shape:
@@ -103,32 +320,124 @@ class HardwareLIF(nn.Module):
             self.adaptation = self.adaptation.to(current)
         if self.threshold_timer.device != current.device:
             self.threshold_timer = self.threshold_timer.to(current.device)
+        if self.homeostasis_scale.device != current.device:
+            self.homeostasis_scale = self.homeostasis_scale.to(current.device)
+        if self.config.homeostasis_kind == "triangular_threshold":
+            if self.threshold_adaptation_age.shape != current.shape:
+                self.threshold_adaptation_age = torch.full_like(current, -1.0)
+                self.threshold_adaptation_amplitude = torch.zeros_like(current)
+                self.threshold_adaptation_penalty = torch.zeros(
+                    (current.shape[0], 1, current.shape[2], current.shape[3]),
+                    device=current.device,
+                    dtype=current.dtype,
+                )
+            elif self.threshold_adaptation_age.device != current.device or self.threshold_adaptation_age.dtype != current.dtype:
+                self.threshold_adaptation_age = self.threshold_adaptation_age.to(current)
+                self.threshold_adaptation_amplitude = self.threshold_adaptation_amplitude.to(current)
+                self.threshold_adaptation_penalty = self.threshold_adaptation_penalty.to(current)
 
     def _leaked_membrane(self) -> Tensor:
         return self.membrane - self.membrane / float(1 << self.config.beta_shift)
 
-    def forward(self, current: Tensor) -> Tensor:
-        if current.ndim != 4 or current.shape[1] != self.channels:
-            raise ValueError(f"expected [N,{self.channels},H,W] current")
-        self._ensure_state(current)
-        leaked = self._leaked_membrane()
-        candidate = leaked + current
-        threshold = (self.config.threshold + self.adaptation).view(1, -1, 1, 1)
-        raw = self.spike_function(candidate - threshold)
-        above = candidate >= threshold
-        if self.config.f_inst_enabled:
+    def _base_threshold(self, current: Tensor) -> Tensor:
+        return torch.full(
+            (self.channels,), self.config.threshold, device=current.device, dtype=current.dtype
+        )
+
+    def _competition_gate(self, candidate: Tensor, above: Tensor) -> Tensor:
+        if not self.config.f_inst_enabled or not self.competition_enabled:
+            return above
+        if self.config.inhibition_kind == "peer_membrane":
+            # Synchronous adaptation: keep simultaneous feature spikes, then
+            # apply Debat et al. UInst membrane decrement to their peers.
+            return above
+        if self.config.inhibition_kind == "winner_peer":
+            # Published retinotopic competition: the first/strongest neuron at
+            # one location wins the current instant and peers are prevented from
+            # spiking.  We use maximum membrane because bins have no event order.
             masked = candidate.masked_fill(~above, -torch.inf)
             winner = masked.argmax(dim=1, keepdim=True)
             gate = torch.zeros_like(above).scatter_(1, winner, True)
-            gate &= above.any(dim=1, keepdim=True)
-            spikes = raw * gate.to(raw.dtype)
+            any_above = above.any(dim=1, keepdim=True)
+            return gate & any_above
+        group_size = self.config.f_inst_group_size or self.channels
+        if group_size <= 0 or self.channels % group_size != 0:
+            group_size = self.channels
+        groups = self.channels // group_size
+        n, _, h, w = candidate.shape
+        grouped_candidate = candidate.view(n, groups, group_size, h, w)
+        grouped_above = above.view(n, groups, group_size, h, w)
+        masked = grouped_candidate.masked_fill(~grouped_above, -torch.inf)
+        k = min(max(1, self.config.f_inst_top_k), group_size)
+        indices = masked.topk(k, dim=2).indices
+        gate = torch.zeros_like(grouped_above).scatter_(2, indices, True)
+        gate &= grouped_above
+        return gate.view_as(above)
+
+    def _retinotopic_membrane_energy(self, candidate: Tensor) -> Tensor:
+        """Local UPropInh from Debat et al. supplementary Eq. 7.
+
+        Debat et al. uses the RMS membrane potential of neurons connected to the
+        same retinotopic patch after subtracting the active threshold adaptation.
+        The scalar is therefore shared across feature maps at one (x,y).
+        """
+        if self.threshold_adaptation_penalty.numel() == 0:
+            adjusted = candidate
         else:
-            gate = above
-            spikes = raw
-        reset = gate.to(candidate.dtype) * threshold
-        loser = (above & ~gate).to(candidate.dtype) * self.config.competitor_decrement
-        self.membrane = candidate - reset - loser
-        if self.config.f_long_enabled:
+            adjusted = candidate - self.threshold_adaptation_penalty
+        rms = torch.sqrt(adjusted.square().mean(dim=1, keepdim=True) + 1e-8)
+        return rms.clamp(max=self.config.membrane_energy_clip)
+
+    def _triangular_threshold_penalty(self) -> Tensor:
+        """Sum triangular ULong processes at each retinotopic location.
+
+        Debat et al. Eq. 6 rises linearly from zero to UMaxThresh over TThresh,
+        then falls linearly to zero over another TThresh.  Each feature neuron
+        keeps its own last-spike process; Eq. 5 sums them across filters.
+        """
+        if self.threshold_adaptation_age.numel() == 0:
+            return self.threshold_adaptation_penalty
+        t_thresh = self.adaptation_duration
+        assert t_thresh is not None
+        t = t_thresh.view(1, 1, 1, 1)
+        age = self.threshold_adaptation_age
+        active = age >= 0.0
+        phase = torch.where(active, age / t, torch.zeros_like(age))
+        triangle = torch.where(
+            phase <= 1.0,
+            phase,
+            torch.where(phase < 2.0, 2.0 - phase, torch.zeros_like(phase)),
+        )
+        triangle = torch.where(active, triangle.clamp(min=0.0), torch.zeros_like(triangle))
+        per_neuron = self.threshold_adaptation_amplitude * triangle
+        return per_neuron.sum(dim=1, keepdim=True)
+
+    def _apply_peer_membrane_inhibition(self, candidate: Tensor, spikes: Tensor) -> None:
+        if (
+            not self.config.f_inst_enabled
+            or self.config.inhibition_kind not in {"peer_membrane", "winner_peer"}
+            or not self.competition_enabled
+        ):
+            return
+        strength = self.inhibition_strength
+        assert strength is not None
+        # An output spike at a retinotopic location inhibits peer feature maps.
+        # The spiking neuron itself is excluded because it has already reset.
+        u_prop = self._retinotopic_membrane_energy(candidate)
+        trigger = (spikes.detach().sum(dim=1, keepdim=True) > 0).to(candidate.dtype)
+        peers = (spikes.detach() <= 0).to(candidate.dtype)
+        decrement = (
+            self.homeostasis_scale
+            * strength.view(1, 1, 1, 1)
+            * u_prop
+            * trigger
+        )
+        self.membrane = self.membrane - decrement * peers
+
+    def _update_homeostasis(self, spikes: Tensor, candidate: Tensor) -> None:
+        if not self.config.f_long_enabled:
+            return
+        if self.config.homeostasis_kind == "legacy":
             activity = spikes.detach().amax(dim=(0, 2, 3))
             active = activity > 0
             if self.config.t_thresh_steps > 0:
@@ -140,9 +449,7 @@ class HardwareLIF(nn.Module):
                 may_decay = self.threshold_timer == 0
                 decayed = torch.where(
                     may_decay,
-                    torch.clamp(
-                        self.adaptation - self.config.adaptation_decay, min=0.0
-                    ),
+                    torch.clamp(self.adaptation - self.config.adaptation_decay, min=0.0),
                     self.adaptation,
                 )
             else:
@@ -150,23 +457,133 @@ class HardwareLIF(nn.Module):
                     self.adaptation - self.config.adaptation_decay, min=0.0
                 )
             self.adaptation = decayed + self.config.adaptation_increment * activity
+            return
+
+        if self.config.homeostasis_kind == "rate":
+            tau = self.adaptation_tau
+            strength = self.adaptation_strength
+            target = self.target_rate
+            assert tau is not None and strength is not None and target is not None
+            activity = spikes.mean(dim=(0, 2, 3))
+            retention = torch.exp(-1.0 / tau)
+            error = activity - target
+            updated = retention * self.adaptation + self.homeostasis_scale * strength * error
+            self.adaptation = torch.clamp(
+                updated, -self.config.adaptation_clip, self.config.adaptation_clip
+            )
+            return
+
+        # Triangular-threshold mode: every neuron keeps one inverted-V ULong process keyed
+        # to its latest spike.  Its peak amplitude is fLong * UPropInh.  TThresh
+        # is continuous and learnable because it appears directly in the
+        # triangular phase calculation used on the next forward pass.
+        strength = self.threshold_adaptation_strength
+        assert strength is not None
+        u_prop = self._retinotopic_membrane_energy(candidate)
+        scaled_amplitude = (
+            self.homeostasis_scale
+            * strength.view(1, 1, 1, 1)
+            * u_prop
+        )
+        spiked = spikes > 0
+        # A new spike resets that neuron's triangular process. Existing ages
+        # were advanced at the start of this forward step, before thresholding.
+        self.threshold_adaptation_age = torch.where(spiked, torch.zeros_like(self.threshold_adaptation_age), self.threshold_adaptation_age)
+        self.threshold_adaptation_amplitude = torch.where(
+            spiked,
+            scaled_amplitude.expand_as(self.threshold_adaptation_amplitude),
+            self.threshold_adaptation_amplitude,
+        )
+        # Keep a detached-looking state name for diagnostics/tests, but preserve
+        # the autograd graph because learned fLong/TThresh are trained through it.
+        self.threshold_adaptation_penalty = self._triangular_threshold_penalty()
+
+    def _advance_threshold_adaptation(self) -> None:
+        if (
+            self.config.homeostasis_kind == "triangular_threshold"
+            and self.config.f_long_enabled
+            and self.threshold_adaptation_age.numel() > 0
+        ):
+            self.threshold_adaptation_age = torch.where(
+                self.threshold_adaptation_age >= 0.0,
+                self.threshold_adaptation_age + 1.0,
+                self.threshold_adaptation_age,
+            )
+
+    def _threshold_tensor(self, current: Tensor) -> Tensor:
+        base = self._base_threshold(current).view(1, -1, 1, 1)
+        if self.config.homeostasis_kind == "triangular_threshold" and self.config.f_long_enabled:
+            self.threshold_adaptation_penalty = self._triangular_threshold_penalty()
+            effective = base + self.threshold_adaptation_penalty
+            return effective.clamp(self.config.threshold_min, self.config.threshold_max)
+        effective = base + self.adaptation.view(1, -1, 1, 1)
+        if self.config.homeostasis_kind == "rate" or self.config.learnable_threshold:
+            effective = effective.clamp(
+                self.config.threshold_min, self.config.threshold_max
+            )
+        return effective
+
+    def forward(self, current: Tensor) -> Tensor:
+        if current.ndim != 4 or current.shape[1] != self.channels:
+            raise ValueError(f"expected [N,{self.channels},H,W] current")
+        self._ensure_state(current)
+        self._advance_threshold_adaptation()
+        leaked = self._leaked_membrane()
+        candidate = leaked + current
+        threshold = self._threshold_tensor(current)
+        raw = self.spike_function(candidate - threshold)
+        above = candidate >= threshold
+        gate = self._competition_gate(candidate, above)
+        spikes = raw * gate.to(raw.dtype)
+        reset = gate.to(candidate.dtype) * threshold
+        loser = (above & ~gate).to(candidate.dtype) * self.config.competitor_decrement
+        self.membrane = candidate - reset - loser
+        self._apply_peer_membrane_inhibition(candidate, spikes)
+        self._update_homeostasis(spikes, candidate)
         return spikes
 
 
 class ParametricLIF(HardwareLIF):
-    """PLIF neuron with learnable per-channel membrane retention."""
+    """PLIF with learnable per-channel retention and optional base threshold."""
 
     def __init__(self, channels: int, config: LIFConfig) -> None:
         super().__init__(channels, config)
         beta = torch.full((channels,), config.beta).clamp(1e-4, 1.0 - 1e-4)
         self.beta_logit = nn.Parameter(torch.logit(beta))
+        if config.learnable_threshold:
+            self.threshold_logit = nn.Parameter(
+                self._bounded_logit(
+                    config.threshold,
+                    config.threshold_min,
+                    config.threshold_max,
+                    channels,
+                )
+            )
+        else:
+            self.register_parameter("threshold_logit", None)
 
     @property
     def beta(self) -> Tensor:
         return torch.sigmoid(self.beta_logit)
 
+    @property
+    def learned_threshold(self) -> Tensor | None:
+        if self.threshold_logit is None:
+            return None
+        return self._bounded(
+            self.threshold_logit,
+            self.config.threshold_min,
+            self.config.threshold_max,
+        )
+
     def _leaked_membrane(self) -> Tensor:
         return self.membrane * self.beta.view(1, -1, 1, 1)
+
+    def _base_threshold(self, current: Tensor) -> Tensor:
+        learned = self.learned_threshold
+        if learned is None:
+            return super()._base_threshold(current)
+        return learned.to(device=current.device, dtype=current.dtype)
 
 
 class ChannelAffine(nn.Module):
@@ -384,9 +801,18 @@ class SpikingClassHead(nn.Module):
         class_count: int,
         lif: LIFConfig,
         neuron_kind: NeuronKind = "lif",
+        *,
+        output_competition: bool = True,
     ) -> None:
         super().__init__()
-        output_lif = replace(lif, f_inst_enabled=True, f_long_enabled=False)
+        output_lif = replace(
+            lif,
+            f_inst_enabled=output_competition,
+            f_inst_top_k=1,
+            f_inst_group_size=0,
+            inhibition_kind="gate",
+            f_long_enabled=False,
+        )
         self.stage = SpikingStage(
             in_channels,
             class_count,
@@ -418,44 +844,78 @@ class EventSpikeSegBase(nn.Module):
         self.architecture = architecture
         base_lif = lif or LIFConfig(
             f_inst_enabled=architecture.f_inst_enabled,
-            f_long_enabled=(
-                architecture.adaptive_threshold or architecture.f_long_enabled
-            ),
+            f_inst_top_k=architecture.f_inst_top_k,
+            f_inst_group_size=architecture.f_inst_group_size,
+            inhibition_kind=architecture.inhibition_kind,
+            inhibition_strength_init=architecture.inhibition_strength_init,
+            f_long_enabled=(architecture.adaptive_threshold or architecture.f_long_enabled),
+            homeostasis_kind=architecture.homeostasis_kind,
+            target_rate=architecture.homeostasis_target_rate,
+            adaptation_tau_init=architecture.homeostasis_tau_init,
+            adaptation_strength_init=architecture.homeostasis_strength_init,
+            threshold_adaptation_strength_init=architecture.threshold_adaptation_strength_init,
+            adaptation_duration_init=architecture.adaptation_duration_init,
             t_thresh_steps=architecture.t_thresh_steps,
+            learnable_threshold=architecture.learnable_threshold,
         )
         neuron_kind = architecture.neuron_kind
+
+        def enabled_for(scope: str, stage: str) -> bool:
+            if scope == "none":
+                return False
+            if scope == "all":
+                return True
+            if scope == "stem":
+                return stage == "stem"
+            if scope == "encoder":
+                return stage in {"stem", "encoder", "context"}
+            raise ValueError(f"unknown stage scope {scope!r}")
+
+        def lif_for(stage: str) -> LIFConfig:
+            return replace(
+                base_lif,
+                f_inst_enabled=(
+                    architecture.f_inst_enabled
+                    and enabled_for(architecture.f_inst_scope, stage)
+                ),
+                f_long_enabled=(
+                    (architecture.adaptive_threshold or architecture.f_long_enabled)
+                    and enabled_for(architecture.f_long_scope, stage)
+                ),
+            )
+
+        stem_lif = lif_for("stem")
+        encoder_lif = lif_for("encoder")
+        context_lif = lif_for("context")
+        decoder_lif = lif_for("decoder")
         c1 = architecture.base_channels
         c2 = c1 * 2
         c3 = c1 * 4
 
         self.input_channels = input_channels
         self.stem = SpikingStage(
-            input_channels,
-            c1,
-            kernel_size=3,
-            norm=architecture.norm,
-            lif=base_lif,
-            neuron_kind=neuron_kind,
+            input_channels, c1, kernel_size=3, norm=architecture.norm,
+            lif=stem_lif, neuron_kind=neuron_kind,
         )
         self.enc1 = SpikingConvBlock(
             c1, c1, depthwise=architecture.depthwise, norm=architecture.norm,
-            lif=base_lif, neuron_kind=neuron_kind, residual=architecture.residual,
+            lif=encoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
         )
         self.down2 = SpikingConvBlock(
             c1, c2, stride=2, depthwise=architecture.depthwise,
-            norm=architecture.norm, lif=base_lif, neuron_kind=neuron_kind,
+            norm=architecture.norm, lif=encoder_lif, neuron_kind=neuron_kind,
         )
         self.enc2 = SpikingConvBlock(
             c2, c2, depthwise=architecture.depthwise, norm=architecture.norm,
-            lif=base_lif, neuron_kind=neuron_kind, residual=architecture.residual,
+            lif=encoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
         )
         self.down3 = SpikingConvBlock(
             c2, c3, stride=2, depthwise=architecture.depthwise,
-            norm=architecture.norm, lif=base_lif, neuron_kind=neuron_kind,
+            norm=architecture.norm, lif=encoder_lif, neuron_kind=neuron_kind,
         )
         self.enc3 = SpikingConvBlock(
             c3, c3, depthwise=architecture.depthwise, norm=architecture.norm,
-            lif=base_lif, neuron_kind=neuron_kind, residual=architecture.residual,
+            lif=encoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
         )
         if architecture.context == "none":
             self.context: nn.Module = nn.Identity()
@@ -464,39 +924,36 @@ class EventSpikeSegBase(nn.Module):
             if architecture.context == "dilated":
                 dilations = (dilations[0],)
             self.context = MultiScaleContext(
-                c3, dilations, norm=architecture.norm, lif=base_lif,
+                c3, dilations, norm=architecture.norm, lif=context_lif,
                 gap_gate=architecture.gap_gate, neuron_kind=neuron_kind,
             )
 
         self.project3 = SpikingStage(
-            c3,
-            c2,
-            kernel_size=1,
-            norm=architecture.norm,
-            lif=base_lif,
-            neuron_kind=neuron_kind,
+            c3, c2, kernel_size=1, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=neuron_kind,
         )
         self.refine2 = SpikingConvBlock(
             c2, c2, depthwise=architecture.depthwise, norm=architecture.norm,
-            lif=base_lif, neuron_kind=neuron_kind, residual=architecture.residual,
+            lif=decoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
         )
         self.project2 = SpikingStage(
-            c2,
-            c1,
-            kernel_size=1,
-            norm=architecture.norm,
-            lif=base_lif,
-            neuron_kind=neuron_kind,
+            c2, c1, kernel_size=1, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=neuron_kind,
         )
         self.refine1 = SpikingConvBlock(
             c1, c1, depthwise=architecture.depthwise, norm=architecture.norm,
-            lif=base_lif, neuron_kind=neuron_kind, residual=architecture.residual,
+            lif=decoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
         )
-        self.head = SpikingClassHead(c1, class_count, base_lif, neuron_kind)
+        self.head = SpikingClassHead(
+            c1, class_count, decoder_lif, neuron_kind,
+            output_competition=architecture.output_f_inst_enabled,
+        )
         self.aux_head = (
-            SpikingClassHead(c2, class_count, base_lif, neuron_kind)
-            if architecture.auxiliary_head
-            else None
+            SpikingClassHead(
+                c2, class_count, decoder_lif, neuron_kind,
+                output_competition=architecture.output_f_inst_enabled,
+            )
+            if architecture.auxiliary_head else None
         )
         self.class_count = class_count
 
@@ -513,6 +970,74 @@ class EventSpikeSegBase(nn.Module):
             reset = getattr(module, "reset", None)
             if callable(reset) and not isinstance(module, EventSpikeSegBase):
                 reset()
+
+    def set_homeostasis_scale(self, value: float) -> None:
+        for module in self.modules():
+            if isinstance(module, HardwareLIF):
+                module.set_homeostasis_scale(value)
+
+    def set_competition_enabled(self, enabled: bool) -> None:
+        for module in self.modules():
+            if isinstance(module, HardwareLIF):
+                module.set_competition_enabled(enabled)
+
+    def set_hidden_inhibition_enabled(self, enabled: bool) -> None:
+        """Enable/disable only hidden retinotopic inhibition modules.
+
+        The semantic class head intentionally uses the historical ``gate`` WTA,
+        so it remains active while an exact hidden retinotopic competition is
+        delayed during training.  This avoids reintroducing the abrupt early
+        feature starvation observed in v2.
+        """
+        for module in self.modules():
+            if (
+                isinstance(module, HardwareLIF)
+                and module.config.inhibition_kind in {"peer_membrane", "winner_peer"}
+            ):
+                module.set_competition_enabled(enabled)
+
+    def neuron_diagnostics(self) -> dict[str, float]:
+        betas: list[Tensor] = []
+        thresholds: list[Tensor] = []
+        taus: list[Tensor] = []
+        strengths: list[Tensor] = []
+        targets: list[Tensor] = []
+        inhibition_values: list[Tensor] = []
+        threshold_adaptation_values: list[Tensor] = []
+        adaptation_duration_values: list[Tensor] = []
+        for module in self.modules():
+            if isinstance(module, ParametricLIF):
+                betas.append(module.beta.detach().flatten())
+                learned = module.learned_threshold
+                if learned is not None:
+                    thresholds.append(learned.detach().flatten())
+            if isinstance(module, HardwareLIF):
+                if module.adaptation_tau is not None:
+                    taus.append(module.adaptation_tau.detach().flatten())
+                if module.adaptation_strength is not None:
+                    strengths.append(module.adaptation_strength.detach().flatten())
+                if module.target_rate is not None:
+                    targets.append(module.target_rate.detach().flatten())
+                if module.inhibition_strength is not None:
+                    inhibition_values.append(module.inhibition_strength.detach().flatten())
+                if module.threshold_adaptation_strength is not None:
+                    threshold_adaptation_values.append(module.threshold_adaptation_strength.detach().flatten())
+                if module.adaptation_duration is not None:
+                    adaptation_duration_values.append(module.adaptation_duration.detach().flatten())
+
+        def mean(values: list[Tensor]) -> float:
+            return float(torch.cat(values).mean()) if values else float("nan")
+
+        return {
+            "mean_beta": mean(betas),
+            "mean_base_threshold": mean(thresholds),
+            "mean_adaptation_tau": mean(taus),
+            "mean_adaptation_strength": mean(strengths),
+            "mean_target_rate": mean(targets),
+            "mean_inhibition_strength": mean(inhibition_values),
+            "mean_threshold_adaptation_strength": mean(threshold_adaptation_values),
+            "mean_adaptation_duration": mean(adaptation_duration_values),
+        }
 
     def forward(self, sequence: Tensor) -> dict[str, Tensor]:
         if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
@@ -551,4 +1076,8 @@ class EventSpikeSegBase(nn.Module):
         return result
 
     def parameter_count(self) -> int:
-        return sum(parameter.numel() for parameter in self.parameters() if parameter.requires_grad)
+        return sum(
+            parameter.numel() for parameter in self.parameters()
+            if parameter.requires_grad
+        )
+

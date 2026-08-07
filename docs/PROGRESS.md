@@ -2,40 +2,40 @@
 
 ## Working now
 
-- DDD17 modality-first loader for `events/{train,test}` and `labels/{train,test}`
-- six-channel Ev-SegNet direct encoding
-- six-class spiking semantic head
-- completed same-seed ten-model benchmark
-- preserved round-one definitions in `top_ten_models.py`
-- shared neuron and layer primitives in `model_components.py`
-- five new PLIF/homeostasis/competition contenders in `top_five_models.py`
-- canonical-only `model.py`, currently set to `v10_fpga_hybrid`
-- separate top-ten and top-five benchmark CLI/Compose commands
-- checkpoint field `model_suite` for correct evaluation dispatch
-- unit tests for all 10 old models, all 5 new models, PLIF gradient, f_inst winner, and f_long/T_thresh timing
-- local synthetic test result after refactor: 10 passed
+- DDD17 six-channel loader with bounded modality-first, split-first, and compact NPZ fixture support
+- completed top-ten benchmark preserved
+- failed first top-five definitions/checkpoints preserved and loadable
+- five revised PLIF contenders implemented
+- learnable per-channel beta and base threshold
+- learnable rate-homeostasis tau, strength, and target firing rate
+- grouped top-2 scoped competition
+- independent spiking class-head accumulation
+- complete-subset class weighting, focal/CE/Dice loss, activity floor, and dynamics warm-up
+- checkpoint diagnostics for class support, predicted pixels, layer spike rates, and neuron parameters
+- canonical `model.py` remains `v10_fpga_hybrid`
 
-## Measured round-one result
+## Validation completed
 
-- winner: `v10_fpga_hybrid`
-- seed: 17
-- train / held-out samples: 2048 / 512
-- epochs: 10
-- mIoU: 0.3130
-- pixel accuracy: 0.7871
-- parameters: 44,016
-- output spike rate: 0.1412
+- 17 local tests pass
+- all five revised contenders build, backpropagate, and complete a synthetic benchmark
+- legacy top-ten v10 state dict still loads strictly into the canonical model
+- failed first top-five names remain buildable for checkpoint evaluation
+
+## Measured incumbent
+
+`v10_fpga_hybrid`: seed 17, mIoU 0.3130, pixel accuracy 0.7871, 44,016 parameters, output spike rate 0.1412.
+
+## Measured failed top-five v1
+
+Best: `f01_v10_plif_long`, mIoU 0.2464. `f04_v02_light_plif_inst_long` collapsed to zero spike rate. No v1 contender is eligible for promotion.
 
 ## Open issues
 
-- object IoU was zero for the round-one winner and nearly all models
-- human IoU was zero for all ten models
-- class distribution, class presence after resize, prediction counts, and confusion matrix are not yet recorded
-- top-five benchmark is not yet measured
-- top-five winner is not yet confirmed across seeds
-- PLIF has not been quantized to a hardware-compatible leak
-- no measured FPGA synthesis, latency, power, or resource results
+- revised top-five v2 has not yet been measured on real DDD17
+- object and human class scarcity/collapse remains unresolved
+- official test is still used as the held-out benchmark split
+- learned continuous dynamics are not quantized or RTL-validated
 
 ## Next action
 
-Run Docker lint/tests, then execute `docker compose run --rm benchmark-top-five` using the same seed and budget as round one.
+Run Docker lint/tests, then `docker compose run --rm benchmark-top-five`. Inspect mIoU, per-class IoU, class support/predictions, layer spike rates, and learned tau/threshold values before any promotion.

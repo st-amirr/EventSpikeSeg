@@ -41,3 +41,21 @@ The benchmark establishes `v10_fpga_hybrid` as the round-one structural incumben
 ## Round two
 
 No top-five PLIF/f_long/f_inst result has been measured yet. Results must be written to `artifacts/ablation/top_five/summary.json` before changing the canonical model.
+
+## 2026-08-07 — First PLIF/homeostasis top-five completed and rejected
+
+Protocol matched round one: seed 17, 10 epochs, 2,048 training samples, 512 held-out samples, 64×64, 20 internal steps, batch size 4.
+
+| rank | architecture | mIoU | pixel accuracy | parameters | spike rate |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | `f01_v10_plif_long` | 0.2464 | 0.7729 | 45,204 | 0.1432 |
+| 2 | `f05_dilated_aux_plif_long` | 0.2340 | 0.7571 | 43,092 | 0.1063 |
+| 3 | `f03_v03_dilated_plif_long` | 0.2293 | 0.7584 | 41,814 | 0.1089 |
+| 4 | `f02_v10_plif_inst_long` | 0.1754 | 0.6933 | 45,204 | 0.1290 |
+| 5 | `f04_v02_light_plif_inst_long` | 0.0167 | 0.1004 | 31,542 | 0.0000 |
+
+The best v1 contender was 0.0667 mIoU below the incumbent. Hard hidden competition was harmful, fixed `T_thresh=4` did not adapt to the data, and global `amax` homeostasis could suppress a whole channel after one spike. These are measured failures, not evidence that PLIF itself is unsuitable.
+
+## Revised top-five v2
+
+No real DDD17 result yet. The new output location is `artifacts/ablation/top_five_v2/summary.json`. Do not overwrite the v1 results.

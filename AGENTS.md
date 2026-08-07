@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, identify the best spike-native architecture, and map the confirmed model to sparse fixed-point VHDL.
+Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, identify a strong spike-native architecture, then map the confirmed model to sparse fixed-point VHDL.
 
 ## Source-of-truth order
 
@@ -10,44 +10,54 @@ Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, 
 2. `AGENTS.md`
 3. `docs/ARCHITECTURE.md`
 4. `docs/DECISIONS.md`
-5. active execution plan
+5. active ablation plan
 6. tests and executable commands
 
 ## Model-file contract
 
 ```text
 model.py              canonical architecture only
-top_ten_models.py     frozen completed round-one definitions
-top_five_models.py    active round-two contenders
+top_ten_models.py     frozen round-one definitions
+top_five_models.py    preserved v1/v2 + active retinotopic-mechanism
 model_components.py   shared tested primitives
 ```
 
-Do not add experimental preset registries back into `model.py`.
+Do not put experimental registries back into `model.py`.
 
-## Current experiment state
+## Current evidence
 
-Round one is complete. `v10_fpga_hybrid` is the incumbent at mIoU 0.3130, but object and human IoU are zero. Round two compares five PLIF models combining the strongest v10/v03/v02/v08 structures with `f_long`, explicit `T_thresh`, and selected `f_inst`.
+- incumbent: `v10_fpga_hybrid`, seed-17 mIoU 0.3130
+- top-five v1 rejected; best 0.2464
+- top-five v2 completed first three only:
+  - `f01r_v10_plif_threshold`: 0.2821
+  - `f02r_v10_plif_ratehomeo`: 0.2047
+  - `f03r_v10_plif_grouped_inst`: 0.1967
+- v2 indicates PLIF + learned threshold is substantially healthier than global rate homeostasis or grouped top-k competition.
 
-Run top-five experiments with identical data, seed, resolution, timesteps, optimizer, loss, class weights, and sample budgets. Record the suite name in checkpoints. Do not overwrite the preserved top-ten results.
+## Retinotopic-mechanism contract
 
-## Neuron requirements
+Source: Debat et al. (2021), *Event-Based Trajectory Prediction Using Spiking Neural Networks*.
 
-- `HardwareLIF`: power-of-two leak, subtractive reset
-- `ParametricLIF`: learnable per-channel retention for software ablation
-- `f_inst`: one winning channel per spatial location when enabled
-- `f_long`: per-feature-map adaptive threshold
-- `T_thresh`: hold timer before adaptive-threshold decay
+Do not describe Debat et al. as using global firing-rate target homeostasis. Its mechanism is retinotopic and membrane-energy driven:
 
-PLIF is not hardware-final until its retention is quantized and revalidated against the floating model.
+- `retinotopic_membrane_energy`: local RMS/mean-square membrane-energy term for neurons sharing one patch, accounting for threshold adaptation.
+- `UInst = fInst * UPropInh`: instantaneous retinotopic inhibition; the source asynchronous mechanism prevents peers from spiking and reduces peer membrane potential.
+- `UMaxThresh = fLong * UPropInh`.
+- every `ULong` process rises linearly over `TThresh`, then falls linearly over another `TThresh`.
+- active `ULong` processes from filters sharing the patch are summed into the local threshold penalty.
+- custom parameters were tuned by a genetic algorithm, not learned by STDP.
 
-## Finalization
+Active current top-five design may use bounded learnable continuous analogues under surrogate-gradient training, but must keep the spatial/local mechanism and triangular time course. `winner_peer` is the close synchronous emulation; `peer_membrane` preserves same-bin feature spikes and applies only the peer membrane decrement.
 
-Do not replace the canonical model based on one seed. Require:
+## Active current top-five design requirements
 
-- complete top-five benchmark
-- rare-class diagnostics
-- confirmation with seeds 17, 101, and 2026
-- timestep sensitivity check
-- quantized-leak validation for a PLIF winner
+- output semantic WTA remains enabled; do not apply hidden retinotopic inhibition in decoder/head
+- triangular threshold adaptation and peer_membrane inhibition ramp from zero over 50% of training; hidden winner_peer gating stays off until the warm-up ends, while output class WTA stays on
+- PLIF beta and threshold receive 2x base LR; mechanism parameters use base LR
+- write new runs only to `artifacts/ablation/top_five_current top-five design/`
+- preserve v1/v2 checkpoint loading and results
+- diagnostics: class support/predictions, per-layer spike rates, beta/threshold, fInst/fLong/TThresh
 
-Keep `README.md`, `project_spec.yaml`, `ARCHITECTURE.md`, `DECISIONS.md`, `PROGRESS.md`, `RESULTS.md`, `BUGS.md`, and the active execution plan synchronized.
+## Finalization gates
+
+Do not replace canonical `model.py` from one seed. Require complete current top-five design benchmark, rare-class diagnostics, seeds 17/101/2026, timestep sensitivity, and quantized dynamics validation.

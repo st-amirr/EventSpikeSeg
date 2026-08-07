@@ -43,6 +43,7 @@ class DDD17Record:
     split: str
     event_path: Path
     label_path: Path
+    archive_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,53 @@ def _list_files(directory: Path, suffix: str) -> list[Path]:
     return sorted(matched)
 
 
+def _candidate_layout_roots(root: Path) -> list[Path]:
+    """Return a bounded set of known Ev-SegNet wrapper roots without full-tree scans."""
+    candidates = [root]
+    if root.is_dir():
+        with os.scandir(root) as entries:
+            first_level = [Path(entry.path) for entry in entries if entry.is_dir(follow_symlinks=False)]
+        candidates.extend(first_level)
+        for directory in first_level:
+            try:
+                with os.scandir(directory) as entries:
+                    candidates.extend(
+                        Path(entry.path)
+                        for entry in entries
+                        if entry.is_dir(follow_symlinks=False)
+                        and entry.name.lower() in {"our_codification", "ddd17", "dataset"}
+                    )
+            except OSError:
+                continue
+    return candidates
+
+
+def _paired_directory_records(layout_root: Path, split: str) -> list[DDD17Record]:
+    directory_pairs = (
+        (layout_root / "events" / split, layout_root / "labels" / split),
+        (layout_root / split / "events", layout_root / split / "labels"),
+    )
+    for events_dir, labels_dir in directory_pairs:
+        event_files = _list_files(events_dir, ".npy")
+        label_list = _list_files(labels_dir, ".png")
+        if not event_files or not label_list:
+            continue
+        by_stem = {path.stem: path for path in label_list}
+        exact = [
+            DDD17Record(split, event_path, by_stem[event_path.stem])
+            for event_path in event_files
+            if event_path.stem in by_stem
+        ]
+        if len(exact) == len(event_files):
+            return exact
+        if len(event_files) == len(label_list):
+            return [
+                DDD17Record(split, event_path, label_path)
+                for event_path, label_path in zip(event_files, label_list, strict=True)
+            ]
+    return []
+
+
 def discover_ddd17_records(
     root: Path | str | None = None,
     split: str = "train",
@@ -82,17 +130,19 @@ def discover_ddd17_records(
     if not root.is_dir():
         raise FileNotFoundError(f"DDD17 root does not exist: {root}")
 
-    events_dir = root / "events" / split
-    labels_dir = root / "labels" / split
-    event_files = _list_files(events_dir, ".npy")
-    label_files = {path.stem: path for path in _list_files(labels_dir, ".png")}
+    for layout_root in _candidate_layout_roots(root):
+        records = _paired_directory_records(layout_root, split)
+        if records:
+            return records
 
-    records: list[DDD17Record] = []
-    for event_path in event_files:
-        label_path = label_files.get(event_path.stem)
-        if label_path is not None:
-            records.append(DDD17Record(split, event_path, label_path))
-    return records
+    archive = root / f"ddd17_{split}.npz"
+    if archive.is_file():
+        with np.load(archive, allow_pickle=False) as payload:
+            if "events" not in payload or "labels" not in payload:
+                raise ValueError(f"{archive} must contain events and labels arrays")
+            count = min(len(payload["events"]), len(payload["labels"]))
+        return [DDD17Record(split, archive, archive, index) for index in range(count)]
+    return []
 
 
 def inspect_ddd17(root: Path | str | None = None) -> DDD17Inspection:
@@ -130,8 +180,8 @@ def inspect_ddd17(root: Path | str | None = None) -> DDD17Inspection:
             shape = tuple(events.shape)
             if events.ndim == 3 and (shape[0] == 6 or shape[-1] == 6):
                 warnings.append(
-                    "Ev-SegNet six-channel representation detected: two histograms, "
-                    "two timestamp means, and two timestamp standard deviations."
+                    "Ev-SegNet six-channel representation detected: the expected primary input "
+                    "contains two histograms, two timestamp means, and two timestamp standard deviations."
                 )
             else:
                 warnings.append(f"Unexpected event shape for first train sample: {shape}")
@@ -142,6 +192,12 @@ def inspect_ddd17(root: Path | str | None = None) -> DDD17Inspection:
 
 
 def _load_record_arrays(record: DDD17Record) -> tuple[np.ndarray, np.ndarray]:
+    if record.archive_index is not None:
+        with np.load(record.event_path, allow_pickle=False) as payload:
+            return (
+                np.asarray(payload["events"][record.archive_index]),
+                np.asarray(payload["labels"][record.archive_index]),
+            )
     events = np.asarray(np.load(record.event_path, allow_pickle=False))
     labels = np.asarray(Image.open(record.label_path))
     return events, labels

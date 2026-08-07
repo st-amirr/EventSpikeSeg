@@ -96,10 +96,10 @@ services:
     command:
       ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
        "--suite", "top-five", "--seed", "${DDD17_SEED:-17}",
-       "--epochs", "${BENCHMARK_EPOCHS:-10}",
-       "--batch-size", "${DDD17_BATCH_SIZE:-4}", "--time-steps", "${DDD17_TIME_STEPS:-20}",
+       "--epochs", "${BENCHMARK_EPOCHS:-6}",
+       "--batch-size", "${DDD17_BATCH_SIZE:-4}", "--time-steps", "${DDD17_TIME_STEPS:-8}",
        "--height", "${DDD17_HEIGHT:-64}", "--width", "${DDD17_WIDTH:-64}",
-       "--train-samples", "${BENCHMARK_TRAIN_SAMPLES:-2048}",
+       "--train-samples", "${BENCHMARK_TRAIN_SAMPLES:-1024}",
        "--validation-samples", "${BENCHMARK_VALIDATION_SAMPLES:-512}",
        "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}",
        "--output-dir", "artifacts/ablation/top_five"]
@@ -116,6 +116,7 @@ services:
        "--validation-samples", "${BENCHMARK_VALIDATION_SAMPLES:-512}",
        "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}",
        "--output-dir", "artifacts/ablation/top_five"]
+
 
   promote-winner:
     <<: *app
