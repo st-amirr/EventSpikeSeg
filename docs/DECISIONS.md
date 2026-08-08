@@ -55,3 +55,25 @@ Only grouped top-2 competition is allowed, and only in the encoder or stem of se
 ## 2026-08-07 — Separate revised results from failed top-five results
 
 Write the rerun to `artifacts/ablation/top_five_v2/`. Keep `artifacts/ablation/top_five/` unchanged for reproducibility.
+
+## 2026-08-07 — Use the completed mechanism screen to freeze neuron dynamics for structural search
+
+The completed five-model screen used seed 17, 5 epochs, 256 training samples, 128 held-out samples, 64×64 output, and 8 internal timesteps. `f05_v02_light_peer_membrane_inhibition` ranked first at mIoU 0.1991. `f02` threshold adaptation alone ranked second at 0.1459, while hidden `winner_peer` inhibition ranked last at 0.1233 and drove `enc3` spike rate to approximately 0.00015.
+
+Decision: the next top-five holds neuron dynamics constant as PLIF + learnable threshold + stem-only `peer_membrane` inhibition + encoder triangular threshold adaptation. Keep affine scaling, residual paths, auxiliary supervision, and semantic output class WTA. Do not use hidden `winner_peer` gating in the active five.
+
+Reason: this separates the next question—network width, receptive field, depth, and context—from the already-screened inhibition question. The low-budget run is sufficient for mechanism selection but not for promotion accuracy claims.
+
+## 2026-08-07 — Make width, early kernel size, and encoder depth explicit architecture variables
+
+Add explicit channel schedules, configurable stem/first-block kernel sizes, and optional fourth encoder scale to the shared segmentation backbone. Preserve the original three-scale module layout for the canonical/top-ten models.
+
+The active five are:
+
+- `f01_base24_multiscale`: 24/48/96, 3×3, multiscale context
+- `f02_wide32_multiscale`: 32/64/128, 3×3, multiscale context
+- `f03_early5x5_multiscale`: 24/48/96, 5×5 stem and first depthwise block
+- `f04_deep4_dilated`: 24/48/96/128, four encoder scales, single dilated context
+- `f05_compact16_dilated`: 16/32/64, single dilated context
+
+This replaces the previous active top-five definitions; there is only one active `TOP_FIVE_PRESETS` registry.

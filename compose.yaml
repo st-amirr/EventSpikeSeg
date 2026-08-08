@@ -5,7 +5,7 @@ x-app: &app
     context: .
     dockerfile: docker/app/Dockerfile
   image: eventspikeseg-fpga:py311-bookworm
-  platform: ${DOCKER_PLATFORM:-linux/amd64}
+  platform: linux/amd64
   working_dir: /workspace
   environment:
     PYTHONPATH: /workspace/src
@@ -33,7 +33,7 @@ x-ddd17: &ddd17
       target: /workspace/artifacts
     - type: bind
       # Embedded host dataset folder; do not point this at a parent "search" directory.
-      source: ${DDD17_HOST_ROOT:-C:/Users/stamir/Desktop/Dataset/DDD17}
+      source: C:/Users/stamir/Desktop/Dataset/DDD17
       target: /datasets/DDD17
       read_only: true
 
@@ -58,76 +58,76 @@ services:
     <<: *ddd17
     command:
       ["python", "-m", "eventscnn.train", "single", "--root", "/datasets/DDD17",
-       "--architecture", "${DDD17_ARCHITECTURE:-v10_fpga_hybrid}",
-       "--suite", "${DDD17_MODEL_SUITE:-final}", "--seed", "${DDD17_SEED:-17}",
+       "--architecture", "v10_fpga_hybrid",
+       "--suite", "final", "--seed", "17",
        "--epochs", "1", "--batch-size", "1",
-       "--time-steps", "${DDD17_SMOKE_TIME_STEPS:-4}",
-       "--height", "${DDD17_SMOKE_HEIGHT:-32}",
-       "--width", "${DDD17_SMOKE_WIDTH:-32}",
+       "--time-steps", "4",
+       "--height", "32",
+       "--width", "32",
        "--train-samples", "2", "--validation-samples", "2", "--checkpoint-dir", "artifacts/checkpoints"]
 
   train-ddd17:
     <<: *ddd17
     command:
       ["python", "-m", "eventscnn.train", "single", "--root", "/datasets/DDD17",
-       "--architecture", "${DDD17_ARCHITECTURE:-v10_fpga_hybrid}",
-       "--suite", "${DDD17_MODEL_SUITE:-final}", "--seed", "${DDD17_SEED:-17}",
-       "--epochs", "${DDD17_EPOCHS:-70}", "--batch-size", "${DDD17_BATCH_SIZE:-4}",
-       "--time-steps", "${DDD17_TIME_STEPS:-20}",
-       "--height", "${DDD17_HEIGHT:-64}", "--width", "${DDD17_WIDTH:-64}", "--train-samples", "${DDD17_TRAIN_SAMPLES:-0}",
-       "--validation-samples", "${DDD17_VALIDATION_SAMPLES:-0}", "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}",
+       "--architecture", "v10_fpga_hybrid",
+       "--suite", "final", "--seed", "17",
+       "--epochs", "70", "--batch-size", "14",
+       "--time-steps", "15",
+       "--height", "64", "--width", "64", "--train-samples", "0",
+       "--validation-samples", "0", "--learning-rate", "0.002",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   benchmark-top-ten:
     <<: *ddd17
     command:
       ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
-       "--suite", "top-ten", "--seed", "${DDD17_SEED:-17}",
-       "--epochs", "${BENCHMARK_EPOCHS:-10}",
-       "--batch-size", "${DDD17_BATCH_SIZE:-4}", "--time-steps", "${DDD17_TIME_STEPS:-20}",
-       "--height", "${DDD17_HEIGHT:-64}", "--width", "${DDD17_WIDTH:-64}",
-       "--train-samples", "${BENCHMARK_TRAIN_SAMPLES:-2048}",
-       "--validation-samples", "${BENCHMARK_VALIDATION_SAMPLES:-512}",
-       "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}",
+       "--suite", "top-ten", "--seed", "17",
+       "--epochs", "8",
+       "--batch-size", "14", "--time-steps", "15",
+       "--height", "64", "--width", "64",
+       "--train-samples", "2048",
+       "--validation-samples", "512",
+       "--learning-rate", "0.002",
        "--output-dir", "artifacts/ablation/top_ten"]
 
   benchmark-top-five:
     <<: *ddd17
     command:
       ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
-       "--suite", "top-five", "--seed", "${DDD17_SEED:-17}",
-       "--epochs", "${BENCHMARK_EPOCHS:-6}",
-       "--batch-size", "${DDD17_BATCH_SIZE:-4}", "--time-steps", "${DDD17_TIME_STEPS:-8}",
-       "--height", "${DDD17_HEIGHT:-64}", "--width", "${DDD17_WIDTH:-64}",
-       "--train-samples", "${BENCHMARK_TRAIN_SAMPLES:-1024}",
-       "--validation-samples", "${BENCHMARK_VALIDATION_SAMPLES:-512}",
-       "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}",
+       "--suite", "top-five", "--seed", "17",
+       "--epochs", "8",
+       "--batch-size", "14", "--time-steps", "15",
+       "--height", "64", "--width", "64",
+       "--train-samples", "2048",
+       "--validation-samples", "512",
+       "--learning-rate", "0.002",
        "--output-dir", "artifacts/ablation/top_five"]
 
   benchmark-ddd17:
     <<: *ddd17
     command:
       ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
-       "--suite", "top-five", "--seed", "${DDD17_SEED:-17}",
-       "--epochs", "${BENCHMARK_EPOCHS:-10}",
-       "--batch-size", "${DDD17_BATCH_SIZE:-4}", "--time-steps", "${DDD17_TIME_STEPS:-20}",
-       "--height", "${DDD17_HEIGHT:-64}", "--width", "${DDD17_WIDTH:-64}",
-       "--train-samples", "${BENCHMARK_TRAIN_SAMPLES:-2048}",
-       "--validation-samples", "${BENCHMARK_VALIDATION_SAMPLES:-512}",
-       "--learning-rate", "${DDD17_LEARNING_RATE:-0.002}",
+       "--suite", "top-five", "--seed", "17",
+       "--epochs", "8",
+       "--batch-size", "14", "--time-steps", "15",
+       "--height", "64", "--width", "64",
+       "--train-samples", "2048",
+       "--validation-samples", "512",
+       "--learning-rate", "0.002",
        "--output-dir", "artifacts/ablation/top_five"]
 
 
   promote-winner:
     <<: *app
     command:
-      ["python", "-m", "eventscnn.train", "promote", "--summary", "${ABLATION_SUMMARY:-artifacts/ablation/top_five/summary.json}",
+      ["python", "-m", "eventscnn.train", "promote", "--summary", "artifacts/ablation/top_five/summary.json",
        "--destination", "artifacts/checkpoints/ddd17_best.pt"]
 
   eval-ddd17:
     <<: *ddd17
     command:
       ["python", "-m", "eventscnn.evaluate", "--root", "/datasets/DDD17",
-       "--checkpoint", "${DDD17_CHECKPOINT:-artifacts/checkpoints/ddd17_best.pt}",
-       "--split", "${DDD17_EVAL_SPLIT:-test}", "--batch-size", "${DDD17_BATCH_SIZE:-4}",
+       "--checkpoint", "artifacts/checkpoints/ddd17_best.pt",
+       "--split", "test", "--batch-size", "14",
        "--visualizations", "8", "--visualization-dir", "artifacts/Validation"]

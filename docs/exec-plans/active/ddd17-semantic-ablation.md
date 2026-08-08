@@ -2,50 +2,49 @@
 
 ## Objective
 
-Preserve the completed top-ten and failed top-five-v1 experiments, then run a revised five-model comparison that fixes the measured neuron-dynamics failures.
+Use the completed neuron-mechanism screen to freeze the most promising SNN dynamics, then compare width, early receptive field, encoder depth, and context strategy without changing neuron rules between contenders.
 
-## Preserved evidence
+## Evidence used
 
-- top-ten winner: `v10_fpga_hybrid`, mIoU 0.3130
-- top-five-v1 winner: `f01_v10_plif_long`, mIoU 0.2464
-- v1 lightweight `f04` output spike rate: 0.0000
-- old results remain in `artifacts/ablation/top_five/`
+Low-budget mechanism screen: seed 17, 5 epochs, 256 train, 128 held-out, 64×64, 8 internal timesteps.
 
-## Revised contenders
+- best: `f05_v02_light_peer_membrane_inhibition`, mIoU 0.1991
+- threshold adaptation improved the controlled v10 comparison slightly
+- `winner_peer` inhibition caused near-dead deep encoder activity and ranked last
+- peer-membrane inhibition preserved deeper activity and ranked first
 
-- `f01r_v10_plif_threshold`
-- `f02r_v10_plif_ratehomeo`
-- `f03r_v10_plif_grouped_inst`
-- `f04r_v03_dilated_plif_ratehomeo`
-- `f05r_v02_light_recovered`
+## Fixed dynamics for all current contenders
 
-## Corrections under test
+- PLIF
+- learnable base threshold
+- affine channel scaling
+- residual paths
+- auxiliary semantic head
+- stem-only `peer_membrane` inhibition
+- encoder/context `triangular_threshold` adaptation
+- output semantic class WTA
+- inhibition strength init 0.20
+- threshold-adaptation strength init 0.20
+- adaptation-duration init 5.0
 
-- learnable per-channel base threshold in addition to PLIF beta
-- learnable continuous adaptation tau replacing integer `T_thresh`
-- rate-based bidirectional homeostasis using mean spike rate
-- learnable adaptation strength and target firing rate
-- independent output class spikes; final temporal argmax only
-- grouped top-2 scoped f_inst instead of global WTA
-- dynamics warm-up and higher learning rate for neuron parameters
-- complete-subset class weights, focal/CE/Dice loss, and activity-floor regularization
+## Current contenders
 
-## Reproducibility contract
+1. `f01_base24_multiscale`: 24/48/96, 3×3, multiscale context
+2. `f02_wide32_multiscale`: 32/64/128, 3×3, multiscale context
+3. `f03_early5x5_multiscale`: 24/48/96, 5×5 stem + first depthwise block
+4. `f04_deep4_dilated`: 24/48/96/128, four encoder scales, single dilation-2 context
+5. `f05_compact16_dilated`: 16/32/64, three encoder scales, single dilation-2 context
 
-- same seed 17, 2,048 train samples, 512 held-out samples, 64×64, 20 steps, 10 epochs
-- all five share the same revised training protocol
-- output only to `artifacts/ablation/top_five_v2/`
-- preserve old checkpoints and summaries
+## Fairness contract
 
-## Acceptance criteria
+- all five use exactly the same neuron/inhibition/adaptation configuration
+- same seed, data subset, resolution, timestep count, optimizer, loss, and class weighting in one benchmark run
+- no contender-specific hyperparameter tuning
+- summary must record mIoU, per-class IoU, pixel predictions, parameter count, and layer spike rates
 
-- Docker lint and tests pass
-- all five complete without non-finite loss
-- no contender has zero output spike rate
-- summary records per-class IoU, class support/predictions, per-layer rates, and learned beta/threshold/tau
-- leader beats or meaningfully approaches mIoU 0.3130 without rare-class regression
-- leader is repeated with seeds 101 and 2026 before promotion
-- learned dynamics are quantized and revalidated before FPGA claims
+## Acceptance
+
+The low-budget round ranks structures only. The leader must later be rerun with the larger training budget and seeds 17, 101, and 2026 before canonical promotion. Quantized neuron dynamics and hardware-cost estimates are required before FPGA selection.
 
 ## Commands
 
@@ -54,7 +53,3 @@ docker compose run --rm lint
 docker compose run --rm test
 docker compose run --rm benchmark-top-five
 ```
-
-## Next concrete action
-
-Run the revised benchmark and inspect whether object, human, and vehicle predictions increase rather than only flat/construction accuracy.

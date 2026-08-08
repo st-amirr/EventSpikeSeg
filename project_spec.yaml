@@ -2,7 +2,7 @@ document:
   title: Hardware-Oriented Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
   version: 1.0.0
-  status: round_one_complete_round_two_top_five_ready
+  status: mechanism_screen_complete_structural_top_five_ready
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -92,7 +92,7 @@ framework:
     type: independent_project_specific_VHDL_2008_backend
     reason: >-
       The intended accelerator requires sparse shared-kernel spatial convolution,
-      deterministic membrane-state ordering, custom competition/homeostasis, segmentation
+      deterministic membrane-state ordering, retinotopic inhibition/threshold adaptation, segmentation
       map emission, fixed-point saturation, and explicit memory banking.
   spiker_plus:
     implementation_status: literature_and_design_inspiration_only
@@ -880,7 +880,7 @@ decision_history:
   - step: 4
     issue: Existing FPGA SNN generator versus custom backend
     decision: Custom VHDL-2008 backend retained
-    reason: Spatial convolution, segmentation maps, custom dynamics, memory banking, and exact ordering require project-specific control.
+    reason: Spatial convolution, segmentation maps, retinotopic neuron dynamics, memory banking, and exact ordering require project-specific control.
   - step: 5
     issue: Detection/tracking versus semantic segmentation
     decision: Active task changed to DDD17 six-class semantic segmentation.
@@ -927,7 +927,7 @@ experiment_code_layout:
     purpose: Preserve the exact completed ten-model definitions and checkpoint compatibility.
   round_two_file:
     path: src/eventscnn/top_five_models.py
-    purpose: Isolate the active neuromorphic contenders from the canonical model.
+    purpose: Isolate the active structural contenders from the canonical model.
 
 round_one_measured_results:
   date: '2026-08-06'
@@ -963,109 +963,111 @@ round_one_measured_results:
     - BatchNorm lowered training loss but did not improve held-out mIoU in this run.
   open_problem: Object and human classes collapsed to zero IoU and require data/prediction diagnostics.
 
-round_two_top_five:
-  status: implemented_not_measured
-  output_directory: artifacts/ablation/top_five
-  fairness_contract: Reuse the round-one seed, data budget, resolution, timesteps, optimizer, class weighting, and loss for the first comparison.
-  common_neuromorphic_features:
+mechanism_screen_measured_results:
+  date: '2026-08-07'
+  purpose: Select neuron/inhibition dynamics before varying architecture.
+  protocol:
+    seed: 17
+    epochs: 5
+    train_samples: 256
+    held_out_samples: 128
+    resolution_hw: [64, 64]
+    internal_timesteps: 8
+  source_summary: artifacts/ablation/top_five/summary.json
+  ranking_by_mIoU:
+    - {rank: 1, architecture: f05_v02_light_peer_membrane_inhibition, mIoU: 0.1990700960, parameters: 33455, spike_rate: 0.0616127253}
+    - {rank: 2, architecture: f02_v10_plif_threshold_adaptation, mIoU: 0.1459280401, parameters: 46422, spike_rate: 0.0469515721}
+    - {rank: 3, architecture: f01_v10_plif_threshold_wta, mIoU: 0.1402056664, parameters: 46392, spike_rate: 0.0456547340}
+    - {rank: 4, architecture: f04_v03_dilated_threshold_adaptation, mIoU: 0.1366340071, parameters: 42830, spike_rate: 0.0512948520}
+    - {rank: 5, architecture: f03_v10_plif_winner_peer_inhibition, mIoU: 0.1232914403, parameters: 46437, spike_rate: 0.0415132840}
+  selected_dynamics:
     neuron: PLIF
-    f_long: feature_map_adaptive_threshold
-    T_thresh_internal_steps: 4
-    note: PLIF retention remains continuous during training and must be quantized before FPGA deployment.
-  contenders:
-    f01_v10_plif_long:
-      structural_sources: [v10_fpga_hybrid]
-      f_inst_hidden: false
-      purpose: Isolate PLIF plus f_long/T_thresh on the incumbent structure.
-    f02_v10_plif_inst_long:
-      structural_sources: [v10_fpga_hybrid]
-      f_inst_hidden: true
-      purpose: Measure the additional effect and sparsity cost of hidden winner-take-all competition.
-    f03_v03_dilated_plif_long:
-      structural_sources: [v03_dw_dilated]
-      f_inst_hidden: false
-      purpose: Test the strongest lower-cost context structure with adaptive temporal dynamics.
-    f04_v02_light_plif_inst_long:
-      structural_sources: [v02_dw_light]
-      f_inst_hidden: true
-      purpose: Test the smallest leading structure with the full competition/homeostasis pair.
-    f05_dilated_aux_plif_long:
-      structural_sources: [v03_dw_dilated, v08_dw_multiscale_aux, v10_fpga_hybrid]
-      f_inst_hidden: false
-      purpose: Combine efficient dilation, affine calibration, and auxiliary supervision.
-  promotion_requirements:
-    - Complete all five with no contender-specific tuning.
-    - Record per-class IoU and rare-class diagnostics.
-    - Confirm the leader with seeds 17, 101, and 2026.
-    - Sweep internal timesteps.
-    - Quantize PLIF retention to a hardware-compatible leak and revalidate.
-    - Replace only the canonical architecture in model.py after acceptance.
+    learnable_base_threshold: true
+    normalization: affine_channel_scale
+    residual_paths: true
+    auxiliary_supervision: true
+    hidden_inhibition:
+      kind: peer_membrane
+      scope: stem
+      inhibition_strength_init: 0.20
+    threshold_adaptation:
+      kind: triangular_threshold
+      scope: encoder_and_context
+      strength_init: 0.20
+      adaptation_duration_init: 5.0
+    output_class_wta: true
+  evidence:
+    - triangular threshold adaptation slightly improved the controlled v10 comparison over PLIF plus learned threshold alone.
+    - winner_peer hidden inhibition caused severe encoder spike starvation and is excluded from the active five.
+    - stem-only peer_membrane inhibition preserved deeper activity and produced the highest mIoU.
+    - the winner learned inhibition strength 0.2082, threshold-adaptation strength 0.1879, and adaptation duration 5.196, close to initialization.
+  limitation: This was a low-budget mechanism screen and is not directly comparable to the full-budget 0.3130 incumbent for promotion.
 
-
-revised_top_five_v2:
-  status: implemented_not_yet_measured_on_real_ddd17
-  reason:
-    - first_top_five_best_miou_0_2464_below_incumbent_0_3130
-    - fixed_t_thresh_4_was_nondifferentiable_and_repeatedly_held_thresholds_high
-    - amax_homeostasis_treated_one_spike_like_dense_activity
-    - global_hard_f_inst_destroyed_distributed_semantic_features
-    - lightweight_f04_collapsed_to_zero_output_spikes
-  preserved_v1:
-    definitions: src/eventscnn/top_five_models.py::TOP_FIVE_V1_PRESETS
-    results: artifacts/ablation/top_five/summary.json
-  active_output: artifacts/ablation/top_five_v2
-  neuron_dynamics:
-    plif:
-      learnable_per_channel_beta: true
-      learnable_per_channel_base_threshold: true
-    rate_homeostasis:
-      activity_measure: mean_over_batch_height_width
-      bidirectional: true
-      update: "a[t] = exp(-1/tau) * a[t-1] + strength * (rate[t] - target_rate)"
-      learnable_per_channel:
-        - tau
-        - strength
-        - target_rate
-      replaces_integer_t_thresh: true
-      hardware_followup: quantize_tau_retention_strength_target_and_threshold
-    competition:
-      hard_global_wta: forbidden_for_active_v2
-      allowed: grouped_top_2
-      scopes:
-        - encoder_only
-        - stem_only
-      training_warmup_fraction: 0.30
-    output_head:
-      independent_class_spikes: true
-      temporal_spike_count_argmax: true
-      analog_linear_classifier: false
-  training_protocol_changes:
-    class_weights: complete_selected_training_subset
-    loss:
-      - weighted_cross_entropy
-      - focal_cross_entropy
-      - soft_dice
-      - dead_and_excessive_spike_activity_regularization
-    neuron_parameter_learning_rate_multiplier: 3.0
-    neuron_parameter_weight_decay: 0.0
-    diagnostics:
-      - ground_truth_pixels_per_class
-      - predicted_pixels_per_class
-      - per_layer_spike_rate
-      - mean_beta
-      - mean_base_threshold
-      - mean_adaptation_tau
-      - mean_adaptation_strength
-      - mean_target_rate
+active_top_five_structural_search:
+  status: implemented_pending_real_ddd17_measurement
+  definitions: src/eventscnn/top_five_models.py::TOP_FIVE_PRESETS
+  output_directory: artifacts/ablation/top_five
+  goal: Hold selected neuron dynamics fixed and vary width, early kernel size, encoder depth, and context.
+  shared_dynamics: mechanism_screen_measured_results.selected_dynamics
+  structural_support:
+    channel_schedule_lengths: [3, 4]
+    configurable_stem_kernel: true
+    configurable_first_block_kernel: true
+    later_spatial_kernel_default: 3
+    pointwise_kernel: 1
+    contexts: [multiscale, dilated]
   contenders:
-    - f01r_v10_plif_threshold
-    - f02r_v10_plif_ratehomeo
-    - f03r_v10_plif_grouped_inst
-    - f04r_v03_dilated_plif_ratehomeo
-    - f05r_v02_light_recovered
+    f01_base24_multiscale:
+      channels: [24, 48, 96]
+      stem_kernel: 3
+      first_block_kernel: 3
+      encoder_scales: 3
+      context: {kind: multiscale, dilations: [1, 2, 4]}
+      parameter_count: 46423
+      purpose: controlled baseline
+    f02_wide32_multiscale:
+      channels: [32, 64, 128]
+      stem_kernel: 3
+      first_block_kernel: 3
+      encoder_scales: 3
+      context: {kind: multiscale, dilations: [1, 2, 4]}
+      parameter_count: 77751
+      purpose: capacity test
+    f03_early5x5_multiscale:
+      channels: [24, 48, 96]
+      stem_kernel: 5
+      first_block_kernel: 5
+      encoder_scales: 3
+      later_spatial_kernel: 3
+      context: {kind: multiscale, dilations: [1, 2, 4]}
+      parameter_count: 49111
+      purpose: early event receptive-field test
+    f04_deep4_dilated:
+      channels: [24, 48, 96, 128]
+      stem_kernel: 3
+      first_block_kernel: 3
+      encoder_scales: 4
+      context: {kind: dilated, dilations: [2]}
+      parameter_count: 107131
+      purpose: depth and low-resolution context test
+    f05_compact16_dilated:
+      channels: [16, 32, 64]
+      stem_kernel: 3
+      first_block_kernel: 3
+      encoder_scales: 3
+      context: {kind: dilated, dilations: [2]}
+      parameter_count: 21491
+      purpose: FPGA-efficiency candidate
+  fairness_contract:
+    - same neuron/inhibition/adaptation configuration for all five
+    - same seed, sample subsets, resolution, internal timesteps, optimizer, loss, and class weighting within one run
+    - no contender-specific hyperparameter tuning
+    - record mIoU, per-class IoU, ground-truth/predicted pixels, layer spike rates, and parameter count
   promotion_gate:
     incumbent_miou: 0.3130307197570801
+    larger_budget_rerun_required: true
     required_seeds: [17, 101, 2026]
-    require_nonzero_output_spike_rate: true
-    require_rare_class_diagnostics: true
+    timestep_sensitivity_required: true
+    quantized_neuron_validation_required: true
+    hardware_cost_comparison_required: true
     canonical_model_file_unchanged_until_pass: true

@@ -26,17 +26,26 @@ def test_top_ten_presets_remain_buildable() -> None:
         assert outputs["segmentation_logits"].shape == (1, 6, 16, 16)
 
 
-def test_active_top_five_use_named_retinotopic_mechanisms_and_are_buildable() -> None:
+def test_active_top_five_share_winning_dynamics_and_are_buildable() -> None:
+    expected = {
+        "f01_base24_multiscale",
+        "f02_wide32_multiscale",
+        "f03_early5x5_multiscale",
+        "f04_deep4_dilated",
+        "f05_compact16_dilated",
+    }
+    assert set(TOP_FIVE_PRESETS) == expected
     sequence = _sample_sequence()
     for name, architecture in TOP_FIVE_PRESETS.items():
-        assert name.startswith("f0")
         assert architecture.neuron_kind == "plif"
         assert architecture.learnable_threshold
-        assert architecture.t_thresh_steps == 0
+        assert architecture.f_inst_enabled
+        assert architecture.f_inst_scope == "stem"
+        assert architecture.inhibition_kind == "peer_membrane"
+        assert architecture.f_long_enabled
+        assert architecture.f_long_scope == "encoder"
+        assert architecture.homeostasis_kind == "triangular_threshold"
         assert architecture.output_f_inst_enabled
-        if architecture.f_long_enabled:
-            assert architecture.homeostasis_kind == "triangular_threshold"
-            assert architecture.f_long_scope == "encoder"
         model = build_top_five_model(name)
         model.eval()
         model.reset()
@@ -46,6 +55,30 @@ def test_active_top_five_use_named_retinotopic_mechanisms_and_are_buildable() ->
         assert plif
         assert all(module.threshold_logit is not None for module in plif)
 
+
+def test_top_five_structural_variations_cover_width_kernel_and_depth() -> None:
+    assert TOP_FIVE_PRESETS["f01_base24_multiscale"].channel_schedule == (24, 48, 96)
+    assert TOP_FIVE_PRESETS["f02_wide32_multiscale"].channel_schedule == (32, 64, 128)
+    early = TOP_FIVE_PRESETS["f03_early5x5_multiscale"]
+    assert early.stem_kernel_size == 5
+    assert early.first_block_kernel_size == 5
+    deep = TOP_FIVE_PRESETS["f04_deep4_dilated"]
+    assert deep.channel_schedule == (24, 48, 96, 128)
+    assert deep.context == "dilated"
+    compact = TOP_FIVE_PRESETS["f05_compact16_dilated"]
+    assert compact.channel_schedule == (16, 32, 64)
+
+    early_model = build_top_five_model("f03_early5x5_multiscale")
+    assert early_model.stem.conv.kernel_size == (5, 5)
+    assert early_model.enc1.depthwise is not None
+    assert early_model.enc1.depthwise.conv.kernel_size == (5, 5)
+
+    deep_model = build_top_five_model("f04_deep4_dilated")
+    deep_model.eval()
+    deep_model.reset()
+    deep_outputs = deep_model(_sample_sequence())
+    assert "enc4_spikes" in deep_outputs
+    assert deep_outputs["enc4_spikes"].shape[-2:] == (2, 2)
 
 def test_rate_homeostasis_v2_parameters_still_receive_gradients() -> None:
     neuron = ParametricLIF(
@@ -196,8 +229,8 @@ def test_canonical_v10_accepts_round_one_v10_state_dict() -> None:
     assert list(canonical.state_dict()) == list(archived.state_dict())
 
 
-def test_hidden_winner_peer_inhibition_can_warm_up_without_disabling_class_wta() -> None:
-    model = build_top_five_model("f03_v10_plif_winner_peer_inhibition")
+def test_hidden_peer_membrane_inhibition_can_warm_up_without_disabling_class_wta() -> None:
+    model = build_top_five_model("f01_base24_multiscale")
     model.set_competition_enabled(True)
     model.set_hidden_inhibition_enabled(False)
     inhibition_modules = [

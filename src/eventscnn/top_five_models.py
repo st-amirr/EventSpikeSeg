@@ -1,108 +1,84 @@
-"""Current five neuromorphic DDD17 semantic-segmentation contenders."""
+"""Structural top-five DDD17 SNN segmentation contenders.
+
+The completed mechanism comparison selected one common neuromorphic operating point for
+all five candidates: PLIF + learnable thresholds, stem-only peer-membrane inhibition,
+encoder triangular threshold adaptation, affine channel scaling, residual paths,
+auxiliary supervision, and output class winner-take-all. This round varies only the
+structural axes: width, early receptive field, encoder depth, and context strategy.
+"""
 
 from __future__ import annotations
 
 from .model_components import EventSpikeSegBase, SegmentationArchitecture
 
 
-# The mechanism names describe their actual operation:
-# - threshold_adaptation: local triangular rise/fall threshold penalty
-# - winner_peer: one retinotopic winner spikes; peer feature membranes are inhibited
-# - peer_membrane: simultaneous spikes are preserved; peer feature membranes are inhibited
+_COMMON_DYNAMICS: dict[str, object] = {
+    "norm": "affine",
+    "auxiliary_head": True,
+    "skip_kind": "two",
+    "residual": True,
+    "adaptive_threshold": False,
+    "neuron_kind": "plif",
+    "learnable_threshold": True,
+    "f_inst_enabled": True,
+    "f_inst_scope": "stem",
+    "inhibition_kind": "peer_membrane",
+    "inhibition_strength_init": 0.20,
+    "f_long_enabled": True,
+    "f_long_scope": "encoder",
+    "homeostasis_kind": "triangular_threshold",
+    "threshold_adaptation_strength_init": 0.20,
+    "adaptation_duration_init": 5.0,
+    "output_f_inst_enabled": True,
+}
+
+
 TOP_FIVE_PRESETS: dict[str, SegmentationArchitecture] = {
-    "f01_v10_plif_threshold_wta": SegmentationArchitecture(
-        name="f01_v10_plif_threshold_wta",
+    # Controlled 24/48/96 baseline using the strongest round-one context family.
+    "f01_base24_multiscale": SegmentationArchitecture(
+        name="f01_base24_multiscale",
+        channel_schedule=(24, 48, 96),
         context="multiscale",
-        norm="affine",
-        auxiliary_head=True,
-        skip_kind="two",
-        residual=True,
-        adaptive_threshold=False,
-        neuron_kind="plif",
-        learnable_threshold=True,
-        f_long_enabled=False,
-        output_f_inst_enabled=True,
+        context_dilations=(1, 2, 4),
+        **_COMMON_DYNAMICS,
     ),
-    "f02_v10_plif_threshold_adaptation": SegmentationArchitecture(
-        name="f02_v10_plif_threshold_adaptation",
+    # Capacity test: same depth and kernels, wider feature maps.
+    "f02_wide32_multiscale": SegmentationArchitecture(
+        name="f02_wide32_multiscale",
+        channel_schedule=(32, 64, 128),
         context="multiscale",
-        norm="affine",
-        auxiliary_head=True,
-        skip_kind="two",
-        residual=True,
-        adaptive_threshold=False,
-        neuron_kind="plif",
-        learnable_threshold=True,
-        f_long_enabled=True,
-        f_long_scope="encoder",
-        homeostasis_kind="triangular_threshold",
-        threshold_adaptation_strength_init=0.30,
-        adaptation_duration_init=6.0,
-        output_f_inst_enabled=True,
+        context_dilations=(1, 2, 4),
+        **_COMMON_DYNAMICS,
     ),
-    "f03_v10_plif_winner_peer_inhibition": SegmentationArchitecture(
-        name="f03_v10_plif_winner_peer_inhibition",
+    # Receptive-field test: 5x5 only where raw/local event structure first enters.
+    "f03_early5x5_multiscale": SegmentationArchitecture(
+        name="f03_early5x5_multiscale",
+        channel_schedule=(24, 48, 96),
+        stem_kernel_size=5,
+        first_block_kernel_size=5,
         context="multiscale",
-        norm="affine",
-        auxiliary_head=True,
-        skip_kind="two",
-        residual=True,
-        adaptive_threshold=False,
-        neuron_kind="plif",
-        learnable_threshold=True,
-        f_inst_enabled=True,
-        f_inst_scope="encoder",
-        inhibition_kind="winner_peer",
-        inhibition_strength_init=0.20,
-        f_long_enabled=True,
-        f_long_scope="encoder",
-        homeostasis_kind="triangular_threshold",
-        threshold_adaptation_strength_init=0.25,
-        adaptation_duration_init=6.0,
-        output_f_inst_enabled=True,
+        context_dilations=(1, 2, 4),
+        **_COMMON_DYNAMICS,
     ),
-    "f04_v03_dilated_threshold_adaptation": SegmentationArchitecture(
-        name="f04_v03_dilated_threshold_adaptation",
+    # Depth/context test: one extra encoder scale, then a single cheap dilated branch.
+    "f04_deep4_dilated": SegmentationArchitecture(
+        name="f04_deep4_dilated",
+        channel_schedule=(24, 48, 96, 128),
         context="dilated",
         context_dilations=(2,),
-        norm="none",
-        auxiliary_head=False,
-        skip_kind="two",
-        residual=True,
-        adaptive_threshold=False,
-        neuron_kind="plif",
-        learnable_threshold=True,
-        f_long_enabled=True,
-        f_long_scope="encoder",
-        homeostasis_kind="triangular_threshold",
-        threshold_adaptation_strength_init=0.25,
-        adaptation_duration_init=5.0,
-        output_f_inst_enabled=True,
+        **_COMMON_DYNAMICS,
     ),
-    "f05_v02_light_peer_membrane_inhibition": SegmentationArchitecture(
-        name="f05_v02_light_peer_membrane_inhibition",
-        context="none",
-        norm="affine",
-        auxiliary_head=True,
-        skip_kind="two",
-        residual=True,
-        adaptive_threshold=False,
-        neuron_kind="plif",
-        learnable_threshold=True,
-        f_inst_enabled=True,
-        f_inst_scope="stem",
-        inhibition_kind="peer_membrane",
-        inhibition_strength_init=0.20,
-        f_long_enabled=True,
-        f_long_scope="encoder",
-        homeostasis_kind="triangular_threshold",
-        threshold_adaptation_strength_init=0.20,
-        adaptation_duration_init=5.0,
-        output_f_inst_enabled=True,
+    # FPGA-efficiency test: narrow channels plus the cheaper single dilated context.
+    "f05_compact16_dilated": SegmentationArchitecture(
+        name="f05_compact16_dilated",
+        channel_schedule=(16, 32, 64),
+        context="dilated",
+        context_dilations=(2,),
+        **_COMMON_DYNAMICS,
     ),
 }
 
-TOP_FIVE_DEFAULT = "f02_v10_plif_threshold_adaptation"
+TOP_FIVE_DEFAULT = "f01_base24_multiscale"
 
 
 def build_top_five_model(

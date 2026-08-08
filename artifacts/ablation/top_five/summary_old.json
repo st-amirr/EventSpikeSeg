@@ -1,0 +1,325 @@
+{
+  "selection_rule": "highest test mIoU; within 0.5 percentage points choose fewer parameters then lower spike rate",
+  "suite": "top-five",
+  "seed": 17,
+  "results": [
+    {
+      "architecture": "f01_v10_plif_threshold_wta",
+      "seed": 17,
+      "epochs": 5,
+      "train_samples": 256,
+      "validation_samples": 128,
+      "parameter_count": 46392,
+      "mean_iou": 0.14020566642284393,
+      "pixel_accuracy": 0.7333736419677734,
+      "mean_spike_rate": 0.045654733975728355,
+      "checkpoint": "artifacts/ablation/top_five/checkpoints/f01_v10_plif_threshold_wta_seed17.pt",
+      "per_class_iou": [
+        0.09881962835788727,
+        0.74000084400177,
+        0.0,
+        0.0019564111717045307,
+        0.0,
+        0.00045708660036325455
+      ],
+      "ground_truth_pixels": [
+        54829,
+        388044,
+        1615,
+        50690,
+        702,
+        28408
+      ],
+      "predicted_pixels": [
+        24764,
+        498951,
+        3,
+        524,
+        0,
+        46
+      ],
+      "layer_spike_rates": {
+        "enc1_spikes": 0.20061503847440085,
+        "enc2_spikes": 0.1019784410794576,
+        "enc3_spikes": 0.06525182723999023,
+        "decoder_spikes": 0.27012892564137775,
+        "segmentation_spikes": 0.045654733975728355
+      },
+      "neuron_diagnostics": {
+        "mean_beta": 0.9375928640365601,
+        "mean_base_threshold": 0.49865877628326416,
+        "mean_adaptation_tau": NaN,
+        "mean_adaptation_strength": NaN,
+        "mean_target_rate": NaN,
+        "mean_inhibition_strength": NaN,
+        "mean_threshold_adaptation_strength": NaN,
+        "mean_adaptation_duration": NaN
+      }
+    },
+    {
+      "architecture": "f02_v10_plif_threshold_adaptation",
+      "seed": 17,
+      "epochs": 5,
+      "train_samples": 256,
+      "validation_samples": 128,
+      "parameter_count": 46422,
+      "mean_iou": 0.1459280401468277,
+      "pixel_accuracy": 0.7395381927490234,
+      "mean_spike_rate": 0.04695157210032145,
+      "checkpoint": "artifacts/ablation/top_five/checkpoints/f02_v10_plif_threshold_adaptation_seed17.pt",
+      "per_class_iou": [
+        0.12956121563911438,
+        0.7442560195922852,
+        0.0,
+        0.0008039058302529156,
+        0.0,
+        0.0009471025550737977
+      ],
+      "ground_truth_pixels": [
+        54829,
+        388044,
+        1615,
+        50690,
+        702,
+        28408
+      ],
+      "predicted_pixels": [
+        24665,
+        499123,
+        21,
+        352,
+        0,
+        127
+      ],
+      "layer_spike_rates": {
+        "enc1_spikes": 0.12235594789187114,
+        "enc2_spikes": 0.02116549015045166,
+        "enc3_spikes": 0.018288930257161457,
+        "decoder_spikes": 0.2107970416545868,
+        "segmentation_spikes": 0.04695157210032145
+      },
+      "neuron_diagnostics": {
+        "mean_beta": 0.9378858208656311,
+        "mean_base_threshold": 0.4980315566062927,
+        "mean_adaptation_tau": NaN,
+        "mean_adaptation_strength": NaN,
+        "mean_target_rate": NaN,
+        "mean_inhibition_strength": NaN,
+        "mean_threshold_adaptation_strength": 0.29405996203422546,
+        "mean_adaptation_duration": 6.073577404022217
+      }
+    },
+    {
+      "architecture": "f03_v10_plif_winner_peer_inhibition",
+      "seed": 17,
+      "epochs": 5,
+      "train_samples": 256,
+      "validation_samples": 128,
+      "parameter_count": 46437,
+      "mean_iou": 0.12329144030809402,
+      "pixel_accuracy": 0.7383995056152344,
+      "mean_spike_rate": 0.041513284047444664,
+      "checkpoint": "artifacts/ablation/top_five/checkpoints/f03_v10_plif_winner_peer_inhibition_seed17.pt",
+      "per_class_iou": [
+        0.0003732404438778758,
+        0.7391980886459351,
+        0.0,
+        0.00017733640561345965,
+        0.0,
+        0.0
+      ],
+      "ground_truth_pixels": [
+        54829,
+        388044,
+        1615,
+        50690,
+        702,
+        28408
+      ],
+      "predicted_pixels": [
+        1456,
+        522741,
+        21,
+        70,
+        0,
+        0
+      ],
+      "layer_spike_rates": {
+        "enc1_spikes": 0.04737546046574911,
+        "enc2_spikes": 0.0030566255251566568,
+        "enc3_spikes": 0.00014925003051757812,
+        "decoder_spikes": 0.0481149951616923,
+        "segmentation_spikes": 0.041513284047444664
+      },
+      "neuron_diagnostics": {
+        "mean_beta": 0.9377050995826721,
+        "mean_base_threshold": 0.4984651803970337,
+        "mean_adaptation_tau": NaN,
+        "mean_adaptation_strength": NaN,
+        "mean_target_rate": NaN,
+        "mean_inhibition_strength": 0.19832326471805573,
+        "mean_threshold_adaptation_strength": 0.24546684324741364,
+        "mean_adaptation_duration": 6.063769817352295
+      }
+    },
+    {
+      "architecture": "f04_v03_dilated_threshold_adaptation",
+      "seed": 17,
+      "epochs": 5,
+      "train_samples": 256,
+      "validation_samples": 128,
+      "parameter_count": 42830,
+      "mean_iou": 0.13663358986377716,
+      "pixel_accuracy": 0.7216949462890625,
+      "mean_spike_rate": 0.051294684410095215,
+      "checkpoint": "artifacts/ablation/top_five/checkpoints/f04_v03_dilated_threshold_adaptation_seed17.pt",
+      "per_class_iou": [
+        0.08616327494382858,
+        0.7332048416137695,
+        0.0,
+        0.0004334462864790112,
+        0.0,
+        0.0
+      ],
+      "ground_truth_pixels": [
+        54829,
+        388044,
+        1615,
+        50690,
+        702,
+        28408
+      ],
+      "predicted_pixels": [
+        34471,
+        489592,
+        33,
+        88,
+        104,
+        0
+      ],
+      "layer_spike_rates": {
+        "enc1_spikes": 0.09819761912027995,
+        "enc2_spikes": 0.00725020964940389,
+        "enc3_spikes": 0.005748669306437175,
+        "decoder_spikes": 0.14780816435813904,
+        "segmentation_spikes": 0.051294684410095215
+      },
+      "neuron_diagnostics": {
+        "mean_beta": 0.9382898211479187,
+        "mean_base_threshold": 0.49501749873161316,
+        "mean_adaptation_tau": NaN,
+        "mean_adaptation_strength": NaN,
+        "mean_target_rate": NaN,
+        "mean_inhibition_strength": NaN,
+        "mean_threshold_adaptation_strength": 0.237832173705101,
+        "mean_adaptation_duration": 5.151174068450928
+      }
+    },
+    {
+      "architecture": "f05_v02_light_peer_membrane_inhibition",
+      "seed": 17,
+      "epochs": 5,
+      "train_samples": 256,
+      "validation_samples": 128,
+      "parameter_count": 33455,
+      "mean_iou": 0.19907009601593018,
+      "pixel_accuracy": 0.7606906890869141,
+      "mean_spike_rate": 0.061612725257873535,
+      "checkpoint": "artifacts/ablation/top_five/checkpoints/f05_v02_light_peer_membrane_inhibition_seed17.pt",
+      "per_class_iou": [
+        0.4113379716873169,
+        0.7824670076370239,
+        0.0006155740120448172,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "ground_truth_pixels": [
+        54829,
+        388044,
+        1615,
+        50690,
+        702,
+        28408
+      ],
+      "predicted_pixels": [
+        114811,
+        407840,
+        1636,
+        0,
+        1,
+        0
+      ],
+      "layer_spike_rates": {
+        "enc1_spikes": 0.07696435848871867,
+        "enc2_spikes": 0.036328653494517006,
+        "enc3_spikes": 0.023871461550394695,
+        "decoder_spikes": 0.14583740631739298,
+        "segmentation_spikes": 0.061612725257873535
+      },
+      "neuron_diagnostics": {
+        "mean_beta": 0.9380295276641846,
+        "mean_base_threshold": 0.49791601300239563,
+        "mean_adaptation_tau": NaN,
+        "mean_adaptation_strength": NaN,
+        "mean_target_rate": NaN,
+        "mean_inhibition_strength": 0.20823706686496735,
+        "mean_threshold_adaptation_strength": 0.18788442015647888,
+        "mean_adaptation_duration": 5.196133136749268
+      }
+    }
+  ],
+  "winner": {
+    "architecture": "f05_v02_light_peer_membrane_inhibition",
+    "seed": 17,
+    "epochs": 5,
+    "train_samples": 256,
+    "validation_samples": 128,
+    "parameter_count": 33455,
+    "mean_iou": 0.19907009601593018,
+    "pixel_accuracy": 0.7606906890869141,
+    "mean_spike_rate": 0.061612725257873535,
+    "checkpoint": "artifacts/ablation/top_five/checkpoints/f05_v02_light_peer_membrane_inhibition_seed17.pt",
+    "per_class_iou": [
+      0.4113379716873169,
+      0.7824670076370239,
+      0.0006155740120448172,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "ground_truth_pixels": [
+      54829,
+      388044,
+      1615,
+      50690,
+      702,
+      28408
+    ],
+    "predicted_pixels": [
+      114811,
+      407840,
+      1636,
+      0,
+      1,
+      0
+    ],
+    "layer_spike_rates": {
+      "enc1_spikes": 0.07696435848871867,
+      "enc2_spikes": 0.036328653494517006,
+      "enc3_spikes": 0.023871461550394695,
+      "decoder_spikes": 0.14583740631739298,
+      "segmentation_spikes": 0.061612725257873535
+    },
+    "neuron_diagnostics": {
+      "mean_beta": 0.9380295276641846,
+      "mean_base_threshold": 0.49791601300239563,
+      "mean_adaptation_tau": NaN,
+      "mean_adaptation_strength": NaN,
+      "mean_target_rate": NaN,
+      "mean_inhibition_strength": 0.20823706686496735,
+      "mean_threshold_adaptation_strength": 0.18788442015647888,
+      "mean_adaptation_duration": 5.196133136749268
+    }
+  }
+}

@@ -38,9 +38,6 @@ The benchmark establishes `v10_fpga_hybrid` as the round-one structural incumben
 - BN achieved low training loss but poor held-out mIoU, so training loss was not a reliable selection metric.
 - GAP and static affine gain did not justify their cost as standalone additions in this run.
 
-## Round two
-
-No top-five PLIF/f_long/f_inst result has been measured yet. Results must be written to `artifacts/ablation/top_five/summary.json` before changing the canonical model.
 
 ## 2026-08-07 — First PLIF/homeostasis top-five completed and rejected
 
@@ -56,6 +53,37 @@ Protocol matched round one: seed 17, 10 epochs, 2,048 training samples, 512 held
 
 The best v1 contender was 0.0667 mIoU below the incumbent. Hard hidden competition was harmful, fixed `T_thresh=4` did not adapt to the data, and global `amax` homeostasis could suppress a whole channel after one spike. These are measured failures, not evidence that PLIF itself is unsuitable.
 
-## Revised top-five v2
 
-No real DDD17 result yet. The new output location is `artifacts/ablation/top_five_v2/summary.json`. Do not overwrite the v1 results.
+## 2026-08-07 — Completed retinotopic/neuron-mechanism screening run
+
+Protocol recorded in the saved checkpoints: seed 17, 5 epochs, 256 training samples, 128 held-out samples, 64×64 output, 8 internal SNN timesteps.
+
+| rank | architecture | mIoU | pixel accuracy | parameters | spike rate |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | `f05_v02_light_peer_membrane_inhibition` | 0.1991 | 0.7607 | 33,455 | 0.0616 |
+| 2 | `f02_v10_plif_threshold_adaptation` | 0.1459 | 0.7395 | 46,422 | 0.0470 |
+| 3 | `f01_v10_plif_threshold_wta` | 0.1402 | 0.7334 | 46,392 | 0.0457 |
+| 4 | `f04_v03_dilated_threshold_adaptation` | 0.1366 | 0.7217 | 42,830 | 0.0513 |
+| 5 | `f03_v10_plif_winner_peer_inhibition` | 0.1233 | 0.7384 | 46,437 | 0.0415 |
+
+### Mechanism interpretation
+
+- Adding triangular threshold adaptation to the same v10 family gave a small improvement over PLIF+threshold alone (`0.1459` vs `0.1402`).
+- Hidden `winner_peer` inhibition was harmful: its encoder spike rates fell from `0.0474` at enc1 to `0.00306` at enc2 and `0.000149` at enc3, indicating feature starvation.
+- Stem-only `peer_membrane` inhibition did not cause that collapse and produced the best mIoU. Its encoder spike rates remained `0.0770`, `0.0363`, and `0.0239`.
+- The winning checkpoint learned mean inhibition strength `0.2082`, threshold-adaptation strength `0.1879`, and adaptation duration `5.196`, close to their initial values `0.20`, `0.20`, and `5.0`.
+- All five still failed badly on rare classes under this small-data screen. The winner's per-class IoUs were flat `0.4113`, construction+sky `0.7825`, object `0.0006`, nature `0`, human `0`, vehicle `0`.
+
+Because this run used only 256 training samples, it is used to choose neuron dynamics, not to replace the full-budget `v10_fpga_hybrid` incumbent.
+
+## Current structural top-five round
+
+Pending measurement. All five share the selected mechanism combination and vary architecture only:
+
+| architecture | channels | early spatial kernels | depth | context | parameters |
+| --- | --- | --- | ---: | --- | ---: |
+| `f01_base24_multiscale` | 24/48/96 | 3×3 | 3 | multiscale | 46,423 |
+| `f02_wide32_multiscale` | 32/64/128 | 3×3 | 3 | multiscale | 77,751 |
+| `f03_early5x5_multiscale` | 24/48/96 | 5×5 stem + first block | 3 | multiscale | 49,111 |
+| `f04_deep4_dilated` | 24/48/96/128 | 3×3 | 4 | dilation 2 | 107,131 |
+| `f05_compact16_dilated` | 16/32/64 | 3×3 | 3 | dilation 2 | 21,491 |

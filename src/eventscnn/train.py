@@ -187,7 +187,13 @@ def focal_cross_entropy(
 
 
 def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
-    hidden_keys = ("enc1_spikes", "enc2_spikes", "enc3_spikes", "decoder_spikes")
+    hidden_keys = tuple(
+        key
+        for key in (
+            "enc1_spikes", "enc2_spikes", "enc3_spikes", "enc4_spikes", "decoder_spikes"
+        )
+        if key in outputs
+    )
     hidden_rates = torch.stack([outputs[key].mean() for key in hidden_keys])
     output_rate = outputs["segmentation_spikes"].mean()
     dead_hidden = torch.relu(0.005 - hidden_rates).mean()
@@ -229,10 +235,12 @@ def evaluate_model(
 ) -> tuple[dict[str, object], float, dict[str, float]]:
     model.eval()
     confusion = ConfusionMatrix(DDD17_CLASS_COUNT, IGNORE_INDEX)
-    layer_sums = {key: 0.0 for key in (
-        "enc1_spikes", "enc2_spikes", "enc3_spikes", "decoder_spikes", "segmentation_spikes"
-    )}
-    layer_elements = {key: 0 for key in layer_sums}
+    tracked_spike_keys = (
+        "enc1_spikes", "enc2_spikes", "enc3_spikes", "enc4_spikes",
+        "decoder_spikes", "segmentation_spikes",
+    )
+    layer_sums: dict[str, float] = {}
+    layer_elements: dict[str, int] = {}
     with torch.no_grad():
         for sequence, target in loader:
             sequence = sequence.to(device)
@@ -241,10 +249,12 @@ def evaluate_model(
             outputs = model(sequence)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
-            for key in layer_sums:
+            for key in tracked_spike_keys:
+                if key not in outputs:
+                    continue
                 spikes = outputs[key]
-                layer_sums[key] += float(spikes.sum())
-                layer_elements[key] += spikes.numel()
+                layer_sums[key] = layer_sums.get(key, 0.0) + float(spikes.sum())
+                layer_elements[key] = layer_elements.get(key, 0) + spikes.numel()
     metrics = confusion.compute().to_dict()
     rates = {
         key: layer_sums[key] / max(1, layer_elements[key]) for key in layer_sums

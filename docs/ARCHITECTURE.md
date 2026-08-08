@@ -2,71 +2,62 @@
 
 ## Active task
 
-Six-class semantic segmentation of the Ev-SegNet DDD17 six-channel event-statistic representation. The model input is `[T,N,6,H,W]`; direct encoding repeats one six-channel sample over `T` internal updates.
+Six-class semantic segmentation of the Ev-SegNet DDD17 six-channel event-statistic representation. Input is `[T,N,6,H,W]`; direct encoding repeats one six-channel sample over `T` internal SNN updates.
 
 ## File separation
 
 - `model.py`: canonical production model only (`v10_fpga_hybrid` until promotion)
-- `model_components.py`: shared layers and neuron dynamics
-- `top_ten_models.py`: frozen completed round-one presets
-- `top_five_models.py`: preserved v1/v2 experiments and active retinotopic-mechanism five
+- `model_components.py`: shared convolution, encoder/decoder, PLIF, inhibition, and threshold-adaptation primitives
+- `top_ten_models.py`: frozen completed ten-model structural benchmark
+- `top_five_models.py`: current five-model structural search only
 
-## Shared encoder-decoder
+## Shared neuron dynamics selected for the new top five
 
-The lightweight backbone uses depthwise/pointwise spiking blocks, two spatial downsampling stages, optional dilated or parallel multiscale context, nearest-neighbor upsampling, additive skips, optional residual paths, and a spiking 1×1 semantic head. Auxiliary heads are training-only supervision paths.
-
-## Revised PLIF neuron
-
-For channel `c`:
+All current contenders use the same mechanism combination so width/kernel/depth comparisons are controlled:
 
 ```text
-V_c[t] = beta_c V_c[t-1] + I_c[t]
-S_c[t] = H(V_c[t] - theta_c[t])
-V_c[t] <- V_c[t] - theta_c[t] after a spike
+PLIF with learnable per-channel beta
++ learnable per-channel base threshold
++ stem-only peer-membrane inhibition
++ encoder/context triangular threshold adaptation
++ affine channel scaling
++ residual paths
++ auxiliary semantic supervision
++ output class winner-take-all
 ```
 
-Both `beta_c` and the base threshold are learnable and bounded. The first top-five learned only `beta_c`, leaving all thresholds fixed.
+`peer_membrane` inhibition preserves simultaneous suprathreshold feature spikes but subtracts a learned retinotopic membrane-energy-scaled amount from peer membrane states. Hidden one-winner gating is not used in the current five because the completed mechanism run showed severe deep-layer sparsification with `winner_peer`.
 
-## Revised f_long
+Triangular threshold adaptation is local in `(x,y)`: activity starts a threshold process that rises for `adaptation_duration`, falls for another `adaptation_duration`, then returns to zero. The adaptation strength and duration remain learnable continuous training parameters and require later fixed-point/shift-compatible conversion.
 
-The failed v1 implementation used a fixed integer `T_thresh=4` and binary `amax` activity. V2 uses normalized feature-map spike rate:
+## Structural configuration support
 
-```text
-r_c[t] = mean_{N,H,W}(S_c[t])
-a_c[t] = exp(-1/tau_c) a_c[t-1] + k_c (r_c[t] - r_target,c)
-theta_c[t] = clamp(theta_base,c + a_c[t])
-```
+`SegmentationArchitecture` now supports:
 
-`tau_c`, `k_c`, and `r_target,c` are learnable. Bidirectional error lets silent channels lower their effective threshold and overactive channels raise it. The continuous tau is the trainable replacement for the nondifferentiable integer timer and must later be quantized for FPGA inference.
+- explicit `channel_schedule` with three or four encoder scales;
+- configurable `stem_kernel_size`;
+- configurable `first_block_kernel_size`;
+- existing depthwise/pointwise blocks;
+- `none`, single-dilated, or parallel multiscale context.
 
-## Revised f_inst
+Three-scale models retain the original state/module layout. Four-scale models add `down4`, `enc4`, `project4`, and `refine3`, with a deep skip into the decoder. Validation diagnostics include `enc4_spikes` when present.
 
-Hard all-channel winner-take-all is no longer used in revised contenders. The one competition contender uses grouped top-2 competition in encoder features only. The repaired lightweight contender uses grouped top-2 only in the stem. Decoder and class-head features are not suppressed.
+## Current structural contenders
+
+| model | channels | early kernels | encoder scales | context | purpose |
+| --- | --- | --- | ---: | --- | --- |
+| `f01_base24_multiscale` | 24/48/96 | 3×3 | 3 | multiscale 1/2/4 | controlled baseline |
+| `f02_wide32_multiscale` | 32/64/128 | 3×3 | 3 | multiscale 1/2/4 | capacity test |
+| `f03_early5x5_multiscale` | 24/48/96 | 5×5 stem + first block | 3 | multiscale 1/2/4 | larger early event receptive field |
+| `f04_deep4_dilated` | 24/48/96/128 | 3×3 | 4 | dilation 2 | depth/context test |
+| `f05_compact16_dilated` | 16/32/64 | 3×3 | 3 | dilation 2 | FPGA-efficiency test |
+
+All later spatial depthwise/standard kernels remain 3×3; pointwise projections and semantic heads remain 1×1.
 
 ## Semantic readout
 
-Revised heads allow independent class neurons to emit spikes. Class logits remain temporal spike counts, and final prediction is the argmax after accumulation. This removes timestep-level class starvation without introducing an analog classifier.
-
-## Training protections
-
-- 30% homeostasis/competition warm-up
-- 3× optimizer rate for neuron dynamics
-- weighted CE + focal CE + Dice
-- dead/excessive layer activity regularization
-- full selected-subset class-weight estimation
-- recorded class support, predictions, layer spike rates, and learned neuron parameters
+The learned output remains fully spiking. Six class LIF populations accumulate spike counts over time; local class WTA is applied in the semantic head and final class selection is temporal spike-count argmax. There is no analog softmax inference head.
 
 ## Hardware interpretation
 
-PLIF beta, base threshold, homeostasis tau, strength, and target rate are floating-point training parameters. A winner is not hardware-final until each is quantized to shift/add or fixed-point operations and the integer reference reproduces segmentation metrics.
-
-
-## Retinotopic-mechanism neuron dynamics
-
-The v2 rate controller is now historical. Debat et al. (2021) uses retinotopic membrane-energy inhibition rather than a global feature-map target rate. For one spatial patch, the retinotopic mechanisms compute a local `retinotopic_membrane_energy` as the RMS of feature-neuron membrane potential after subtracting the active shared threshold penalty.
-
-When `triangular_threshold_adaptation` is enabled, each neuron that spikes starts one triangular `ULong` process. Its peak amplitude is `fLong * UPropInh`; it rises linearly for learned `TThresh`, falls linearly for another `TThresh`, and then becomes zero. All active processes at the same `(x,y)` are summed and added to every feature neuron's threshold at that retinotopic location. `fLong` and continuous `TThresh` are learned per layer in our supervised implementation.
-
-For `winner_peer` fInst, if several feature neurons cross threshold at the same binned step, the strongest membrane is used as the synchronous proxy for Debat et al.'s first asynchronous spike. Only that feature spikes and peers at the same `(x,y)` receive the learned `fInst * UPropInh` membrane decrement. `peer_membrane` leaves simultaneous spikes intact but applies the peer decrement. Both are restricted to early/encoder features.
-
-The semantic class head uses local class WTA independently of hidden fInst. This restores the successful round-one class-head behavior while keeping inhibition out of the decoder.
+The current top-five run is still floating-point training. Before FPGA promotion, learned beta, thresholds, inhibition strength, threshold-adaptation strength, and adaptation duration must be quantized and checked against an integer reference. Larger kernels, wider channels, and a fourth encoder level must also be compared by estimated/synthesized memory and event-addition cost rather than mIoU alone.

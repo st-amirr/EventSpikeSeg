@@ -5,13 +5,13 @@ Lightweight fully-spiking semantic segmentation for the Ev-SegNet semantic exten
 ## Project layout
 
 ```text
-src/eventscnn/model.py              canonical model only
-src/eventscnn/model_components.py   shared convolution, LIF/PLIF, fInst/fLong primitives
-src/eventscnn/top_ten_models.py     frozen round-one ten-model benchmark
-src/eventscnn/top_five_models.py    preserved v1/v2 + active retinotopic-mechanism five
+src/eventscnn/model.py              canonical model only (`v10_fpga_hybrid` for now)
+src/eventscnn/model_components.py   shared spiking layers and neuron dynamics
+src/eventscnn/top_ten_models.py     frozen completed ten-model structural benchmark
+src/eventscnn/top_five_models.py    current five-model structural search
 ```
 
-`model.py` remains `v10_fpga_hybrid` until a new contender beats the incumbent and passes multi-seed validation.
+`model.py` is not changed until a contender beats the incumbent and passes wider validation.
 
 ## DDD17 input
 
@@ -23,24 +23,38 @@ C:/Users/stamir/Desktop/Dataset/DDD17/
 └── labels/{train,test}/*.png
 ```
 
-Docker mounts it at `/datasets/DDD17`.
-
-Each sample is the Ev-SegNet six-channel event-statistic representation. The same six-channel sample is applied for `T` internal SNN updates; `T=20` is not 20 camera frames or 20 updates per second.
+Docker mounts it at `/datasets/DDD17`. Each sample is the Ev-SegNet six-channel event-statistic representation and is applied for `T` internal SNN updates.
 
 Classes: `flat`, `construction+sky`, `object`, `nature`, `human`, `vehicle`. Label `255` is ignored.
 
-## Basic checks
+## Basic commands
 
 ```powershell
-docker compose build
 docker compose run --rm inspect-ddd17
 docker compose run --rm lint
 docker compose run --rm test
+docker compose run --rm benchmark-top-five
 ```
 
-## Measured baselines
+Benchmark defaults are defined directly in `compose.yaml`:
 
-Round-one incumbent:
+```text
+seed=17
+epochs=8
+time_steps=15
+train_samples=2048
+validation_samples=512
+height=64
+width=64
+batch_size=14
+learning_rate=0.002
+```
+
+Edit `compose.yaml` directly when intentionally changing these defaults. The project does not use a `.env` file.
+
+## Measured structural incumbent
+
+The completed ten-model benchmark used seed 17, 10 epochs, 2,048 train samples, 512 held-out samples, 64×64 output, and 20 internal steps.
 
 ```text
 v10_fpga_hybrid
@@ -50,98 +64,60 @@ parameters      44,016
 spike rate      0.1412
 ```
 
-Top-five v1 was rejected; best mIoU was `0.2464`.
+This remains the canonical model.
 
-Top-five v2 was interrupted after three completed checkpoints:
+## Completed neuron-mechanism comparison
 
-```text
-f01r_v10_plif_threshold       mIoU 0.2821
-f02r_v10_plif_ratehomeo       mIoU 0.2047
-f03r_v10_plif_grouped_inst    mIoU 0.1967
-```
-
-The v2 result indicates that PLIF + learnable threshold was useful, while the global rate controller and grouped top-k competition were harmful.
-
-## Retinotopic-mechanism neuron mechanisms
-
-The active redesign follows Debat et al. (2021), *Event-Based Trajectory Prediction Using Spiking Neural Networks*, more closely.
-
-For neurons sharing one retinotopic location, the retinotopic mechanisms compute local membrane-energy `retinotopic_membrane_energy`. The retinotopic mechanisms use:
+The latest five-model mechanism run used seed 17, 5 epochs, 256 train samples, 128 held-out samples, 64×64 output, and 8 internal steps. It was intentionally a low-budget screening run.
 
 ```text
-UInst      = fInst * UPropInh
-UMaxThresh = fLong * UPropInh
+f05_v02_light_peer_membrane_inhibition  mIoU 0.1991
+f02_v10_plif_threshold_adaptation       mIoU 0.1459
+f01_v10_plif_threshold_wta              mIoU 0.1402
+f04_v03_dilated_threshold_adaptation    mIoU 0.1366
+f03_v10_plif_winner_peer_inhibition     mIoU 0.1233
 ```
 
-`triangular_threshold_adaptation` creates a local threshold process that rises for `adaptation_duration`, falls for another `adaptation_duration`, then returns to zero. Active processes at the same retinotopic location are summed. `peer_membrane_inhibition` reduces competing feature membranes at the same retinotopic location; `winner_peer_inhibition` additionally keeps only one same-bin winner.
+The useful mechanism conclusions are:
 
-Debat et al. optimized `fInst`, `fLong`, and `TThresh` with a genetic algorithm. In this supervised project, bounded continuous versions are learnable during surrogate-gradient training. Debat et al.'s physical-time `TThresh` values are not copied directly because the current DDD17 representation has artificial internal timesteps rather than Debat et al.'s physical event timing.
+- keep PLIF and learnable base thresholds;
+- keep local triangular threshold adaptation;
+- keep `peer_membrane` inhibition, restricted to the stem;
+- reject hidden `winner_peer` gating for dense segmentation;
+- keep affine channel scaling, residual paths, auxiliary supervision, and semantic output class WTA.
 
-Two inhibition forms are available:
+The winning model learned approximately `inhibition_strength=0.208`, `threshold_adaptation_strength=0.188`, and `adaptation_duration=5.20`, close to the chosen initial values `0.20`, `0.20`, and `5.0`.
 
-- `winner_peer`: closest synchronous approximation; strongest same-bin feature is used as the proxy for Debat et al.'s first asynchronous spike, peers are prevented from spiking and inhibited.
-- `peer_membrane`: preserves same-bin feature spikes but applies the peer membrane inhibition.
+## Current top five: structural search
 
-Hidden retinotopic inhibition is restricted to early/encoder features. Semantic output class WTA is restored separately because it performed well in the round-one incumbent.
-
-## Active top-five current top-five design
+All five now use the same selected neuron dynamics above. The experiment therefore varies architecture rather than mixing architecture and inhibition rules.
 
 ```text
-f01_v10_plif_threshold_wta
-  v10 + PLIF + learned threshold + output class WTA; no hidden retinotopic mechanism
+f01_base24_multiscale
+  24→48→96, 3×3 spatial kernels, three encoder scales, multiscale context
 
-f02_v10_plif_threshold_adaptation
-  v10 + local triangular triangular threshold adaptation in encoder/context
+f02_wide32_multiscale
+  32→64→128, 3×3 spatial kernels, three encoder scales, multiscale context
 
-f03_v10_plif_winner_peer_inhibition
-  v10 + encoder winner_peer fInst + triangular threshold adaptation
+f03_early5x5_multiscale
+  24→48→96, 5×5 stem + first depthwise block, then 3×3, multiscale context
 
-f04_v03_dilated_threshold_adaptation
-  efficient v03 dilated parent + triangular threshold adaptation
+f04_deep4_dilated
+  24→48→96→128, four encoder scales, 3×3 kernels, single dilated context
 
-f05_v02_light_peer_membrane_inhibition
-  lightweight recovered path + stem peer_membrane fInst + encoder triangular threshold adaptation
+f05_compact16_dilated
+  16→32→64, three encoder scales, 3×3 kernels, single dilated context
 ```
 
-`triangular_threshold_adaptation` and `peer_membrane` inhibition ramp from zero over the first 50% of training. The discrete hidden `winner_peer` winner gate is kept off during that warm-up and enabled only afterward, while semantic class WTA remains active throughout. PLIF beta and threshold use 2x the base learning rate; learned `fInst`, `fLong`, and `TThresh` use the base learning rate without weight decay.
+Approximate trainable parameter counts are respectively `46,423`, `77,751`, `49,111`, `107,131`, and `21,491`.
 
-## Validate only the three completed v2 checkpoints
-
-This retrains nothing and writes no model checkpoint. It evaluates the same deterministic 512-sample held-out subset and prints mIoU/per-class IoU for all three:
-
-```powershell
-docker compose run --rm validate-top-five-v2-completed
-```
-
-Do not run it simultaneously with a CPU-heavy training benchmark unless the slowdown is acceptable.
-
-## Run retinotopic-mechanism benchmark
-
-```powershell
-docker compose run --rm benchmark-top-five
-```
-
-Outputs are isolated at:
+Outputs are written to:
 
 ```text
-artifacts/ablation/top_five_current top-five design/summary.json
-artifacts/ablation/top_five_current top-five design/checkpoints/
+artifacts/ablation/top_five/summary.json
+artifacts/ablation/top_five/checkpoints/
 ```
 
-Historical results remain untouched:
+## Selection rule
 
-```text
-artifacts/ablation/top_five/
-artifacts/ablation/top_five_v2/
-artifacts/ablation/top_ten/
-```
-
-## Full single-model training
-
-The canonical model is still selected through `.env`:
-
-```powershell
-docker compose run --rm train-ddd17
-```
-
-Do not run `promote-winner` until a current top-five design contender exceeds or materially improves on the `0.3130` incumbent and is confirmed with seeds 17, 101, and 2026, timestep sensitivity, and quantized-neuron validation.
+Use mIoU as the primary metric. Also inspect per-class IoU, predicted-pixel counts, layer spike rates, and parameter count. A low-budget winner must be rerun with the larger protocol and multiple seeds before replacing `model.py`.

@@ -66,6 +66,6 @@ def test_prepare_datasets_uses_train_and_test(tmp_path) -> None:
 def test_architecture_suites_are_isolated() -> None:
     assert len(architecture_presets("top-ten")) == 10
     assert len(architecture_presets("top-five")) == 5
-    assert infer_model_suite("f01_v10_plif_threshold_wta") == "top-five"
-    assert infer_model_suite("f03_v10_plif_winner_peer_inhibition") == "top-five"
+    assert infer_model_suite("f01_base24_multiscale") == "top-five"
+    assert infer_model_suite("f03_early5x5_multiscale") == "top-five"
     assert infer_model_suite("v03_dw_dilated") == "top-ten"

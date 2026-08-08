@@ -9,4 +9,5 @@ __pycache__/
 sim_build/
 data/**
 !data/README.md
-artifacts/checkpoints/**
+artifacts/**/** */ /**/**/**
+artifacts/ablation/top_five/checkpoints/**

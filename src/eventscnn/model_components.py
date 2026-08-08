@@ -92,6 +92,9 @@ class LIFConfig:
 class SegmentationArchitecture:
     name: str
     base_channels: int = 24
+    channel_schedule: tuple[int, ...] = ()
+    stem_kernel_size: int = 3
+    first_block_kernel_size: int = 3
     depthwise: bool = True
     context: ContextKind = "multiscale"
     context_dilations: tuple[int, ...] = (1, 2, 4)
@@ -132,7 +135,7 @@ class HardwareLIF(nn.Module):
 
     * ``legacy`` preserves the completed round-one/two checkpoints.
     * ``rate`` preserves the first v2 rate-homeostasis experiment.
-    * ``custom`` uses the project retinotopic inhibition and triangular threshold adaptation derived from Debat et al. (2021): inhibition and threshold penalty are
+    * ``triangular_threshold`` uses retinotopic membrane-energy inhibition and local triangular threshold adaptation derived from Debat et al. (2021): inhibition and threshold penalty are
       driven by the local mean squared membrane potential ``UPropInh``.  The
       published inverted-V threshold response is implemented directly as a
       triangular rise/fall process with a learnable continuous TThresh-like time
@@ -683,6 +686,7 @@ class SpikingConvBlock(nn.Module):
         *,
         stride: int = 1,
         dilation: int = 1,
+        kernel_size: int = 3,
         depthwise: bool,
         norm: NormKind,
         lif: LIFConfig,
@@ -695,7 +699,7 @@ class SpikingConvBlock(nn.Module):
             self.depthwise = SpikingStage(
                 in_channels,
                 in_channels,
-                kernel_size=3,
+                kernel_size=kernel_size,
                 stride=stride,
                 dilation=dilation,
                 groups=in_channels,
@@ -716,7 +720,7 @@ class SpikingConvBlock(nn.Module):
             self.standard = SpikingStage(
                 in_channels,
                 out_channels,
-                kernel_size=3,
+                kernel_size=kernel_size,
                 stride=stride,
                 dilation=dilation,
                 norm=norm,
@@ -888,17 +892,34 @@ class EventSpikeSegBase(nn.Module):
         encoder_lif = lif_for("encoder")
         context_lif = lif_for("context")
         decoder_lif = lif_for("decoder")
-        c1 = architecture.base_channels
-        c2 = c1 * 2
-        c3 = c1 * 4
+        channels = architecture.channel_schedule or (
+            architecture.base_channels,
+            architecture.base_channels * 2,
+            architecture.base_channels * 4,
+        )
+        if len(channels) not in {3, 4}:
+            raise ValueError("channel_schedule must contain exactly 3 or 4 stages")
+        if any(channel <= 0 for channel in channels):
+            raise ValueError("channel_schedule entries must be positive")
+        if architecture.stem_kernel_size % 2 == 0 or architecture.stem_kernel_size < 1:
+            raise ValueError("stem_kernel_size must be a positive odd integer")
+        if (
+            architecture.first_block_kernel_size % 2 == 0
+            or architecture.first_block_kernel_size < 1
+        ):
+            raise ValueError("first_block_kernel_size must be a positive odd integer")
+
+        self.encoder_levels = len(channels)
+        c1, c2, c3 = channels[:3]
 
         self.input_channels = input_channels
         self.stem = SpikingStage(
-            input_channels, c1, kernel_size=3, norm=architecture.norm,
-            lif=stem_lif, neuron_kind=neuron_kind,
+            input_channels, c1, kernel_size=architecture.stem_kernel_size,
+            norm=architecture.norm, lif=stem_lif, neuron_kind=neuron_kind,
         )
         self.enc1 = SpikingConvBlock(
-            c1, c1, depthwise=architecture.depthwise, norm=architecture.norm,
+            c1, c1, kernel_size=architecture.first_block_kernel_size,
+            depthwise=architecture.depthwise, norm=architecture.norm,
             lif=encoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
         )
         self.down2 = SpikingConvBlock(
@@ -917,6 +938,23 @@ class EventSpikeSegBase(nn.Module):
             c3, c3, depthwise=architecture.depthwise, norm=architecture.norm,
             lif=encoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
         )
+
+        if self.encoder_levels == 4:
+            c4 = channels[3]
+            self.down4: SpikingConvBlock | None = SpikingConvBlock(
+                c3, c4, stride=2, depthwise=architecture.depthwise,
+                norm=architecture.norm, lif=encoder_lif, neuron_kind=neuron_kind,
+            )
+            self.enc4: SpikingConvBlock | None = SpikingConvBlock(
+                c4, c4, depthwise=architecture.depthwise, norm=architecture.norm,
+                lif=encoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
+            )
+            context_channels = c4
+        else:
+            self.down4 = None
+            self.enc4 = None
+            context_channels = c3
+
         if architecture.context == "none":
             self.context: nn.Module = nn.Identity()
         else:
@@ -924,9 +962,22 @@ class EventSpikeSegBase(nn.Module):
             if architecture.context == "dilated":
                 dilations = (dilations[0],)
             self.context = MultiScaleContext(
-                c3, dilations, norm=architecture.norm, lif=context_lif,
+                context_channels, dilations, norm=architecture.norm, lif=context_lif,
                 gap_gate=architecture.gap_gate, neuron_kind=neuron_kind,
             )
+
+        if self.encoder_levels == 4:
+            self.project4: SpikingStage | None = SpikingStage(
+                channels[3], c3, kernel_size=1, norm=architecture.norm,
+                lif=decoder_lif, neuron_kind=neuron_kind,
+            )
+            self.refine3: SpikingConvBlock | None = SpikingConvBlock(
+                c3, c3, depthwise=architecture.depthwise, norm=architecture.norm,
+                lif=decoder_lif, neuron_kind=neuron_kind, residual=architecture.residual,
+            )
+        else:
+            self.project4 = None
+            self.refine3 = None
 
         self.project3 = SpikingStage(
             c3, c2, kernel_size=1, norm=architecture.norm,
@@ -1047,8 +1098,20 @@ class EventSpikeSegBase(nn.Module):
         x1 = self.enc1(self.stem(sequence))
         x2 = self.enc2(self.down2(x1))
         x3 = self.enc3(self.down3(x2))
-        z3 = self.context(x3) if not isinstance(self.context, nn.Identity) else x3
-        d2 = self._upsample(self.project3(z3), x2.shape[-2:])
+        x4: Tensor | None = None
+        if self.encoder_levels == 4:
+            assert self.down4 is not None and self.enc4 is not None
+            assert self.project4 is not None and self.refine3 is not None
+            x4 = self.enc4(self.down4(x3))
+            deepest = self.context(x4) if not isinstance(self.context, nn.Identity) else x4
+            d3 = self._upsample(self.project4(deepest), x3.shape[-2:])
+            if self.architecture.skip_kind == "two":
+                d3 = torch.clamp(d3 + x3, 0.0, 1.0)
+            d3 = self.refine3(d3)
+            d2 = self._upsample(self.project3(d3), x2.shape[-2:])
+        else:
+            deepest = self.context(x3) if not isinstance(self.context, nn.Identity) else x3
+            d2 = self._upsample(self.project3(deepest), x2.shape[-2:])
         if self.architecture.skip_kind == "two":
             d2 = torch.clamp(d2 + x2, 0.0, 1.0)
         d2 = self.refine2(d2)
@@ -1068,6 +1131,8 @@ class EventSpikeSegBase(nn.Module):
             "enc3_spikes": x3,
             "decoder_spikes": d1,
         }
+        if x4 is not None:
+            result["enc4_spikes"] = x4
         if aux_spikes is not None:
             result["auxiliary_spikes"] = aux_spikes
             result["auxiliary_logits"] = aux_spikes.sum(dim=0) * (

@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, identify a strong spike-native architecture, then map the confirmed model to sparse fixed-point VHDL.
+Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, select a strong spike-native architecture, then map the confirmed model to sparse fixed-point VHDL.
 
 ## Source-of-truth order
 
@@ -17,47 +17,64 @@ Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, 
 
 ```text
 model.py              canonical architecture only
-top_ten_models.py     frozen round-one definitions
-top_five_models.py    preserved v1/v2 + active retinotopic-mechanism
+top_ten_models.py     frozen completed ten-model benchmark
+top_five_models.py    one active five-model structural search
 model_components.py   shared tested primitives
 ```
 
-Do not put experimental registries back into `model.py`.
+Do not put experimental registries back into `model.py`. Do not create versioned active top-five registries; measured old results belong in `RESULTS.md`, not in the active model registry.
 
 ## Current evidence
 
-- incumbent: `v10_fpga_hybrid`, seed-17 mIoU 0.3130
-- top-five v1 rejected; best 0.2464
-- top-five v2 completed first three only:
-  - `f01r_v10_plif_threshold`: 0.2821
-  - `f02r_v10_plif_ratehomeo`: 0.2047
-  - `f03r_v10_plif_grouped_inst`: 0.1967
-- v2 indicates PLIF + learned threshold is substantially healthier than global rate homeostasis or grouped top-k competition.
+- full-budget structural incumbent: `v10_fpga_hybrid`, seed-17 mIoU 0.3130
+- latest low-budget mechanism screen: seed 17, 5 epochs, 256 train, 128 held-out, 64×64, 8 timesteps
+- mechanism-screen winner: `f05_v02_light_peer_membrane_inhibition`, mIoU 0.1991
+- controlled v10 comparison: triangular threshold adaptation slightly improved PLIF+threshold (`0.1459` vs `0.1402`)
+- hidden `winner_peer` inhibition ranked last (`0.1233`) and nearly silenced deep encoder activity
+- selected hidden mechanism: stem-only `peer_membrane` inhibition plus encoder/context triangular threshold adaptation
 
-## Retinotopic-mechanism contract
+The low-budget screen selects dynamics only; it does not supersede the 0.3130 full-budget incumbent.
 
-Source: Debat et al. (2021), *Event-Based Trajectory Prediction Using Spiking Neural Networks*.
+## Active neuron-dynamics contract
 
-Do not describe Debat et al. as using global firing-rate target homeostasis. Its mechanism is retinotopic and membrane-energy driven:
+All current structural contenders use:
 
-- `retinotopic_membrane_energy`: local RMS/mean-square membrane-energy term for neurons sharing one patch, accounting for threshold adaptation.
-- `UInst = fInst * UPropInh`: instantaneous retinotopic inhibition; the source asynchronous mechanism prevents peers from spiking and reduces peer membrane potential.
-- `UMaxThresh = fLong * UPropInh`.
-- every `ULong` process rises linearly over `TThresh`, then falls linearly over another `TThresh`.
-- active `ULong` processes from filters sharing the patch are summed into the local threshold penalty.
-- custom parameters were tuned by a genetic algorithm, not learned by STDP.
+- PLIF with learnable per-channel beta
+- learnable per-channel base threshold
+- affine channel scaling
+- residual paths
+- auxiliary semantic supervision
+- stem-only `peer_membrane` inhibition
+- local triangular threshold adaptation in encoder/context
+- output semantic class WTA
 
-Active current top-five design may use bounded learnable continuous analogues under surrogate-gradient training, but must keep the spatial/local mechanism and triangular time course. `winner_peer` is the close synchronous emulation; `peer_membrane` preserves same-bin feature spikes and applies only the peer membrane decrement.
+`peer_membrane` preserves simultaneous suprathreshold feature spikes while reducing peer membrane state using retinotopic membrane energy. Do not use hidden `winner_peer` gating in the active top five.
 
-## Active current top-five design requirements
+The triangular threshold process uses learnable threshold-adaptation strength and continuous adaptation duration. These are training parameters only until fixed-point quantization and integer-reference regression pass.
 
-- output semantic WTA remains enabled; do not apply hidden retinotopic inhibition in decoder/head
-- triangular threshold adaptation and peer_membrane inhibition ramp from zero over 50% of training; hidden winner_peer gating stays off until the warm-up ends, while output class WTA stays on
-- PLIF beta and threshold receive 2x base LR; mechanism parameters use base LR
-- write new runs only to `artifacts/ablation/top_five_current top-five design/`
-- preserve v1/v2 checkpoint loading and results
-- diagnostics: class support/predictions, per-layer spike rates, beta/threshold, fInst/fLong/TThresh
+## Active top-five structural search
+
+The five current contenders differ structurally while keeping neuron dynamics identical:
+
+- `f01_base24_multiscale`: 24/48/96, 3×3, multiscale context
+- `f02_wide32_multiscale`: 32/64/128, 3×3, multiscale context
+- `f03_early5x5_multiscale`: 24/48/96, 5×5 stem + first depthwise block
+- `f04_deep4_dilated`: 24/48/96/128, four encoder scales, dilation-2 context
+- `f05_compact16_dilated`: 16/32/64, dilation-2 context
+
+Fairness rule: no contender-specific neuron, optimizer, loss, data, timestep, or warm-up tuning during one benchmark comparison.
+
+## Diagnostics
+
+Every top-five run must record:
+
+- mIoU and per-class IoU
+- ground-truth and predicted pixels per class
+- pixel accuracy
+- trainable parameter count
+- per-layer spike rates, including `enc4_spikes` when present
+- learned beta, threshold, inhibition strength, threshold-adaptation strength, and adaptation duration
 
 ## Finalization gates
 
-Do not replace canonical `model.py` from one seed. Require complete current top-five design benchmark, rare-class diagnostics, seeds 17/101/2026, timestep sensitivity, and quantized dynamics validation.
+Do not replace canonical `model.py` from one low-budget seed. Require a larger-budget rerun, seeds 17/101/2026, timestep sensitivity, rare-class diagnostics, quantized neuron validation, and hardware-cost comparison.

@@ -2,46 +2,37 @@
 
 ## Dataset representation limitation
 
-The Ev-SegNet semantic download contains six aggregate event-statistic channels rather
-than raw asynchronous events. This limits direct claims about temporal sparsity and
-event-addressed FPGA execution. Raw-event validation requires original DDD17 recordings
-aligned to the published semantic labels.
+The Ev-SegNet semantic download contains six aggregate event-statistic channels rather than raw asynchronous events. This limits direct claims about temporal sparsity and event-addressed FPGA execution. Raw-event validation requires original DDD17 recordings aligned to the semantic labels.
 
-## Resolved: loader uses the known Desktop layout only
+## Rare-class collapse
 
-The loader no longer searches parent mounts or walks the tree. It reads only:
+**Status:** open.
+
+Object, nature, human, and vehicle classes remain weak or absent in the low-budget mechanism screen. Ground-truth support for the 128-sample held-out subset was:
 
 ```text
-events/{train,test}/*.npy
-labels/{train,test}/*.png
+flat               54,829 pixels
+construction+sky  388,044
+object               1,615
+nature              50,690
+human                  702
+vehicle              28,408
 ```
 
-from the embedded root `C:/Users/stamir/Desktop/Dataset/DDD17`, pairs files by stem, and
-uses `test` as the held-out set. Preview folders such as `events_images` and
-`labels/test_colored` are ignored.
+The mechanism-screen winner predicted no nature or vehicle pixels and only one human pixel. This cannot be fixed by architecture ranking alone. Continue recording ground-truth and predicted pixel counts, and do not promote a model solely on overall pixel accuracy.
 
-## 2026-08-06 — Rare classes collapse to zero IoU
+## Resolved: whole-feature-map binary homeostasis
 
-**Status:** open diagnostic issue.
+The old `amax` activity rule treated one spike like dense activity and could raise an entire feature-map threshold. The active mechanism uses local triangular threshold adaptation driven by retinotopic membrane energy instead.
 
-**Evidence:** object IoU is zero for the round-one winner and nearly all variants; human IoU is zero for all ten variants.
+## Resolved: hidden hard winner gating in the active top five
 
-**Possible causes:** severe class imbalance, too few class-containing samples in the fixed subset, loss weighting limits, disappearance of small regions at 64×64, or class-prediction collapse.
+The completed mechanism screen showed `winner_peer` inhibition starving the encoder: spike rates fell to approximately `0.0474 → 0.00306 → 0.000149` across enc1/enc2/enc3. The active structural top five therefore use `peer_membrane` inhibition only in the stem. The stronger winner gate remains a reusable component but is not part of the current contenders.
 
-**Required diagnostic:** record ground-truth pixels per class, samples containing each class, post-resize class counts, predicted pixels per class, and the full confusion matrix before final architecture promotion.
+## Open: structural-cost trade-off
 
-## 2026-08-07 — Resolved design flaw: binary feature-map homeostasis
+The new contenders span approximately 21k to 107k trainable parameters. Parameter count is only a proxy for FPGA cost; 5×5 kernels, wider pointwise layers, fourth-stage membrane state, event additions, memory banking, and line buffering must be measured/estimated separately before hardware selection.
 
-**Former behavior:** `amax` reduced a complete feature map to 0/1, so one spike and dense firing caused the same threshold increment. A fixed integer timer repeatedly held the threshold high.
+## Open: continuous learned neuron parameters
 
-**Correction:** revised contenders use mean spike rate and learnable continuous adaptation tau, strength, and target rate. Silent channels can lower their threshold; overactive channels raise it.
-
-## 2026-08-07 — Resolved design flaw: global hard f_inst
-
-**Former behavior:** one winning channel per pixel was enforced through all hidden stages, causing feature loss and complete collapse in the lightweight contender.
-
-**Correction:** revised competition is grouped top-2 and scoped to encoder or stem only. Competition is disabled during the first 30% of training.
-
-## 2026-08-07 — Open: revised real-data outcome
-
-The revised mechanisms pass unit and synthetic training tests but have not yet demonstrated improved DDD17 mIoU. Promotion remains blocked until the real benchmark and multi-seed confirmation finish.
+PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are still floating-point training variables. They require quantization and integer-reference regression before FPGA claims.
