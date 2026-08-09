@@ -3,14 +3,14 @@
 ## Working now
 
 - DDD17 six-channel semantic loader and deterministic bounded subsets
-- canonical `model.py` still fixed at `v10_fpga_hybrid`
+- canonical `model.py` now contains the post-ablation `final_dualpath_wide32` candidate (~132k params)
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
-- active accuracy-oriented top-three registry in `top_three_models.py`
+- completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
 - PLIF with learnable beta and base thresholds
 - local triangular threshold adaptation
 - stem-only peer-membrane inhibition
-- output class WTA and spike-count semantic readout
+- canonical independent spiking class populations with temporal spike-count semantic readout
 - explicit 3- or 4-stage channel schedules
 - configurable stem and first-block kernel size
 - dynamic `enc4_spikes` activity/evaluation diagnostics for the deep contender
@@ -49,11 +49,22 @@ Protocol: seed 17, 8 epochs, 2,048 train, 512 held-out, 64×64, 15 timesteps, ba
 
 None beat the 0.3130 incumbent. The round indicates that feature preservation/fusion is a higher-priority accuracy problem than simply adding width or parameters.
 
-## Active accuracy top three
+## Completed accuracy top three
 
-- `t01_spike_pyramid_concat` — 63,147 params; concatenated d1/d2/d4 spike context + binary channel selection + concatenative decoder.
-- `t02_dualpath_detail` — 24,211 params; compact semantic encoder + persistent high-resolution spiking detail stream.
-- `t03_deep_attention_fpn` — 108,781 params; four-stage encoder + low-resolution binary spike-mask attention + concatenative FPN.
+- `t02_dualpath_detail` — **0.2728 mIoU**, 24,211 params; winner and evidence for a persistent high-resolution spiking detail stream.
+- `t01_spike_pyramid_concat` — 0.1671 mIoU, 63,147 params; parallel multiscale concat did not recover accuracy.
+- `t03_deep_attention_fpn` — 0.1555 mIoU, 108,781 params; extra depth/attention collapsed predictions toward dominant classes.
+
+## Canonical candidate implemented
+
+- 32/64/128 semantic path with extra residual depthwise/pointwise refinement;
+- persistent 32-channel high-resolution detail path;
+- serial dilation-2 context ×2;
+- stronger 128→64→32 decoder with late semantic/shallow/detail concatenation;
+- PLIF 1×1 cross-channel spike selector (no count-domain MLP);
+- independent spiking class neurons and temporal argmax;
+- SpikingJelly `Conv2d` wrappers and `ParametricLIFNode` charge equation when installed, with project-specific per-channel tau, fInst, fLong and exact operation order preserved;
+- canonical-only 70/20/10 joint → backbone-frozen refinement → low-LR joint-unfreeze schedule.
 
 ## Validation completed locally
 
@@ -67,10 +78,10 @@ None beat the 0.3130 incumbent. The round indicates that feature preservation/fu
 ## Open issues
 
 - rare-class IoU remains the dominant accuracy limitation;
-- the new multiscale concatenation, detail preservation, and low-resolution spike attention hypotheses have not yet been measured on real DDD17;
+- the completed top-three hypotheses are measured; the new scaled canonical candidate has not yet been trained/evaluated;
 - learned continuous neuron dynamics and learned attention thresholds remain unquantized;
-- the eventual winner still needs the larger-budget/multi-seed/timestep and integer-reference gates before canonical promotion.
+- `final_dualpath_wide32` is installed as the canonical candidate by design decision but still needs larger-budget/multi-seed/timestep and integer-reference gates before it is treated as the validated final/hardware-frozen model.
 
 ## Next action
 
-Run `docker compose run --rm lint`, `docker compose run --rm test`, then `docker compose run --rm benchmark-top-three`. Compare mIoU first, then rare-class IoU/predicted-pixel counts, layer spike rates, parameter count, and hardware complexity before deciding whether to merge features into the final candidate.
+Run `docker compose run --rm lint`, `docker compose run --rm test`, then `docker compose run --rm train-ddd17-smoke`. If these pass, train `final_dualpath_wide32` and compare it directly with the measured 0.3130 `v10_fpga_hybrid` baseline before larger multi-seed and quantization/hardware validation.

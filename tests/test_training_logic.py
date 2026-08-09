@@ -4,6 +4,7 @@ from eventscnn.train import (
     _prepare_datasets,
     architecture_presets,
     infer_model_suite,
+    refinement_phase_for_epoch,
     select_winner,
 )
 
@@ -69,3 +70,12 @@ def test_architecture_suites_are_isolated() -> None:
     assert infer_model_suite("f01_base24_multiscale") == "top-five"
     assert infer_model_suite("f03_early5x5_multiscale") == "top-five"
     assert infer_model_suite("v03_dw_dilated") == "top-ten"
+
+
+def test_final_refinement_schedule_phases() -> None:
+    schedule = (0.70, 0.90)
+    assert refinement_phase_for_epoch(1, 10, schedule) == ("joint", True)
+    assert refinement_phase_for_epoch(8, 10, schedule) == ("decoder_detail_refinement", False)
+    assert refinement_phase_for_epoch(9, 10, schedule) == ("decoder_detail_refinement", False)
+    assert refinement_phase_for_epoch(10, 10, schedule) == ("final_joint_low_lr", True)
+    assert refinement_phase_for_epoch(8, 10, None) == ("joint", True)

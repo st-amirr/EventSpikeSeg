@@ -9,7 +9,11 @@ import torch
 from torch import Tensor, nn
 
 try:
+    from spikingjelly.activation_based import functional as sj_functional
+    from spikingjelly.activation_based import layer as sj_layer
+    from spikingjelly.activation_based import neuron as sj_neuron
     from spikingjelly.activation_based import surrogate
+    SPIKINGJELLY_AVAILABLE = True
 except ImportError:  # lightweight test environments; Docker installs SpikingJelly
     class _ATanSpike(torch.autograd.Function):
         @staticmethod
@@ -30,6 +34,10 @@ except ImportError:  # lightweight test environments; Docker installs SpikingJel
         ATan = _ATanModule
 
     surrogate = _SurrogateNamespace()
+    sj_neuron = None
+    sj_layer = None
+    sj_functional = None
+    SPIKINGJELLY_AVAILABLE = False
 from torch.nn import functional as F
 
 NormKind = Literal["none", "affine", "bn"]
@@ -526,13 +534,20 @@ class HardwareLIF(nn.Module):
             )
         return effective
 
+    def _candidate_membrane(self, current: Tensor) -> Tensor:
+        """Charge the membrane for one step.
+
+        Fixed LIF keeps the original hardware equation. ParametricLIF overrides
+        this hook with SpikingJelly's PLIF charge equation when available.
+        """
+        return self._leaked_membrane() + current
+
     def forward(self, current: Tensor) -> Tensor:
         if current.ndim != 4 or current.shape[1] != self.channels:
             raise ValueError(f"expected [N,{self.channels},H,W] current")
         self._ensure_state(current)
         self._advance_threshold_adaptation()
-        leaked = self._leaked_membrane()
-        candidate = leaked + current
+        candidate = self._candidate_membrane(current)
         threshold = self._threshold_tensor(current)
         raw = self.spike_function(candidate - threshold)
         above = candidate >= threshold
@@ -547,11 +562,26 @@ class HardwareLIF(nn.Module):
 
 
 class ParametricLIF(HardwareLIF):
-    """PLIF with learnable per-channel retention and optional base threshold."""
+    """Per-channel PLIF backed by SpikingJelly's ParametricLIF charge core.
+
+    SpikingJelly's public ``ParametricLIFNode`` learns reciprocal tau as
+    ``sigmoid(w)``. The stock node uses a layer-level scalar ``w``; this
+    project keeps the already-benchmarked per-channel retention by feeding a
+    broadcast per-channel reciprocal-tau tensor into that same charge
+    equation. Our dynamic threshold, fInst and fLong logic remains explicit in
+    :class:`HardwareLIF`, so its runtime order is still directly translatable
+    to RTL/circuit state machines.
+
+    When SpikingJelly is unavailable (lightweight unit-test environments), the
+    mathematically identical PyTorch charge expression is used.
+    """
 
     def __init__(self, channels: int, config: LIFConfig) -> None:
         super().__init__(channels, config)
         beta = torch.full((channels,), config.beta).clamp(1e-4, 1.0 - 1e-4)
+        # Keep the historical state-dict name for completed experiment
+        # reproducibility. SpikingJelly uses w=logit(1/tau)=logit(1-beta),
+        # which is exactly -logit(beta).
         self.beta_logit = nn.Parameter(torch.logit(beta))
         if config.learnable_threshold:
             self.threshold_logit = nn.Parameter(
@@ -564,6 +594,28 @@ class ParametricLIF(HardwareLIF):
             )
         else:
             self.register_parameter("threshold_logit", None)
+
+        self.plif_core: nn.Module | None
+        if SPIKINGJELLY_AVAILABLE:
+            assert sj_neuron is not None
+            initial_tau = 1.0 / max(1.0 - config.beta, 1e-6)
+            core = sj_neuron.ParametricLIFNode(
+                init_tau=float(initial_tau),
+                decay_input=False,
+                v_threshold=config.threshold,
+                v_reset=None,
+                surrogate_function=surrogate.ATan(),
+                detach_reset=False,
+                step_mode="s",
+                backend="torch",
+                store_v_seq=False,
+            )
+            # ``w`` is supplied from beta_logit below so that old checkpoints
+            # remain loadable and only one trainable PLIF parameter exists.
+            core._parameters.pop("w", None)
+            self.plif_core = core
+        else:
+            self.plif_core = None
 
     @property
     def beta(self) -> Tensor:
@@ -579,14 +631,44 @@ class ParametricLIF(HardwareLIF):
             self.config.threshold_max,
         )
 
+    @property
+    def reciprocal_tau(self) -> Tensor:
+        """SpikingJelly PLIF reciprocal tau = 1 - beta, per channel."""
+        return 1.0 - self.beta
+
     def _leaked_membrane(self) -> Tensor:
         return self.membrane * self.beta.view(1, -1, 1, 1)
+
+    def _candidate_membrane(self, current: Tensor) -> Tensor:
+        if self.plif_core is None:
+            return self._leaked_membrane() + current
+
+        # Reuse SpikingJelly's PLIF neuronal_charge implementation while
+        # preserving our per-channel tau and external hardware-visible state.
+        core = self.plif_core
+        core.v = self.membrane
+        # ParametricLIFNode.neuronal_charge reads self.w.sigmoid(). Feeding
+        # -beta_logit gives sigmoid(w)=1-beta=1/tau.
+        core.w = (-self.beta_logit).view(1, -1, 1, 1)
+        core.neuronal_charge(current)
+        return core.v
 
     def _base_threshold(self, current: Tensor) -> Tensor:
         learned = self.learned_threshold
         if learned is None:
             return super()._base_threshold(current)
         return learned.to(device=current.device, dtype=current.dtype)
+
+    def reset(self) -> None:
+        super().reset()
+        if self.plif_core is not None:
+            if sj_functional is not None:
+                sj_functional.reset_net(self.plif_core)
+            else:
+                reset = getattr(self.plif_core, "reset", None)
+                if callable(reset):
+                    reset()
+
 
 
 class ChannelAffine(nn.Module):
@@ -653,15 +735,21 @@ class SpikingStage(nn.Module):
     ) -> None:
         super().__init__()
         padding = dilation * (kernel_size // 2)
-        self.conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size,
+        conv_type = sj_layer.Conv2d if SPIKINGJELLY_AVAILABLE and sj_layer is not None else nn.Conv2d
+        conv_kwargs = dict(
             stride=stride,
             padding=padding,
             dilation=dilation,
             groups=groups,
             bias=False,
+        )
+        if SPIKINGJELLY_AVAILABLE:
+            conv_kwargs["step_mode"] = "s"
+        self.conv = conv_type(
+            in_channels,
+            out_channels,
+            kernel_size,
+            **conv_kwargs,
         )
         self.transform = CurrentTransform(out_channels, norm)
         neuron_type = ParametricLIF if neuron_kind == "plif" else HardwareLIF

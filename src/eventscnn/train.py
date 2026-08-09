@@ -264,6 +264,30 @@ def evaluate_model(
     return metrics, rates["segmentation_spikes"], rates
 
 
+def refinement_phase_for_epoch(
+    epoch: int,
+    epochs: int,
+    schedule: tuple[float, float] | None,
+) -> tuple[str, bool]:
+    """Return final-model training phase and semantic-backbone trainability.
+
+    Historical benchmark models pass ``schedule=None`` and remain unchanged.
+    The canonical model trains jointly, freezes the semantic backbone for late
+    detail/decoder refinement, then performs a final all-layer low-LR tune.
+    """
+    if schedule is None:
+        return "joint", True
+    freeze_start, unfreeze_start = schedule
+    if not (0.0 < freeze_start < unfreeze_start < 1.0):
+        raise ValueError("refinement schedule must satisfy 0 < freeze < unfreeze < 1")
+    progress = (epoch - 1) / float(max(1, epochs))
+    if progress >= unfreeze_start:
+        return "final_joint_low_lr", True
+    if progress >= freeze_start:
+        return "decoder_detail_refinement", False
+    return "joint", True
+
+
 def train_architecture(
     root: Path,
     *,
@@ -347,6 +371,15 @@ def train_architecture(
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
     class_weights = estimate_class_weights(train_dataset).to(resolved_device)
 
+    raw_refinement_schedule = getattr(model, "refinement_schedule", None)
+    refinement_schedule = (
+        tuple(float(value) for value in raw_refinement_schedule)
+        if raw_refinement_schedule is not None
+        else None
+    )
+    set_backbone_trainable = getattr(model, "set_semantic_backbone_trainable", None)
+    previous_training_phase: str | None = None
+
     architecture_config = getattr(model, "architecture", None)
     mechanism_round = bool(
         architecture_config is not None
@@ -359,6 +392,22 @@ def train_architecture(
     warmup_epochs = max(2, int(round(epochs * (0.50 if mechanism_round else 0.30))))
     for epoch in range(1, epochs + 1):
         model.train()
+        training_phase, semantic_backbone_trainable = refinement_phase_for_epoch(
+            epoch, epochs, refinement_schedule
+        )
+        if callable(set_backbone_trainable):
+            set_backbone_trainable(semantic_backbone_trainable)
+        # The final unfreeze is deliberately lower-LR than the decoder/detail
+        # refinement phase. CosineAnnealing has already lowered LR late in the
+        # run; this one-time multiplier makes the phase boundary explicit.
+        if (
+            training_phase == "final_joint_low_lr"
+            and previous_training_phase != "final_joint_low_lr"
+        ):
+            for group in optimizer.param_groups:
+                group["lr"] *= 0.25
+        previous_training_phase = training_phase
+
         if mechanism_round:
             # Start exactly as the stable PLIF/threshold model, then introduce
             # triangular threshold adaptation smoothly over half the run.
@@ -403,7 +452,7 @@ def train_architecture(
             ce = F.cross_entropy(logits, target, weight=class_weights, ignore_index=IGNORE_INDEX)
             focal = focal_cross_entropy(logits, target, class_weights)
             dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
-            loss = 0.5 * ce + 0.5 * focal + 0.75 * dice + _activity_regularizer(outputs)
+            loss = 1.0 * ce + 0.5 * focal + 0.75 * dice + _activity_regularizer(outputs)
             if "auxiliary_logits" in outputs:
                 auxiliary = F.interpolate(
                     outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
@@ -412,7 +461,10 @@ def train_architecture(
                     auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
                 )
                 auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
-                loss = loss + 0.15 * auxiliary_ce + 0.15 * auxiliary_focal
+                auxiliary_scale = (
+                    0.30 if training_phase == "decoder_detail_refinement" else 0.15
+                )
+                loss = loss + auxiliary_scale * auxiliary_ce + auxiliary_scale * auxiliary_focal
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite loss for {architecture} at epoch {epoch}")
             optimizer.zero_grad(set_to_none=True)
@@ -431,11 +483,17 @@ def train_architecture(
                     "homeostasis_scale": homeostasis_scale,
                     "competition_enabled": competition_enabled,
                     "hidden_inhibition_enabled": hidden_inhibition_enabled,
+                    "training_phase": training_phase,
+                    "semantic_backbone_trainable": semantic_backbone_trainable,
+                    "learning_rates": [group["lr"] for group in optimizer.param_groups],
                 },
                 sort_keys=True,
             ),
             flush=True,
         )
+
+    if callable(set_backbone_trainable):
+        set_backbone_trainable(True)
 
     set_homeostasis = getattr(model, "set_homeostasis_scale", None)
     if callable(set_homeostasis):

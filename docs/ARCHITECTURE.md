@@ -6,11 +6,11 @@ Six-class semantic segmentation of the Ev-SegNet DDD17 six-channel event-statist
 
 ## File separation
 
-- `model.py`: canonical production model only (`v10_fpga_hybrid` until promotion)
+- `model.py`: canonical post-ablation high-accuracy candidate (`final_dualpath_wide32`)
 - `model_components.py`: shared convolution, encoder/decoder, PLIF, inhibition, and threshold-adaptation primitives
 - `top_ten_models.py`: frozen completed ten-model structural benchmark
 - `top_five_models.py`: completed five-model structural search
-- `top_three_models.py`: current accuracy-oriented three-model search
+- `top_three_models.py`: frozen completed accuracy-oriented three-model search
 
 ## Shared neuron dynamics carried into the structural and accuracy rounds
 
@@ -24,7 +24,7 @@ PLIF with learnable per-channel beta
 + affine channel scaling
 + residual paths
 + auxiliary semantic supervision
-+ output class winner-take-all
++ historical structural/top-three output class winner-take-all
 ```
 
 `peer_membrane` inhibition preserves simultaneous suprathreshold feature spikes but subtracts a learned retinotopic membrane-energy-scaled amount from peer membrane states. Hidden one-winner gating is not used in the current search because the completed mechanism run showed severe deep-layer sparsification with `winner_peer`.
@@ -57,16 +57,16 @@ All later spatial depthwise/standard kernels remain 3×3; pointwise projections 
 
 ## Semantic readout
 
-The learned output remains fully spiking. Six class LIF populations accumulate spike counts over time; local class WTA is applied in the semantic head and final class selection is temporal spike-count argmax. There is no analog softmax inference head.
+The learned output remains fully spiking. Historical benchmark models retain their recorded class-head behavior. The canonical `final_dualpath_wide32` uses six independent spiking class populations with no hard per-timestep class WTA; final class selection is temporal spike-count argmax. There is no analog softmax inference head.
 
 ## Hardware interpretation
 
 The completed top-five and current top-three runs use floating-point training. Before FPGA promotion, learned beta, thresholds, inhibition strength, threshold-adaptation strength, and adaptation duration must be quantized and checked against an integer reference. Larger kernels, wider channels, and a fourth encoder level must also be compared by estimated/synthesized memory and event-addition cost rather than mIoU alone.
 
 
-## Current accuracy-oriented top three
+## Completed accuracy-oriented top three
 
-The completed structural round established three useful facts: the compact three-stage/single-dilation path was the strongest overall, the wide path helped `object`, and the four-stage path recovered the best aggregate rare-class signal. The next round therefore tests feature preservation and fusion rather than simply adding parameters.
+The completed structural round established three useful facts: the compact three-stage/single-dilation path was the strongest overall, the wide path helped `object`, and the four-stage path recovered the best aggregate rare-class signal. That round therefore tested feature preservation and fusion rather than simply adding parameters.
 
 ### `t01_spike_pyramid_concat` — 63,147 parameters
 
@@ -105,3 +105,34 @@ This tests whether the rare-class semantics seen in the four-stage top-five mode
 ## Spike-oriented fusion and attention rule
 
 Concatenation is treated as wiring/channel routing and does not itself require multiply-accumulate operations. Learned fusion occurs afterward through spiking 1×1 projections. Channel attention uses spike counts and a hard binary gate in the forward path. Deep attention uses binary Q/K coincidence, accumulation, comparison, and V masking rather than conventional floating-point softmax attention. These operations remain compatible with an eventual counter/comparator/accumulator FPGA mapping, subject to later quantization and bit-accurate validation.
+
+
+## Canonical `final_dualpath_wide32`
+
+The post-ablation candidate combines only mechanisms supported by the completed experiments and scales capacity without adding another spatial downsampling stage:
+
+```text
+input 6
+  → stem 32
+  → encoder 32 (two residual DW/PW blocks total)
+  → downsample / encoder 64 (two residual DW/PW blocks total)
+  → downsample / encoder 128 (two residual DW/PW blocks total)
+  → serial residual dilation-2 context ×2
+  → decoder 128→64 + mid-level additive skip + residual refine
+  → decoder 64→32
+  → CONCAT semantic32 + shallow32 + persistent detail32
+  → spike-driven 1×1 cross-channel projection → PLIF selector gate
+  → DW/PW 96→32 + residual refine
+  → six independent spiking class populations
+  → temporal spike-count argmax
+```
+
+The high-resolution detail stream has three residual 32-channel depthwise/pointwise blocks. The final channel selector uses a 96→96 spiking 1×1 projection followed by per-channel PLIF selector neurons. Their binary spikes gate the fused channels, preserving cross-channel selection without a dense count-domain MLP. The architecture has approximately 141k trainable parameters.
+
+### Software/runtime substrate
+
+PyTorch remains the tensor, autograd, and optimizer substrate. When installed, SpikingJelly provides `activation_based.layer.Conv2d`, `surrogate.ATan`, and the `ParametricLIFNode` charge equation. The project retains explicit per-channel reciprocal tau plus custom dynamic threshold, `peer_membrane` fInst, triangular fLong/TThresh, and operation ordering. This keeps the runtime equation visible for fixed-point FPGA, neuromorphic-chip translation, or circuit-level implementation instead of hiding project-specific behavior inside framework internals.
+
+### Canonical training refinement
+
+Only the canonical model exposes the late refinement schedule: joint training through 70% of epochs; freeze stem/semantic encoder/context during 70–90% while detail path, decoder/fusion, auxiliary head, and class head continue; then unfreeze all layers for the final 10% with an explicit 0.25 LR multiplier in addition to cosine decay. The main CE coefficient is 1.0; auxiliary CE/focal coefficients rise from 0.15 to 0.30 only during the frozen-backbone phase.

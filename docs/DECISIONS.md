@@ -119,3 +119,29 @@ Do not introduce conventional dense softmax self-attention into the active FPGA/
 - concatenation followed by spiking 1×1 mixing.
 
 This is informed by SLTNet's evidence for multi-receptive-field event features, channel interaction, multi-level decoder restoration, and spike-driven masked attention, but the project tests smaller hardware-oriented modules rather than reproducing the full SLTNet network.
+
+
+## 2026-08-09 — Complete the top-three search and select the dual-path mechanism
+
+The accuracy-oriented top-three benchmark completed at seed 17 with 8 epochs, 2,048 training samples, 512 held-out samples, 64×64 output, and 15 internal timesteps. Results were `t02_dualpath_detail` mIoU 0.2728 / 24,211 parameters, `t01_spike_pyramid_concat` 0.1671 / 63,147, and `t03_deep_attention_fpn` 0.1555 / 108,781. T2 therefore provides the strongest new structural evidence: preserve a persistent high-resolution detail stream and fuse semantic + shallow + detail spikes late. T3's extra depth/attention is rejected for the canonical model because its predictions collapsed toward the two dominant classes.
+
+## 2026-08-09 — Install a scaled spike-native dual-path canonical candidate
+
+Replace the old `v10_fpga_hybrid` architecture in `model.py` with `final_dualpath_wide32`, while preserving `v10` in the frozen top-ten registry as the measured 0.3130 mIoU incumbent. The new candidate uses a 32/64/128 three-scale semantic encoder, extra residual depthwise/pointwise refinement per scale, a persistent 32-channel high-resolution detail path, two serial dilation-2 context blocks, a stronger decoder, and late semantic/shallow/detail concatenation. Do not add a fourth spatial scale, early 5×5 processing, averaged parallel multiscale context, dense softmax attention, or the failed T3 mask-attention path. The candidate is not yet an accuracy claim; it requires larger-budget and multi-seed validation.
+
+## 2026-08-09 — Prefer comparator-only spike-count selection and independent class spikes
+
+For the canonical circuit-oriented path, replace the top-three count-domain MLP channel selector with one learned activity threshold per fused channel. Inference is spike counting, comparison, and binary AND gating only. Also disable hard per-timestep semantic class WTA in the canonical head: six independent spiking class populations accumulate evidence and final segmentation uses temporal spike-count argmax. This remains fully spiking while avoiding early suppression of rare class evidence. Historical benchmark definitions remain unchanged.
+
+## 2026-08-09 — Use SpikingJelly as the PLIF/convolution infrastructure layer
+
+Keep PyTorch as the tensor/autograd/optimizer substrate, but use SpikingJelly public `activation_based` components where they match the hardware contract. `SpikingStage` uses the SpikingJelly `Conv2d` wrapper when available, and `ParametricLIF` delegates its charge equation to SpikingJelly `ParametricLIFNode`. Preserve the already-benchmarked per-channel beta by feeding a per-channel reciprocal-tau tensor into the SpikingJelly PLIF charge equation. Custom dynamic threshold, `peer_membrane` fInst, triangular fLong/TThresh, reset ordering, and hardware-visible state remain explicit project code. A mathematically equivalent fallback remains for lightweight tests without SpikingJelly.
+
+## 2026-08-09 — Add late decoder/detail refinement training
+
+The canonical model trains all layers jointly through 70% of epochs. From 70% to 90%, freeze only the semantic backbone (stem, encoder, and semantic context) while keeping the high-resolution detail path, decoder/fusion, auxiliary head, and class head trainable; auxiliary CE/focal coefficients rise from 0.15 to 0.30 during this phase. At 90%, unfreeze all layers and apply an additional 0.25 learning-rate multiplier on top of the existing cosine decay for final joint tuning. Completed benchmark models have no refinement schedule and retain their original training behavior. The main segmentation CE coefficient is 1.0.
+
+
+## 2026-08-09 — Replace comparator-only final selector with PLIF cross-channel selector
+
+The comparator-only selector was more circuit-minimal but discarded T2's learned cross-channel relationships. The canonical `final_dualpath_wide32` therefore uses a spike-driven 96→96 1×1 synaptic projection followed by PLIF selector neurons. Selector spikes are reduced to binary per-channel enables and gate the fused semantic/shallow/detail spikes. This preserves cross-channel learned selection while keeping inference spike-native: active input spikes cause stored 1×1 weights to be accumulated into PLIF membranes, followed by threshold/fire gating. No dense count-domain MLP or softmax is used. Historical T2 remains unchanged for reproducibility. The canonical model is now approximately 141k trainable parameters.

@@ -5,14 +5,14 @@ Lightweight fully-spiking semantic segmentation for the Ev-SegNet semantic exten
 ## Project layout
 
 ```text
-src/eventscnn/model.py              canonical model only (`v10_fpga_hybrid` for now)
+src/eventscnn/model.py              canonical high-accuracy candidate (`final_dualpath_wide32`)
 src/eventscnn/model_components.py   shared spiking layers and neuron dynamics
 src/eventscnn/top_ten_models.py     frozen completed ten-model structural benchmark
 src/eventscnn/top_five_models.py    completed five-model structural search
-src/eventscnn/top_three_models.py   current accuracy-oriented three-model search
+src/eventscnn/top_three_models.py   frozen completed accuracy-oriented three-model search
 ```
 
-`model.py` is not changed until a contender beats the incumbent and passes wider validation.
+`model.py` now contains the post-ablation high-accuracy candidate. Historical benchmark registries remain frozen; the new canonical model still requires larger-budget/multi-seed validation before its accuracy is claimed.
 
 ## DDD17 input
 
@@ -65,7 +65,7 @@ parameters      44,016
 spike rate      0.1412
 ```
 
-This remains the canonical model.
+This remains the **measured historical incumbent**, but it is no longer the architecture installed in `model.py`.
 
 ## Completed neuron-mechanism comparison
 
@@ -111,49 +111,39 @@ The main findings were more useful than the ranking alone:
 
 None of these five displaced the historical `v10_fpga_hybrid` incumbent at `0.3130` mIoU.
 
-## Current top three: accuracy-oriented search
+## Completed top three: accuracy-oriented search
 
-`top_three_models.py` contains three intentionally different hypotheses rather than minor variants:
+The top-three benchmark completed under the same seed-17 / 2,048-train / 512-held-out / 64×64 / 15-step protocol used for the structural round.
 
-```text
-t01_spike_pyramid_concat       63,147 params
-  24→48→96 encoder
-  d1/d2/d4 depthwise spike branches
-  CONCAT instead of branch averaging
-  binary spike-count channel selection
-  1×1 spiking fusion
-  concatenative decoder skip fusion
+| Rank | Architecture | mIoU | Pixel accuracy | Params | Spike rate |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | `t02_dualpath_detail` | **0.2728** | **0.7952** | **24,211** | 0.1395 |
+| 2 | `t01_spike_pyramid_concat` | 0.1671 | 0.6122 | 63,147 | 0.1145 |
+| 3 | `t03_deep_attention_fpn` | 0.1555 | 0.7151 | 108,781 | **0.0592** |
 
-t02_dualpath_detail            24,211 params
-  compact 16→32→64 semantic encoder
-  single dilation-2 semantic context
-  persistent 16-channel high-resolution spiking detail path
-  final semantic + shallow + detail CONCAT
-  binary spike-count channel selection
+T2 validated the persistent high-resolution detail-path hypothesis. T1 showed that parallel dilation concat/channel selection was not sufficient by itself. T3 retained deep spike activity but collapsed its predictions toward the two dominant classes, so the final design does not add a fourth downsampling level or low-resolution attention.
 
-t03_deep_attention_fpn        108,781 params
-  24→48→96→128 four-stage encoder
-  low-resolution dilation-2 context
-  32-channel / 4-head binary spike-mask attention
-  no dense spatial softmax attention
-  concatenative FPN decoder restoring x4→x3→x2→x1 information
-```
+## Canonical post-ablation model
 
-All three preserve binary spike transmission between learned stages and use depthwise spatial convolution plus pointwise channel mixing where practical. Attention is deliberately spike-oriented: the channel selector uses spike counts and a hard binary gate, while the deep model uses Q/K binary coincidence, integer-like accumulation, a learned comparator threshold, and V masking at low resolution.
-
-The round uses the same fixed benchmark protocol as the completed structural five and writes only to:
+`final_dualpath_wide32` scales the successful dual-path idea without importing the failed complexity:
 
 ```text
-artifacts/ablation/top_three/summary.json
-artifacts/ablation/top_three/checkpoints/
+semantic path: 32 → 64 → 128
+per-scale residual depthwise/pointwise refinement
+persistent high-resolution 32-channel detail path
+two serial dilation-2 residual context blocks
+stronger 128→64→32 decoder
+mid-level additive skip + late semantic/shallow/detail concatenation
+PLIF 1×1 cross-channel selector (spike-driven synaptic mixing + PLIF binary gating)
+independent spiking class neurons; final decision is temporal spike-count argmax
+PLIF + learnable threshold + stem-only peer_membrane fInst
+encoder/context triangular fLong homeostasis
 ```
 
-Run it with:
+The model has approximately 141k trainable parameters. It is intentionally kept spike/circuit friendly: no BatchNorm dependence, dense softmax attention, GAP/MLP inference gate, or analog classifier is present in the canonical path.
 
-```powershell
-docker compose run --rm benchmark-top-three
-```
+Training uses the existing weighted CE/focal/Dice objective with the main CE coefficient set to `1.0`. The final model additionally exposes a late refinement schedule: joint training through 70% of epochs, semantic-backbone freeze during 70–90% while detail/decoder/heads continue training, then full low-LR unfreeze for the final 10%.
 
 ## Selection rule
 
-Use mIoU as the primary metric. Also inspect per-class IoU, predicted-pixel counts, layer spike rates, and parameter count. A low-budget winner must be rerun with the larger protocol and multiple seeds before replacing `model.py`.
+Use mIoU as the primary metric. Also inspect per-class IoU, predicted-pixel counts, layer spike rates, and parameter count. The new canonical candidate must beat the measured `v10_fpga_hybrid` baseline under a larger protocol and seeds 17/101/2026 before it is treated as the validated final architecture or frozen for hardware.

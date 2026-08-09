@@ -19,11 +19,11 @@ Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, 
 model.py              canonical architecture only
 top_ten_models.py     frozen completed ten-model benchmark
 top_five_models.py    completed five-model structural search
-top_three_models.py   one active three-model accuracy search
+top_three_models.py   frozen completed three-model accuracy search
 model_components.py   shared tested primitives
 ```
 
-Do not put experimental registries back into `model.py`. Keep completed top-ten/top-five definitions reproducible and place the active accuracy search only in `top_three_models.py`. Measured results belong in `RESULTS.md`, not in the canonical model registry.
+Do not put experimental registries back into `model.py`. Keep completed top-ten/top-five/top-three definitions reproducible. `model.py` now contains only the post-ablation canonical candidate. Measured results belong in `RESULTS.md`, not in the canonical model registry.
 
 ## Current evidence
 
@@ -34,8 +34,11 @@ Do not put experimental registries back into `model.py`. Keep completed top-ten/
 - `f04_deep4_dilated` produced the strongest aggregate rare-class signal, especially nature (0.0712) and vehicle (0.1230)
 - early 5×5 processing was harmful; averaged parallel multiscale context did not beat the simpler dilated path
 - none of the completed top-five models superseded the 0.3130 incumbent
+- completed top-three: T2 dual-path detail 0.2728 mIoU, T1 0.1671, T3 0.1555
+- T2 validates a persistent high-resolution detail path; T3 extra depth/attention collapsed toward dominant classes
+- canonical candidate is now `final_dualpath_wide32` (~132k params); `v10_fpga_hybrid` remains the measured baseline until the new model is validated
 
-The active question is now feature preservation/fusion, not another inhibition sweep.
+The active question is now whether the scaled dual-path candidate can exceed the 0.3130 measured incumbent under larger/multi-seed training.
 
 ## Active neuron-dynamics contract
 
@@ -48,15 +51,15 @@ All current structural contenders use:
 - auxiliary semantic supervision
 - stem-only `peer_membrane` inhibition
 - local triangular threshold adaptation in encoder/context
-- output semantic class WTA
+- independent output semantic class spikes with final temporal count argmax
 
 `peer_membrane` preserves simultaneous suprathreshold feature spikes while reducing peer membrane state using retinotopic membrane energy. Do not use hidden `winner_peer` gating in the active search.
 
 The triangular threshold process uses learnable threshold-adaptation strength and continuous adaptation duration. These are training parameters only until fixed-point quantization and integer-reference regression pass.
 
-## Active top-three accuracy search
+## Completed top-three accuracy search
 
-The three current contenders intentionally test different accuracy mechanisms while preserving a hardware-oriented spiking datapath:
+The three completed contenders intentionally tested different accuracy mechanisms while preserving a hardware-oriented spiking datapath:
 
 - `t01_spike_pyramid_concat`: 24/48/96 encoder; concatenate d1/d2/d4 depthwise spike branches, apply binary spike-count channel selection, fuse with spiking 1×1, and concatenate decoder skips before spiking refinement.
 - `t02_dualpath_detail`: compact 16/32/64 semantic path plus a persistent 16-channel high-resolution spiking detail path; concatenate semantic/shallow/detail evidence before binary selection and final spiking fusion.
@@ -66,7 +69,15 @@ Parameter counts are 63,147 / 24,211 / 108,781. A ~100k model is acceptable when
 
 Do not introduce dense softmax spatial attention. Attention forward behavior should remain expressible as spike counts, binary masks, accumulators, comparators, and sparse/1×1 projections that can later be quantized.
 
-Fairness rule: all three use the same seed, data subset, resolution, timestep count, optimizer/loss, and benchmark budget. Do not tune one contender differently during the ranking run.
+Fairness rule used: all three used the same seed, data subset, resolution, timestep count, optimizer/loss, and benchmark budget. Do not tune one contender differently during the ranking run.
+
+## Canonical post-ablation candidate
+
+`final_dualpath_wide32` uses a 32/64/128 three-scale semantic path, residual depthwise/pointwise refinement, a persistent 32-channel high-resolution detail path, serial dilation-2 context, stronger decoder, and late semantic/shallow/detail concatenation. Final channel selection uses a spike-driven 1×1 cross-channel projection into PLIF selector neurons; do not add a dense count-domain MLP. No fourth downsampling level or dense/masked attention is used.
+
+Use SpikingJelly public `activation_based` infrastructure where compatible: SpikingJelly `Conv2d` wrappers and `ParametricLIFNode` charge dynamics back the canonical software model, while project code keeps per-channel tau, dynamic threshold, fInst/fLong, and exact reset/order explicit for later integer/RTL/circuit reproduction.
+
+Canonical training schedule only: 0–70% joint, 70–90% semantic backbone frozen while detail/decoder/heads refine, 90–100% all layers unfrozen at lower LR. Historical benchmark suites do not inherit this schedule.
 
 ## Diagnostics
 
@@ -81,4 +92,4 @@ Every active benchmark run must record:
 
 ## Finalization gates
 
-Do not replace canonical `model.py` from one low-budget seed. Require a larger-budget rerun, seeds 17/101/2026, timestep sensitivity, rare-class diagnostics, quantized neuron validation, and hardware-cost comparison.
+`model.py` now contains the post-ablation candidate by explicit project decision, but do not call it the validated final architecture from design reasoning alone. Require a larger-budget rerun, seeds 17/101/2026, timestep sensitivity, rare-class diagnostics, quantized neuron validation, and hardware-cost comparison before hardware freeze or accuracy claims.

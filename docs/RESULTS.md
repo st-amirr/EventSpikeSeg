@@ -114,3 +114,16 @@ Interpretation:
 | `t03_deep_attention_fpn` | retain deep rare-class semantics with low-resolution spike-mask attention + FPN restoration | 108,781 |
 
 No top-three mIoU values are recorded yet. Results must come from `artifacts/ablation/top_three/summary.json`; do not promote a model from synthetic tests or training loss alone.
+
+
+## Completed top-three accuracy search — seed 17
+
+Protocol: 8 epochs, 2,048 training samples, 512 held-out samples, 64×64 output, 15 internal timesteps, learning rate 0.002.
+
+| Rank | Architecture | mIoU | Pixel accuracy | Parameters | Mean spike rate |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | `t02_dualpath_detail` | **0.2728** | **0.7952** | **24,211** | 0.1395 |
+| 2 | `t01_spike_pyramid_concat` | 0.1671 | 0.6122 | 63,147 | 0.1145 |
+| 3 | `t03_deep_attention_fpn` | 0.1555 | 0.7151 | 108,781 | **0.0592** |
+
+T2 per-class IoU: flat 0.6190, construction+sky 0.8169, object 0.0095, nature 0.0221, human 0.0000, vehicle 0.1691. These are measured benchmark results only. No accuracy result is yet recorded for `final_dualpath_wide32`.

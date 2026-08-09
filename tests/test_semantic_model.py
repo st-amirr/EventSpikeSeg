@@ -216,17 +216,52 @@ def test_legacy_t_thresh_behavior_is_preserved() -> None:
     assert torch.allclose(neuron.adaptation, torch.tensor([0.05]))
 
 
-def test_final_model_contains_only_canonical_architecture() -> None:
+def test_final_model_contains_scaled_dualpath_architecture() -> None:
     model = build_model()
     assert model.architecture.name == FINAL_ARCHITECTURE_NAME
-    assert FINAL_ARCHITECTURE_NAME == "v10_fpga_hybrid"
+    assert FINAL_ARCHITECTURE_NAME == "final_dualpath_wide32"
+    assert model.architecture.channel_schedule == (32, 64, 128)
+    assert model.architecture.neuron_kind == "plif"
+    assert model.architecture.inhibition_kind == "peer_membrane"
+    assert model.architecture.homeostasis_kind == "triangular_threshold"
+    # Independent spiking class neurons accumulate evidence over time instead
+    # of using hard per-timestep class WTA.
+    assert not model.architecture.output_f_inst_enabled
+    assert model.parameter_count() < 160_000
 
 
-def test_canonical_v10_accepts_round_one_v10_state_dict() -> None:
-    archived = build_top_ten_model("v10_fpga_hybrid")
-    canonical = build_model()
-    canonical.load_state_dict(archived.state_dict(), strict=True)
-    assert list(canonical.state_dict()) == list(archived.state_dict())
+def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
+    model = build_model()
+    model.set_semantic_backbone_trainable(False)
+    assert not any(parameter.requires_grad for parameter in model.stem.parameters())
+    assert not any(parameter.requires_grad for parameter in model.enc3.parameters())
+    assert any(parameter.requires_grad for parameter in model.detail1.parameters())
+    assert any(parameter.requires_grad for parameter in model.final_fuse.parameters())
+    assert any(parameter.requires_grad for parameter in model.head.parameters())
+    model.set_semantic_backbone_trainable(True)
+    assert all(parameter.requires_grad for parameter in model.stem.parameters())
+
+
+def test_final_channel_selector_is_plif_spike_native() -> None:
+    model = build_model()
+    selector = model.final_selector
+    assert selector.selector.conv.kernel_size == (1, 1)
+    assert selector.selector.conv.in_channels == 96
+    assert selector.selector.conv.out_channels == 96
+    assert hasattr(selector.selector.neuron, "beta_logit")
+    assert not any(isinstance(module, torch.nn.Linear) for module in selector.modules())
+
+    sequence = torch.ones(3, 1, 96, 8, 8)
+    selected = selector(sequence)
+    assert selected.shape == sequence.shape
+    assert torch.all((selected == 0) | (selected == 1))
+
+def test_plif_keeps_per_channel_retention_and_optional_spikingjelly_core() -> None:
+    neuron = ParametricLIF(4, LIFConfig(learnable_threshold=True))
+    assert neuron.beta.shape == (4,)
+    assert neuron.reciprocal_tau.shape == (4,)
+    if neuron.plif_core is not None:
+        assert neuron.plif_core.__class__.__name__ == "ParametricLIFNode"
 
 
 def test_hidden_peer_membrane_inhibition_can_warm_up_without_disabling_class_wta() -> None:
