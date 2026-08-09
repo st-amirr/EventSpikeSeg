@@ -465,6 +465,27 @@ def train_architecture(
                     0.30 if training_phase == "decoder_detail_refinement" else 0.15
                 )
                 loss = loss + auxiliary_scale * auxiliary_ce + auxiliary_scale * auxiliary_focal
+            if "deep_auxiliary_logits" in outputs:
+                deep_auxiliary = F.interpolate(
+                    outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
+                )
+                deep_auxiliary_ce = F.cross_entropy(
+                    deep_auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
+                )
+                deep_auxiliary_focal = focal_cross_entropy(
+                    deep_auxiliary, target, class_weights
+                )
+                # The deepest head is optimization-only and deliberately weaker
+                # than the mid-decoder head so it improves gradient flow without
+                # overpowering the final dense segmentation objective.
+                deep_auxiliary_scale = (
+                    0.20 if training_phase == "decoder_detail_refinement" else 0.10
+                )
+                loss = (
+                    loss
+                    + deep_auxiliary_scale * deep_auxiliary_ce
+                    + deep_auxiliary_scale * deep_auxiliary_focal
+                )
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite loss for {architecture} at epoch {epoch}")
             optimizer.zero_grad(set_to_none=True)

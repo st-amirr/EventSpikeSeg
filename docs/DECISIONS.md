@@ -145,3 +145,27 @@ The canonical model trains all layers jointly through 70% of epochs. From 70% to
 ## 2026-08-09 — Replace comparator-only final selector with PLIF cross-channel selector
 
 The comparator-only selector was more circuit-minimal but discarded T2's learned cross-channel relationships. The canonical `final_dualpath_wide32` therefore uses a spike-driven 96→96 1×1 synaptic projection followed by PLIF selector neurons. Selector spikes are reduced to binary per-channel enables and gate the fused semantic/shallow/detail spikes. This preserves cross-channel learned selection while keeping inference spike-native: active input spikes cause stored 1×1 weights to be accumulated into PLIF membranes, followed by threshold/fire gating. No dense count-domain MLP or softmax is used. Historical T2 remains unchanged for reproducibility. The canonical model is now approximately 141k trainable parameters.
+
+
+## 2026-08-09 — Scale the canonical model by additive spike-native features
+
+Decision: expand `final_dualpath_wide32` from the ~141k revision to 237,623 trainable parameters. Hardware simplicity alone is no longer a reason to remove an accuracy-oriented feature; features are excluded only when prior ablations give meaningful negative evidence or when they require a fundamentally dense/non-spiking inference path.
+
+Added:
+- projected cross-scale PLIF residual bridges (`32->64`, `64->128`) to reduce information loss through strided thresholded stages;
+- residual parallel d1/d2/d4 depthwise context while retaining the existing serial d2 context;
+- one low-resolution bottlenecked spike-mask attention residual;
+- concatenative 64+64 mid-decoder fusion;
+- asymmetric spike-native detail refinement;
+- a second deep auxiliary head used only during training.
+
+Retained unchanged:
+- 32/64/128 three-scale semantic backbone;
+- persistent 32-channel high-resolution detail path;
+- PLIF, learnable threshold, stem-only peer-membrane fInst, encoder/context triangular fLong;
+- late semantic+shallow+detail concatenation;
+- 96->96 PLIF cross-channel selector;
+- independent class spiking neurons with temporal count decision;
+- 70/90% freeze/refinement schedule and CE coefficient 1.0.
+
+The deep auxiliary loss is intentionally weaker than the mid auxiliary loss: 0.10 CE + 0.10 focal normally and 0.20 + 0.20 during decoder/detail refinement.

@@ -73,7 +73,7 @@ services:
        "--architecture", "final_dualpath_wide32",
        "--suite", "final", "--seed", "17",
        "--epochs", "70", "--batch-size", "12",
-       "--time-steps", "15",
+       "--time-steps", "25",
        "--height", "64", "--width", "64", "--train-samples", "0",
        "--validation-samples", "0", "--learning-rate", "0.002",
        "--checkpoint-dir", "artifacts/checkpoints"]

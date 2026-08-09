@@ -725,7 +725,7 @@ class SpikingStage(nn.Module):
         in_channels: int,
         out_channels: int,
         *,
-        kernel_size: int,
+        kernel_size: int | tuple[int, int],
         stride: int = 1,
         dilation: int = 1,
         groups: int = 1,
@@ -734,7 +734,10 @@ class SpikingStage(nn.Module):
         neuron_kind: NeuronKind = "lif",
     ) -> None:
         super().__init__()
-        padding = dilation * (kernel_size // 2)
+        if isinstance(kernel_size, tuple):
+            padding = tuple(dilation * (size // 2) for size in kernel_size)
+        else:
+            padding = dilation * (kernel_size // 2)
         conv_type = sj_layer.Conv2d if SPIKINGJELLY_AVAILABLE and sj_layer is not None else nn.Conv2d
         conv_kwargs = dict(
             stride=stride,

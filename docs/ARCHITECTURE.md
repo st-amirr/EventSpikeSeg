@@ -136,3 +136,18 @@ PyTorch remains the tensor, autograd, and optimizer substrate. When installed, S
 ### Canonical training refinement
 
 Only the canonical model exposes the late refinement schedule: joint training through 70% of epochs; freeze stem/semantic encoder/context during 70–90% while detail path, decoder/fusion, auxiliary head, and class head continue; then unfreeze all layers for the final 10% with an explicit 0.25 LR multiplier in addition to cosine decay. The main CE coefficient is 1.0; auxiliary CE/focal coefficients rise from 0.15 to 0.30 only during the frozen-backbone phase.
+
+
+## Final high-capacity spike-native revision (2026-08-09)
+
+The canonical `final_dualpath_wide32` is expanded to 237,623 trainable parameters while remaining fully spike-native in its learned inference path. Relative to the earlier ~141k revision it adds:
+
+- projected PLIF residual bridges across encoder transitions `32->64` and `64->128`;
+- serial dilation-2 context retained, plus residual parallel depthwise `d=1/2/4` context with PLIF 1x1 fusion;
+- one bottlenecked 32-channel, 4-head spike-mask attention residual at the deepest 128-channel scale;
+- concatenative mid-decoder fusion: decoder64 + encoder64 -> 128 -> DW/PW PLIF -> 64;
+- an asymmetric high-resolution detail residual: DW `3x1` -> PLIF -> DW `1x3` -> PLIF -> PW `1x1` -> PLIF;
+- a deep training-only auxiliary head in addition to the existing mid-decoder auxiliary head;
+- the previously restored 96->96 PLIF 1x1 cross-channel selector remains in the late semantic+shallow+detail fusion.
+
+No fourth downsampling scale, BatchNorm, GAP/MLP gate, dense softmax attention, or hard hidden WTA is introduced. The extra encoder residuals are projected spike residuals rather than duplicate decoder skips: each strided DW/PW downsample is added to a 1x1 stride-2 PLIF projection of the previous scale before same-scale refinement.

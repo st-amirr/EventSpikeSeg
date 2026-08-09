@@ -227,7 +227,7 @@ def test_final_model_contains_scaled_dualpath_architecture() -> None:
     # Independent spiking class neurons accumulate evidence over time instead
     # of using hard per-timestep class WTA.
     assert not model.architecture.output_f_inst_enabled
-    assert model.parameter_count() < 160_000
+    assert model.parameter_count() == 237_623
 
 
 def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
@@ -255,6 +255,42 @@ def test_final_channel_selector_is_plif_spike_native() -> None:
     selected = selector(sequence)
     assert selected.shape == sequence.shape
     assert torch.all((selected == 0) | (selected == 1))
+
+
+def test_final_model_richer_spiking_paths_and_residual_bridges() -> None:
+    model = build_model()
+    assert model.bridge12.conv.kernel_size == (1, 1)
+    assert model.bridge12.conv.stride == (2, 2)
+    assert model.bridge23.conv.kernel_size == (1, 1)
+    assert model.decoder2_fuse.depthwise is not None
+    assert model.decoder2_fuse.depthwise.conv.in_channels == 128
+    assert model.parallel_context.fuse.conv.in_channels == 384
+    assert model.deep_attention.q.conv.out_channels == 32
+    assert model.detail2.vertical.conv.kernel_size == (3, 1)
+    assert model.detail2.horizontal.conv.kernel_size == (1, 3)
+
+    sequence = torch.zeros(2, 1, 6, 64, 64)
+    outputs = model(sequence)
+    assert outputs["segmentation_logits"].shape == (1, 6, 64, 64)
+    assert outputs["auxiliary_logits"].shape[-2:] == (32, 32)
+    assert outputs["deep_auxiliary_logits"].shape[-2:] == (16, 16)
+    assert model.parameter_count() == 237623
+
+
+def test_final_deep_paths_receive_gradients() -> None:
+    model = build_model()
+    sequence = torch.ones(2, 1, 6, 32, 32)
+    outputs = model(sequence)
+    loss = (
+        outputs["segmentation_logits"].mean()
+        + outputs["auxiliary_logits"].mean()
+        + outputs["deep_auxiliary_logits"].mean()
+    )
+    loss.backward()
+    assert model.bridge12.conv.weight.grad is not None
+    assert model.parallel_context.fuse.conv.weight.grad is not None
+    assert model.deep_attention.q.conv.weight.grad is not None
+    assert model.final_selector.selector.conv.weight.grad is not None
 
 def test_plif_keeps_per_channel_retention_and_optional_spikingjelly_core() -> None:
     neuron = ParametricLIF(4, LIFConfig(learnable_threshold=True))
