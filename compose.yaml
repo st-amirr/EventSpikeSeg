@@ -90,12 +90,14 @@ services:
       #  "--device", "cuda", "--amp",
        "--height", "212", "--width", "282",
        "--suite", "final", "--seed", "17",
-       "--epochs", "70", "--batch-size", "1",
+       "--epochs", "80", "--batch-size", "1",
+       "--accumulate-steps", "4",
        "--time-steps", "10",
-       "--train-samples", "0.8",
+       "--train-samples", "0.5",
        "--validation-fraction", "0.10",
-       "--learning-rate", "0.001",
+       "--learning-rate", "0.0015",
        "--checkpoint-every", "1",
+      #  "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_last.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   # Canonical expanded ~238k final model.
@@ -115,11 +117,13 @@ services:
        "--height", "212", "--width", "282",
        "--suite", "final", "--seed", "17",
        "--epochs", "70", "--batch-size", "1",
+       "--accumulate-steps", "4",
        "--time-steps", "10",
        "--train-samples", "0.8",
        "--validation-fraction", "0.10",
        "--learning-rate", "0.001",
        "--checkpoint-every", "1",
+      #  "--load", "artifacts/checkpoints/EventSpikeSeg_seed17_last.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   benchmark-top-ten:

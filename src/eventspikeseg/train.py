@@ -426,6 +426,7 @@ def train_architecture(
     device: str,
     checkpoint_every: int = 5,
     amp: bool = False,
+    accumulate_steps: int = 1,
     load: Path | None = None,
 ) -> TrainResult:
     seed_everything(seed)
@@ -660,7 +661,9 @@ def train_architecture(
     )
     print(
         f"Training {architecture} | {resolved_device} | {precision} | "
-        f"epochs={epochs} batch={batch_size} T={time_steps} size={size_label} | "
+        f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
+        f"effective_batch={batch_size * accumulate_steps} "
+        f"T={time_steps} size={size_label} | "
         f"train={len(train_dataset)} val={len(validation_dataset)} | "
         f"params={model.parameter_count():,}",
         flush=True,
@@ -729,13 +732,10 @@ def train_architecture(
             dynamic_ncols=True,
             leave=True,
         )
+        optimizer.zero_grad(set_to_none=True)
         for batch_index, (sequence, target) in enumerate(progress, start=1):
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
-            # Release the previous step's gradient buffers before building the
-            # next forward graph. set_to_none avoids zero-filled replacement
-            # tensors and is mathematically equivalent for optimizer.step().
-            optimizer.zero_grad(set_to_none=True)
             model.reset()
             with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
                 outputs = model(sequence)
@@ -799,11 +799,20 @@ def train_architecture(
                     loss = loss + deep_auxiliary_term
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite loss for {architecture} at epoch {epoch}")
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            scaler.step(optimizer)
-            scaler.update()
+            # Average gradients across micro-batches so accumulate_steps mimics
+            # a larger batch without holding those samples in memory together.
+            scaled_loss = loss / float(accumulate_steps)
+            scaler.scale(scaled_loss).backward()
+            should_step = (
+                batch_index % accumulate_steps == 0 or batch_index == total_batches
+            )
+            gradient_norm = None
+            if should_step:
+                scaler.unscale_(optimizer)
+                gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
             batch_loss = float(loss.detach())
             running_loss += batch_loss
             output_spike_rate = float(
@@ -825,7 +834,7 @@ def train_architecture(
             # forward pass. Python locals otherwise keep the large output/aux
             # tensors alive until they are overwritten during the next batch,
             # which can nearly double peak host RAM at native resolution.
-            del outputs, logits, loss, ce, focal, dice, activity
+            del outputs, logits, loss, scaled_loss, ce, focal, dice, activity
             del auxiliary, auxiliary_ce, auxiliary_focal
             del deep_auxiliary, deep_auxiliary_ce, deep_auxiliary_focal
             del auxiliary_term, deep_auxiliary_term, gradient_norm
@@ -1004,7 +1013,8 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             device=args.device,
             checkpoint_every=args.checkpoint_every,
             amp=args.amp,
-            load=args.load,
+            accumulate_steps=args.accumulate_steps,
+            load=None,
         )
         for name in presets
     ]
@@ -1101,6 +1111,15 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="enable CUDA automatic mixed precision (FP16 autocast + GradScaler)",
     )
+    parser.add_argument(
+        "--accumulate-steps",
+        type=int,
+        default=1,
+        help=(
+            "accumulate gradients over this many micro-batches before an optimizer "
+            "step (effective batch = batch-size * accumulate-steps; memory stays ~batch-size)"
+        ),
+    )
 
 
 def main() -> None:
@@ -1182,6 +1201,7 @@ def main() -> None:
             device=args.device,
             checkpoint_every=args.checkpoint_every,
             amp=args.amp,
+            accumulate_steps=args.accumulate_steps,
             load=args.load,
         )
     elif args.command == "benchmark":
