@@ -125,11 +125,11 @@ This is informed by SLTNet's evidence for multi-receptive-field event features, 
 
 The accuracy-oriented top-three benchmark completed at seed 17 with 8 epochs, 2,048 training samples, 512 held-out samples, 64×64 output, and 15 internal timesteps. Results were `t02_dualpath_detail` mIoU 0.2728 / 24,211 parameters, `t01_spike_pyramid_concat` 0.1671 / 63,147, and `t03_deep_attention_fpn` 0.1555 / 108,781. T2 therefore provides the strongest new structural evidence: preserve a persistent high-resolution detail stream and fuse semantic + shallow + detail spikes late. T3's extra depth/attention is rejected for the canonical model because its predictions collapsed toward the two dominant classes.
 
-## 2026-08-09 — Install a scaled spike-native dual-path canonical candidate
+## 2026-08-09 — Install the initial scaled spike-native dual-path candidate (later extended)
 
-Replace the old `v10_fpga_hybrid` architecture in `model.py` with `final_dualpath_wide32`, while preserving `v10` in the frozen top-ten registry as the measured 0.3130 mIoU incumbent. The new candidate uses a 32/64/128 three-scale semantic encoder, extra residual depthwise/pointwise refinement per scale, a persistent 32-channel high-resolution detail path, two serial dilation-2 context blocks, a stronger decoder, and late semantic/shallow/detail concatenation. Do not add a fourth spatial scale, early 5×5 processing, averaged parallel multiscale context, dense softmax attention, or the failed T3 mask-attention path. The candidate is not yet an accuracy claim; it requires larger-budget and multi-seed validation.
+Replace the old `v10_fpga_hybrid` architecture in `model.py` with `final_dualpath_wide32`, while preserving `v10` in the frozen top-ten registry as the measured 0.3130 mIoU incumbent. The new candidate uses a 32/64/128 three-scale semantic encoder, extra residual depthwise/pointwise refinement per scale, a persistent 32-channel high-resolution detail path, two serial dilation-2 context blocks, a stronger decoder, and late semantic/shallow/detail concatenation. At this revision, do not add a fourth spatial scale, early 5×5 processing, averaged parallel multiscale context, dense softmax attention, or the failed T3 attention architecture wholesale. This restriction is later refined: one bottlenecked low-resolution residual spike-mask attention block is reintroduced as an additive feature, without the fourth T3 scale/FPN design. The candidate is not yet an accuracy claim; it requires larger-budget and multi-seed validation.
 
-## 2026-08-09 — Prefer comparator-only spike-count selection and independent class spikes
+## 2026-08-09 — Try comparator-only spike-count selection and independent class spikes (selector later superseded)
 
 For the canonical circuit-oriented path, replace the top-three count-domain MLP channel selector with one learned activity threshold per fused channel. Inference is spike counting, comparison, and binary AND gating only. Also disable hard per-timestep semantic class WTA in the canonical head: six independent spiking class populations accumulate evidence and final segmentation uses temporal spike-count argmax. This remains fully spiking while avoiding early suppression of rare class evidence. Historical benchmark definitions remain unchanged.
 
@@ -169,3 +169,19 @@ Retained unchanged:
 - 70/90% freeze/refinement schedule and CE coefficient 1.0.
 
 The deep auxiliary loss is intentionally weaker than the mid auxiliary loss: 0.10 CE + 0.10 focal normally and 0.20 + 0.20 during decoder/detail refinement.
+
+
+## 2026-08-09 — Consolidate all architecture suites into one trainer
+
+Remove the standalone top-three training implementation. `train.py` is the single engine for `top-ten`, `top-five`, `top-three`, and `final`, while `top_*_models.py` contain definitions only. Preserve historical reproducibility by pinning top-ten/top-five/top-three to the recorded `0.5 CE + 0.5 focal + 0.75 Dice` objective and historical test-split evaluation. Keep the final suite on CE `1.0`, training-split validation holdout, per-epoch best-model selection, periodic checkpoints, and the 70/90% refinement schedule.
+
+The active evaluation path must point to `final_dualpath_wide32_seed17.pt`; promotion of the completed T2 top-three winner is historical-only and uses a separately named checkpoint.
+
+## 2026-08-09 — Apply lossless native-resolution memory cleanup
+
+Keep the same FP32 math, T, BPTT, resolution, and model dynamics while removing avoidable RAM use: direct encoding uses a stride-0 temporal view rather than cloning T copies; old batch graph references are released immediately; gradients are cleared with `set_to_none=True` before the next forward; auxiliary heads are skipped in eval/inference; and native-resolution `output_size=None` checkpoints are handled by `evaluate.py`. Do not silently enable activation checkpointing, lower precision, truncated BPTT, or reduced resolution because those trade CPU or change the training calculation.
+
+
+## 2026-08-09 — Remove obsolete project debris and archive the completed search plan
+
+Keep `src/eventspikeseg/` limited to active runtime/training code plus frozen architecture registries. Delete the obsolete standalone `benchmark_top_three.py`, MEVDT/EventSCNN-only diagnostic scripts, generated `.ruff_cache`, and the PowerShell RTL wrapper that targeted a nonexistent Compose service. Retain the functional local-GHDL `scripts/run_rtl_tests.py`. Move `ddd17-semantic-ablation.md` from `docs/exec-plans/active/` to `completed/` after recording the measured top-three outcome and the feature lineage into the 237,623-parameter canonical model.

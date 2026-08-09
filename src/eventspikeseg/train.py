@@ -32,6 +32,10 @@ from .top_five_models import (
     TOP_FIVE_PRESETS,
     build_top_five_model,
 )
+from .top_three_models import (
+    TOP_THREE_PRESETS,
+    build_top_three_model,
+)
 from .top_ten_models import (
     TOP_TEN_PRESETS,
     build_top_ten_model,
@@ -46,6 +50,8 @@ def architecture_presets(suite: str) -> dict[str, object]:
         return TOP_TEN_PRESETS
     if suite == "top-five":
         return TOP_FIVE_PRESETS
+    if suite == "top-three":
+        return TOP_THREE_PRESETS
     if suite == "final":
         return {FINAL_ARCHITECTURE_NAME: object()}
     raise ValueError(f"unknown model suite {suite!r}")
@@ -56,6 +62,8 @@ def infer_model_suite(architecture: str) -> str:
         return "top-ten"
     if architecture in TOP_FIVE_PRESETS:
         return "top-five"
+    if architecture in TOP_THREE_PRESETS:
+        return "top-three"
     if architecture == FINAL_ARCHITECTURE_NAME:
         return "final"
     raise KeyError(f"unknown architecture {architecture!r}")
@@ -75,6 +83,10 @@ def build_experiment_model(
         )
     if resolved_suite == "top-five":
         return build_top_five_model(
+            architecture, class_count=class_count, input_channels=input_channels
+        )
+    if resolved_suite == "top-three":
+        return build_top_three_model(
             architecture, class_count=class_count, input_channels=input_channels
         )
     if resolved_suite == "final":
@@ -110,6 +122,29 @@ class TrainResult:
         data["ground_truth_pixels"] = list(self.ground_truth_pixels)
         data["predicted_pixels"] = list(self.predicted_pixels)
         return data
+
+
+@dataclass(frozen=True)
+class LossProfile:
+    """Frozen objective weights for reproducible suites."""
+
+    cross_entropy: float
+    focal: float = 0.5
+    dice: float = 0.75
+    auxiliary_ce: float = 0.15
+    auxiliary_focal: float = 0.15
+
+
+HISTORICAL_LOSS_PROFILE = LossProfile(cross_entropy=0.5)
+FINAL_LOSS_PROFILE = LossProfile(cross_entropy=1.0)
+
+
+def loss_profile_for_suite(suite: str) -> LossProfile:
+    if suite in {"top-ten", "top-five", "top-three"}:
+        return HISTORICAL_LOSS_PROFILE
+    if suite == "final":
+        return FINAL_LOSS_PROFILE
+    raise ValueError(f"unknown model suite {suite!r}")
 
 
 def seed_everything(seed: int) -> None:
@@ -367,6 +402,7 @@ def train_architecture(
 ) -> TrainResult:
     seed_everything(seed)
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
+    loss_profile = loss_profile_for_suite(resolved_suite)
     train_dataset, validation_dataset = _prepare_datasets(
         root,
         seed=seed,
@@ -496,7 +532,7 @@ def train_architecture(
                 "epoch": epoch_number,
                 "epochs": epochs,
                 "time_steps": time_steps,
-                "held_out_split": "test",
+                "held_out_split": "train_holdout" if is_final_run else "test",
                 "input_channels": 6,
                 "input_representation": "evsegnet_hist_mean_std_direct_encoding",
                 "output_size": list(output_size) if output_size is not None else None,
@@ -528,6 +564,7 @@ def train_architecture(
                 "validation_fraction": validation_fraction if is_final_run else None,
                 "validation_source": "train_holdout" if is_final_run else "official_test",
                 "base_learning_rate": learning_rate,
+                "loss_profile": asdict(loss_profile),
                 "checkpoint_every": checkpoint_every if is_final_run else None,
                 "log_every_batches": log_every_batches,
             },
@@ -604,7 +641,12 @@ def train_architecture(
             focal = focal_cross_entropy(logits, target, class_weights)
             dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
             activity = _activity_regularizer(outputs)
-            loss = 1.0 * ce + 0.5 * focal + 0.75 * dice + activity
+            loss = (
+                loss_profile.cross_entropy * ce
+                + loss_profile.focal * focal
+                + loss_profile.dice * dice
+                + activity
+            )
             auxiliary = auxiliary_ce = auxiliary_focal = None
             deep_auxiliary = deep_auxiliary_ce = deep_auxiliary_focal = None
             auxiliary_term = logits.new_zeros(())
@@ -617,10 +659,20 @@ def train_architecture(
                     auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
                 )
                 auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
-                auxiliary_scale = (
-                    0.30 if training_phase == "decoder_detail_refinement" else 0.15
+                auxiliary_ce_weight = (
+                    0.30
+                    if is_final_run and training_phase == "decoder_detail_refinement"
+                    else loss_profile.auxiliary_ce
                 )
-                auxiliary_term = auxiliary_scale * (auxiliary_ce + auxiliary_focal)
+                auxiliary_focal_weight = (
+                    0.30
+                    if is_final_run and training_phase == "decoder_detail_refinement"
+                    else loss_profile.auxiliary_focal
+                )
+                auxiliary_term = (
+                    auxiliary_ce_weight * auxiliary_ce
+                    + auxiliary_focal_weight * auxiliary_focal
+                )
                 loss = loss + auxiliary_term
             if "deep_auxiliary_logits" in outputs:
                 deep_auxiliary = F.interpolate(
@@ -897,6 +949,17 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
         ),
         "suite": args.suite,
         "seed": args.seed,
+        "protocol": {
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "time_steps": args.time_steps,
+            "train_samples": args.train_samples,
+            "validation_samples": args.validation_samples,
+            "height": args.height,
+            "width": args.width,
+            "learning_rate": args.learning_rate,
+            "loss_profile": asdict(loss_profile_for_suite(args.suite)),
+        },
         "results": [result.to_dict() for result in results],
         "winner": winner.to_dict(),
     }
@@ -1001,19 +1064,20 @@ def main() -> None:
         choices=(
             tuple(TOP_TEN_PRESETS)
             + tuple(TOP_FIVE_PRESETS)
+            + tuple(TOP_THREE_PRESETS)
             + (FINAL_ARCHITECTURE_NAME,)
         ),
         default=FINAL_ARCHITECTURE_NAME,
     )
     single.add_argument(
-        "--suite", choices=("auto", "top-ten", "top-five", "final"), default="auto"
+        "--suite", choices=("auto", "top-ten", "top-five", "top-three", "final"), default="auto"
     )
     single.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
 
     benchmark = subparsers.add_parser("benchmark")
     _common_training_arguments(benchmark)
     benchmark.add_argument(
-        "--suite", choices=("top-ten", "top-five"), default="top-five"
+        "--suite", choices=("top-ten", "top-five", "top-three"), default="top-five"
     )
     benchmark.add_argument("--output-dir", type=Path, default=Path("artifacts/ablation"))
 

@@ -11,6 +11,7 @@ Six-class semantic segmentation of the Ev-SegNet DDD17 six-channel event-statist
 - `top_ten_models.py`: frozen completed ten-model structural benchmark
 - `top_five_models.py`: completed five-model structural search
 - `top_three_models.py`: frozen completed accuracy-oriented three-model search
+- `train.py`: the single training/benchmark engine for historical suites and the final model
 
 ## Shared neuron dynamics carried into the structural and accuracy rounds
 
@@ -109,45 +110,57 @@ Concatenation is treated as wiring/channel routing and does not itself require m
 
 ## Canonical `final_dualpath_wide32`
 
-The post-ablation candidate combines only mechanisms supported by the completed experiments and scales capacity without adding another spatial downsampling stage:
+The current EventSpikeSeg architecture is the 237,623-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
 
 ```text
 input 6
   → stem 32
-  → encoder 32 (two residual DW/PW blocks total)
-  → downsample / encoder 64 (two residual DW/PW blocks total)
-  → downsample / encoder 128 (two residual DW/PW blocks total)
+  → encoder 32 + residual DW/PW refinement
+  → stride-2 main path + 1×1 PLIF projected residual → encoder 64
+  → stride-2 main path + 1×1 PLIF projected residual → encoder 128
   → serial residual dilation-2 context ×2
-  → decoder 128→64 + mid-level additive skip + residual refine
-  → decoder 64→32
+  → residual parallel DW d1/d2/d4 context → concat → PLIF 1×1 fusion
+  → one bottlenecked 32-channel / 4-head spike-mask attention residual
+  → deep auxiliary semantic head (training only)
+  → project/upsample + CONCAT encoder64 → DW/PW PLIF fusion/refinement 64
+  → mid auxiliary semantic head (training only)
+  → project/upsample to 32
   → CONCAT semantic32 + shallow32 + persistent detail32
-  → spike-driven 1×1 cross-channel projection → PLIF selector gate
-  → DW/PW 96→32 + residual refine
+  → 96→96 spike-driven 1×1 projection + PLIF selector gate
+  → DW/PW 96→32 + residual refinement
   → six independent spiking class populations
   → temporal spike-count argmax
 ```
 
-The high-resolution detail stream has three residual 32-channel depthwise/pointwise blocks. The final channel selector uses a 96→96 spiking 1×1 projection followed by per-channel PLIF selector neurons. Their binary spikes gate the fused channels, preserving cross-channel selection without a dense count-domain MLP. The architecture has approximately 141k trainable parameters.
+The high-resolution detail stream is persistent from the shallow 32-channel feature and contains DW/PW residual refinement plus a spike-native asymmetric `3×1 → 1×3 → 1×1` residual block. The parallel multiscale context is not the failed historical branch *average*: branch identities are concatenated and mixed by a learned spiking 1×1 stage, while the simpler serial dilation-2 path remains intact.
 
-### Software/runtime substrate
+The low-resolution attention block is also not the failed T3 architecture as a whole. Only one bottlenecked residual block is used at the deepest 128-channel scale. Q/K are binary PLIF spike streams; coincidence is accumulated per head and compared with a learned threshold; the resulting binary mask gates V spikes. There is no dense spatial softmax or analog NxN attention matrix.
 
-PyTorch remains the tensor, autograd, and optimizer substrate. When installed, SpikingJelly provides `activation_based.layer.Conv2d`, `surrogate.ATan`, and the `ParametricLIFNode` charge equation. The project retains explicit per-channel reciprocal tau plus custom dynamic threshold, `peer_membrane` fInst, triangular fLong/TThresh, and operation ordering. This keeps the runtime equation visible for fixed-point FPGA, neuromorphic-chip translation, or circuit-level implementation instead of hiding project-specific behavior inside framework internals.
+### Neuron/runtime contract
+
+- PLIF with learnable per-channel beta and base threshold;
+- stem-only `peer_membrane` fInst;
+- encoder/context triangular fLong/TThresh;
+- no hard hidden `winner_peer` gating;
+- independent output class spiking populations;
+- temporal spike-count class decision;
+- affine channel scaling rather than BatchNorm;
+- PyTorch for tensors/autograd/optimizer;
+- SpikingJelly convolution/PLIF/surrogate infrastructure where compatible;
+- project-specific fInst/fLong/reset ordering remains explicit for hardware translation.
+
+Auxiliary heads are optimization-only: they are computed while `model.training` is true and skipped in evaluation/inference. This does not change deployed logits and avoids unnecessary inference state.
 
 ### Canonical training refinement
 
-Only the canonical model exposes the late refinement schedule: joint training through 70% of epochs; freeze stem/semantic encoder/context during 70–90% while detail path, decoder/fusion, auxiliary head, and class head continue; then unfreeze all layers for the final 10% with an explicit 0.25 LR multiplier in addition to cosine decay. The main CE coefficient is 1.0; auxiliary CE/focal coefficients rise from 0.15 to 0.30 only during the frozen-backbone phase.
+Only the final model exposes the late refinement schedule: joint training through 70% of epochs; freeze stem/semantic encoder/context during 70–90% while detail path, decoder/fusion, selector, auxiliary heads, and class head continue; then unfreeze all layers for the final 10% with an additional `0.25×` LR multiplier on top of cosine decay.
 
+The final loss profile uses CE coefficient `1.0`, focal `0.5`, Dice `0.75`, the existing activity regularizer, mid auxiliary CE/focal `0.15/0.15` normally and `0.30/0.30` during frozen-backbone refinement, and deep auxiliary CE/focal `0.10/0.10` normally and `0.20/0.20` during refinement. Historical suites are pinned separately to their recorded CE coefficient `0.5`.
 
-## Final high-capacity spike-native revision (2026-08-09)
+### Training/evaluation data protocol
 
-The canonical `final_dualpath_wide32` is expanded to 237,623 trainable parameters while remaining fully spike-native in its learned inference path. Relative to the earlier ~141k revision it adds:
+For the final suite, best-checkpoint selection uses a deterministic holdout from the DDD17 training split (`--validation-fraction`) rather than the official test split. The official test split remains for final reporting. Omitting `--height/--width` preserves the stored dataset resolution. Historical architecture-search suites continue to use their recorded official-test benchmark protocol for reproducibility.
 
-- projected PLIF residual bridges across encoder transitions `32->64` and `64->128`;
-- serial dilation-2 context retained, plus residual parallel depthwise `d=1/2/4` context with PLIF 1x1 fusion;
-- one bottlenecked 32-channel, 4-head spike-mask attention residual at the deepest 128-channel scale;
-- concatenative mid-decoder fusion: decoder64 + encoder64 -> 128 -> DW/PW PLIF -> 64;
-- an asymmetric high-resolution detail residual: DW `3x1` -> PLIF -> DW `1x3` -> PLIF -> PW `1x1` -> PLIF;
-- a deep training-only auxiliary head in addition to the existing mid-decoder auxiliary head;
-- the previously restored 96->96 PLIF 1x1 cross-channel selector remains in the late semantic+shallow+detail fusion.
+## Historical architecture registries
 
-No fourth downsampling scale, BatchNorm, GAP/MLP gate, dense softmax attention, or hard hidden WTA is introduced. The extra encoder residuals are projected spike residuals rather than duplicate decoder skips: each strided DW/PW downsample is added to a 1x1 stride-2 PLIF projection of the previous scale before same-scale refinement.
+`top_ten_models.py`, `top_five_models.py`, and `top_three_models.py` preserve the measured ablation definitions and checkpoint-facing behavior. All three are dispatched through `train.py`; there is no separate top-three training implementation. Historical results remain in `RESULTS.md` and the design interpretation in `DECISIONS.md`.

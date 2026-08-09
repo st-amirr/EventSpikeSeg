@@ -105,17 +105,6 @@ Interpretation:
 - the multiscale-average models did not beat the single-dilation models, motivating branch concatenation rather than averaging.
 - none of the five beat the historical `v10_fpga_hybrid` result of 0.3130 mIoU.
 
-## Current top-three accuracy experiment — pending DDD17 measurement
-
-| architecture | main hypothesis | parameters |
-| --- | --- | ---: |
-| `t01_spike_pyramid_concat` | preserve d1/d2/d4 branch identity; binary channel selection; concat decoder | 63,147 |
-| `t02_dualpath_detail` | preserve small-class/boundary evidence with a narrow high-resolution spike path | 24,211 |
-| `t03_deep_attention_fpn` | retain deep rare-class semantics with low-resolution spike-mask attention + FPN restoration | 108,781 |
-
-No top-three mIoU values are recorded yet. Results must come from `artifacts/ablation/top_three/summary.json`; do not promote a model from synthetic tests or training loss alone.
-
-
 ## Completed top-three accuracy search — seed 17
 
 Protocol: 8 epochs, 2,048 training samples, 512 held-out samples, 64×64 output, 15 internal timesteps, learning rate 0.002.
@@ -127,3 +116,8 @@ Protocol: 8 epochs, 2,048 training samples, 512 held-out samples, 64×64 output,
 | 3 | `t03_deep_attention_fpn` | 0.1555 | 0.7151 | 108,781 | **0.0592** |
 
 T2 per-class IoU: flat 0.6190, construction+sky 0.8169, object 0.0095, nature 0.0221, human 0.0000, vehicle 0.1691. These are measured benchmark results only. No accuracy result is yet recorded for `final_dualpath_wide32`.
+
+
+## Reproducibility note
+
+The top-ten, top-five, and top-three registries are all trained through `eventspikeseg.train`. Historical suites are pinned to the objective used for the recorded architecture-search results (`0.5 CE + 0.5 focal + 0.75 Dice`, plus historical auxiliary supervision). The final suite intentionally uses CE coefficient `1.0`, validation-on-train-holdout best-checkpoint selection, and the canonical refinement schedule. The old standalone `benchmark_top_three.py` runner is retired; its unique protocol has been represented in the shared trainer/launch configuration.

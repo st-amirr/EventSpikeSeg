@@ -1,4 +1,4 @@
-# DDD17 semantic architecture ablation
+# DDD17 semantic architecture ablation — completed
 
 ## Objective
 
@@ -32,7 +32,7 @@ Findings:
 - early 5×5 processing is rejected;
 - averaging parallel dilation branches is rejected for the next round because it mixes sparse receptive-field evidence before the model can learn how to use it.
 
-## Round 4 — active top-three accuracy search
+## Round 4 — completed top-three accuracy search
 
 All three are defined in `src/eventspikeseg/top_three_models.py` and use the same benchmark protocol as the completed structural five.
 
@@ -73,6 +73,27 @@ Hypothesis: tiny object/human regions and boundaries are lost by repeated downsa
 
 Hypothesis: the four-stage top-five model already found rare-class semantics, but a better decoder and low-resolution long-range interaction are required to preserve them.
 
+## Top-three outcome and promotion
+
+Measured under the frozen protocol:
+
+1. `t02_dualpath_detail`: mIoU **0.2728**, pixel accuracy 0.7952, 24,211 params
+2. `t01_spike_pyramid_concat`: mIoU 0.1671, 63,147 params
+3. `t03_deep_attention_fpn`: mIoU 0.1555, 108,781 params
+
+The search did **not** directly replace the canonical model because the older `v10_fpga_hybrid` remained the measured incumbent at mIoU 0.3130. Instead, the final architecture was constructed by combining the strongest measured/structural lessons:
+
+- retain T2's persistent high-resolution detail path and late semantic+shallow+detail fusion;
+- scale the semantic path to 32/64/128 rather than adding a fourth downsampling stage;
+- use projected encoder residual bridges and stronger concatenative decoder fusion to reduce information loss through thresholding/downsampling;
+- retain simple serial dilation-2 context, while adding a residual parallel d1/d2/d4 context path rather than replacing the successful serial path;
+- reuse the T2 channel-selection idea as a 96→96 spike-driven 1×1 + PLIF selector rather than a count-domain MLP;
+- reuse only a **single bottlenecked residual** form of T3's spike-mask attention at the deepest scale, not T3's full deep-attention-FPN topology;
+- keep auxiliary supervision and add a deep training-only auxiliary head;
+- reject early 5×5, BatchNorm, GAP/MLP gating, hard hidden winner-peer competition, and a fourth encoder scale for the canonical model.
+
+These decisions produced `final_dualpath_wide32`, currently **237,623 trainable parameters**. It still requires a larger-budget measured confirmation before any accuracy claim beyond the historical 0.3130 incumbent.
+
 ## Hardware-oriented design contract
 
 - learned feature transmission remains spiking/binary between stages;
@@ -112,4 +133,4 @@ artifacts/ablation/top_three/summary.json
 artifacts/ablation/top_three/checkpoints/
 ```
 
-Do not replace `model.py` from this single run. The winner still needs a larger-budget confirmation, seeds 17/101/2026, timestep sensitivity, and quantized/integer-reference validation.
+This architecture-search plan is complete and archived. The canonical `final_dualpath_wide32` derived from these findings still needs larger-budget validation, multi-seed confirmation, timestep sensitivity, and quantized/integer-reference validation.

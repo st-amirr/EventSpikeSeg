@@ -3,7 +3,7 @@
 ## Working now
 
 - DDD17 six-channel semantic loader and deterministic bounded subsets
-- canonical `model.py` now contains the post-ablation `final_dualpath_wide32` candidate (~132k params)
+- canonical `model.py` contains the high-capacity spike-native `final_dualpath_wide32` candidate (237,623 params)
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -57,23 +57,27 @@ None beat the 0.3130 incumbent. The round indicates that feature preservation/fu
 
 ## Canonical candidate implemented
 
-- 32/64/128 semantic path with extra residual depthwise/pointwise refinement;
-- persistent 32-channel high-resolution detail path;
-- serial dilation-2 context ×2;
-- stronger 128→64→32 decoder with late semantic/shallow/detail concatenation;
-- PLIF 1×1 cross-channel spike selector (no count-domain MLP);
+- 32/64/128 semantic path with projected residual bridges and extra residual DW/PW refinement;
+- persistent 32-channel high-resolution detail path with asymmetric 3×1/1×3 refinement;
+- serial dilation-2 context ×2 plus residual concatenated d1/d2/d4 context;
+- one bottlenecked low-resolution spike-mask attention residual;
+- concatenative mid-decoder fusion and late semantic/shallow/detail concatenation;
+- 96→96 PLIF 1×1 cross-channel spike selector (no count-domain MLP);
+- two training-only auxiliary heads;
 - independent spiking class neurons and temporal argmax;
-- SpikingJelly `Conv2d` wrappers and `ParametricLIFNode` charge equation when installed, with project-specific per-channel tau, fInst, fLong and exact operation order preserved;
+- SpikingJelly `Conv2d`/PLIF/surrogate infrastructure where compatible, with project-specific per-channel beta, fInst, fLong and operation order preserved;
 - canonical-only 70/20/10 joint → backbone-frozen refinement → low-LR joint-unfreeze schedule.
 
-## Validation completed locally
+## Validation/cleanup state
 
-- focused top-three test module passes `2/2` in the local lightweight environment;
-- `top_three_models.py`, updated `train.py`, and the top-three test module compile successfully;
-- forward/backward passes complete for all three contenders with finite gradients;
-- semantic logits have the standard `[N,6,H,W]` shape and auxiliary logits remain available;
-- measured local parameter counts are 63,147 / 24,211 / 108,781;
-- authoritative Ruff/full-suite validation still needs the Docker environment.
+- all architecture suites now dispatch through `train.py`; the duplicate standalone top-three trainer is retired;
+- historical top-ten/top-five/top-three loss weights are explicit and separated from the final CE=1.0 profile;
+- final best-checkpoint selection uses a training-split holdout instead of the official DDD17 test split;
+- direct-encoded static inputs use a stride-0 temporal view instead of materializing T copies;
+- auxiliary heads are skipped in evaluation/inference;
+- native-resolution checkpoints are supported by `evaluate.py` when `output_size` is `None`;
+- consolidated local regression suite passes 29/29 tests after the cleanup; Ruff is not installed in the local execution environment, so `docker compose run --rm lint` remains the authoritative lint check;
+- obsolete `benchmark_top_three.py`, MEVDT/EventSCNN scripts, the dead `rtl-test` PowerShell wrapper, and checked-in `.ruff_cache` were removed; the completed DDD17 architecture-search plan is archived under `docs/exec-plans/completed/`.
 
 ## Open issues
 

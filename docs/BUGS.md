@@ -31,8 +31,13 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The new contenders span approximately 21k to 107k trainable parameters. Parameter count is only a proxy for FPGA cost; 5×5 kernels, wider pointwise layers, fourth-stage membrane state, event additions, memory banking, and line buffering must be measured/estimated separately before hardware selection.
+The historical structural contenders span approximately 21k to 107k trainable parameters; the canonical model is now 237,623 parameters. Parameter count is only a proxy for FPGA cost; 5×5 kernels, wider pointwise layers, fourth-stage membrane state, event additions, memory banking, and line buffering must be measured/estimated separately before hardware selection.
 
 ## Open: continuous learned neuron parameters
 
 PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are still floating-point training variables. They require quantization and integer-reference regression before FPGA claims.
+
+
+## Open: native-resolution CPU BPTT memory
+
+Native-resolution DDD17 training with full BPTT over `T=15` retains high-resolution PLIF/convolution autograd state across many layers. This can exceed 32 GB of system RAM even though model parameters are small. Lossless fixes already applied include a stride-0 repeated-input view, immediate per-batch graph/reference release, `set_to_none=True` gradient clearing, and skipping training-only auxiliary heads during evaluation. Activation checkpointing, lower precision, truncated BPTT, lower resolution, and shorter T are not enabled automatically because they trade compute or change the training calculation.

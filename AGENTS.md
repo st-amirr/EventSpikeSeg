@@ -17,10 +17,11 @@ Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, 
 
 ```text
 model.py              canonical architecture only
-top_ten_models.py     frozen completed ten-model benchmark
-top_five_models.py    completed five-model structural search
-top_three_models.py   frozen completed three-model accuracy search
 model_components.py   shared tested primitives
+top_ten_models.py     frozen completed ten-model benchmark
+top_five_models.py    frozen completed structural top-five
+top_three_models.py   frozen completed accuracy top-three
+train.py              single trainer/benchmark engine for every suite
 ```
 
 Do not put experimental registries back into `model.py`. Keep completed top-ten/top-five/top-three definitions reproducible. `model.py` now contains only the post-ablation canonical candidate. Measured results belong in `RESULTS.md`, not in the canonical model registry.
@@ -36,7 +37,7 @@ Do not put experimental registries back into `model.py`. Keep completed top-ten/
 - none of the completed top-five models superseded the 0.3130 incumbent
 - completed top-three: T2 dual-path detail 0.2728 mIoU, T1 0.1671, T3 0.1555
 - T2 validates a persistent high-resolution detail path; T3 extra depth/attention collapsed toward dominant classes
-- canonical candidate is now `final_dualpath_wide32` (~132k params); `v10_fpga_hybrid` remains the measured baseline until the new model is validated
+- canonical candidate is `final_dualpath_wide32` (237,623 params); `v10_fpga_hybrid` remains the measured baseline until the new model is validated
 
 The active question is now whether the scaled dual-path candidate can exceed the 0.3130 measured incumbent under larger/multi-seed training.
 
@@ -53,7 +54,7 @@ All current structural contenders use:
 - local triangular threshold adaptation in encoder/context
 - independent output semantic class spikes with final temporal count argmax
 
-`peer_membrane` preserves simultaneous suprathreshold feature spikes while reducing peer membrane state using retinotopic membrane energy. Do not use hidden `winner_peer` gating in the active search.
+`peer_membrane` preserves simultaneous suprathreshold feature spikes while reducing peer membrane state using retinotopic membrane energy. Do not use hidden `winner_peer` gating in the canonical model.
 
 The triangular threshold process uses learnable threshold-adaptation strength and continuous adaptation duration. These are training parameters only until fixed-point quantization and integer-reference regression pass.
 
@@ -73,11 +74,13 @@ Fairness rule used: all three used the same seed, data subset, resolution, times
 
 ## Canonical post-ablation candidate
 
-`final_dualpath_wide32` uses a 32/64/128 three-scale semantic path, residual depthwise/pointwise refinement, a persistent 32-channel high-resolution detail path, serial dilation-2 context, stronger decoder, and late semantic/shallow/detail concatenation. Final channel selection uses a spike-driven 1×1 cross-channel projection into PLIF selector neurons; do not add a dense count-domain MLP. No fourth downsampling level or dense/masked attention is used.
+`final_dualpath_wide32` is the 237,623-parameter EventSpikeSeg candidate. It uses a 32/64/128 semantic path, projected PLIF residual bridges across downsampling, residual DW/PW refinement, a persistent 32-channel high-resolution detail path with asymmetric refinement, serial dilation-2 context plus residual concatenated d1/d2/d4 context, one bottlenecked low-resolution spike-mask attention residual, concatenative mid-decoder fusion, and late semantic/shallow/detail concatenation. Final channel selection is a spike-driven 96→96 1×1 projection into PLIF selector neurons. No fourth downsampling level, dense softmax attention, GAP/MLP inference gate, BatchNorm dependency, or hard hidden WTA is used.
 
-Use SpikingJelly public `activation_based` infrastructure where compatible: SpikingJelly `Conv2d` wrappers and `ParametricLIFNode` charge dynamics back the canonical software model, while project code keeps per-channel tau, dynamic threshold, fInst/fLong, and exact reset/order explicit for later integer/RTL/circuit reproduction.
+Use SpikingJelly public `activation_based` infrastructure where compatible: SpikingJelly convolution/PLIF/surrogate behavior backs the software model, while project code keeps per-channel beta, dynamic threshold, fInst/fLong, and exact reset/order explicit for later integer/RTL/circuit reproduction.
 
-Canonical training schedule only: 0–70% joint, 70–90% semantic backbone frozen while detail/decoder/heads refine, 90–100% all layers unfrozen at lower LR. Historical benchmark suites do not inherit this schedule.
+Auxiliary heads are training-only and must be skipped in eval/inference. Canonical training schedule only: 0–70% joint, 70–90% semantic backbone frozen while detail/decoder/selector/heads refine, 90–100% all layers unfrozen at lower LR. Historical benchmark suites do not inherit this schedule. Historical suites are pinned to CE=0.5; the final suite uses CE=1.0.
+
+There is one training implementation: `eventspikeseg.train`. Do not recreate suite-specific training loops. Historical registries define models only. Final best-model selection uses a holdout from the training split, not the official test set.
 
 ## Diagnostics
 

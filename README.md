@@ -1,61 +1,66 @@
 # EventSpikeSeg
 
-Lightweight fully-spiking semantic segmentation for the Ev-SegNet semantic extension of DDD17, with a later sparse fixed-point FPGA target.
+Fully spiking event-camera semantic segmentation for the Ev-SegNet semantic extension of DDD17, designed so the learned inference path can later be mapped to FPGA, neuromorphic hardware, or custom circuits.
 
-## Project layout
+## Repository layout
 
 ```text
-src/eventspikeseg/model.py              canonical high-accuracy candidate (`final_dualpath_wide32`)
-src/eventspikeseg/model_components.py   shared spiking layers and neuron dynamics
-src/eventspikeseg/top_ten_models.py     frozen completed ten-model structural benchmark
-src/eventspikeseg/top_five_models.py    completed five-model structural search
-src/eventspikeseg/top_three_models.py   frozen completed accuracy-oriented three-model search
+src/eventspikeseg/model.py              canonical EventSpikeSeg model (`final_dualpath_wide32`)
+src/eventspikeseg/model_components.py   shared PLIF/SNN/convolution primitives
+src/eventspikeseg/top_ten_models.py     frozen round-one model registry
+src/eventspikeseg/top_five_models.py    frozen structural top-five registry
+src/eventspikeseg/top_three_models.py   frozen accuracy top-three registry
+src/eventspikeseg/train.py              single training/benchmark engine for all suites
+src/eventspikeseg/evaluate.py           checkpoint evaluation and visualizations
+scripts/                                utility/diagnostic scripts only
+docs/ARCHITECTURE.md                    current architecture and runtime contract
+docs/DECISIONS.md                       chronological design decisions
+docs/RESULTS.md                         measured experiment results
+docs/PROGRESS.md                        current implementation/validation state
+docs/BUGS.md                            open limitations and resolved failures
 ```
 
-`model.py` now contains the post-ablation high-accuracy candidate. Historical benchmark registries remain frozen; the new canonical model still requires larger-budget/multi-seed validation before its accuracy is claimed.
+The historical model registries remain importable for reproducibility, but there is only one training engine. `train.py` handles `top-ten`, `top-five`, `top-three`, and `final`; the old standalone top-three benchmark runner is retired.
 
 ## DDD17 input
 
-Host dataset:
+Expected host layout:
 
 ```text
-C:/Users/stamir/Desktop/Dataset/DDD17/
+DDD17/
 ├── events/{train,test}/*.npy
 └── labels/{train,test}/*.png
 ```
 
-Docker mounts it at `/datasets/DDD17`. Each sample is the Ev-SegNet six-channel event-statistic representation and is applied for `T` internal SNN updates.
+Each Ev-SegNet semantic sample contains six event-statistic channels (histogram, timestamp mean, timestamp standard deviation for both polarities). Direct encoding reuses that sample over the configured number of internal SNN updates. These are neural timesteps, not raw chronological event bins.
 
 Classes: `flat`, `construction+sky`, `object`, `nature`, `human`, `vehicle`. Label `255` is ignored.
 
-## Basic commands
+If `--height` and `--width` are omitted, the stored dataset resolution is preserved. If they are provided, both must be supplied. `--train-samples` and `--validation-samples` accept `0` for all records, a fraction in `(0,1]`, or an absolute integer count greater than `1`.
+
+## Main commands
 
 ```powershell
 docker compose run --rm inspect-ddd17
 docker compose run --rm lint
 docker compose run --rm test
+docker compose run --rm train-ddd17-smoke
+docker compose run --rm train-ddd17
+```
+
+Historical ablations can still be reproduced through the same trainer:
+
+```powershell
+docker compose run --rm benchmark-top-ten
+docker compose run --rm benchmark-top-five
 docker compose run --rm benchmark-top-three
 ```
 
-Benchmark defaults are defined directly in `compose.yaml`:
+Historical suites use their frozen objective (`0.5 CE + 0.5 focal + 0.75 Dice`, plus historical auxiliary weights). The canonical final suite uses the current objective with CE coefficient `1.0` and its late refinement schedule.
 
-```text
-seed=17
-epochs=8
-time_steps=15
-train_samples=2048
-validation_samples=512
-height=64
-width=64
-batch_size=14
-learning_rate=0.002
-```
+## Measured architecture-search evidence
 
-Edit `compose.yaml` directly when intentionally changing these defaults. The project does not use a `.env` file.
-
-## Measured structural incumbent
-
-The completed ten-model benchmark used seed 17, 10 epochs, 2,048 train samples, 512 held-out samples, 64×64 output, and 20 internal steps.
+The measured historical incumbent remains:
 
 ```text
 v10_fpga_hybrid
@@ -65,85 +70,49 @@ parameters      44,016
 spike rate      0.1412
 ```
 
-This remains the **measured historical incumbent**, but it is no longer the architecture installed in `model.py`.
+The completed structural top-five selected `f05_compact16_dilated` at mIoU `0.2596` with only `21,491` parameters. The completed accuracy top-three selected `t02_dualpath_detail` at mIoU `0.2728` with `24,211` parameters. These experiments established the main design evidence carried into EventSpikeSeg: preserve high-resolution detail, retain moderate channel capacity, prefer depthwise/pointwise processing and simple dilation, and avoid a fourth downsampling scale or hard hidden winner gating.
 
-## Completed neuron-mechanism comparison
+Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological interpretation is in `docs/DECISIONS.md`.
 
-The latest five-model mechanism run used seed 17, 5 epochs, 256 train samples, 128 held-out samples, 64×64 output, and 8 internal steps. It was intentionally a low-budget screening run.
+## Canonical EventSpikeSeg model
 
-```text
-f05_v02_light_peer_membrane_inhibition  mIoU 0.1991
-f02_v10_plif_threshold_adaptation       mIoU 0.1459
-f01_v10_plif_threshold_wta              mIoU 0.1402
-f04_v03_dilated_threshold_adaptation    mIoU 0.1366
-f03_v10_plif_winner_peer_inhibition     mIoU 0.1233
-```
-
-The useful mechanism conclusions are:
-
-- keep PLIF and learnable base thresholds;
-- keep local triangular threshold adaptation;
-- keep `peer_membrane` inhibition, restricted to the stem;
-- reject hidden `winner_peer` gating for dense segmentation;
-- keep affine channel scaling, residual paths, auxiliary supervision, and semantic output class WTA.
-
-The winning model learned approximately `inhibition_strength=0.208`, `threshold_adaptation_strength=0.188`, and `adaptation_duration=5.20`, close to the chosen initial values `0.20`, `0.20`, and `5.0`.
-
-## Completed top five: structural search
-
-The structural round used seed 17, 8 epochs, 2,048 train samples, 512 held-out samples, 64×64 output, 15 internal timesteps, batch 14, and learning rate 0.002. All five used the same selected neuron dynamics so width/depth/kernel/context could be compared fairly.
-
-| Rank | Architecture | mIoU | Pixel accuracy | Params | Spike rate |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | `f05_compact16_dilated` | **0.2596** | 0.7822 | **21,491** | 0.1093 |
-| 2 | `f02_wide32_multiscale` | 0.2284 | 0.7763 | 77,751 | 0.0965 |
-| 3 | `f04_deep4_dilated` | 0.2079 | 0.6792 | 107,131 | 0.1495 |
-| 4 | `f01_base24_multiscale` | 0.1626 | 0.7294 | 46,423 | 0.0497 |
-| 5 | `f03_early5x5_multiscale` | 0.1482 | 0.6719 | 49,111 | 0.0670 |
-
-The main findings were more useful than the ranking alone:
-
-- the compact `16→32→64` single-dilation model was both the most accurate and the smallest, so parameter count alone is not the current bottleneck;
-- the wide `32→64→128` model produced the best `object` IoU in this round (`0.0141`), so some extra channel diversity can help rare features;
-- the four-stage model produced the strongest aggregate rare-class signal, especially `nature=0.0712` and `vehicle=0.1230`, suggesting that the deep path contains useful semantics which the old decoder does not preserve well;
-- early `5×5` processing hurt accuracy and is dropped;
-- averaged parallel dilation branches did not justify their cost. The next round preserves each sparse receptive-field branch by concatenating it before learned spiking fusion.
-
-None of these five displaced the historical `v10_fpga_hybrid` incumbent at `0.3130` mIoU.
-
-## Completed top three: accuracy-oriented search
-
-The top-three benchmark completed under the same seed-17 / 2,048-train / 512-held-out / 64×64 / 15-step protocol used for the structural round.
-
-| Rank | Architecture | mIoU | Pixel accuracy | Params | Spike rate |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | `t02_dualpath_detail` | **0.2728** | **0.7952** | **24,211** | 0.1395 |
-| 2 | `t01_spike_pyramid_concat` | 0.1671 | 0.6122 | 63,147 | 0.1145 |
-| 3 | `t03_deep_attention_fpn` | 0.1555 | 0.7151 | 108,781 | **0.0592** |
-
-T2 validated the persistent high-resolution detail-path hypothesis. T1 showed that parallel dilation concat/channel selection was not sufficient by itself. T3 retained deep spike activity but collapsed its predictions toward the two dominant classes, so the final design does not add a fourth downsampling level or low-resolution attention.
-
-## Canonical post-ablation model
-
-`final_dualpath_wide32` scales the successful dual-path idea without importing the failed complexity:
+`final_dualpath_wide32` currently has **237,623 trainable parameters** and uses:
 
 ```text
-semantic path: 32 → 64 → 128
-per-scale residual depthwise/pointwise refinement
-persistent high-resolution 32-channel detail path
-two serial dilation-2 residual context blocks
-stronger 128→64→32 decoder
-mid-level additive skip + late semantic/shallow/detail concatenation
-PLIF 1×1 cross-channel selector (spike-driven synaptic mixing + PLIF binary gating)
-independent spiking class neurons; final decision is temporal spike-count argmax
-PLIF + learnable threshold + stem-only peer_membrane fInst
-encoder/context triangular fLong homeostasis
+6-channel input
+→ 32/64/128 semantic encoder
+→ projected PLIF residual bridges across downsampling
+→ residual DW/PW refinement per scale
+→ serial dilation-2 context ×2
+→ residual parallel d1/d2/d4 context with PLIF 1×1 fusion
+→ one bottlenecked low-resolution spike-mask attention residual
+→ persistent high-resolution 32-channel detail path with asymmetric refinement
+→ concatenative 64+64 mid-decoder fusion
+→ late semantic32 + shallow32 + detail32 concatenation
+→ 96→96 PLIF cross-channel selector
+→ DW/PW final fusion/refinement
+→ six independent spiking class populations
+→ temporal spike-count argmax
 ```
 
-The model has approximately 141k trainable parameters. It is intentionally kept spike/circuit friendly: no BatchNorm dependence, dense softmax attention, GAP/MLP inference gate, or analog classifier is present in the canonical path.
+Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, stem-only `peer_membrane` fInst, and encoder/context triangular fLong/TThresh. PyTorch provides tensors/autograd/optimization; SpikingJelly supplies compatible spiking convolution/PLIF/surrogate infrastructure while project-specific dynamics stay explicit.
 
-Training uses the existing weighted CE/focal/Dice objective with the main CE coefficient set to `1.0`. The final model additionally exposes a late refinement schedule: joint training through 70% of epochs, semantic-backbone freeze during 70–90% while detail/decoder/heads continue training, then full low-LR unfreeze for the final 10%.
+There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gate, analog classifier, fourth downsampling stage, or hard hidden winner-peer WTA in the canonical path.
 
-## Selection rule
+## Canonical training
 
-Use mIoU as the primary metric. Also inspect per-class IoU, predicted-pixel counts, layer spike rates, and parameter count. The new canonical candidate must beat the measured `v10_fpga_hybrid` baseline under a larger protocol and seeds 17/101/2026 before it is treated as the validated final architecture or frozen for hardware.
+The final model uses all available selected training data with a deterministic training-split validation holdout when `--validation-fraction` is set. The official DDD17 test split is reserved for final reporting rather than best-checkpoint selection.
+
+The model exposes a late refinement schedule:
+
+```text
+0–70%   all layers train jointly
+70–90%  semantic backbone frozen; detail/decoder/selector/heads refine
+90–100% all layers unfrozen with an additional 0.25× LR multiplier
+```
+
+Final training validates after every epoch, saves the best validation-mIoU model, saves a recovery checkpoint every configured N epochs, and saves the last state separately. Auxiliary heads are training-only and are skipped in evaluation/inference.
+
+## Accuracy status
+
+`final_dualpath_wide32` is the canonical architecture by design, **not yet a measured accuracy claim**. It must be trained/evaluated under the larger final protocol and compared against the measured `0.3130` v10 baseline before hardware freezing. Rare-class IoU, especially `human` and `object`, remains the main accuracy risk.

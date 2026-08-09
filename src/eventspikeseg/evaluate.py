@@ -93,7 +93,12 @@ def evaluate(
         # Match train.py's held-out benchmark subset exactly.
         seed=int(checkpoint["seed"]) + 1,
     )
-    output_size = tuple(int(value) for value in checkpoint.get("output_size", [64, 64]))
+    raw_output_size = checkpoint.get("output_size")
+    output_size = (
+        tuple(int(value) for value in raw_output_size)
+        if raw_output_size is not None
+        else None
+    )
     dataset = DDD17Dataset(root, split=split, records=records, output_size=output_size)
     collate = lambda batch: temporal_collate(batch, time_steps=time_steps)  # noqa: E731
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate)

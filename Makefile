@@ -12,10 +12,8 @@ DDD17_ROOT ?= C:/Users/stamir/Desktop/Dataset/DDD17
 DDD17_SEED ?= 17
 DDD17_ARCHITECTURE ?= final_dualpath_wide32
 DDD17_MODEL_SUITE ?= final
-DDD17_HEIGHT ?= 64
-DDD17_WIDTH ?= 64
 
-.PHONY: setup test lint inspect-ddd17 train-ddd17-smoke train-ddd17 benchmark-top-ten benchmark-top-five benchmark-top-three benchmark-ddd17 promote-winner eval-ddd17
+.PHONY: setup test lint inspect-ddd17 train-ddd17-smoke train-ddd17 benchmark-top-ten benchmark-top-five benchmark-top-three promote-top-three-winner eval-ddd17
 
 setup:
 	$(VENV_CREATE)
@@ -40,14 +38,16 @@ train-ddd17-smoke:
 train-ddd17:
 	$(PYTHON) -m eventspikeseg.train single --root "$(DDD17_ROOT)" \
 		--architecture "$(DDD17_ARCHITECTURE)" --suite "$(DDD17_MODEL_SUITE)" --seed $(DDD17_SEED) \
-		--epochs 70 --batch-size 14 --time-steps 15 --height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
-		--learning-rate 0.002 --checkpoint-dir artifacts/checkpoints
+		--epochs 70 --batch-size 1 --time-steps 15 \
+		--train-samples 0 --validation-samples 0 --validation-fraction 0.10 \
+		--learning-rate 0.001 --checkpoint-every 5 --log-every-batches 1 \
+		--checkpoint-dir artifacts/checkpoints
 
 # Historical round-one protocol is intentionally preserved here.
 benchmark-top-ten:
 	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
 		--suite top-ten --seed $(DDD17_SEED) --epochs 10 --batch-size 4 --time-steps 20 \
-		--height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
+		--height 64 --width 64 \
 		--train-samples 2048 --validation-samples 512 \
 		--learning-rate 0.002 --output-dir artifacts/ablation/top_ten
 
@@ -55,27 +55,25 @@ benchmark-top-ten:
 benchmark-top-five:
 	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
 		--suite top-five --seed $(DDD17_SEED) --epochs 8 --batch-size 14 --time-steps 15 \
-		--height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
+		--height 64 --width 64 \
 		--train-samples 2048 --validation-samples 512 \
 		--learning-rate 0.002 --output-dir artifacts/ablation/top_five
 
-# Active accuracy-oriented round.
+# Completed accuracy-oriented round; retained for reproducibility.
 benchmark-top-three:
 	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
 		--suite top-three --seed $(DDD17_SEED) --epochs 8 --batch-size 14 --time-steps 15 \
-		--height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
+		--height 64 --width 64 \
 		--train-samples 2048 --validation-samples 512 \
 		--learning-rate 0.002 --output-dir artifacts/ablation/top_three
 
-benchmark-ddd17: benchmark-top-three
-
-promote-winner:
+promote-top-three-winner:
 	$(PYTHON) -m eventspikeseg.train promote \
 		--summary artifacts/ablation/top_three/summary.json \
-		--destination artifacts/checkpoints/ddd17_best.pt
+		--destination artifacts/checkpoints/top_three_winner.pt
 
 eval-ddd17:
 	$(PYTHON) -m eventspikeseg.evaluate --root "$(DDD17_ROOT)" \
-		--checkpoint artifacts/checkpoints/ddd17_best.pt \
-		--split test --batch-size 14 --visualizations 8 \
+		--checkpoint artifacts/checkpoints/final_dualpath_wide32_seed17.pt \
+		--split test --batch-size 1 --visualizations 8 \
 		--visualization-dir artifacts/Validation

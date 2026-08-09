@@ -122,7 +122,6 @@ class PLIFChannelSelector(nn.Module):
         return sequence * gate
 
 
-
 class ParallelDilatedResidualContext(nn.Module):
     """Residual d1/d2/d4 depthwise context with spiking 1x1 fusion."""
 
@@ -328,9 +327,10 @@ class EventSpikeSeg(EventSpikeSegBase):
             lif=encoder_lif, neuron_kind=architecture.neuron_kind,
         )
 
-        # v03, the compact structural winner, and T2 all favor a simple dilation-2
-        # semantic context over averaged parallel multiscale branches.  Scale it by
-        # depth (two residual blocks), not by more branch types.
+        # v03, the compact structural winner, and T2 all favored a simple
+        # dilation-2 path over *averaged* multiscale branches. Keep that serial
+        # path as the semantic backbone; the later parallel d1/d2/d4 module is a
+        # residual branch-concatenation addition rather than a replacement/average.
         self.context1 = SpikingConvBlock(
             128, 128, dilation=2, depthwise=True, norm=architecture.norm,
             lif=context_lif, neuron_kind=architecture.neuron_kind, residual=True,
@@ -441,12 +441,18 @@ class EventSpikeSeg(EventSpikeSegBase):
         deepest = self.context2(self.context1(x3))
         deepest = self.parallel_context(deepest)
         deepest = self.deep_attention(deepest)
-        deep_auxiliary_spikes = self.deep_aux_head(deepest)
+        # Auxiliary branches optimize training only. Skipping them in eval/inference
+        # preserves identical deployed logits while avoiding unnecessary spike state.
+        deep_auxiliary_spikes = self.deep_aux_head(deepest) if self.training else None
 
         d2 = self._upsample(self.project3(deepest), x2.shape[-2:])
         d2 = self.decoder2_fuse(torch.cat((d2, x2), dim=2))
         d2 = self.decoder2_extra(d2)
-        auxiliary_spikes = self.aux_head(d2) if self.aux_head is not None else None
+        auxiliary_spikes = (
+            self.aux_head(d2)
+            if self.training and self.aux_head is not None
+            else None
+        )
 
         semantic = self._upsample(self.project2(d2), x1.shape[-2:])
         merged = torch.cat((semantic, x1, detail), dim=2)
@@ -470,10 +476,11 @@ class EventSpikeSeg(EventSpikeSegBase):
             result["auxiliary_logits"] = auxiliary_spikes.sum(dim=0) * (
                 self.architecture.output_rate_scale / float(sequence.shape[0])
             )
-        result["deep_auxiliary_spikes"] = deep_auxiliary_spikes
-        result["deep_auxiliary_logits"] = deep_auxiliary_spikes.sum(dim=0) * (
-            self.architecture.output_rate_scale / float(sequence.shape[0])
-        )
+        if deep_auxiliary_spikes is not None:
+            result["deep_auxiliary_spikes"] = deep_auxiliary_spikes
+            result["deep_auxiliary_logits"] = deep_auxiliary_spikes.sum(dim=0) * (
+                self.architecture.output_rate_scale / float(sequence.shape[0])
+            )
         return result
 
 

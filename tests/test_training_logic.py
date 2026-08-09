@@ -5,6 +5,7 @@ from eventspikeseg.train import (
     _prepare_datasets,
     architecture_presets,
     infer_model_suite,
+    loss_profile_for_suite,
     refinement_phase_for_epoch,
     select_winner,
     temporal_collate,
@@ -69,9 +70,20 @@ def test_prepare_datasets_uses_train_and_test(tmp_path) -> None:
 def test_architecture_suites_are_isolated() -> None:
     assert len(architecture_presets("top-ten")) == 10
     assert len(architecture_presets("top-five")) == 5
+    assert len(architecture_presets("top-three")) == 3
     assert infer_model_suite("f01_base24_multiscale") == "top-five"
     assert infer_model_suite("f03_early5x5_multiscale") == "top-five"
     assert infer_model_suite("v03_dw_dilated") == "top-ten"
+    assert infer_model_suite("t02_dualpath_detail") == "top-three"
+
+
+def test_historical_and_final_loss_profiles_are_explicit() -> None:
+    for suite in ("top-ten", "top-five", "top-three"):
+        profile = loss_profile_for_suite(suite)
+        assert profile.cross_entropy == 0.5
+        assert profile.focal == 0.5
+        assert profile.dice == 0.75
+    assert loss_profile_for_suite("final").cross_entropy == 1.0
 
 
 def test_final_refinement_schedule_phases() -> None:
