@@ -7,11 +7,11 @@ from pathlib import Path
 
 import torch
 
-from eventscnn.config import BackboneConfig, EventBinningConfig, LIFConfig
-from eventscnn.datasets import load_mevdt_window
-from eventscnn.evaluate_mevdt import select_mevdt_evaluation_records
-from eventscnn.system import EventSCNNSystem
-from eventscnn.train_mevdt import event_supported_attention_target
+from eventspikeseg.config import BackboneConfig, EventBinningConfig, LIFConfig
+from eventspikeseg.datasets import load_mevdt_window
+from eventspikeseg.evaluate_mevdt import select_mevdt_evaluation_records
+from eventspikeseg.system import EventSpikeSegSystem
+from eventspikeseg.train_mevdt import event_supported_attention_target
 
 
 def _trace_summary(trace: dict[str, torch.Tensor], threshold: float) -> dict[str, list[float]]:
@@ -48,7 +48,7 @@ def diagnose_checkpoint(
         adaptation_increment=float(checkpoint["adaptation_increment"]),
         adaptation_decay=float(checkpoint["adaptation_decay"]),
     )
-    system = EventSCNNSystem(
+    system = EventSpikeSegSystem(
         class_count=2,
         backbone_config=BackboneConfig(lif=lif),
         classification_current_scale_shift=int(

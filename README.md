@@ -1,15 +1,15 @@
-# EventSpikeSeg-FPGA
+# EventSpikeSeg
 
 Lightweight fully-spiking semantic segmentation for the Ev-SegNet semantic extension of DDD17, with a later sparse fixed-point FPGA target.
 
 ## Project layout
 
 ```text
-src/eventscnn/model.py              canonical high-accuracy candidate (`final_dualpath_wide32`)
-src/eventscnn/model_components.py   shared spiking layers and neuron dynamics
-src/eventscnn/top_ten_models.py     frozen completed ten-model structural benchmark
-src/eventscnn/top_five_models.py    completed five-model structural search
-src/eventscnn/top_three_models.py   frozen completed accuracy-oriented three-model search
+src/eventspikeseg/model.py              canonical high-accuracy candidate (`final_dualpath_wide32`)
+src/eventspikeseg/model_components.py   shared spiking layers and neuron dynamics
+src/eventspikeseg/top_ten_models.py     frozen completed ten-model structural benchmark
+src/eventspikeseg/top_five_models.py    completed five-model structural search
+src/eventspikeseg/top_three_models.py   frozen completed accuracy-oriented three-model search
 ```
 
 `model.py` now contains the post-ablation high-accuracy candidate. Historical benchmark registries remain frozen; the new canonical model still requires larger-budget/multi-seed validation before its accuracy is claimed.

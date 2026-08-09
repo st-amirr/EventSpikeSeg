@@ -34,7 +34,7 @@ Findings:
 
 ## Round 4 — active top-three accuracy search
 
-All three are defined in `src/eventscnn/top_three_models.py` and use the same benchmark protocol as the completed structural five.
+All three are defined in `src/eventspikeseg/top_three_models.py` and use the same benchmark protocol as the completed structural five.
 
 ### T1 — `t01_spike_pyramid_concat`
 

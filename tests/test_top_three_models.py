@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import torch
 
-from eventscnn.top_three_models import TOP_THREE_PRESETS, build_top_three_model
-from eventscnn.train import build_experiment_model, infer_model_suite
+from eventspikeseg.top_three_models import TOP_THREE_PRESETS, build_top_three_model
+from eventspikeseg.train import build_experiment_model, infer_model_suite
 
 
 def test_top_three_registry_and_forward_backward() -> None:

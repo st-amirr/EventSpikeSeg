@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from eventscnn.evaluate_mevdt import evaluate_mevdt_checkpoint
+from eventspikeseg.evaluate_mevdt import evaluate_mevdt_checkpoint
 
 
 def main() -> None:

@@ -1,12 +1,12 @@
 import torch
 
-from eventscnn.model import FINAL_ARCHITECTURE_NAME, build_model
-from eventscnn.model_components import HardwareLIF, LIFConfig, ParametricLIF
-from eventscnn.top_five_models import (
+from eventspikeseg.model import FINAL_ARCHITECTURE_NAME, build_model
+from eventspikeseg.model_components import HardwareLIF, LIFConfig, ParametricLIF
+from eventspikeseg.top_five_models import (
     TOP_FIVE_PRESETS,
     build_top_five_model,
 )
-from eventscnn.top_ten_models import TOP_TEN_PRESETS, build_top_ten_model
+from eventspikeseg.top_ten_models import TOP_TEN_PRESETS, build_top_ten_model
 
 
 def _sample_sequence() -> torch.Tensor:

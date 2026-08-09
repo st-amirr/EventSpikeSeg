@@ -8,7 +8,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ghdl \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /opt/eventscnn
+WORKDIR /opt/eventspikeseg
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN python -m pip install --no-cache-dir \

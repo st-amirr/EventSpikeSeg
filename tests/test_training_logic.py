@@ -1,5 +1,5 @@
-from eventscnn.data import discover_ddd17_records
-from eventscnn.train import (
+from eventspikeseg.data import discover_ddd17_records
+from eventspikeseg.train import (
     TrainResult,
     _prepare_datasets,
     architecture_presets,

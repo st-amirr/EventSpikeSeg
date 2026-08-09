@@ -3,14 +3,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from eventscnn.data import (
+from eventspikeseg.data import (
     DDD17_CLASS_NAMES,
     DEFAULT_DDD17_ROOT,
     DDD17Dataset,
     discover_ddd17_records,
     inspect_ddd17,
 )
-from eventscnn.train import temporal_collate
+from eventspikeseg.train import temporal_collate
 
 
 def _write_split(root: Path, split: str, count: int = 3) -> None:

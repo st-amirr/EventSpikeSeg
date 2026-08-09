@@ -1,11 +1,11 @@
 document:
   title: Hardware-Oriented Event-Camera Spiking Neural Network for Semantic Segmentation
-  short_name: EventSpikeSeg-FPGA
+  short_name: EventSpikeSeg
   version: 1.0.0
   status: structural_top_five_complete_top_three_accuracy_search_ready
   created_date: '2026-08-06'
   supersedes:
-    - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
+    - EventSpikeSeg region-proposal, classification, and tracking specification v0.2
     - minimal semantic-segmentation project_spec.yaml created during repository cleanup
   intended_uses:
     - Executable software and FPGA implementation specification
@@ -753,7 +753,7 @@ validation_and_testing:
     - Report missing tools as blockers rather than claiming validation.
 
 repository_contract:
-  active_python_package: src/eventscnn
+  active_python_package: src/eventspikeseg
   active_source_files:
     - model.py
     - data.py
@@ -909,12 +909,12 @@ decision_history:
 
 experiment_code_layout:
   canonical_model_file:
-    path: src/eventscnn/model.py
+    path: src/eventspikeseg/model.py
     rule: Contains one production architecture only; no experimental preset registry.
     current_architecture: v10_fpga_hybrid
     status: round_one_incumbent_pending_round_two_confirmation
   shared_components_file:
-    path: src/eventscnn/model_components.py
+    path: src/eventspikeseg/model_components.py
     contents:
       - standard_and_depthwise_pointwise_spiking_convolution
       - multiscale_and_dilated_context
@@ -924,13 +924,13 @@ experiment_code_layout:
       - f_inst
       - f_long_and_T_thresh
   round_one_file:
-    path: src/eventscnn/top_ten_models.py
+    path: src/eventspikeseg/top_ten_models.py
     purpose: Preserve the exact completed ten-model definitions and checkpoint compatibility.
   round_two_file:
-    path: src/eventscnn/top_five_models.py
+    path: src/eventspikeseg/top_five_models.py
     purpose: Preserve the completed five-model structural search separately from the canonical model.
   round_three_file:
-    path: src/eventscnn/top_three_models.py
+    path: src/eventspikeseg/top_three_models.py
     purpose: Isolate the active accuracy-oriented three-model search from the canonical and completed ablation models.
 
 round_one_measured_results:
@@ -1009,7 +1009,7 @@ mechanism_screen_measured_results:
 
 completed_top_five_structural_search:
   status: completed_2026_08_08
-  definitions: src/eventscnn/top_five_models.py::TOP_FIVE_PRESETS
+  definitions: src/eventspikeseg/top_five_models.py::TOP_FIVE_PRESETS
   output_directory: artifacts/ablation/top_five
   goal: Hold selected neuron dynamics fixed and vary width, early kernel size, encoder depth, and context.
   shared_dynamics: mechanism_screen_measured_results.selected_dynamics
@@ -1110,7 +1110,7 @@ round_two_measured_results:
 
 active_top_three_accuracy_search:
   status: implemented_pending_real_ddd17_measurement
-  definitions: src/eventscnn/top_three_models.py::TOP_THREE_PRESETS
+  definitions: src/eventspikeseg/top_three_models.py::TOP_THREE_PRESETS
   output_directory: artifacts/ablation/top_three
   protocol:
     seed: 17

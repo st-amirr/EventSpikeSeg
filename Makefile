@@ -29,23 +29,23 @@ lint:
 	$(RUFF) check src tests
 
 inspect-ddd17:
-	$(PYTHON) -m eventscnn.train inspect --root "$(DDD17_ROOT)"
+	$(PYTHON) -m eventspikeseg.train inspect --root "$(DDD17_ROOT)"
 
 train-ddd17-smoke:
-	$(PYTHON) -m eventscnn.train single --root "$(DDD17_ROOT)" \
+	$(PYTHON) -m eventspikeseg.train single --root "$(DDD17_ROOT)" \
 		--architecture "$(DDD17_ARCHITECTURE)" --suite "$(DDD17_MODEL_SUITE)" --seed $(DDD17_SEED) \
 		--epochs 1 --batch-size 1 --time-steps 4 --height 32 --width 32 \
 		--train-samples 2 --validation-samples 2 --checkpoint-dir artifacts/checkpoints
 
 train-ddd17:
-	$(PYTHON) -m eventscnn.train single --root "$(DDD17_ROOT)" \
+	$(PYTHON) -m eventspikeseg.train single --root "$(DDD17_ROOT)" \
 		--architecture "$(DDD17_ARCHITECTURE)" --suite "$(DDD17_MODEL_SUITE)" --seed $(DDD17_SEED) \
 		--epochs 70 --batch-size 14 --time-steps 15 --height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
 		--learning-rate 0.002 --checkpoint-dir artifacts/checkpoints
 
 # Historical round-one protocol is intentionally preserved here.
 benchmark-top-ten:
-	$(PYTHON) -m eventscnn.train benchmark --root "$(DDD17_ROOT)" \
+	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
 		--suite top-ten --seed $(DDD17_SEED) --epochs 10 --batch-size 4 --time-steps 20 \
 		--height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
 		--train-samples 2048 --validation-samples 512 \
@@ -53,7 +53,7 @@ benchmark-top-ten:
 
 # Completed structural round.
 benchmark-top-five:
-	$(PYTHON) -m eventscnn.train benchmark --root "$(DDD17_ROOT)" \
+	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
 		--suite top-five --seed $(DDD17_SEED) --epochs 8 --batch-size 14 --time-steps 15 \
 		--height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
 		--train-samples 2048 --validation-samples 512 \
@@ -61,7 +61,7 @@ benchmark-top-five:
 
 # Active accuracy-oriented round.
 benchmark-top-three:
-	$(PYTHON) -m eventscnn.train benchmark --root "$(DDD17_ROOT)" \
+	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
 		--suite top-three --seed $(DDD17_SEED) --epochs 8 --batch-size 14 --time-steps 15 \
 		--height $(DDD17_HEIGHT) --width $(DDD17_WIDTH) \
 		--train-samples 2048 --validation-samples 512 \
@@ -70,12 +70,12 @@ benchmark-top-three:
 benchmark-ddd17: benchmark-top-three
 
 promote-winner:
-	$(PYTHON) -m eventscnn.train promote \
+	$(PYTHON) -m eventspikeseg.train promote \
 		--summary artifacts/ablation/top_three/summary.json \
 		--destination artifacts/checkpoints/ddd17_best.pt
 
 eval-ddd17:
-	$(PYTHON) -m eventscnn.evaluate --root "$(DDD17_ROOT)" \
+	$(PYTHON) -m eventspikeseg.evaluate --root "$(DDD17_ROOT)" \
 		--checkpoint artifacts/checkpoints/ddd17_best.pt \
 		--split test --batch-size 14 --visualizations 8 \
 		--visualization-dir artifacts/Validation

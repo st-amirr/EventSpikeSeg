@@ -1,4 +1,4 @@
-# EventSpikeSeg-FPGA Agent Instructions
+# EventSpikeSeg Agent Instructions
 
 ## Mission
 
