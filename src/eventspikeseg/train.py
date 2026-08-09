@@ -426,6 +426,7 @@ def train_architecture(
     device: str,
     checkpoint_every: int = 5,
     log_every_batches: int = 1,
+    amp: bool = False,
 ) -> TrainResult:
     seed_everything(seed)
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
@@ -466,6 +467,8 @@ def train_architecture(
     model = build_experiment_model(
         architecture, class_count=DDD17_CLASS_COUNT, suite=resolved_suite
     ).to(resolved_device)
+    amp_enabled = bool(amp and resolved_device.type == "cuda")
+    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     output_dir.mkdir(parents=True, exist_ok=True)
     is_final_run = resolved_suite == "final"
     if checkpoint_every < 1:
@@ -564,6 +567,7 @@ def train_architecture(
                 "input_representation": "evsegnet_hist_mean_std_direct_encoding",
                 "output_size": list(output_size) if output_size is not None else None,
                 "training_phase": training_phase_name,
+                "amp": amp_enabled,
                 "validation_metrics": validation_metrics,
                 "validation_mean_spike_rate": validation_spike_rate,
                 "validation_layer_spike_rates": validation_layer_rates or {},
@@ -594,6 +598,7 @@ def train_architecture(
                 "loss_profile": asdict(loss_profile),
                 "checkpoint_every": checkpoint_every if is_final_run else None,
                 "log_every_batches": log_every_batches,
+                "amp": amp_enabled,
             },
             sort_keys=True,
         ),
@@ -662,70 +667,73 @@ def train_architecture(
             # tensors and is mathematically equivalent for optimizer.step().
             optimizer.zero_grad(set_to_none=True)
             model.reset()
-            outputs = model(sequence)
-            logits = outputs["segmentation_logits"]
-            ce = F.cross_entropy(logits, target, weight=class_weights, ignore_index=IGNORE_INDEX)
-            focal = focal_cross_entropy(logits, target, class_weights)
-            dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
-            activity = _activity_regularizer(outputs)
-            loss = (
-                loss_profile.cross_entropy * ce
-                + loss_profile.focal * focal
-                + loss_profile.dice * dice
-                + activity
-            )
-            auxiliary = auxiliary_ce = auxiliary_focal = None
-            deep_auxiliary = deep_auxiliary_ce = deep_auxiliary_focal = None
-            auxiliary_term = logits.new_zeros(())
-            deep_auxiliary_term = logits.new_zeros(())
-            if "auxiliary_logits" in outputs:
-                auxiliary = F.interpolate(
-                    outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
+            with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
+                outputs = model(sequence)
+                logits = outputs["segmentation_logits"]
+                ce = F.cross_entropy(logits, target, weight=class_weights, ignore_index=IGNORE_INDEX)
+                focal = focal_cross_entropy(logits, target, class_weights)
+                dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
+                activity = _activity_regularizer(outputs)
+                loss = (
+                    loss_profile.cross_entropy * ce
+                    + loss_profile.focal * focal
+                    + loss_profile.dice * dice
+                    + activity
                 )
-                auxiliary_ce = F.cross_entropy(
-                    auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
-                )
-                auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
-                auxiliary_ce_weight = (
-                    0.30
-                    if is_final_run and training_phase == "decoder_detail_refinement"
-                    else loss_profile.auxiliary_ce
-                )
-                auxiliary_focal_weight = (
-                    0.30
-                    if is_final_run and training_phase == "decoder_detail_refinement"
-                    else loss_profile.auxiliary_focal
-                )
-                auxiliary_term = (
-                    auxiliary_ce_weight * auxiliary_ce
-                    + auxiliary_focal_weight * auxiliary_focal
-                )
-                loss = loss + auxiliary_term
-            if "deep_auxiliary_logits" in outputs:
-                deep_auxiliary = F.interpolate(
-                    outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
-                )
-                deep_auxiliary_ce = F.cross_entropy(
-                    deep_auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
-                )
-                deep_auxiliary_focal = focal_cross_entropy(
-                    deep_auxiliary, target, class_weights
-                )
-                # The deepest head is optimization-only and deliberately weaker
-                # than the mid-decoder head so it improves gradient flow without
-                # overpowering the final dense segmentation objective.
-                deep_auxiliary_scale = (
-                    0.20 if training_phase == "decoder_detail_refinement" else 0.10
-                )
-                deep_auxiliary_term = deep_auxiliary_scale * (
-                    deep_auxiliary_ce + deep_auxiliary_focal
-                )
-                loss = loss + deep_auxiliary_term
+                auxiliary = auxiliary_ce = auxiliary_focal = None
+                deep_auxiliary = deep_auxiliary_ce = deep_auxiliary_focal = None
+                auxiliary_term = logits.new_zeros(())
+                deep_auxiliary_term = logits.new_zeros(())
+                if "auxiliary_logits" in outputs:
+                    auxiliary = F.interpolate(
+                        outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
+                    )
+                    auxiliary_ce = F.cross_entropy(
+                        auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
+                    )
+                    auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
+                    auxiliary_ce_weight = (
+                        0.30
+                        if is_final_run and training_phase == "decoder_detail_refinement"
+                        else loss_profile.auxiliary_ce
+                    )
+                    auxiliary_focal_weight = (
+                        0.30
+                        if is_final_run and training_phase == "decoder_detail_refinement"
+                        else loss_profile.auxiliary_focal
+                    )
+                    auxiliary_term = (
+                        auxiliary_ce_weight * auxiliary_ce
+                        + auxiliary_focal_weight * auxiliary_focal
+                    )
+                    loss = loss + auxiliary_term
+                if "deep_auxiliary_logits" in outputs:
+                    deep_auxiliary = F.interpolate(
+                        outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
+                    )
+                    deep_auxiliary_ce = F.cross_entropy(
+                        deep_auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
+                    )
+                    deep_auxiliary_focal = focal_cross_entropy(
+                        deep_auxiliary, target, class_weights
+                    )
+                    # The deepest head is optimization-only and deliberately weaker
+                    # than the mid-decoder head so it improves gradient flow without
+                    # overpowering the final dense segmentation objective.
+                    deep_auxiliary_scale = (
+                        0.20 if training_phase == "decoder_detail_refinement" else 0.10
+                    )
+                    deep_auxiliary_term = deep_auxiliary_scale * (
+                        deep_auxiliary_ce + deep_auxiliary_focal
+                    )
+                    loss = loss + deep_auxiliary_term
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite loss for {architecture} at epoch {epoch}")
-            loss.backward()
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
             gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             batch_loss = float(loss.detach())
             running_loss += batch_loss
             if batch_index % log_every_batches == 0 or batch_index == total_batches:
@@ -969,6 +977,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             device=args.device,
             checkpoint_every=args.checkpoint_every,
             log_every_batches=args.log_every_batches,
+            amp=args.amp,
         )
         for name in presets
     ]
@@ -1074,6 +1083,11 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         default=1,
         help="print detailed training progress every N batches",
     )
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="enable CUDA automatic mixed precision (FP16 autocast + GradScaler)",
+    )
 
 
 def main() -> None:
@@ -1146,6 +1160,7 @@ def main() -> None:
             device=args.device,
             checkpoint_every=args.checkpoint_every,
             log_every_batches=args.log_every_batches,
+            amp=args.amp,
         )
         print(json.dumps(result.to_dict(), indent=2))
     elif args.command == "benchmark":

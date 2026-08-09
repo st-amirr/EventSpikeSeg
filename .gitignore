@@ -12,3 +12,4 @@ data/**
 artifacts/**/** */ /**/**/**
 artifacts/ablation/top_five/checkpoints/**
 desktop.ini
+*.pt
