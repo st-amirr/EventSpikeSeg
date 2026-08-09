@@ -235,7 +235,7 @@ class DDD17Dataset(Dataset[tuple[Tensor, Tensor]]):
         root: Path | str | None = None,
         *,
         split: str,
-        output_size: tuple[int, int] = (64, 64),
+        output_size: tuple[int, int] | None = None,
         records: list[DDD17Record] | None = None,
     ) -> None:
         self.root = resolve_ddd17_root(root)
@@ -251,15 +251,16 @@ class DDD17Dataset(Dataset[tuple[Tensor, Tensor]]):
         events_array, mask_array = _load_record_arrays(self.records[index])
         events = _canonical_events(events_array)
         mask = _canonical_mask(mask_array)
-        t, c, _, _ = events.shape
-        events = F.interpolate(
-            events.view(t * c, 1, *events.shape[-2:]),
-            size=self.output_size,
-            mode="area",
-        ).view(t, c, *self.output_size)
-        mask = F.interpolate(
-            mask[None, None].float(), size=self.output_size, mode="nearest"
-        )[0, 0].long()
+        if self.output_size is not None:
+            t, c, _, _ = events.shape
+            events = F.interpolate(
+                events.view(t * c, 1, *events.shape[-2:]),
+                size=self.output_size,
+                mode="area",
+            ).view(t, c, *self.output_size)
+            mask = F.interpolate(
+                mask[None, None].float(), size=self.output_size, mode="nearest"
+            )[0, 0].long()
         return events, mask
 
 

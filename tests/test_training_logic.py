@@ -1,3 +1,4 @@
+import torch
 from eventspikeseg.data import discover_ddd17_records
 from eventspikeseg.train import (
     TrainResult,
@@ -6,6 +7,7 @@ from eventspikeseg.train import (
     infer_model_suite,
     refinement_phase_for_epoch,
     select_winner,
+    temporal_collate,
 )
 
 
@@ -79,3 +81,18 @@ def test_final_refinement_schedule_phases() -> None:
     assert refinement_phase_for_epoch(9, 10, schedule) == ("decoder_detail_refinement", False)
     assert refinement_phase_for_epoch(10, 10, schedule) == ("final_joint_low_lr", True)
     assert refinement_phase_for_epoch(8, 10, None) == ("joint", True)
+
+
+def test_temporal_collate_reuses_static_event_storage() -> None:
+    events_a = torch.arange(6 * 4 * 5, dtype=torch.float32).reshape(1, 6, 4, 5)
+    events_b = events_a + 1.0
+    mask = torch.zeros((4, 5), dtype=torch.long)
+    sequence, masks = temporal_collate(
+        [(events_a, mask), (events_b, mask)], time_steps=15
+    )
+    assert sequence.shape == (15, 2, 6, 4, 5)
+    assert masks.shape == (2, 4, 5)
+    # Expanded direct encoding should share the same temporal storage rather
+    # than materializing 15 physical input copies.
+    assert sequence.stride(0) == 0
+    assert torch.equal(sequence[0], sequence[-1])

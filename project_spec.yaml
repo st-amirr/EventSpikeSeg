@@ -911,8 +911,8 @@ experiment_code_layout:
   canonical_model_file:
     path: src/eventspikeseg/model.py
     rule: Contains one production architecture only; no experimental preset registry.
-    current_architecture: v10_fpga_hybrid
-    status: round_one_incumbent_pending_round_two_confirmation
+    current_architecture: final_dualpath_wide32
+    status: canonical_high_accuracy_candidate_pending_full_validation
   shared_components_file:
     path: src/eventspikeseg/model_components.py
     contents:

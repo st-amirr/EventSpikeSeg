@@ -79,7 +79,7 @@ def build_experiment_model(
         )
     if resolved_suite == "final":
         if architecture != FINAL_ARCHITECTURE_NAME:
-            raise KeyError(f"final architecture is {FINAL_ARCHITECTURE_NAME!r}")
+            raise KeyError(f"final suite requires architecture {FINAL_ARCHITECTURE_NAME!r}, got {architecture!r}")
         return build_final_model(
             class_count=class_count, input_channels=input_channels
         )
@@ -91,8 +91,8 @@ class TrainResult:
     architecture: str
     seed: int
     epochs: int
-    train_samples: int
-    validation_samples: int
+    train_samples: float
+    validation_samples: float
     parameter_count: int
     mean_iou: float
     pixel_accuracy: float
@@ -124,14 +124,21 @@ def seed_everything(seed: int) -> None:
 def temporal_collate(
     batch: list[tuple[Tensor, Tensor]], *, time_steps: int
 ) -> tuple[Tensor, Tensor]:
+    # Ev-SegNet DDD17 supplies one six-channel statistical event image per
+    # record. Direct encoding reuses that same current over all SNN timesteps.
+    # Keep this as an expanded *view* instead of cloning T physical copies.
+    if all(events.shape[0] == 1 for events, _ in batch):
+        static_batch = torch.stack([events[0] for events, _ in batch], dim=0)
+        sequence = static_batch.unsqueeze(0).expand(
+            time_steps, -1, -1, -1, -1
+        )
+        masks = torch.stack([mask for _, mask in batch])
+        return sequence, masks
+
     sequences: list[Tensor] = []
     masks: list[Tensor] = []
     for events, mask in batch:
-        if events.shape[0] == 1:
-            # Ev-SegNet supplies one six-channel statistical event image.  Direct
-            # encoding applies the same current over the SNN's internal timesteps.
-            events = events.expand(time_steps, -1, -1, -1).clone()
-        elif events.shape[0] >= time_steps:
+        if events.shape[0] >= time_steps:
             events = events[:time_steps]
         else:
             padding = torch.zeros(
@@ -205,23 +212,70 @@ def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
     return 0.10 * dead_hidden + 0.01 * excessive_hidden + 0.50 * dead_output + 0.01 * excessive_output
 
 
+def _record_subset_from_spec(
+    records: list, *, amount: float, seed: int
+) -> list:
+    """Select records by fraction or absolute count.
+
+    amount <= 0: all records
+    0 < amount <= 1: fraction of available records
+    amount > 1: absolute record count (must be integer-valued)
+    """
+    if amount <= 0:
+        maximum = 0
+    elif amount <= 1:
+        maximum = max(1, int(round(len(records) * amount)))
+    else:
+        if not float(amount).is_integer():
+            raise ValueError(
+                "sample values above 1 must be integer counts; "
+                f"got {amount!r}"
+            )
+        maximum = int(amount)
+    return deterministic_record_subset(records, maximum=maximum, seed=seed)
+
+
 def _prepare_datasets(
     root: Path,
     *,
     seed: int,
-    train_samples: int,
-    validation_samples: int,
-    output_size: tuple[int, int],
+    train_samples: float,
+    validation_samples: float,
+    output_size: tuple[int, int] | None,
+    final_validation_fraction: float | None = None,
 ) -> tuple[DDD17Dataset, DDD17Dataset]:
-    train_records = deterministic_record_subset(
-        discover_ddd17_records(root, "train"),
-        maximum=train_samples,
-        seed=seed,
+    train_records = _record_subset_from_spec(
+        discover_ddd17_records(root, "train"), amount=train_samples, seed=seed
     )
-    test_records = deterministic_record_subset(
-        discover_ddd17_records(root, "test"),
-        maximum=validation_samples,
-        seed=seed + 1,
+    if final_validation_fraction is not None:
+        if not (0.0 < final_validation_fraction < 0.5):
+            raise ValueError("validation_fraction must satisfy 0 < value < 0.5")
+        if len(train_records) < 2:
+            raise ValueError("at least two DDD17 training records are required")
+        generator = torch.Generator().manual_seed(seed + 1)
+        order = torch.randperm(len(train_records), generator=generator).tolist()
+        validation_count = max(1, int(round(len(train_records) * final_validation_fraction)))
+        validation_count = min(validation_count, len(train_records) - 1)
+        validation_records = [train_records[index] for index in order[:validation_count]]
+        training_records = [train_records[index] for index in order[validation_count:]]
+        if validation_samples > 0:
+            validation_records = _record_subset_from_spec(
+                validation_records, amount=validation_samples, seed=seed + 2
+            )
+        return (
+            DDD17Dataset(
+                root, split="train", records=training_records, output_size=output_size
+            ),
+            DDD17Dataset(
+                root, split="train", records=validation_records, output_size=output_size
+            ),
+        )
+
+    # Historical architecture-search behavior: benchmark against the official
+    # Ev-SegNet test split exactly as the completed rounds did. Do not use this
+    # branch for checkpoint selection in the canonical final-model run.
+    test_records = _record_subset_from_spec(
+        discover_ddd17_records(root, "test"), amount=validation_samples, seed=seed + 1
     )
     return (
         DDD17Dataset(root, split="train", records=train_records, output_size=output_size),
@@ -257,6 +311,10 @@ def evaluate_model(
                 spikes = outputs[key]
                 layer_sums[key] = layer_sums.get(key, 0.0) + float(spikes.sum())
                 layer_elements[key] = layer_elements.get(key, 0) + spikes.numel()
+            # no_grad avoids an autograd graph, but the full temporal output
+            # tensors are still large. Drop the batch references before the
+            # loader produces the next native-resolution batch.
+            del outputs, prediction, sequence, target
     metrics = confusion.compute().to_dict()
     rates = {
         key: layer_sums[key] / max(1, layer_elements[key]) for key in layer_sums
@@ -297,20 +355,27 @@ def train_architecture(
     epochs: int,
     batch_size: int,
     time_steps: int,
-    train_samples: int,
-    validation_samples: int,
+    train_samples: float,
+    validation_samples: float,
+    validation_fraction: float,
     learning_rate: float,
     output_dir: Path,
-    output_size: tuple[int, int],
+    output_size: tuple[int, int] | None,
     device: str,
+    checkpoint_every: int = 5,
+    log_every_batches: int = 1,
 ) -> TrainResult:
     seed_everything(seed)
+    resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
     train_dataset, validation_dataset = _prepare_datasets(
         root,
         seed=seed,
         train_samples=train_samples,
         validation_samples=validation_samples,
         output_size=output_size,
+        final_validation_fraction=(
+            validation_fraction if resolved_suite == "final" else None
+        ),
     )
     collate = lambda batch: temporal_collate(batch, time_steps=time_steps)  # noqa: E731
     generator = torch.Generator().manual_seed(seed)
@@ -335,10 +400,15 @@ def train_architecture(
         )
     else:
         resolved_device = torch.device(device)
-    resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
     model = build_experiment_model(
         architecture, class_count=DDD17_CLASS_COUNT, suite=resolved_suite
     ).to(resolved_device)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    is_final_run = resolved_suite == "final"
+    if checkpoint_every < 1:
+        raise ValueError("checkpoint_every must be >= 1")
+    if log_every_batches < 1:
+        raise ValueError("log_every_batches must be >= 1")
     base_neuron_tokens = ("beta_logit", "threshold_logit")
     mechanism_tokens = (
         "adaptation_tau_logit", "adaptation_strength_logit", "target_rate_logit",
@@ -390,6 +460,82 @@ def train_architecture(
         )
     )
     warmup_epochs = max(2, int(round(epochs * (0.50 if mechanism_round else 0.30))))
+
+    best_mean_iou = float("-inf")
+    best_epoch = 0
+    best_metrics: dict[str, object] | None = None
+    best_mean_spike_rate = 0.0
+    best_layer_spike_rates: dict[str, float] = {}
+    best_neuron_diagnostics: dict[str, float] = {}
+    best_checkpoint_path = output_dir / f"{architecture}_seed{seed}_best.pt"
+    last_checkpoint_path = output_dir / f"{architecture}_seed{seed}_last.pt"
+    canonical_checkpoint_path = output_dir / f"{architecture}_seed{seed}.pt"
+
+    def save_training_checkpoint(
+        path: Path,
+        *,
+        epoch_number: int,
+        validation_metrics: dict[str, object] | None,
+        validation_spike_rate: float | None,
+        validation_layer_rates: dict[str, float] | None,
+        training_phase_name: str,
+        best: bool = False,
+    ) -> None:
+        diagnostics_fn = getattr(model, "neuron_diagnostics", None)
+        diagnostics = diagnostics_fn() if callable(diagnostics_fn) else {}
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "architecture": architecture,
+                "model_suite": resolved_suite,
+                "architecture_config": model.architecture.to_dict(),
+                "class_names": DDD17_CLASS_NAMES,
+                "seed": seed,
+                "epoch": epoch_number,
+                "epochs": epochs,
+                "time_steps": time_steps,
+                "held_out_split": "test",
+                "input_channels": 6,
+                "input_representation": "evsegnet_hist_mean_std_direct_encoding",
+                "output_size": list(output_size) if output_size is not None else None,
+                "training_phase": training_phase_name,
+                "validation_metrics": validation_metrics,
+                "validation_mean_spike_rate": validation_spike_rate,
+                "validation_layer_spike_rates": validation_layer_rates or {},
+                "neuron_diagnostics": diagnostics,
+                "is_best": best,
+            },
+            path,
+        )
+
+    print(
+        json.dumps(
+            {
+                "event": "training_start",
+                "architecture": architecture,
+                "suite": resolved_suite,
+                "device": str(resolved_device),
+                "parameters": model.parameter_count(),
+                "epochs": epochs,
+                "batches_per_epoch": len(train_loader),
+                "batch_size": batch_size,
+                "time_steps": time_steps,
+                "output_size": list(output_size) if output_size is not None else None,
+                "train_samples": len(train_dataset),
+                "validation_samples": len(validation_dataset),
+                "validation_fraction": validation_fraction if is_final_run else None,
+                "validation_source": "train_holdout" if is_final_run else "official_test",
+                "base_learning_rate": learning_rate,
+                "checkpoint_every": checkpoint_every if is_final_run else None,
+                "log_every_batches": log_every_batches,
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+
     for epoch in range(1, epochs + 1):
         model.train()
         training_phase, semantic_backbone_trainable = refinement_phase_for_epoch(
@@ -443,16 +589,26 @@ def train_architecture(
         if callable(set_hidden_inhibition):
             set_hidden_inhibition(hidden_inhibition_enabled)
         running_loss = 0.0
-        for sequence, target in train_loader:
+        total_batches = len(train_loader)
+        for batch_index, (sequence, target) in enumerate(train_loader, start=1):
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
+            # Release the previous step's gradient buffers before building the
+            # next forward graph. set_to_none avoids zero-filled replacement
+            # tensors and is mathematically equivalent for optimizer.step().
+            optimizer.zero_grad(set_to_none=True)
             model.reset()
             outputs = model(sequence)
             logits = outputs["segmentation_logits"]
             ce = F.cross_entropy(logits, target, weight=class_weights, ignore_index=IGNORE_INDEX)
             focal = focal_cross_entropy(logits, target, class_weights)
             dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
-            loss = 1.0 * ce + 0.5 * focal + 0.75 * dice + _activity_regularizer(outputs)
+            activity = _activity_regularizer(outputs)
+            loss = 1.0 * ce + 0.5 * focal + 0.75 * dice + activity
+            auxiliary = auxiliary_ce = auxiliary_focal = None
+            deep_auxiliary = deep_auxiliary_ce = deep_auxiliary_focal = None
+            auxiliary_term = logits.new_zeros(())
+            deep_auxiliary_term = logits.new_zeros(())
             if "auxiliary_logits" in outputs:
                 auxiliary = F.interpolate(
                     outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
@@ -464,7 +620,8 @@ def train_architecture(
                 auxiliary_scale = (
                     0.30 if training_phase == "decoder_detail_refinement" else 0.15
                 )
-                loss = loss + auxiliary_scale * auxiliary_ce + auxiliary_scale * auxiliary_focal
+                auxiliary_term = auxiliary_scale * (auxiliary_ce + auxiliary_focal)
+                loss = loss + auxiliary_term
             if "deep_auxiliary_logits" in outputs:
                 deep_auxiliary = F.interpolate(
                     outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
@@ -481,37 +638,129 @@ def train_architecture(
                 deep_auxiliary_scale = (
                     0.20 if training_phase == "decoder_detail_refinement" else 0.10
                 )
-                loss = (
-                    loss
-                    + deep_auxiliary_scale * deep_auxiliary_ce
-                    + deep_auxiliary_scale * deep_auxiliary_focal
+                deep_auxiliary_term = deep_auxiliary_scale * (
+                    deep_auxiliary_ce + deep_auxiliary_focal
                 )
+                loss = loss + deep_auxiliary_term
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite loss for {architecture} at epoch {epoch}")
-            optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            running_loss += float(loss.detach())
+            batch_loss = float(loss.detach())
+            running_loss += batch_loss
+            if batch_index % log_every_batches == 0 or batch_index == total_batches:
+                print(
+                    json.dumps(
+                        {
+                            "event": "train_batch",
+                            "architecture": architecture,
+                            "epoch": epoch,
+                            "epochs": epochs,
+                            "batch": batch_index,
+                            "batches": total_batches,
+                            "progress_pct": round(100.0 * batch_index / max(1, total_batches), 2),
+                            "loss": batch_loss,
+                            "running_mean_loss": running_loss / batch_index,
+                            "ce": float(ce.detach()),
+                            "focal": float(focal.detach()),
+                            "dice": float(dice.detach()),
+                            "activity_regularizer": float(activity.detach()),
+                            "auxiliary_term": float(auxiliary_term.detach()),
+                            "deep_auxiliary_term": float(deep_auxiliary_term.detach()),
+                            "output_spike_rate": float(outputs["segmentation_spikes"].detach().mean()),
+                            "gradient_norm_before_clip": float(gradient_norm),
+                            "learning_rates": [group["lr"] for group in optimizer.param_groups],
+                            "training_phase": training_phase,
+                            "homeostasis_scale": homeostasis_scale,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+
+            # Do not carry a completed batch's autograd graph into the next
+            # forward pass. Python locals otherwise keep the large output/aux
+            # tensors alive until they are overwritten during the next batch,
+            # which can nearly double peak host RAM at native resolution.
+            del outputs, logits, loss, ce, focal, dice, activity
+            del auxiliary, auxiliary_ce, auxiliary_focal
+            del deep_auxiliary, deep_auxiliary_ce, deep_auxiliary_focal
+            del auxiliary_term, deep_auxiliary_term, gradient_norm
+            del sequence, target
         scheduler.step()
-        print(
-            json.dumps(
-                {
-                    "architecture": architecture,
-                    "epoch": epoch,
-                    "epochs": epochs,
-                    "mean_loss": running_loss / max(1, len(train_loader)),
-                    "homeostasis_scale": homeostasis_scale,
-                    "competition_enabled": competition_enabled,
-                    "hidden_inhibition_enabled": hidden_inhibition_enabled,
-                    "training_phase": training_phase,
-                    "semantic_backbone_trainable": semantic_backbone_trainable,
-                    "learning_rates": [group["lr"] for group in optimizer.param_groups],
-                },
-                sort_keys=True,
-            ),
-            flush=True,
-        )
+        epoch_summary = {
+            "event": "train_epoch",
+            "architecture": architecture,
+            "epoch": epoch,
+            "epochs": epochs,
+            "mean_loss": running_loss / max(1, len(train_loader)),
+            "homeostasis_scale": homeostasis_scale,
+            "competition_enabled": competition_enabled,
+            "hidden_inhibition_enabled": hidden_inhibition_enabled,
+            "training_phase": training_phase,
+            "semantic_backbone_trainable": semantic_backbone_trainable,
+            "learning_rates": [group["lr"] for group in optimizer.param_groups],
+        }
+        print(json.dumps(epoch_summary, sort_keys=True), flush=True)
+
+        if is_final_run:
+            validation_metrics, validation_spike_rate, validation_layer_rates = evaluate_model(
+                model, validation_loader, device=resolved_device
+            )
+            validation_miou = float(validation_metrics["mean_iou"])
+            improved = validation_miou > best_mean_iou
+            if improved:
+                best_mean_iou = validation_miou
+                best_epoch = epoch
+                best_metrics = validation_metrics
+                best_mean_spike_rate = validation_spike_rate
+                best_layer_spike_rates = validation_layer_rates
+                diagnostics_fn = getattr(model, "neuron_diagnostics", None)
+                best_neuron_diagnostics = (
+                    diagnostics_fn() if callable(diagnostics_fn) else {}
+                )
+                save_training_checkpoint(
+                    best_checkpoint_path,
+                    epoch_number=epoch,
+                    validation_metrics=validation_metrics,
+                    validation_spike_rate=validation_spike_rate,
+                    validation_layer_rates=validation_layer_rates,
+                    training_phase_name=training_phase,
+                    best=True,
+                )
+            if epoch % checkpoint_every == 0:
+                periodic_path = output_dir / (
+                    f"{architecture}_seed{seed}_epoch{epoch:03d}.pt"
+                )
+                save_training_checkpoint(
+                    periodic_path,
+                    epoch_number=epoch,
+                    validation_metrics=validation_metrics,
+                    validation_spike_rate=validation_spike_rate,
+                    validation_layer_rates=validation_layer_rates,
+                    training_phase_name=training_phase,
+                )
+            print(
+                json.dumps(
+                    {
+                        "event": "validation_epoch",
+                        "architecture": architecture,
+                        "epoch": epoch,
+                        "mean_iou": validation_miou,
+                        "pixel_accuracy": float(validation_metrics["pixel_accuracy"]),
+                        "mean_spike_rate": validation_spike_rate,
+                        "best_mean_iou": best_mean_iou,
+                        "best_epoch": best_epoch,
+                        "new_best": improved,
+                        "best_checkpoint": str(best_checkpoint_path),
+                        "periodic_checkpoint_saved": epoch % checkpoint_every == 0,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            model.train()
 
     if callable(set_backbone_trainable):
         set_backbone_trainable(True)
@@ -522,13 +771,38 @@ def train_architecture(
     set_competition = getattr(model, "set_competition_enabled", None)
     if callable(set_competition):
         set_competition(True)
-    metrics, mean_spike_rate, layer_spike_rates = evaluate_model(
-        model, validation_loader, device=resolved_device
-    )
-    diagnostics_fn = getattr(model, "neuron_diagnostics", None)
-    neuron_diagnostics = diagnostics_fn() if callable(diagnostics_fn) else {}
-    output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = output_dir / f"{architecture}_seed{seed}.pt"
+    if is_final_run:
+        # Preserve the last state for recovery, then expose the best-validation
+        # checkpoint at the historical canonical filename for compatibility.
+        final_metrics, final_spike_rate, final_layer_rates = evaluate_model(
+            model, validation_loader, device=resolved_device
+        )
+        save_training_checkpoint(
+            last_checkpoint_path,
+            epoch_number=epochs,
+            validation_metrics=final_metrics,
+            validation_spike_rate=final_spike_rate,
+            validation_layer_rates=final_layer_rates,
+            training_phase_name=previous_training_phase or "joint",
+        )
+        if not best_checkpoint_path.is_file():
+            raise RuntimeError("best checkpoint was not created during final-model training")
+        shutil.copy2(best_checkpoint_path, canonical_checkpoint_path)
+        if best_metrics is None:
+            raise RuntimeError("best validation metrics were not recorded")
+        metrics = best_metrics
+        mean_spike_rate = best_mean_spike_rate
+        layer_spike_rates = best_layer_spike_rates
+        neuron_diagnostics = best_neuron_diagnostics
+        checkpoint_path = canonical_checkpoint_path
+    else:
+        metrics, mean_spike_rate, layer_spike_rates = evaluate_model(
+            model, validation_loader, device=resolved_device
+        )
+        diagnostics_fn = getattr(model, "neuron_diagnostics", None)
+        neuron_diagnostics = diagnostics_fn() if callable(diagnostics_fn) else {}
+        checkpoint_path = output_dir / f"{architecture}_seed{seed}.pt"
+
     result = TrainResult(
         architecture=architecture,
         seed=seed,
@@ -546,22 +820,39 @@ def train_architecture(
         layer_spike_rates=layer_spike_rates,
         neuron_diagnostics=neuron_diagnostics,
     )
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "architecture": architecture,
-            "model_suite": resolved_suite,
-            "architecture_config": model.architecture.to_dict(),
-            "class_names": DDD17_CLASS_NAMES,
-            "seed": seed,
-            "time_steps": time_steps,
-            "held_out_split": "test",
-            "input_channels": 6,
-            "input_representation": "evsegnet_hist_mean_std_direct_encoding",
-            "output_size": list(output_size),
-            "result": result.to_dict(),
-        },
-        checkpoint_path,
+    if not is_final_run:
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "architecture": architecture,
+                "model_suite": resolved_suite,
+                "architecture_config": model.architecture.to_dict(),
+                "class_names": DDD17_CLASS_NAMES,
+                "seed": seed,
+                "time_steps": time_steps,
+                "held_out_split": "test",
+                "input_channels": 6,
+                "input_representation": "evsegnet_hist_mean_std_direct_encoding",
+                "output_size": list(output_size) if output_size is not None else None,
+                "result": result.to_dict(),
+            },
+            checkpoint_path,
+        )
+    print(
+        json.dumps(
+            {
+                "event": "training_complete",
+                "architecture": architecture,
+                "reported_mean_iou": result.mean_iou,
+                "reported_pixel_accuracy": result.pixel_accuracy,
+                "checkpoint": result.checkpoint,
+                "best_epoch": best_epoch if is_final_run else None,
+                "best_checkpoint": str(best_checkpoint_path) if is_final_run else None,
+                "last_checkpoint": str(last_checkpoint_path) if is_final_run else None,
+            },
+            sort_keys=True,
+        ),
+        flush=True,
     )
     return result
 
@@ -588,10 +879,13 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             time_steps=args.time_steps,
             train_samples=args.train_samples,
             validation_samples=args.validation_samples,
+            validation_fraction=args.validation_fraction,
             learning_rate=args.learning_rate,
             output_dir=args.output_dir / "checkpoints",
-            output_size=(args.height, args.width),
+            output_size=_resolve_output_size(args.height, args.width),
             device=args.device,
+            checkpoint_every=args.checkpoint_every,
+            log_every_batches=args.log_every_batches,
         )
         for name in presets
     ]
@@ -626,6 +920,16 @@ def promote_winner(summary_path: Path, destination: Path) -> dict[str, object]:
     return {"winner": winner["architecture"], "checkpoint": str(destination)}
 
 
+def _resolve_output_size(height: int | None, width: int | None) -> tuple[int, int] | None:
+    if height is None and width is None:
+        return None
+    if height is None or width is None:
+        raise ValueError("--height and --width must be provided together, or both omitted")
+    if height <= 0 or width <= 0:
+        raise ValueError("--height and --width must be positive")
+    return (height, width)
+
+
 def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--root",
@@ -637,12 +941,45 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--time-steps", type=int, default=20)
-    parser.add_argument("--train-samples", type=int, default=2048)
-    parser.add_argument("--validation-samples", type=int, default=512)
+    parser.add_argument(
+        "--train-samples", type=float, default=2048.0,
+        help="0=all, 0<x<=1=fraction of available training records, x>1=absolute count",
+    )
+    parser.add_argument(
+        "--validation-samples", type=float, default=512.0,
+        help="0=all, 0<x<=1=fraction of available validation records, x>1=absolute count",
+    )
+    parser.add_argument(
+        "--validation-fraction",
+        type=float,
+        default=0.10,
+        help=(
+            "fraction of the DDD17 training split reserved for validation in the "
+            "final suite; validation-samples optionally caps this holdout"
+        ),
+    )
     parser.add_argument("--learning-rate", type=float, default=2e-3)
-    parser.add_argument("--height", type=int, default=64)
-    parser.add_argument("--width", type=int, default=64)
+    parser.add_argument(
+        "--height", type=int, default=None,
+        help="optional resize height; omit together with --width to preserve native dataset size",
+    )
+    parser.add_argument(
+        "--width", type=int, default=None,
+        help="optional resize width; omit together with --height to preserve native dataset size",
+    )
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=5,
+        help="save a recoverable periodic checkpoint every N epochs (final suite)",
+    )
+    parser.add_argument(
+        "--log-every-batches",
+        type=int,
+        default=1,
+        help="print detailed training progress every N batches",
+    )
 
 
 def main() -> None:
@@ -707,10 +1044,13 @@ def main() -> None:
             time_steps=args.time_steps,
             train_samples=args.train_samples,
             validation_samples=args.validation_samples,
+            validation_fraction=args.validation_fraction,
             learning_rate=args.learning_rate,
             output_dir=args.checkpoint_dir,
-            output_size=(args.height, args.width),
+            output_size=_resolve_output_size(args.height, args.width),
             device=args.device,
+            checkpoint_every=args.checkpoint_every,
+            log_every_batches=args.log_every_batches,
         )
         print(json.dumps(result.to_dict(), indent=2))
     elif args.command == "benchmark":
