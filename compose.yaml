@@ -1,10 +1,10 @@
-name: litespikeseg
+name: eventspikeseg
 
 x-app: &app
   build:
     context: .
     dockerfile: docker/app/Dockerfile
-  image: litespikeseg:py311-bookworm
+  image: eventspikeseg:py311-bookworm
   platform: linux/amd64
   working_dir: /workspace
   environment:
@@ -52,12 +52,12 @@ services:
 
   inspect-ddd17:
     <<: *ddd17
-    command: ["python", "-m", "litespikeseg.train", "inspect", "--root", "/datasets/DDD17"]
+    command: ["python", "-m", "eventspikeseg.train", "inspect", "--root", "/datasets/DDD17"]
 
   train-ddd17-smoke:
     <<: *ddd17
     command:
-      ["python", "-m", "litespikeseg.train", "single", "--root", "/datasets/DDD17",
+      ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
        "--architecture", "v10_fpga_hybrid",
        "--suite", "final", "--seed", "17",
        "--epochs", "1", "--batch-size", "1",
@@ -69,7 +69,7 @@ services:
   train-ddd17:
     <<: *ddd17
     command:
-      ["python", "-m", "litespikeseg.train", "single", "--root", "/datasets/DDD17",
+      ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
        "--architecture", "v10_fpga_hybrid",
        "--suite", "final", "--seed", "17",
        "--epochs", "70", "--batch-size", "12",
@@ -81,7 +81,7 @@ services:
   benchmark-top-ten:
     <<: *ddd17
     command:
-      ["python", "-m", "litespikeseg.train", "benchmark", "--root", "/datasets/DDD17",
+      ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
        "--suite", "top-ten", "--seed", "17",
        "--epochs", "8",
        "--batch-size", "12", "--time-steps", "15",
@@ -94,7 +94,7 @@ services:
   benchmark-top-five:
     <<: *ddd17
     command:
-      ["python", "-m", "litespikeseg.train", "benchmark", "--root", "/datasets/DDD17",
+      ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
        "--suite", "top-five", "--seed", "17",
        "--epochs", "8",
        "--batch-size", "12", "--time-steps", "15",
@@ -107,7 +107,7 @@ services:
   benchmark-top-three:
     <<: *ddd17
     command:
-      ["python", "-m", "litespikeseg.benchmark_top_three", "--root", "/datasets/DDD17",
+      ["python", "-m", "eventspikeseg.benchmark_top_three", "--root", "/datasets/DDD17",
        "--seed", "17",
        "--epochs", "8",
        "--batch-size", "12", "--time-steps", "15",
@@ -120,7 +120,7 @@ services:
   benchmark-ddd17:
     <<: *ddd17
     command:
-      ["python", "-m", "litespikeseg.benchmark_top_three", "--root", "/datasets/DDD17",
+      ["python", "-m", "eventspikeseg.benchmark_top_three", "--root", "/datasets/DDD17",
        "--seed", "17",
        "--epochs", "8",
        "--batch-size", "12", "--time-steps", "15",
@@ -134,13 +134,13 @@ services:
   promote-winner:
     <<: *app
     command:
-      ["python", "-m", "litespikeseg.train", "promote", "--summary", "artifacts/ablation/top_three/summary.json",
+      ["python", "-m", "eventspikeseg.train", "promote", "--summary", "artifacts/ablation/top_three/summary.json",
        "--destination", "artifacts/checkpoints/ddd17_best.pt"]
 
   eval-ddd17:
     <<: *ddd17
     command:
-      ["python", "-m", "litespikeseg.evaluate", "--root", "/datasets/DDD17",
+      ["python", "-m", "eventspikeseg.evaluate", "--root", "/datasets/DDD17",
        "--checkpoint", "artifacts/checkpoints/ddd17_best.pt",
        "--split", "test", "--batch-size", "12",
        "--visualizations", "8", "--visualization-dir", "artifacts/Validation"]
