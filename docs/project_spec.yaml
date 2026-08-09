@@ -1,8 +1,8 @@
 document:
   title: Hardware-Oriented Event-Camera Spiking Neural Network for Semantic Segmentation
-  short_name: EventSpikeSeg
+  short_name: EventSpikeSeg-FPGA
   version: 1.0.0
-  status: top_three_complete_canonical_final_training_pending
+  status: structural_top_five_complete_top_three_accuracy_search_ready
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -753,7 +753,7 @@ validation_and_testing:
     - Report missing tools as blockers rather than claiming validation.
 
 repository_contract:
-  active_python_package: src/eventspikeseg
+  active_python_package: src/eventscnn
   active_source_files:
     - model.py
     - data.py
@@ -909,12 +909,12 @@ decision_history:
 
 experiment_code_layout:
   canonical_model_file:
-    path: src/eventspikeseg/model.py
+    path: src/eventscnn/model.py
     rule: Contains one production architecture only; no experimental preset registry.
-    current_architecture: final_dualpath_wide32
-    status: canonical_candidate_237623_params_pending_full_validation
+    current_architecture: v10_fpga_hybrid
+    status: round_one_incumbent_pending_round_two_confirmation
   shared_components_file:
-    path: src/eventspikeseg/model_components.py
+    path: src/eventscnn/model_components.py
     contents:
       - standard_and_depthwise_pointwise_spiking_convolution
       - multiscale_and_dilated_context
@@ -924,14 +924,14 @@ experiment_code_layout:
       - f_inst
       - f_long_and_T_thresh
   round_one_file:
-    path: src/eventspikeseg/top_ten_models.py
+    path: src/eventscnn/top_ten_models.py
     purpose: Preserve the exact completed ten-model definitions and checkpoint compatibility.
   round_two_file:
-    path: src/eventspikeseg/top_five_models.py
+    path: src/eventscnn/top_five_models.py
     purpose: Preserve the completed five-model structural search separately from the canonical model.
   round_three_file:
-    path: src/eventspikeseg/top_three_models.py
-    purpose: Preserve the completed accuracy-oriented three-model search separately from the canonical model.
+    path: src/eventscnn/top_three_models.py
+    purpose: Isolate the active accuracy-oriented three-model search from the canonical and completed ablation models.
 
 round_one_measured_results:
   date: '2026-08-06'
@@ -1009,7 +1009,7 @@ mechanism_screen_measured_results:
 
 completed_top_five_structural_search:
   status: completed_2026_08_08
-  definitions: src/eventspikeseg/top_five_models.py::TOP_FIVE_PRESETS
+  definitions: src/eventscnn/top_five_models.py::TOP_FIVE_PRESETS
   output_directory: artifacts/ablation/top_five
   goal: Hold selected neuron dynamics fixed and vary width, early kernel size, encoder depth, and context.
   shared_dynamics: mechanism_screen_measured_results.selected_dynamics
@@ -1108,12 +1108,10 @@ round_two_measured_results:
     f04_deep4_dilated: {object_iou: 0.0048840051, nature_iou: 0.0712307617, human_iou: 0.0059523811, vehicle_iou: 0.1229809299}
     f05_compact16_dilated: {object_iou: 0.0001719099, nature_iou: 0.0346265808, human_iou: 0.0180736408, vehicle_iou: 0.0756903067}
 
-completed_top_three_accuracy_search:
-  status: completed_seed17
-  definitions: src/eventspikeseg/top_three_models.py::TOP_THREE_PRESETS
-  training_engine: src/eventspikeseg/train.py
+active_top_three_accuracy_search:
+  status: implemented_pending_real_ddd17_measurement
+  definitions: src/eventscnn/top_three_models.py::TOP_THREE_PRESETS
   output_directory: artifacts/ablation/top_three
-  frozen_loss_profile: {cross_entropy: 0.5, focal: 0.5, dice: 0.75, auxiliary_ce: 0.15, auxiliary_focal: 0.15}
   protocol:
     seed: 17
     epochs: 8
@@ -1123,66 +1121,57 @@ completed_top_three_accuracy_search:
     internal_timesteps: 15
     batch_size: 14
     learning_rate: 0.002
-  ranking_by_mIoU:
-    - {rank: 1, architecture: t02_dualpath_detail, mIoU: 0.2728, pixel_accuracy: 0.7952, parameters: 24211, spike_rate: 0.1395}
-    - {rank: 2, architecture: t01_spike_pyramid_concat, mIoU: 0.1671, pixel_accuracy: 0.6122, parameters: 63147, spike_rate: 0.1145}
-    - {rank: 3, architecture: t03_deep_attention_fpn, mIoU: 0.1555, pixel_accuracy: 0.7151, parameters: 108781, spike_rate: 0.0592}
-  key_findings:
-    - Persistent high-resolution detail is the strongest new structural evidence.
-    - Parallel multiscale concatenation/channel selection was insufficient by itself.
-    - The four-scale T3 architecture with attention/FPN collapsed toward dominant classes and is not carried over wholesale.
-    - Historical definitions remain unchanged for reproducibility.
-
-canonical_final_model:
-  name: final_dualpath_wide32
-  public_model_name: EventSpikeSeg
-  parameters: 237623
-  status: implemented_pending_full_accuracy_validation
-  semantic_channels: [32, 64, 128]
-  spike_native_features:
-    - projected_PLIF_residual_bridges_across_downsampling
-    - residual_depthwise_pointwise_refinement
-    - persistent_high_resolution_detail_path
-    - asymmetric_3x1_then_1x3_detail_residual
-    - serial_dilation2_context_x2
-    - residual_parallel_d1_d2_d4_context_with_spiking_1x1_fusion
-    - one_bottlenecked_low_resolution_spike_mask_attention_residual
-    - concatenative_mid_decoder_fusion
-    - late_semantic_shallow_detail_concatenation
-    - PLIF_96_to_96_cross_channel_selector
-    - independent_spiking_class_populations_with_temporal_count_argmax
-  excluded_from_canonical:
-    - fourth_downsampling_scale
-    - early_5x5_processing
-    - branch_averaged_multiscale_context
-    - BatchNorm_dependency
-    - GAP_or_dense_MLP_inference_gate
-    - dense_softmax_attention
-    - hidden_winner_peer_WTA
-  neuron_dynamics:
-    neuron: PLIF
-    per_channel_beta: learnable
-    per_channel_base_threshold: learnable
-    f_inst: stem_only_peer_membrane
-    f_long: encoder_context_triangular_threshold
-  training:
-    engine: src/eventspikeseg/train.py
-    final_loss_profile: {cross_entropy: 1.0, focal: 0.5, dice: 0.75}
-    validation_source: deterministic_training_split_holdout
-    official_test_use: final_reporting_only
-    refinement_schedule: {joint_until: 0.70, freeze_semantic_until: 0.90, final_joint_lr_multiplier: 0.25}
-    checkpoint_policy: best_validation_mIoU_plus_periodic_plus_last
-    auxiliary_heads: training_only
-  software_stack:
-    tensors_autograd_optimizer: PyTorch
-    spiking_infrastructure: SpikingJelly_where_compatible
-    custom_explicit_logic: [per_channel_PLIF_beta, f_inst, f_long_TThresh, reset_and_operation_order]
-  memory_notes:
-    direct_encoding: stride0_temporal_view_for_static_six_channel_input
-    batch_graph_lifetime: release_immediately_after_step
-    native_resolution_evaluation: output_size_null_preserves_dataset_size
-    no_automatic_tradeoffs: [activation_checkpointing, lower_precision, truncated_BPTT, forced_downsampling]
-  validation_gate:
-    measured_incumbent_mIoU: 0.3130307198
-    required_before_accuracy_claim: [larger_budget_training, rare_class_diagnostics, multi_seed_validation]
-    required_before_hardware_freeze: [timestep_sensitivity, fixed_point_quantization, integer_reference_regression, hardware_cost_measurement]
+  design_rules:
+    - Preserve binary spike transmission between learned stages.
+    - Keep 3x3 spatial kernels; obtain larger receptive fields with dilation instead of early 5x5 kernels.
+    - Prefer depthwise spatial convolution and 1x1 pointwise/channel mixing for FPGA efficiency.
+    - Do not average parallel multi-scale spike branches; concatenate them and let a following spiking 1x1 layer learn the mixture.
+    - Use binary channel gates or low-resolution binary coincidence masks rather than dense softmax attention.
+    - Preserve shallow spatial detail separately when testing deeper semantic paths.
+    - Keep auxiliary semantic supervision and residual/skip paths.
+    - Do not use hidden winner-peer competition.
+  contenders:
+    t01_spike_pyramid_concat:
+      hypothesis: Multi-receptive-field sparse evidence is being destroyed by branch averaging and additive skip fusion.
+      encoder_channels: [24, 48, 96]
+      context:
+        bottleneck_channels: 48
+        depthwise_dilations: [1, 2, 4]
+        merge: channel_concatenation
+        selection: binary_spike_count_channel_attention
+        fusion: spiking_1x1
+      decoder_merge: concatenation_then_depthwise_pointwise_spiking_fusion
+      parameter_count: 63147
+    t02_dualpath_detail:
+      hypothesis: Rare and small classes are lost during downsampling, so a narrow high-resolution spike path should preserve boundaries and small semantic regions.
+      semantic_encoder_channels: [16, 32, 64]
+      semantic_context: depthwise_dilation_2
+      high_resolution_detail_channels: 16
+      final_merge: semantic_plus_shallow_plus_detail_concatenation
+      selection: binary_spike_count_channel_attention
+      parameter_count: 24211
+    t03_deep_attention_fpn:
+      hypothesis: The four-stage encoder contains useful rare-class semantics, but needs an FPN decoder and low-resolution global spike interaction to retain them.
+      encoder_channels: [24, 48, 96, 128]
+      context: depthwise_dilation_2
+      attention:
+        kind: low_resolution_spike_driven_binary_mask
+        attention_channels: 32
+        heads: 4
+        operation: q_k_binary_coincidence_plus_channel_accumulation_then_v_mask
+        dense_spatial_softmax: false
+      decoder: concatenative_fpn
+      parameter_count: 108781
+  literature_basis:
+    - SLTNet shows that multi-branch depthwise/dilated event features benefit from explicit channel interaction rather than isolated depthwise processing.
+    - SLTNet also demonstrates spike-driven masked attention and multi-level encoder-to-decoder feature restoration; the project adapts these ideas into smaller FPGA-oriented ablations rather than copying the complete network.
+  promotion_gate:
+    incumbent_miou: 0.3130307197570801
+    primary_metric: mean_iou
+    inspect_per_class_iou: true
+    inspect_predicted_pixel_counts: true
+    inspect_layer_spike_rates: true
+    prefer_fewer_parameters_when_accuracy_is_equivalent: true
+    larger_budget_rerun_required: true
+    required_seeds: [17, 101, 2026]
+    canonical_model_file_unchanged_until_pass: true

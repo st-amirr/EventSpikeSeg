@@ -110,7 +110,7 @@ Concatenation is treated as wiring/channel routing and does not itself require m
 
 ## Canonical `final_dualpath_wide32`
 
-The current EventSpikeSeg architecture is the 237,623-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
+The current EventSpikeSeg architecture is the 237,597-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
 
 ```text
 input 6
@@ -140,7 +140,7 @@ The low-resolution attention block is also not the failed T3 architecture as a w
 
 - PLIF with learnable per-channel beta and base threshold;
 - stem-only `peer_membrane` fInst;
-- encoder/context triangular fLong/TThresh;
+- downsampled encoder/context triangular fLong/TThresh;
 - no hard hidden `winner_peer` gating;
 - independent output class spiking populations;
 - temporal spike-count class decision;
@@ -164,3 +164,8 @@ For the final suite, best-checkpoint selection uses a deterministic holdout from
 ## Historical architecture registries
 
 `top_ten_models.py`, `top_five_models.py`, and `top_three_models.py` preserve the measured ablation definitions and checkpoint-facing behavior. All three are dispatched through `train.py`; there is no separate top-three training implementation. Historical results remain in `RESULTS.md` and the design interpretation in `DECISIONS.md`.
+
+
+## fLong scope and native-resolution memory
+
+The canonical model uses triangular fLong only on semantic encoder/context stages (`f_long_scope=encoder_context`). The full-resolution stem and custom detail branch remain PLIF with learnable thresholds but do not allocate per-pixel triangular fLong age/amplitude state. Historical benchmark presets retain the older `encoder` scope semantics for reproducibility. During training the canonical forward returns scalar activity rates for regularization instead of retaining full hidden TNCHW spike sequences.

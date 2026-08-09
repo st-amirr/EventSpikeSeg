@@ -71,6 +71,7 @@ services:
     command:
       ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
        "--architecture", "final_dualpath_wide32",
+       "--height", "64", "--width", "64",
        "--suite", "final", "--seed", "17",
        "--epochs", "70", "--batch-size", "1",
        "--time-steps", "15",

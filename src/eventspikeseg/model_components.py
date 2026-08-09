@@ -47,7 +47,7 @@ NeuronKind = Literal["lif", "plif"]
 HomeostasisKind = Literal["legacy", "rate", "triangular_threshold"]
 InhibitionKind = Literal["gate", "peer_membrane", "winner_peer"]
 CompetitionScope = Literal["none", "stem", "encoder", "all"]
-HomeostasisScope = Literal["none", "encoder", "all"]
+HomeostasisScope = Literal["none", "encoder", "encoder_context", "all"]
 
 
 @dataclass(frozen=True)
@@ -754,6 +754,7 @@ class SpikingStage(nn.Module):
             kernel_size,
             **conv_kwargs,
         )
+        self.norm_kind = norm
         self.transform = CurrentTransform(out_channels, norm)
         neuron_type = ParametricLIF if neuron_kind == "plif" else HardwareLIF
         self.neuron = neuron_type(out_channels, lif)
@@ -762,6 +763,26 @@ class SpikingStage(nn.Module):
         self.neuron.reset()
 
     def forward(self, sequence: Tensor) -> Tensor:
+        if sequence.ndim != 5:
+            raise ValueError("expected a TNCHW sequence")
+
+        # Convolution and affine/identity current transforms are stateless across
+        # timesteps. Batch T and N together so PyTorch builds one convolution
+        # graph instead of T independent graphs, then keep the neuron update
+        # strictly sequential to preserve PLIF/LIF temporal dynamics and BPTT.
+        if self.norm_kind != "bn":
+            time_steps, batch_size = sequence.shape[:2]
+            flat = sequence.reshape(
+                time_steps * batch_size, *sequence.shape[2:]
+            ).float()
+            currents = self.transform(self.conv(flat))
+            currents = currents.reshape(
+                time_steps, batch_size, *currents.shape[1:]
+            )
+            return torch.stack([self.neuron(current) for current in currents])
+
+        # Historical BatchNorm ablations retain per-timestep batch-statistics
+        # semantics for reproducibility.
         return torch.stack(
             [self.neuron(self.transform(self.conv(step.float()))) for step in sequence]
         )
@@ -963,7 +984,12 @@ class EventSpikeSegBase(nn.Module):
             if scope == "stem":
                 return stage == "stem"
             if scope == "encoder":
+                # Historical benchmark meaning retained for reproducibility.
                 return stage in {"stem", "encoder", "context"}
+            if scope == "encoder_context":
+                # Canonical EventSpikeSeg keeps triangular fLong on semantic
+                # encoder/context stages, not on the full-resolution stem.
+                return stage in {"encoder", "context"}
             raise ValueError(f"unknown stage scope {scope!r}")
 
         def lif_for(stage: str) -> LIFConfig:

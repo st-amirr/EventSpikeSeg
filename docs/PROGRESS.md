@@ -3,7 +3,7 @@
 ## Working now
 
 - DDD17 six-channel semantic loader and deterministic bounded subsets
-- canonical `model.py` contains the high-capacity spike-native `final_dualpath_wide32` candidate (237,623 params)
+- canonical `model.py` contains the high-capacity spike-native `final_dualpath_wide32` candidate (237,597 params)
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -89,3 +89,6 @@ None beat the 0.3130 incumbent. The round indicates that feature preservation/fu
 ## Next action
 
 Run `docker compose run --rm lint`, `docker compose run --rm test`, then `docker compose run --rm train-ddd17-smoke`. If these pass, train `final_dualpath_wide32` and compare it directly with the measured 0.3130 `v10_fpga_hybrid` baseline before larger multi-seed and quantization/hardware validation.
+
+- corrected final fLong scope so only semantic encoder/context stages use triangular homeostasis; stem/detail/auxiliary remain PLIF without fLong
+- reduced canonical training-output retention to logits + scalar activity rates; historical registries remain unchanged

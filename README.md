@@ -76,7 +76,7 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 
 ## Canonical EventSpikeSeg model
 
-`final_dualpath_wide32` currently has **237,623 trainable parameters** and uses:
+`final_dualpath_wide32` currently has **237,597 trainable parameters** and uses:
 
 ```text
 6-channel input

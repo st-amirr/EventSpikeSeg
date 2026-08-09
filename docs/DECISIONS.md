@@ -149,7 +149,7 @@ The comparator-only selector was more circuit-minimal but discarded T2's learned
 
 ## 2026-08-09 — Scale the canonical model by additive spike-native features
 
-Decision: expand `final_dualpath_wide32` from the ~141k revision to 237,623 trainable parameters. Hardware simplicity alone is no longer a reason to remove an accuracy-oriented feature; features are excluded only when prior ablations give meaningful negative evidence or when they require a fundamentally dense/non-spiking inference path.
+Decision: expand `final_dualpath_wide32` from the ~141k revision to 237,597 trainable parameters. Hardware simplicity alone is no longer a reason to remove an accuracy-oriented feature; features are excluded only when prior ablations give meaningful negative evidence or when they require a fundamentally dense/non-spiking inference path.
 
 Added:
 - projected cross-scale PLIF residual bridges (`32->64`, `64->128`) to reduce information loss through strided thresholded stages;
@@ -184,4 +184,9 @@ Keep the same FP32 math, T, BPTT, resolution, and model dynamics while removing 
 
 ## 2026-08-09 — Remove obsolete project debris and archive the completed search plan
 
-Keep `src/eventspikeseg/` limited to active runtime/training code plus frozen architecture registries. Delete the obsolete standalone `benchmark_top_three.py`, MEVDT/EventSCNN-only diagnostic scripts, generated `.ruff_cache`, and the PowerShell RTL wrapper that targeted a nonexistent Compose service. Retain the functional local-GHDL `scripts/run_rtl_tests.py`. Move `ddd17-semantic-ablation.md` from `docs/exec-plans/active/` to `completed/` after recording the measured top-three outcome and the feature lineage into the 237,623-parameter canonical model.
+Keep `src/eventspikeseg/` limited to active runtime/training code plus frozen architecture registries. Delete the obsolete standalone `benchmark_top_three.py`, MEVDT/EventSCNN-only diagnostic scripts, generated `.ruff_cache`, and the PowerShell RTL wrapper that targeted a nonexistent Compose service. Retain the functional local-GHDL `scripts/run_rtl_tests.py`. Move `ddd17-semantic-ablation.md` from `docs/exec-plans/active/` to `completed/` after recording the measured top-three outcome and the feature lineage into the 237,597-parameter canonical model.
+
+
+## 2026-08-09 — Restrict canonical fLong to semantic encoder/context
+
+Decision: introduce a canonical-only `encoder_context` fLong scope. Historical `encoder` scope semantics remain unchanged. The final model no longer applies triangular fLong to the full-resolution stem/x1, custom detail branch, or auxiliary head; fLong begins at x2 after the first spatial downsampling and remains active through x2/x3/context. This matches the intended architecture and removes unnecessary per-pixel temporal state without reducing channels, T, precision, or gradient horizon. Final parameter count becomes 237,597. Stateless convolution plus affine current transforms are vectorized across the T×N batch dimension while PLIF/LIF updates remain sequential, preserving identical temporal dynamics and gradients. The training output contract also uses scalar activity rates instead of retaining complete hidden spike sequences.

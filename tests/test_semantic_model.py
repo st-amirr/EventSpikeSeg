@@ -224,10 +224,18 @@ def test_final_model_contains_scaled_dualpath_architecture() -> None:
     assert model.architecture.neuron_kind == "plif"
     assert model.architecture.inhibition_kind == "peer_membrane"
     assert model.architecture.homeostasis_kind == "triangular_threshold"
+    assert model.architecture.f_long_scope == "encoder_context"
+    assert not model.stem.neuron.config.f_long_enabled
+    assert model.enc1.depthwise is not None
+    assert not model.enc1.depthwise.neuron.config.f_long_enabled
+    assert model.enc2.depthwise is not None
+    assert model.enc2.depthwise.neuron.config.f_long_enabled
+    assert model.detail1.depthwise is not None
+    assert not model.detail1.depthwise.neuron.config.f_long_enabled
     # Independent spiking class neurons accumulate evidence over time instead
     # of using hard per-timestep class WTA.
     assert not model.architecture.output_f_inst_enabled
-    assert model.parameter_count() == 237_623
+    assert model.parameter_count() == 237_597
 
 
 def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
@@ -272,10 +280,25 @@ def test_final_model_richer_spiking_paths_and_residual_bridges() -> None:
     sequence = torch.zeros(2, 1, 6, 64, 64)
     outputs = model(sequence)
     assert outputs["segmentation_logits"].shape == (1, 6, 64, 64)
+    assert "segmentation_spikes" not in outputs
+    assert outputs["segmentation_rate"].ndim == 0
+    assert outputs["enc1_rate"].ndim == 0
     assert outputs["auxiliary_logits"].shape[-2:] == (32, 32)
     assert outputs["deep_auxiliary_logits"].shape[-2:] == (16, 16)
-    assert model.parameter_count() == 237623
+    assert model.parameter_count() == 237597
 
+
+
+
+def test_final_eval_keeps_only_output_spike_raster() -> None:
+    model = build_model()
+    model.eval()
+    sequence = torch.zeros(2, 1, 6, 16, 16)
+    with torch.no_grad():
+        outputs = model(sequence)
+    assert outputs["segmentation_spikes"].shape == (2, 1, 6, 16, 16)
+    assert "enc1_spikes" not in outputs
+    assert "decoder_spikes" not in outputs
 
 def test_final_deep_paths_receive_gradients() -> None:
     model = build_model()

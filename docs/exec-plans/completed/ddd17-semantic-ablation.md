@@ -92,7 +92,7 @@ The search did **not** directly replace the canonical model because the older `v
 - keep auxiliary supervision and add a deep training-only auxiliary head;
 - reject early 5×5, BatchNorm, GAP/MLP gating, hard hidden winner-peer competition, and a fourth encoder scale for the canonical model.
 
-These decisions produced `final_dualpath_wide32`, currently **237,623 trainable parameters**. It still requires a larger-budget measured confirmation before any accuracy claim beyond the historical 0.3130 incumbent.
+These decisions produced `final_dualpath_wide32`, currently **237,597 trainable parameters**. It still requires a larger-budget measured confirmation before any accuracy claim beyond the historical 0.3130 incumbent.
 
 ## Hardware-oriented design contract
 

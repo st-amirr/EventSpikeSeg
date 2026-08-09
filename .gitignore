@@ -11,3 +11,4 @@ data/**
 !data/README.md
 artifacts/**/** */ /**/**/**
 artifacts/ablation/top_five/checkpoints/**
+desktop.ini

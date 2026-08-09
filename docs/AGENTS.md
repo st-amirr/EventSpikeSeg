@@ -37,7 +37,7 @@ Do not put experimental registries back into `model.py`. Keep completed top-ten/
 - none of the completed top-five models superseded the 0.3130 incumbent
 - completed top-three: T2 dual-path detail 0.2728 mIoU, T1 0.1671, T3 0.1555
 - T2 validates a persistent high-resolution detail path; T3 extra depth/attention collapsed toward dominant classes
-- canonical candidate is `final_dualpath_wide32` (237,623 params); `v10_fpga_hybrid` remains the measured baseline until the new model is validated
+- canonical candidate is `final_dualpath_wide32` (237,597 params); `v10_fpga_hybrid` remains the measured baseline until the new model is validated
 
 The active question is now whether the scaled dual-path candidate can exceed the 0.3130 measured incumbent under larger/multi-seed training.
 
@@ -74,7 +74,7 @@ Fairness rule used: all three used the same seed, data subset, resolution, times
 
 ## Canonical post-ablation candidate
 
-`final_dualpath_wide32` is the 237,623-parameter EventSpikeSeg candidate. It uses a 32/64/128 semantic path, projected PLIF residual bridges across downsampling, residual DW/PW refinement, a persistent 32-channel high-resolution detail path with asymmetric refinement, serial dilation-2 context plus residual concatenated d1/d2/d4 context, one bottlenecked low-resolution spike-mask attention residual, concatenative mid-decoder fusion, and late semantic/shallow/detail concatenation. Final channel selection is a spike-driven 96→96 1×1 projection into PLIF selector neurons. No fourth downsampling level, dense softmax attention, GAP/MLP inference gate, BatchNorm dependency, or hard hidden WTA is used.
+`final_dualpath_wide32` is the 237,597-parameter EventSpikeSeg candidate. It uses a 32/64/128 semantic path, projected PLIF residual bridges across downsampling, residual DW/PW refinement, a persistent 32-channel high-resolution detail path with asymmetric refinement, serial dilation-2 context plus residual concatenated d1/d2/d4 context, one bottlenecked low-resolution spike-mask attention residual, concatenative mid-decoder fusion, and late semantic/shallow/detail concatenation. Final channel selection is a spike-driven 96→96 1×1 projection into PLIF selector neurons. No fourth downsampling level, dense softmax attention, GAP/MLP inference gate, BatchNorm dependency, or hard hidden WTA is used.
 
 Use SpikingJelly public `activation_based` infrastructure where compatible: SpikingJelly convolution/PLIF/surrogate behavior backs the software model, while project code keeps per-channel beta, dynamic threshold, fInst/fLong, and exact reset/order explicit for later integer/RTL/circuit reproduction.
 

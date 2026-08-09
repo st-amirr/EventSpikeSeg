@@ -26,6 +26,8 @@ remain trainable while the semantic backbone is frozen.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import torch
 from torch import Tensor, nn
 
@@ -55,7 +57,7 @@ FINAL_ARCHITECTURE = SegmentationArchitecture(
     inhibition_kind="peer_membrane",
     inhibition_strength_init=0.20,
     f_long_enabled=True,
-    f_long_scope="encoder",
+    f_long_scope="encoder_context",
     homeostasis_kind="triangular_threshold",
     threshold_adaptation_strength_init=0.20,
     adaptation_duration_init=5.0,
@@ -298,13 +300,24 @@ class EventSpikeSeg(EventSpikeSegBase):
         encoder_lif = _block_lif(self.enc1)
         context_lif = _block_lif(self.enc3)
         decoder_lif = self.project3.neuron.config
+        highres_lif = replace(encoder_lif, f_long_enabled=False)
+
+        # Keep triangular fLong from the first downsampled semantic scale onward.
+        # The full-resolution x1/detail stream preserves fine spatial evidence and
+        # does not allocate per-pixel long-term homeostasis state.
+        self.enc1 = SpikingConvBlock(
+            32, 32, kernel_size=architecture.first_block_kernel_size,
+            depthwise=architecture.depthwise, norm=architecture.norm,
+            lif=highres_lif, neuron_kind=architecture.neuron_kind,
+            residual=architecture.residual,
+        )
 
         # The base encoder already contributes one residual block at each scale.
         # One additional block gives two residual DW/PW transformations per scale
         # without introducing a fourth spatial downsampling level.
         self.enc1_extra = SpikingConvBlock(
             32, 32, depthwise=True, norm=architecture.norm,
-            lif=encoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+            lif=highres_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
         self.enc2_extra = SpikingConvBlock(
             64, 64, depthwise=True, norm=architecture.norm,
@@ -350,21 +363,28 @@ class EventSpikeSeg(EventSpikeSegBase):
             lif=context_lif,
             norm=architecture.norm,
         )
+        # Auxiliary supervision should not allocate triangular fLong state of
+        # its own. It remains PLIF/learnable-threshold via decoder_lif.
         self.deep_aux_head = DeepAuxiliaryHead(
-            128, class_count, lif=context_lif, norm=architecture.norm
+            128, class_count, lif=decoder_lif, norm=architecture.norm
         )
 
         # Persistent high-resolution path: the strongest new feature from T2.
+        # High-resolution detail refinement is PLIF-only. Reusing encoder_lif
+        # here unintentionally enabled per-pixel triangular fLong state on every
+        # detail stage, which is outside the intended fLong scope and is very
+        # expensive at native DDD17 resolution. decoder_lif preserves PLIF and
+        # learned thresholds without fInst/fLong.
         self.detail1 = SpikingConvBlock(
             32, 32, depthwise=True, norm=architecture.norm,
-            lif=encoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
         self.detail2 = AsymmetricDetailResidual(
-            32, lif=encoder_lif, norm=architecture.norm,
+            32, lif=decoder_lif, norm=architecture.norm,
         )
         self.detail3 = SpikingConvBlock(
             32, 32, depthwise=True, norm=architecture.norm,
-            lif=encoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
 
         # Preserve decoder and encoder identities until learned spiking fusion.
@@ -426,7 +446,6 @@ class EventSpikeSeg(EventSpikeSegBase):
             raise ValueError(
                 f"expected [T,N,{self.input_channels},H,W] direct-encoded event sequence"
             )
-
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
         detail = self.detail3(self.detail2(self.detail1(x1)))
 
@@ -463,21 +482,27 @@ class EventSpikeSeg(EventSpikeSegBase):
         logits = class_spikes.sum(dim=0) * (
             self.architecture.output_rate_scale / float(sequence.shape[0])
         )
+        # Return exact scalar activity means instead of pinning full TNCHW
+        # hidden sequences in the output dictionary until backward completes.
+        # The activity regularizer depends only on these means, so its math and
+        # gradients are unchanged.
         result = {
-            "segmentation_spikes": class_spikes,
             "segmentation_logits": logits,
-            "enc1_spikes": x1,
-            "enc2_spikes": x2,
-            "enc3_spikes": x3,
-            "decoder_spikes": d1,
+            "segmentation_rate": class_spikes.mean(),
+            "enc1_rate": x1.mean(),
+            "enc2_rate": x2.mean(),
+            "enc3_rate": x3.mean(),
+            "decoder_rate": d1.mean(),
         }
+        if not self.training:
+            # Evaluation visualizations may still need the output spike raster;
+            # under no_grad this does not retain a training autograd graph.
+            result["segmentation_spikes"] = class_spikes
         if auxiliary_spikes is not None:
-            result["auxiliary_spikes"] = auxiliary_spikes
             result["auxiliary_logits"] = auxiliary_spikes.sum(dim=0) * (
                 self.architecture.output_rate_scale / float(sequence.shape[0])
             )
         if deep_auxiliary_spikes is not None:
-            result["deep_auxiliary_spikes"] = deep_auxiliary_spikes
             result["deep_auxiliary_logits"] = deep_auxiliary_spikes.sum(dim=0) * (
                 self.architecture.output_rate_scale / float(sequence.shape[0])
             )

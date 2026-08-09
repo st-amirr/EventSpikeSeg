@@ -231,15 +231,26 @@ def focal_cross_entropy(
 
 
 def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
-    hidden_keys = tuple(
+    scalar_hidden_keys = tuple(
         key
-        for key in (
-            "enc1_spikes", "enc2_spikes", "enc3_spikes", "enc4_spikes", "decoder_spikes"
-        )
+        for key in ("enc1_rate", "enc2_rate", "enc3_rate", "enc4_rate", "decoder_rate")
         if key in outputs
     )
-    hidden_rates = torch.stack([outputs[key].mean() for key in hidden_keys])
-    output_rate = outputs["segmentation_spikes"].mean()
+    if scalar_hidden_keys:
+        hidden_rates = torch.stack([outputs[key] for key in scalar_hidden_keys])
+    else:
+        # Frozen historical registries preserve their full-spike output contract.
+        hidden_keys = tuple(
+            key
+            for key in (
+                "enc1_spikes", "enc2_spikes", "enc3_spikes", "enc4_spikes", "decoder_spikes"
+            )
+            if key in outputs
+        )
+        hidden_rates = torch.stack([outputs[key].mean() for key in hidden_keys])
+    output_rate = outputs.get("segmentation_rate")
+    if output_rate is None:
+        output_rate = outputs["segmentation_spikes"].mean()
     dead_hidden = torch.relu(0.005 - hidden_rates).mean()
     excessive_hidden = torch.relu(hidden_rates - 0.25).mean()
     dead_output = torch.relu(0.01 - output_rate)
@@ -330,8 +341,14 @@ def evaluate_model(
         "enc1_spikes", "enc2_spikes", "enc3_spikes", "enc4_spikes",
         "decoder_spikes", "segmentation_spikes",
     )
+    tracked_rate_keys = (
+        "enc1_rate", "enc2_rate", "enc3_rate", "enc4_rate",
+        "decoder_rate", "segmentation_rate",
+    )
     layer_sums: dict[str, float] = {}
     layer_elements: dict[str, int] = {}
+    scalar_rate_sums: dict[str, float] = {}
+    scalar_rate_batches: dict[str, int] = {}
     with torch.no_grad():
         for sequence, target in loader:
             sequence = sequence.to(device)
@@ -346,6 +363,11 @@ def evaluate_model(
                 spikes = outputs[key]
                 layer_sums[key] = layer_sums.get(key, 0.0) + float(spikes.sum())
                 layer_elements[key] = layer_elements.get(key, 0) + spikes.numel()
+            for key in tracked_rate_keys:
+                if key not in outputs:
+                    continue
+                scalar_rate_sums[key] = scalar_rate_sums.get(key, 0.0) + float(outputs[key])
+                scalar_rate_batches[key] = scalar_rate_batches.get(key, 0) + 1
             # no_grad avoids an autograd graph, but the full temporal output
             # tensors are still large. Drop the batch references before the
             # loader produces the next native-resolution batch.
@@ -354,7 +376,12 @@ def evaluate_model(
     rates = {
         key: layer_sums[key] / max(1, layer_elements[key]) for key in layer_sums
     }
-    return metrics, rates["segmentation_spikes"], rates
+    for key, total in scalar_rate_sums.items():
+        rates[key] = total / max(1, scalar_rate_batches[key])
+    output_rate = rates.get(
+        "segmentation_rate", rates.get("segmentation_spikes", float("nan"))
+    )
+    return metrics, output_rate, rates
 
 
 def refinement_phase_for_epoch(
@@ -720,7 +747,11 @@ def train_architecture(
                             "activity_regularizer": float(activity.detach()),
                             "auxiliary_term": float(auxiliary_term.detach()),
                             "deep_auxiliary_term": float(deep_auxiliary_term.detach()),
-                            "output_spike_rate": float(outputs["segmentation_spikes"].detach().mean()),
+                            "output_spike_rate": float(
+                                outputs["segmentation_rate"].detach()
+                                if "segmentation_rate" in outputs
+                                else outputs["segmentation_spikes"].detach().mean()
+                            ),
                             "gradient_norm_before_clip": float(gradient_norm),
                             "learning_rates": [group["lr"] for group in optimizer.param_groups],
                             "training_phase": training_phase,
