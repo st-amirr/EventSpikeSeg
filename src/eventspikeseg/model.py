@@ -41,8 +41,9 @@ from .model_components import (
 )
 
 
+# Selectable finals: EventSpikeSeg (~238k) and EventSpikeSeg140k (~140k).
 FINAL_ARCHITECTURE = SegmentationArchitecture(
-    name="final_dualpath_wide32",
+    name="EventSpikeSeg",
     channel_schedule=(32, 64, 128),
     context="none",  # custom serial dilation-2 context below
     norm="affine",
@@ -63,7 +64,6 @@ FINAL_ARCHITECTURE = SegmentationArchitecture(
     adaptation_duration_init=5.0,
     output_f_inst_enabled=False,
 )
-FINAL_ARCHITECTURE_NAME = FINAL_ARCHITECTURE.name
 
 # Final-model-only late refinement schedule.  The generic trainer discovers this
 # attribute at runtime, so frozen historical benchmark models are unaffected.
@@ -509,5 +509,167 @@ class EventSpikeSeg(EventSpikeSegBase):
         return result
 
 
-def build_model(*, class_count: int = 6, input_channels: int = 6) -> EventSpikeSeg:
-    return EventSpikeSeg(class_count=class_count, input_channels=input_channels)
+class EventSpikeSeg140k(EventSpikeSegBase):
+    """Pre-expansion ~140k dual-path final model."""
+
+    refinement_schedule = (
+        FINAL_REFINEMENT_FREEZE_START,
+        FINAL_REFINEMENT_UNFREEZE_START,
+    )
+
+    def __init__(self, *, class_count: int = 6, input_channels: int = 6) -> None:
+        super().__init__(
+            class_count=class_count,
+            input_channels=input_channels,
+            architecture=replace(FINAL_ARCHITECTURE, name="EventSpikeSeg140k"),
+        )
+        architecture = self.architecture
+        encoder_lif = _block_lif(self.enc1)
+        context_lif = _block_lif(self.enc3)
+        decoder_lif = self.project3.neuron.config
+        highres_lif = replace(encoder_lif, f_long_enabled=False)
+
+        self.enc1 = SpikingConvBlock(
+            32, 32, kernel_size=architecture.first_block_kernel_size,
+            depthwise=architecture.depthwise, norm=architecture.norm,
+            lif=highres_lif, neuron_kind=architecture.neuron_kind,
+            residual=architecture.residual,
+        )
+        self.enc1_extra = SpikingConvBlock(
+            32, 32, depthwise=True, norm=architecture.norm,
+            lif=highres_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.enc2_extra = SpikingConvBlock(
+            64, 64, depthwise=True, norm=architecture.norm,
+            lif=encoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.enc3_extra = SpikingConvBlock(
+            128, 128, depthwise=True, norm=architecture.norm,
+            lif=encoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.context1 = SpikingConvBlock(
+            128, 128, dilation=2, depthwise=True, norm=architecture.norm,
+            lif=context_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.context2 = SpikingConvBlock(
+            128, 128, dilation=2, depthwise=True, norm=architecture.norm,
+            lif=context_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+
+        self.detail1 = SpikingConvBlock(
+            32, 32, depthwise=True, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.detail2 = SpikingConvBlock(
+            32, 32, depthwise=True, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.detail3 = SpikingConvBlock(
+            32, 32, depthwise=True, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+
+        self.decoder2_extra = SpikingConvBlock(
+            64, 64, depthwise=True, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.final_selector = PLIFChannelSelector(
+            96, lif=decoder_lif, norm=architecture.norm
+        )
+        self.final_fuse = SpikingConvBlock(
+            96, 32, depthwise=True, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind,
+        )
+        self.decoder1_extra = SpikingConvBlock(
+            32, 32, depthwise=True, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.context = nn.Identity()
+        self.refine1 = nn.Identity()
+
+    def set_semantic_backbone_trainable(self, trainable: bool) -> None:
+        semantic_modules: tuple[nn.Module, ...] = (
+            self.stem,
+            self.enc1,
+            self.enc1_extra,
+            self.down2,
+            self.enc2,
+            self.enc2_extra,
+            self.down3,
+            self.enc3,
+            self.enc3_extra,
+            self.context1,
+            self.context2,
+        )
+        for module in semantic_modules:
+            for parameter in module.parameters():
+                parameter.requires_grad_(trainable)
+
+    def forward(self, sequence: Tensor) -> dict[str, Tensor]:
+        if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
+            raise ValueError(
+                f"expected [T,N,{self.input_channels},H,W] direct-encoded event sequence"
+            )
+        x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
+        detail = self.detail3(self.detail2(self.detail1(x1)))
+
+        x2 = self.enc2_extra(self.enc2(self.down2(x1)))
+        x3 = self.enc3_extra(self.enc3(self.down3(x2)))
+        deepest = self.context2(self.context1(x3))
+
+        d2 = self._upsample(self.project3(deepest), x2.shape[-2:])
+        d2 = torch.clamp(d2 + x2, 0.0, 1.0)
+        d2 = self.decoder2_extra(d2)
+        auxiliary_spikes = (
+            self.aux_head(d2)
+            if self.training and self.aux_head is not None
+            else None
+        )
+
+        semantic = self._upsample(self.project2(d2), x1.shape[-2:])
+        merged = torch.cat((semantic, x1, detail), dim=2)
+        d1 = self.final_fuse(self.final_selector(merged))
+        d1 = self.decoder1_extra(d1)
+
+        class_spikes = self.head(d1)
+        logits = class_spikes.sum(dim=0) * (
+            self.architecture.output_rate_scale / float(sequence.shape[0])
+        )
+        result = {
+            "segmentation_logits": logits,
+            "segmentation_rate": class_spikes.mean(),
+            "enc1_rate": x1.mean(),
+            "enc2_rate": x2.mean(),
+            "enc3_rate": x3.mean(),
+            "decoder_rate": d1.mean(),
+        }
+        if not self.training:
+            result["segmentation_spikes"] = class_spikes
+        if auxiliary_spikes is not None:
+            result["auxiliary_logits"] = auxiliary_spikes.sum(dim=0) * (
+                self.architecture.output_rate_scale / float(sequence.shape[0])
+            )
+        return result
+
+
+
+FINAL_MODELS = {
+    "EventSpikeSeg": EventSpikeSeg,
+    "EventSpikeSeg140k": EventSpikeSeg140k,
+}
+
+
+def build_model(
+    *,
+    class_count: int = 6,
+    input_channels: int = 6,
+    architecture: str = "EventSpikeSeg",
+) -> EventSpikeSegBase:
+    try:
+        model_class = FINAL_MODELS[architecture]
+    except KeyError as exc:
+        raise KeyError(
+            f"unknown final architecture {architecture!r}; "
+            f"expected one of {tuple(FINAL_MODELS)}"
+        ) from exc
+    return model_class(class_count=class_count, input_channels=input_channels)

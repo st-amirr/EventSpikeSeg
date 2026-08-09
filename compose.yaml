@@ -65,37 +65,61 @@ services:
               capabilities: [gpu]
     command:
       ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
-       "--architecture", "final_dualpath_wide32",
+       "--architecture", "EventSpikeSeg",
        "--device", "cuda", "--amp",
        "--suite", "final", "--seed", "17",
        "--epochs", "1", "--batch-size", "1",
        "--time-steps", "4",
        "--height", "32",
        "--width", "32",
-       "--train-samples", "2", "--validation-samples", "2", "--checkpoint-dir", "artifacts/checkpoints"]
+       "--train-samples", "2", "--checkpoint-dir", "artifacts/checkpoints"]
 
-  train-ddd17:
+  # Pre-expansion ~140k final model.
+  train-ddd17-140k:
     <<: *ddd17
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
     command:
       ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
-       "--architecture", "final_dualpath_wide32",
-       "--device", "cuda", "--amp",
-       "--height", "200", "--width", "300",
+       "--architecture", "EventSpikeSeg140k",
+      #  "--device", "cuda", "--amp",
+       "--height", "212", "--width", "282",
        "--suite", "final", "--seed", "17",
        "--epochs", "70", "--batch-size", "1",
        "--time-steps", "10",
-       "--train-samples", "0",
-       "--validation-samples", "0",
+       "--train-samples", "0.8",
        "--validation-fraction", "0.10",
        "--learning-rate", "0.001",
-       "--checkpoint-every", "5",
+       "--checkpoint-every", "1",
+       "--checkpoint-dir", "artifacts/checkpoints"]
+
+  # Canonical expanded ~238k final model.
+  train-ddd17:
+    <<: *ddd17
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    command:
+      ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
+       "--architecture", "EventSpikeSeg",
+      #  "--device", "cuda", "--amp",
+       "--height", "212", "--width", "282",
+       "--suite", "final", "--seed", "17",
+       "--epochs", "70", "--batch-size", "1",
+       "--time-steps", "10",
+       "--train-samples", "0.8",
+       "--validation-fraction", "0.10",
+       "--learning-rate", "0.001",
+       "--checkpoint-every", "1",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   benchmark-top-ten:
@@ -107,7 +131,6 @@ services:
        "--batch-size", "4", "--time-steps", "20",
        "--height", "64", "--width", "64",
        "--train-samples", "2048",
-       "--validation-samples", "512",
        "--learning-rate", "0.002",
        "--output-dir", "artifacts/ablation/top_ten"]
 
@@ -120,7 +143,6 @@ services:
        "--batch-size", "14", "--time-steps", "15",
        "--height", "64", "--width", "64",
        "--train-samples", "2048",
-       "--validation-samples", "512",
        "--learning-rate", "0.002",
        "--output-dir", "artifacts/ablation/top_five"]
 
@@ -133,7 +155,6 @@ services:
        "--batch-size", "14", "--time-steps", "15",
        "--height", "64", "--width", "64",
        "--train-samples", "2048",
-       "--validation-samples", "512",
        "--learning-rate", "0.002",
        "--output-dir", "artifacts/ablation/top_three"]
 
@@ -148,6 +169,6 @@ services:
     <<: *ddd17
     command:
       ["python", "-m", "eventspikeseg.evaluate", "--root", "/datasets/DDD17",
-       "--checkpoint", "artifacts/checkpoints/final_dualpath_wide32_seed17.pt",
+       "--checkpoint", "artifacts/checkpoints/EventSpikeSeg_seed17.pt",
        "--split", "test", "--batch-size", "1",
        "--visualizations", "8", "--visualization-dir", "artifacts/Validation"]

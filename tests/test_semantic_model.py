@@ -1,6 +1,6 @@
 import torch
 
-from eventspikeseg.model import FINAL_ARCHITECTURE_NAME, build_model
+from eventspikeseg.model import EventSpikeSeg, EventSpikeSeg140k, build_model
 from eventspikeseg.model_components import HardwareLIF, LIFConfig, ParametricLIF
 from eventspikeseg.top_five_models import (
     TOP_FIVE_PRESETS,
@@ -218,8 +218,8 @@ def test_legacy_t_thresh_behavior_is_preserved() -> None:
 
 def test_final_model_contains_scaled_dualpath_architecture() -> None:
     model = build_model()
-    assert model.architecture.name == FINAL_ARCHITECTURE_NAME
-    assert FINAL_ARCHITECTURE_NAME == "final_dualpath_wide32"
+    assert isinstance(model, EventSpikeSeg)
+    assert model.architecture.name == "EventSpikeSeg"
     assert model.architecture.channel_schedule == (32, 64, 128)
     assert model.architecture.neuron_kind == "plif"
     assert model.architecture.inhibition_kind == "peer_membrane"
@@ -236,6 +236,13 @@ def test_final_model_contains_scaled_dualpath_architecture() -> None:
     # of using hard per-timestep class WTA.
     assert not model.architecture.output_f_inst_enabled
     assert model.parameter_count() == 237_597
+
+
+def test_final_140k_model_is_selectable() -> None:
+    model = build_model(architecture="EventSpikeSeg140k")
+    assert isinstance(model, EventSpikeSeg140k)
+    assert model.architecture.name == "EventSpikeSeg140k"
+    assert model.parameter_count() == 141_241
 
 
 def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:

@@ -28,7 +28,10 @@ from .data import (
     resolve_ddd17_root,
 )
 from .metrics import ConfusionMatrix
-from .model import FINAL_ARCHITECTURE_NAME, build_model as build_final_model
+from .model import (
+    FINAL_MODELS,
+    build_model as build_final_model,
+)
 from .top_five_models import (
     TOP_FIVE_PRESETS,
     build_top_five_model,
@@ -54,7 +57,7 @@ def architecture_presets(suite: str) -> dict[str, object]:
     if suite == "top-three":
         return TOP_THREE_PRESETS
     if suite == "final":
-        return {FINAL_ARCHITECTURE_NAME: object()}
+        return FINAL_MODELS
     raise ValueError(f"unknown model suite {suite!r}")
 
 
@@ -65,7 +68,7 @@ def infer_model_suite(architecture: str) -> str:
         return "top-five"
     if architecture in TOP_THREE_PRESETS:
         return "top-three"
-    if architecture == FINAL_ARCHITECTURE_NAME:
+    if architecture in FINAL_MODELS:
         return "final"
     raise KeyError(f"unknown architecture {architecture!r}")
 
@@ -91,10 +94,14 @@ def build_experiment_model(
             architecture, class_count=class_count, input_channels=input_channels
         )
     if resolved_suite == "final":
-        if architecture != FINAL_ARCHITECTURE_NAME:
-            raise KeyError(f"final suite requires architecture {FINAL_ARCHITECTURE_NAME!r}, got {architecture!r}")
+        if architecture not in FINAL_MODELS:
+            raise KeyError(
+                f"final suite requires one of {tuple(FINAL_MODELS)!r}, got {architecture!r}"
+            )
         return build_final_model(
-            class_count=class_count, input_channels=input_channels
+            class_count=class_count,
+            input_channels=input_channels,
+            architecture=architecture,
         )
     raise ValueError(f"unknown model suite {resolved_suite!r}")
 
@@ -287,7 +294,6 @@ def _prepare_datasets(
     *,
     seed: int,
     train_samples: float,
-    validation_samples: float,
     output_size: tuple[int, int] | None,
     final_validation_fraction: float | None = None,
 ) -> tuple[DDD17Dataset, DDD17Dataset]:
@@ -305,10 +311,6 @@ def _prepare_datasets(
         validation_count = min(validation_count, len(train_records) - 1)
         validation_records = [train_records[index] for index in order[:validation_count]]
         training_records = [train_records[index] for index in order[validation_count:]]
-        if validation_samples > 0:
-            validation_records = _record_subset_from_spec(
-                validation_records, amount=validation_samples, seed=seed + 2
-            )
         return (
             DDD17Dataset(
                 root, split="train", records=training_records, output_size=output_size
@@ -321,9 +323,7 @@ def _prepare_datasets(
     # Historical architecture-search behavior: benchmark against the official
     # Ev-SegNet test split exactly as the completed rounds did. Do not use this
     # branch for checkpoint selection in the canonical final-model run.
-    test_records = _record_subset_from_spec(
-        discover_ddd17_records(root, "test"), amount=validation_samples, seed=seed + 1
-    )
+    test_records = discover_ddd17_records(root, "test")
     return (
         DDD17Dataset(root, split="train", records=train_records, output_size=output_size),
         DDD17Dataset(root, split="test", records=test_records, output_size=output_size),
@@ -419,7 +419,6 @@ def train_architecture(
     batch_size: int,
     time_steps: int,
     train_samples: float,
-    validation_samples: float,
     validation_fraction: float,
     learning_rate: float,
     output_dir: Path,
@@ -427,6 +426,7 @@ def train_architecture(
     device: str,
     checkpoint_every: int = 5,
     amp: bool = False,
+    load: Path | None = None,
 ) -> TrainResult:
     seed_everything(seed)
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
@@ -435,7 +435,6 @@ def train_architecture(
         root,
         seed=seed,
         train_samples=train_samples,
-        validation_samples=validation_samples,
         output_size=output_size,
         final_validation_fraction=(
             validation_fraction if resolved_suite == "final" else None
@@ -552,6 +551,13 @@ def train_architecture(
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "scheduler_state_dict": scheduler.state_dict(),
+                "scaler_state_dict": scaler.state_dict(),
+                "best_mean_iou": best_mean_iou,
+                "best_epoch": best_epoch,
+                "best_validation_metrics": best_metrics,
+                "best_validation_mean_spike_rate": best_mean_spike_rate,
+                "best_validation_layer_spike_rates": best_layer_spike_rates,
+                "best_neuron_diagnostics": best_neuron_diagnostics,
                 "architecture": architecture,
                 "model_suite": resolved_suite,
                 "architecture_config": model.architecture.to_dict(),
@@ -575,6 +581,79 @@ def train_architecture(
             path,
         )
 
+    start_epoch = 1
+    if load is not None:
+        load_path = Path(load)
+        if not load_path.is_file():
+            raise FileNotFoundError(f"resume checkpoint not found: {load_path}")
+        checkpoint = torch.load(load_path, map_location=resolved_device)
+        checkpoint_architecture = checkpoint.get("architecture")
+        if checkpoint_architecture not in (None, architecture):
+            raise ValueError(
+                f"checkpoint architecture {checkpoint_architecture!r} does not match "
+                f"requested architecture {architecture!r}"
+            )
+        if "model_state_dict" not in checkpoint:
+            raise KeyError(f"checkpoint has no model_state_dict: {load_path}")
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+        optimizer_state = checkpoint.get("optimizer_state_dict")
+        scheduler_state = checkpoint.get("scheduler_state_dict")
+        scaler_state = checkpoint.get("scaler_state_dict")
+        if optimizer_state is not None:
+            optimizer.load_state_dict(optimizer_state)
+        if scheduler_state is not None:
+            scheduler.load_state_dict(scheduler_state)
+        if scaler_state is not None and amp_enabled:
+            scaler.load_state_dict(scaler_state)
+
+        loaded_epoch = int(checkpoint.get("epoch", 0))
+        start_epoch = loaded_epoch + 1
+        if start_epoch > epochs:
+            raise ValueError(
+                f"checkpoint is already at epoch {loaded_epoch}, but --epochs={epochs}; "
+                "set --epochs to a larger total target"
+            )
+
+        checkpoint_metrics = checkpoint.get("validation_metrics")
+        checkpoint_miou = (
+            float(checkpoint_metrics["mean_iou"])
+            if isinstance(checkpoint_metrics, dict) and "mean_iou" in checkpoint_metrics
+            else float("-inf")
+        )
+        best_mean_iou = float(checkpoint.get("best_mean_iou", checkpoint_miou))
+        best_epoch = int(checkpoint.get("best_epoch", loaded_epoch if checkpoint_miou > float("-inf") else 0))
+        best_metrics = checkpoint.get("best_validation_metrics")
+        if best_metrics is None and checkpoint.get("is_best"):
+            best_metrics = checkpoint_metrics
+        best_mean_spike_rate = float(
+            checkpoint.get(
+                "best_validation_mean_spike_rate",
+                checkpoint.get("validation_mean_spike_rate", 0.0) if checkpoint.get("is_best") else 0.0,
+            )
+            or 0.0
+        )
+        best_layer_spike_rates = dict(
+            checkpoint.get(
+                "best_validation_layer_spike_rates",
+                checkpoint.get("validation_layer_spike_rates", {}) if checkpoint.get("is_best") else {},
+            )
+            or {}
+        )
+        best_neuron_diagnostics = dict(
+            checkpoint.get(
+                "best_neuron_diagnostics",
+                checkpoint.get("neuron_diagnostics", {}) if checkpoint.get("is_best") else {},
+            )
+            or {}
+        )
+        previous_training_phase = checkpoint.get("training_phase")
+        print(
+            f"Resuming {architecture} from {load_path} | "
+            f"completed_epoch={loaded_epoch} next_epoch={start_epoch} target_epoch={epochs}",
+            flush=True,
+        )
+
     precision = "AMP FP16" if amp_enabled else "FP32"
     size_label = (
         f"{output_size[0]}x{output_size[1]}" if output_size is not None else "native"
@@ -588,7 +667,7 @@ def train_architecture(
     )
 
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch, epochs + 1):
         model.train()
         training_phase, semantic_backbone_trainable = refinement_phase_for_epoch(
             epoch, epochs, refinement_schedule
@@ -918,7 +997,6 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             batch_size=args.batch_size,
             time_steps=args.time_steps,
             train_samples=args.train_samples,
-            validation_samples=args.validation_samples,
             validation_fraction=args.validation_fraction,
             learning_rate=args.learning_rate,
             output_dir=args.output_dir / "checkpoints",
@@ -926,6 +1004,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             device=args.device,
             checkpoint_every=args.checkpoint_every,
             amp=args.amp,
+            load=args.load,
         )
         for name in presets
     ]
@@ -942,7 +1021,6 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             "batch_size": args.batch_size,
             "time_steps": args.time_steps,
             "train_samples": args.train_samples,
-            "validation_samples": args.validation_samples,
             "height": args.height,
             "width": args.width,
             "learning_rate": args.learning_rate,
@@ -997,17 +1075,10 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         help="0=all, 0<x<=1=fraction of available training records, x>1=absolute count",
     )
     parser.add_argument(
-        "--validation-samples", type=float, default=512.0,
-        help="0=all, 0<x<=1=fraction of available validation records, x>1=absolute count",
-    )
-    parser.add_argument(
         "--validation-fraction",
         type=float,
         default=0.10,
-        help=(
-            "fraction of the DDD17 training split reserved for validation in the "
-            "final suite; validation-samples optionally caps this holdout"
-        ),
+        help="fraction of the DDD17 training split reserved for validation in the final suite",
     )
     parser.add_argument("--learning-rate", type=float, default=2e-3)
     parser.add_argument(
@@ -1052,14 +1123,24 @@ def main() -> None:
             tuple(TOP_TEN_PRESETS)
             + tuple(TOP_FIVE_PRESETS)
             + tuple(TOP_THREE_PRESETS)
-            + (FINAL_ARCHITECTURE_NAME,)
+            + tuple(FINAL_MODELS)
         ),
-        default=FINAL_ARCHITECTURE_NAME,
+        default="EventSpikeSeg",
     )
     single.add_argument(
         "--suite", choices=("auto", "top-ten", "top-five", "top-three", "final"), default="auto"
     )
     single.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
+    single.add_argument(
+        "--load",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "resume from this checkpoint file (full path + filename); "
+            "omit to start training from scratch"
+        ),
+    )
 
     benchmark = subparsers.add_parser("benchmark")
     _common_training_arguments(benchmark)
@@ -1094,7 +1175,6 @@ def main() -> None:
             batch_size=args.batch_size,
             time_steps=args.time_steps,
             train_samples=args.train_samples,
-            validation_samples=args.validation_samples,
             validation_fraction=args.validation_fraction,
             learning_rate=args.learning_rate,
             output_dir=args.checkpoint_dir,
@@ -1102,6 +1182,7 @@ def main() -> None:
             device=args.device,
             checkpoint_every=args.checkpoint_every,
             amp=args.amp,
+            load=args.load,
         )
     elif args.command == "benchmark":
         print(json.dumps(benchmark_architectures(args), indent=2))

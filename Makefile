@@ -10,7 +10,7 @@ PYTEST := $(PYTHON) -m pytest
 RUFF := $(PYTHON) -m ruff
 DDD17_ROOT ?= C:/Users/stamir/Desktop/Dataset/DDD17
 DDD17_SEED ?= 17
-DDD17_ARCHITECTURE ?= final_dualpath_wide32
+DDD17_ARCHITECTURE ?= EventSpikeSeg
 DDD17_MODEL_SUITE ?= final
 
 .PHONY: setup test lint inspect-ddd17 train-ddd17-smoke train-ddd17 benchmark-top-ten benchmark-top-five benchmark-top-three promote-top-three-winner eval-ddd17
@@ -74,6 +74,6 @@ promote-top-three-winner:
 
 eval-ddd17:
 	$(PYTHON) -m eventspikeseg.evaluate --root "$(DDD17_ROOT)" \
-		--checkpoint artifacts/checkpoints/final_dualpath_wide32_seed17.pt \
+		--checkpoint artifacts/checkpoints/EventSpikeSeg_seed17.pt \
 		--split test --batch-size 1 --visualizations 8 \
 		--visualization-dir artifacts/Validation
