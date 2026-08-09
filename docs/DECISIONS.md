@@ -54,7 +54,7 @@ Only grouped top-2 competition is allowed, and only in the encoder or stem of se
 
 ## 2026-08-07 — Separate revised results from failed top-five results
 
-Write the rerun to `artifacts/ablation/top_five_v2/`. Keep `artifacts/ablation/top_five/` unchanged for reproducibility.
+This rerun was temporarily separated from the failed first attempt for diagnosis. That versioned active-directory convention is now retired: the completed structural five lives in `artifacts/ablation/top_five/` and the active three lives in `artifacts/ablation/top_three/`.
 
 ## 2026-08-07 — Use the completed mechanism screen to freeze neuron dynamics for structural search
 
@@ -76,4 +76,46 @@ The active five are:
 - `f04_deep4_dilated`: 24/48/96/128, four encoder scales, single dilated context
 - `f05_compact16_dilated`: 16/32/64, single dilated context
 
-This replaces the previous active top-five definitions; there is only one active `TOP_FIVE_PRESETS` registry.
+This replaced the previous top-five definitions. `TOP_FIVE_PRESETS` is now the single completed structural registry; the active search moved to `TOP_THREE_PRESETS`.
+
+## 2026-08-08 — Complete the structural top-five and move the search toward feature preservation
+
+The fixed-dynamics structural benchmark completed with seed 17, 8 epochs, 2,048 training samples, 512 held-out samples, 64×64 output, 15 internal timesteps, batch 14, and learning rate 0.002.
+
+Measured ranking:
+
+- `f05_compact16_dilated`: mIoU 0.2596, 21,491 parameters
+- `f02_wide32_multiscale`: mIoU 0.2284, 77,751 parameters
+- `f04_deep4_dilated`: mIoU 0.2079, 107,131 parameters
+- `f01_base24_multiscale`: mIoU 0.1626, 46,423 parameters
+- `f03_early5x5_multiscale`: mIoU 0.1482, 49,111 parameters
+
+Decision: do not promote any of these models. `v10_fpga_hybrid` remains the 0.3130 mIoU incumbent.
+
+Findings used for the next round:
+
+- compact `16/32/64` + a single dilated context gives the strongest overall accuracy/parameter tradeoff, so more parameters alone are not the answer;
+- moderate width helped feature diversity and produced the best object IoU in the round (`0.0141`);
+- the four-stage model produced the best aggregate rare-class signal, especially nature (`0.0712`) and vehicle (`0.1230`), so the deep encoder is extracting useful semantics that are being lost during decoding;
+- early 5×5 processing is rejected;
+- averaged multiscale branches are rejected for the next round because they erase branch identity and underperformed the simpler single-dilation path.
+
+## 2026-08-08 — Create a separate top-three accuracy search
+
+Create `top_three_models.py` instead of modifying the canonical model or the completed top-five registry. The three models isolate three accuracy hypotheses:
+
+- `t01_spike_pyramid_concat`: preserve dilation-1/2/4 branch identity with channel concatenation, binary spike-count channel selection, and a spiking 1×1 fusion; use concatenative decoder skip fusion.
+- `t02_dualpath_detail`: retain the compact semantic path but add a narrow persistent high-resolution spiking detail stream for small classes and boundaries.
+- `t03_deep_attention_fpn`: retain four-stage semantic depth, add low-resolution spike-driven binary-mask attention, and use a concatenative FPN decoder to restore shallow spatial information.
+
+The parameter targets are approximately 63k, 24k, and 109k respectively. Around 100k parameters is acceptable for an accuracy candidate, but fewer parameters win when validation accuracy is effectively equivalent.
+
+## 2026-08-08 — Keep attention spike-oriented
+
+Do not introduce conventional dense softmax self-attention into the active FPGA/neuromorphic search. The top-three may use:
+
+- spike-count channel selection with a hard binary forward gate;
+- low-resolution Q/K binary coincidence, channel accumulation, learned comparison threshold, and V masking;
+- concatenation followed by spiking 1×1 mixing.
+
+This is informed by SLTNet's evidence for multi-receptive-field event features, channel interaction, multi-level decoder restoration, and spike-driven masked attention, but the project tests smaller hardware-oriented modules rather than reproducing the full SLTNet network.

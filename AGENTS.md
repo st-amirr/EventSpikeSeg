@@ -18,22 +18,24 @@ Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, 
 ```text
 model.py              canonical architecture only
 top_ten_models.py     frozen completed ten-model benchmark
-top_five_models.py    one active five-model structural search
+top_five_models.py    completed five-model structural search
+top_three_models.py   one active three-model accuracy search
 model_components.py   shared tested primitives
 ```
 
-Do not put experimental registries back into `model.py`. Do not create versioned active top-five registries; measured old results belong in `RESULTS.md`, not in the active model registry.
+Do not put experimental registries back into `model.py`. Keep completed top-ten/top-five definitions reproducible and place the active accuracy search only in `top_three_models.py`. Measured results belong in `RESULTS.md`, not in the canonical model registry.
 
 ## Current evidence
 
 - full-budget structural incumbent: `v10_fpga_hybrid`, seed-17 mIoU 0.3130
-- latest low-budget mechanism screen: seed 17, 5 epochs, 256 train, 128 held-out, 64×64, 8 timesteps
-- mechanism-screen winner: `f05_v02_light_peer_membrane_inhibition`, mIoU 0.1991
-- controlled v10 comparison: triangular threshold adaptation slightly improved PLIF+threshold (`0.1459` vs `0.1402`)
-- hidden `winner_peer` inhibition ranked last (`0.1233`) and nearly silenced deep encoder activity
-- selected hidden mechanism: stem-only `peer_membrane` inhibition plus encoder/context triangular threshold adaptation
+- mechanism screen selected PLIF + learnable threshold + stem-only `peer_membrane` inhibition + local triangular threshold adaptation; hidden `winner_peer` inhibition caused severe feature starvation
+- completed structural top-five winner: `f05_compact16_dilated`, mIoU 0.2596 with only 21,491 parameters
+- `f02_wide32_multiscale` produced the best object IoU in that round (0.0141)
+- `f04_deep4_dilated` produced the strongest aggregate rare-class signal, especially nature (0.0712) and vehicle (0.1230)
+- early 5×5 processing was harmful; averaged parallel multiscale context did not beat the simpler dilated path
+- none of the completed top-five models superseded the 0.3130 incumbent
 
-The low-budget screen selects dynamics only; it does not supersede the 0.3130 full-budget incumbent.
+The active question is now feature preservation/fusion, not another inhibition sweep.
 
 ## Active neuron-dynamics contract
 
@@ -48,31 +50,33 @@ All current structural contenders use:
 - local triangular threshold adaptation in encoder/context
 - output semantic class WTA
 
-`peer_membrane` preserves simultaneous suprathreshold feature spikes while reducing peer membrane state using retinotopic membrane energy. Do not use hidden `winner_peer` gating in the active top five.
+`peer_membrane` preserves simultaneous suprathreshold feature spikes while reducing peer membrane state using retinotopic membrane energy. Do not use hidden `winner_peer` gating in the active search.
 
 The triangular threshold process uses learnable threshold-adaptation strength and continuous adaptation duration. These are training parameters only until fixed-point quantization and integer-reference regression pass.
 
-## Active top-five structural search
+## Active top-three accuracy search
 
-The five current contenders differ structurally while keeping neuron dynamics identical:
+The three current contenders intentionally test different accuracy mechanisms while preserving a hardware-oriented spiking datapath:
 
-- `f01_base24_multiscale`: 24/48/96, 3×3, multiscale context
-- `f02_wide32_multiscale`: 32/64/128, 3×3, multiscale context
-- `f03_early5x5_multiscale`: 24/48/96, 5×5 stem + first depthwise block
-- `f04_deep4_dilated`: 24/48/96/128, four encoder scales, dilation-2 context
-- `f05_compact16_dilated`: 16/32/64, dilation-2 context
+- `t01_spike_pyramid_concat`: 24/48/96 encoder; concatenate d1/d2/d4 depthwise spike branches, apply binary spike-count channel selection, fuse with spiking 1×1, and concatenate decoder skips before spiking refinement.
+- `t02_dualpath_detail`: compact 16/32/64 semantic path plus a persistent 16-channel high-resolution spiking detail path; concatenate semantic/shallow/detail evidence before binary selection and final spiking fusion.
+- `t03_deep_attention_fpn`: 24/48/96/128 encoder; low-resolution binary Q/K coincidence attention with accumulation/comparison/V masking; concatenative FPN restores x4→x3→x2→x1 detail.
 
-Fairness rule: no contender-specific neuron, optimizer, loss, data, timestep, or warm-up tuning during one benchmark comparison.
+Parameter counts are 63,147 / 24,211 / 108,781. A ~100k model is acceptable when it provides a meaningful accuracy gain, but prefer the smaller model when accuracy is effectively equivalent.
+
+Do not introduce dense softmax spatial attention. Attention forward behavior should remain expressible as spike counts, binary masks, accumulators, comparators, and sparse/1×1 projections that can later be quantized.
+
+Fairness rule: all three use the same seed, data subset, resolution, timestep count, optimizer/loss, and benchmark budget. Do not tune one contender differently during the ranking run.
 
 ## Diagnostics
 
-Every top-five run must record:
+Every active benchmark run must record:
 
 - mIoU and per-class IoU
 - ground-truth and predicted pixels per class
 - pixel accuracy
 - trainable parameter count
-- per-layer spike rates, including `enc4_spikes` when present
+- per-layer spike rates, including deep-stage activity when present
 - learned beta, threshold, inhibition strength, threshold-adaptation strength, and adaptation duration
 
 ## Finalization gates

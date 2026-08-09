@@ -76,14 +76,41 @@ Protocol recorded in the saved checkpoints: seed 17, 5 epochs, 256 training samp
 
 Because this run used only 256 training samples, it is used to choose neuron dynamics, not to replace the full-budget `v10_fpga_hybrid` incumbent.
 
-## Current structural top-five round
+## 2026-08-08 — Structural top-five completed
 
-Pending measurement. All five share the selected mechanism combination and vary architecture only:
+Protocol: seed 17, 8 epochs, 2,048 train samples, 512 held-out samples, 64×64, 15 internal timesteps, batch 14, learning rate 0.002.
 
-| architecture | channels | early spatial kernels | depth | context | parameters |
-| --- | --- | --- | ---: | --- | ---: |
-| `f01_base24_multiscale` | 24/48/96 | 3×3 | 3 | multiscale | 46,423 |
-| `f02_wide32_multiscale` | 32/64/128 | 3×3 | 3 | multiscale | 77,751 |
-| `f03_early5x5_multiscale` | 24/48/96 | 5×5 stem + first block | 3 | multiscale | 49,111 |
-| `f04_deep4_dilated` | 24/48/96/128 | 3×3 | 4 | dilation 2 | 107,131 |
-| `f05_compact16_dilated` | 16/32/64 | 3×3 | 3 | dilation 2 | 21,491 |
+| rank | architecture | mIoU | pixel accuracy | parameters | spike rate |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | `f05_compact16_dilated` | **0.2596** | **0.7822** | **21,491** | 0.1093 |
+| 2 | `f02_wide32_multiscale` | 0.2284 | 0.7763 | 77,751 | 0.0965 |
+| 3 | `f04_deep4_dilated` | 0.2079 | 0.6792 | 107,131 | 0.1495 |
+| 4 | `f01_base24_multiscale` | 0.1626 | 0.7294 | 46,423 | 0.0497 |
+| 5 | `f03_early5x5_multiscale` | 0.1482 | 0.6719 | 49,111 | 0.0670 |
+
+### Per-class evidence driving the next round
+
+| architecture | object | nature | human | vehicle |
+| --- | ---: | ---: | ---: | ---: |
+| `f02_wide32_multiscale` | **0.0141** | 0.0390 | 0.0000 | 0.0000 |
+| `f04_deep4_dilated` | 0.0049 | **0.0712** | 0.0060 | **0.1230** |
+| `f05_compact16_dilated` | 0.0002 | 0.0346 | **0.0181** | 0.0757 |
+
+Interpretation:
+
+- `f05` establishes that a small three-stage single-dilation backbone can outperform much larger structures.
+- `f02` supports retaining some capacity for feature diversity because it produced the best object IoU.
+- `f04` supports retaining deep semantic information because it produced the best aggregate rare-class coverage, especially nature and vehicle.
+- `f03` rejects early 5×5 processing.
+- the multiscale-average models did not beat the single-dilation models, motivating branch concatenation rather than averaging.
+- none of the five beat the historical `v10_fpga_hybrid` result of 0.3130 mIoU.
+
+## Current top-three accuracy experiment — pending DDD17 measurement
+
+| architecture | main hypothesis | parameters |
+| --- | --- | ---: |
+| `t01_spike_pyramid_concat` | preserve d1/d2/d4 branch identity; binary channel selection; concat decoder | 63,147 |
+| `t02_dualpath_detail` | preserve small-class/boundary evidence with a narrow high-resolution spike path | 24,211 |
+| `t03_deep_attention_fpn` | retain deep rare-class semantics with low-resolution spike-mask attention + FPN restoration | 108,781 |
+
+No top-three mIoU values are recorded yet. Results must come from `artifacts/ablation/top_three/summary.json`; do not promote a model from synthetic tests or training loss alone.

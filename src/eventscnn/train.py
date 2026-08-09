@@ -36,8 +36,10 @@ from .top_ten_models import (
     TOP_TEN_PRESETS,
     build_top_ten_model,
 )
+
 torch.set_num_threads(10)
 torch.set_num_interop_threads(1)
+
 
 def architecture_presets(suite: str) -> dict[str, object]:
     if suite == "top-ten":

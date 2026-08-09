@@ -72,7 +72,7 @@ services:
       ["python", "-m", "eventscnn.train", "single", "--root", "/datasets/DDD17",
        "--architecture", "v10_fpga_hybrid",
        "--suite", "final", "--seed", "17",
-       "--epochs", "70", "--batch-size", "14",
+       "--epochs", "70", "--batch-size", "12",
        "--time-steps", "15",
        "--height", "64", "--width", "64", "--train-samples", "0",
        "--validation-samples", "0", "--learning-rate", "0.002",
@@ -84,7 +84,7 @@ services:
       ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
        "--suite", "top-ten", "--seed", "17",
        "--epochs", "8",
-       "--batch-size", "14", "--time-steps", "15",
+       "--batch-size", "12", "--time-steps", "15",
        "--height", "64", "--width", "64",
        "--train-samples", "2048",
        "--validation-samples", "512",
@@ -97,31 +97,44 @@ services:
       ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
        "--suite", "top-five", "--seed", "17",
        "--epochs", "8",
-       "--batch-size", "14", "--time-steps", "15",
+       "--batch-size", "12", "--time-steps", "15",
        "--height", "64", "--width", "64",
        "--train-samples", "2048",
        "--validation-samples", "512",
        "--learning-rate", "0.002",
        "--output-dir", "artifacts/ablation/top_five"]
 
-  benchmark-ddd17:
+  benchmark-top-three:
     <<: *ddd17
     command:
-      ["python", "-m", "eventscnn.train", "benchmark", "--root", "/datasets/DDD17",
-       "--suite", "top-five", "--seed", "17",
+      ["python", "-m", "eventscnn.benchmark_top_three", "--root", "/datasets/DDD17",
+       "--seed", "17",
        "--epochs", "8",
-       "--batch-size", "14", "--time-steps", "15",
+       "--batch-size", "12", "--time-steps", "15",
        "--height", "64", "--width", "64",
        "--train-samples", "2048",
        "--validation-samples", "512",
        "--learning-rate", "0.002",
-       "--output-dir", "artifacts/ablation/top_five"]
+       "--output-dir", "artifacts/ablation/top_three"]
+
+  benchmark-ddd17:
+    <<: *ddd17
+    command:
+      ["python", "-m", "eventscnn.benchmark_top_three", "--root", "/datasets/DDD17",
+       "--seed", "17",
+       "--epochs", "8",
+       "--batch-size", "12", "--time-steps", "15",
+       "--height", "64", "--width", "64",
+       "--train-samples", "2048",
+       "--validation-samples", "512",
+       "--learning-rate", "0.002",
+       "--output-dir", "artifacts/ablation/top_three"]
 
 
   promote-winner:
     <<: *app
     command:
-      ["python", "-m", "eventscnn.train", "promote", "--summary", "artifacts/ablation/top_five/summary.json",
+      ["python", "-m", "eventscnn.train", "promote", "--summary", "artifacts/ablation/top_three/summary.json",
        "--destination", "artifacts/checkpoints/ddd17_best.pt"]
 
   eval-ddd17:
@@ -129,5 +142,5 @@ services:
     command:
       ["python", "-m", "eventscnn.evaluate", "--root", "/datasets/DDD17",
        "--checkpoint", "artifacts/checkpoints/ddd17_best.pt",
-       "--split", "test", "--batch-size", "14",
+       "--split", "test", "--batch-size", "12",
        "--visualizations", "8", "--visualization-dir", "artifacts/Validation"]

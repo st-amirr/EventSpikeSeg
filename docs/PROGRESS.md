@@ -5,7 +5,8 @@
 - DDD17 six-channel semantic loader and deterministic bounded subsets
 - canonical `model.py` still fixed at `v10_fpga_hybrid`
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
-- one active top-five registry in `top_five_models.py`
+- completed structural top-five registry in `top_five_models.py`
+- active accuracy-oriented top-three registry in `top_three_models.py`
 - PLIF with learnable beta and base thresholds
 - local triangular threshold adaptation
 - stem-only peer-membrane inhibition
@@ -34,28 +35,42 @@ Protocol: seed 17, 5 epochs, 256 train, 128 held-out, 64×64, 8 internal timeste
 
 Selected mechanism base: PLIF + learnable threshold + stem peer-membrane inhibition + encoder triangular threshold adaptation.
 
-## Active structural top five
+## Completed structural top five
 
-- `f01_base24_multiscale`
-- `f02_wide32_multiscale`
-- `f03_early5x5_multiscale`
-- `f04_deep4_dilated`
-- `f05_compact16_dilated`
+Protocol: seed 17, 8 epochs, 2,048 train, 512 held-out, 64×64, 15 timesteps, batch 14, LR 0.002.
+
+| architecture | mIoU | parameters | useful evidence |
+| --- | ---: | ---: | --- |
+| `f05_compact16_dilated` | **0.2596** | **21,491** | best overall/efficiency |
+| `f02_wide32_multiscale` | 0.2284 | 77,751 | best object IoU in round |
+| `f04_deep4_dilated` | 0.2079 | 107,131 | strongest aggregate rare-class signal |
+| `f01_base24_multiscale` | 0.1626 | 46,423 | weak controlled baseline |
+| `f03_early5x5_multiscale` | 0.1482 | 49,111 | early 5×5 rejected |
+
+None beat the 0.3130 incumbent. The round indicates that feature preservation/fusion is a higher-priority accuracy problem than simply adding width or parameters.
+
+## Active accuracy top three
+
+- `t01_spike_pyramid_concat` — 63,147 params; concatenated d1/d2/d4 spike context + binary channel selection + concatenative decoder.
+- `t02_dualpath_detail` — 24,211 params; compact semantic encoder + persistent high-resolution spiking detail stream.
+- `t03_deep_attention_fpn` — 108,781 params; four-stage encoder + low-resolution binary spike-mask attention + concatenative FPN.
 
 ## Validation completed locally
 
-- targeted semantic/training suite passes after structural refactor
-- canonical v10/top-ten strict state-dict compatibility remains covered by tests
-- all active top-five models build and produce the expected semantic output shape
-- the four-stage contender exposes `enc4_spikes`
+- focused top-three test module passes `2/2` in the local lightweight environment;
+- `top_three_models.py`, updated `train.py`, and the top-three test module compile successfully;
+- forward/backward passes complete for all three contenders with finite gradients;
+- semantic logits have the standard `[N,6,H,W]` shape and auxiliary logits remain available;
+- measured local parameter counts are 63,147 / 24,211 / 108,781;
+- authoritative Ruff/full-suite validation still needs the Docker environment.
 
 ## Open issues
 
-- rare-class collapse remains severe in low-budget runs, especially nature/human/vehicle
-- current mechanism screen is too small to compare against the 0.3130 full-budget incumbent directly
-- learned continuous neuron dynamics remain unquantized
-- structural contenders still need real DDD17 benchmarking and multi-seed confirmation
+- rare-class IoU remains the dominant accuracy limitation;
+- the new multiscale concatenation, detail preservation, and low-resolution spike attention hypotheses have not yet been measured on real DDD17;
+- learned continuous neuron dynamics and learned attention thresholds remain unquantized;
+- the eventual winner still needs the larger-budget/multi-seed/timestep and integer-reference gates before canonical promotion.
 
 ## Next action
 
-Run `docker compose run --rm lint`, `docker compose run --rm test`, then `docker compose run --rm benchmark-top-five`. Compare mIoU, rare-class IoU, predicted-pixel counts, per-layer spike rates, and parameter count before selecting the structural winner.
+Run `docker compose run --rm lint`, `docker compose run --rm test`, then `docker compose run --rm benchmark-top-three`. Compare mIoU first, then rare-class IoU/predicted-pixel counts, layer spike rates, parameter count, and hardware complexity before deciding whether to merge features into the final candidate.
