@@ -117,6 +117,19 @@ Protocol: 8 epochs, 2,048 training samples, 512 held-out samples, 64×64 output,
 
 T2 per-class IoU: flat 0.6190, construction+sky 0.8169, object 0.0095, nature 0.0221, human 0.0000, vehicle 0.1691. These are measured benchmark results only. No accuracy result is yet recorded for `final_dualpath_wide32`.
 
+## TIMESTEP SWEEP SUMMARY
+
+| Timesteps (T) | Mean IoU (mIoU) | Pixel Accuracy (acc) | Mean Spike Rate | Inference Time (s) |
+|:-------------:|:---------------:|:--------------------:|:---------------:|:------------------:|
+| 12            | 0.2408          | 0.8284               | 0.08029         | 523.2              |
+| 15            | 0.2349          | 0.8220               | 0.06780         | 688.4              |
+| 10            | 0.2330          | 0.8211               | 0.06075         | 452.2              |
+| 8             | 0.2316          | 0.8189               | 0.08601         | 356.4              |
+| 6             | 0.2003          | 0.7826               | 0.06168         | 278.0              |
+| 4             | 0.0180          | 0.1082               | 0.00000         | 196.2              |
+
+Performance improves with more timesteps up to T=12, after which gains diminish while runtime continues to increase.
+
 
 ## Reproducibility note
 

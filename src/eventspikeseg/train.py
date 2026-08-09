@@ -14,6 +14,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from .data import (
     DDD17_CLASS_COUNT,
@@ -425,7 +426,6 @@ def train_architecture(
     output_size: tuple[int, int] | None,
     device: str,
     checkpoint_every: int = 5,
-    log_every_batches: int = 1,
     amp: bool = False,
 ) -> TrainResult:
     seed_everything(seed)
@@ -473,8 +473,6 @@ def train_architecture(
     is_final_run = resolved_suite == "final"
     if checkpoint_every < 1:
         raise ValueError("checkpoint_every must be >= 1")
-    if log_every_batches < 1:
-        raise ValueError("log_every_batches must be >= 1")
     base_neuron_tokens = ("beta_logit", "threshold_logit")
     mechanism_tokens = (
         "adaptation_tau_logit", "adaptation_strength_logit", "target_rate_logit",
@@ -577,33 +575,18 @@ def train_architecture(
             path,
         )
 
+    precision = "AMP FP16" if amp_enabled else "FP32"
+    size_label = (
+        f"{output_size[0]}x{output_size[1]}" if output_size is not None else "native"
+    )
     print(
-        json.dumps(
-            {
-                "event": "training_start",
-                "architecture": architecture,
-                "suite": resolved_suite,
-                "device": str(resolved_device),
-                "parameters": model.parameter_count(),
-                "epochs": epochs,
-                "batches_per_epoch": len(train_loader),
-                "batch_size": batch_size,
-                "time_steps": time_steps,
-                "output_size": list(output_size) if output_size is not None else None,
-                "train_samples": len(train_dataset),
-                "validation_samples": len(validation_dataset),
-                "validation_fraction": validation_fraction if is_final_run else None,
-                "validation_source": "train_holdout" if is_final_run else "official_test",
-                "base_learning_rate": learning_rate,
-                "loss_profile": asdict(loss_profile),
-                "checkpoint_every": checkpoint_every if is_final_run else None,
-                "log_every_batches": log_every_batches,
-                "amp": amp_enabled,
-            },
-            sort_keys=True,
-        ),
+        f"Training {architecture} | {resolved_device} | {precision} | "
+        f"epochs={epochs} batch={batch_size} T={time_steps} size={size_label} | "
+        f"train={len(train_dataset)} val={len(validation_dataset)} | "
+        f"params={model.parameter_count():,}",
         flush=True,
     )
+
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -659,7 +642,15 @@ def train_architecture(
             set_hidden_inhibition(hidden_inhibition_enabled)
         running_loss = 0.0
         total_batches = len(train_loader)
-        for batch_index, (sequence, target) in enumerate(train_loader, start=1):
+        progress = tqdm(
+            train_loader,
+            total=total_batches,
+            desc=f"Epoch {epoch:02d}/{epochs:02d}",
+            unit="batch",
+            dynamic_ncols=True,
+            leave=True,
+        )
+        for batch_index, (sequence, target) in enumerate(progress, start=1):
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
             # Release the previous step's gradient buffers before building the
@@ -736,39 +727,20 @@ def train_architecture(
             scaler.update()
             batch_loss = float(loss.detach())
             running_loss += batch_loss
-            if batch_index % log_every_batches == 0 or batch_index == total_batches:
-                print(
-                    json.dumps(
-                        {
-                            "event": "train_batch",
-                            "architecture": architecture,
-                            "epoch": epoch,
-                            "epochs": epochs,
-                            "batch": batch_index,
-                            "batches": total_batches,
-                            "progress_pct": round(100.0 * batch_index / max(1, total_batches), 2),
-                            "loss": batch_loss,
-                            "running_mean_loss": running_loss / batch_index,
-                            "ce": float(ce.detach()),
-                            "focal": float(focal.detach()),
-                            "dice": float(dice.detach()),
-                            "activity_regularizer": float(activity.detach()),
-                            "auxiliary_term": float(auxiliary_term.detach()),
-                            "deep_auxiliary_term": float(deep_auxiliary_term.detach()),
-                            "output_spike_rate": float(
-                                outputs["segmentation_rate"].detach()
-                                if "segmentation_rate" in outputs
-                                else outputs["segmentation_spikes"].detach().mean()
-                            ),
-                            "gradient_norm_before_clip": float(gradient_norm),
-                            "learning_rates": [group["lr"] for group in optimizer.param_groups],
-                            "training_phase": training_phase,
-                            "homeostasis_scale": homeostasis_scale,
-                        },
-                        sort_keys=True,
-                    ),
-                    flush=True,
-                )
+            output_spike_rate = float(
+                outputs["segmentation_rate"].detach()
+                if "segmentation_rate" in outputs
+                else outputs["segmentation_spikes"].detach().mean()
+            )
+            progress.set_postfix(
+                loss=f"{batch_loss:.4f}",
+                avg=f"{running_loss / batch_index:.4f}",
+                lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+                spike=f"{output_spike_rate:.4f}",
+                phase=training_phase,
+                refresh=False,
+            )
+
 
             # Do not carry a completed batch's autograd graph into the next
             # forward pass. Python locals otherwise keep the large output/aux
@@ -780,20 +752,14 @@ def train_architecture(
             del auxiliary_term, deep_auxiliary_term, gradient_norm
             del sequence, target
         scheduler.step()
-        epoch_summary = {
-            "event": "train_epoch",
-            "architecture": architecture,
-            "epoch": epoch,
-            "epochs": epochs,
-            "mean_loss": running_loss / max(1, len(train_loader)),
-            "homeostasis_scale": homeostasis_scale,
-            "competition_enabled": competition_enabled,
-            "hidden_inhibition_enabled": hidden_inhibition_enabled,
-            "training_phase": training_phase,
-            "semantic_backbone_trainable": semantic_backbone_trainable,
-            "learning_rates": [group["lr"] for group in optimizer.param_groups],
-        }
-        print(json.dumps(epoch_summary, sort_keys=True), flush=True)
+        mean_epoch_loss = running_loss / max(1, len(train_loader))
+        print(
+            f"Epoch {epoch:02d}/{epochs:02d} complete | "
+            f"loss={mean_epoch_loss:.4f} | phase={training_phase} | "
+            f"homeostasis={homeostasis_scale:.2f}",
+            flush=True,
+        )
+
 
         if is_final_run:
             validation_metrics, validation_spike_rate, validation_layer_rates = evaluate_model(
@@ -832,25 +798,18 @@ def train_architecture(
                     validation_layer_rates=validation_layer_rates,
                     training_phase_name=training_phase,
                 )
+            best_marker = " | new best" if improved else ""
+            checkpoint_marker = " | checkpoint saved" if epoch % checkpoint_every == 0 else ""
             print(
-                json.dumps(
-                    {
-                        "event": "validation_epoch",
-                        "architecture": architecture,
-                        "epoch": epoch,
-                        "mean_iou": validation_miou,
-                        "pixel_accuracy": float(validation_metrics["pixel_accuracy"]),
-                        "mean_spike_rate": validation_spike_rate,
-                        "best_mean_iou": best_mean_iou,
-                        "best_epoch": best_epoch,
-                        "new_best": improved,
-                        "best_checkpoint": str(best_checkpoint_path),
-                        "periodic_checkpoint_saved": epoch % checkpoint_every == 0,
-                    },
-                    sort_keys=True,
-                ),
+                f"Validation {epoch:02d}/{epochs:02d} | "
+                f"mIoU={validation_miou:.4f} | "
+                f"pixel_acc={float(validation_metrics['pixel_accuracy']):.4f} | "
+                f"spike={validation_spike_rate:.4f} | "
+                f"best={best_mean_iou:.4f} (epoch {best_epoch})"
+                f"{best_marker}{checkpoint_marker}",
                 flush=True,
             )
+
             model.train()
 
     if callable(set_backbone_trainable):
@@ -930,21 +889,11 @@ def train_architecture(
             checkpoint_path,
         )
     print(
-        json.dumps(
-            {
-                "event": "training_complete",
-                "architecture": architecture,
-                "reported_mean_iou": result.mean_iou,
-                "reported_pixel_accuracy": result.pixel_accuracy,
-                "checkpoint": result.checkpoint,
-                "best_epoch": best_epoch if is_final_run else None,
-                "best_checkpoint": str(best_checkpoint_path) if is_final_run else None,
-                "last_checkpoint": str(last_checkpoint_path) if is_final_run else None,
-            },
-            sort_keys=True,
-        ),
+        f"Training complete | mIoU={result.mean_iou:.4f} | "
+        f"pixel_acc={result.pixel_accuracy:.4f} | checkpoint={result.checkpoint}",
         flush=True,
     )
+
     return result
 
 
@@ -976,7 +925,6 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             output_size=_resolve_output_size(args.height, args.width),
             device=args.device,
             checkpoint_every=args.checkpoint_every,
-            log_every_batches=args.log_every_batches,
             amp=args.amp,
         )
         for name in presets
@@ -1078,12 +1026,6 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         help="save a recoverable periodic checkpoint every N epochs (final suite)",
     )
     parser.add_argument(
-        "--log-every-batches",
-        type=int,
-        default=1,
-        help="print detailed training progress every N batches",
-    )
-    parser.add_argument(
         "--amp",
         action="store_true",
         help="enable CUDA automatic mixed precision (FP16 autocast + GradScaler)",
@@ -1159,10 +1101,8 @@ def main() -> None:
             output_size=_resolve_output_size(args.height, args.width),
             device=args.device,
             checkpoint_every=args.checkpoint_every,
-            log_every_batches=args.log_every_batches,
             amp=args.amp,
         )
-        print(json.dumps(result.to_dict(), indent=2))
     elif args.command == "benchmark":
         print(json.dumps(benchmark_architectures(args), indent=2))
     else:
