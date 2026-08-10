@@ -293,24 +293,28 @@ def _prepare_datasets(
     root: Path,
     *,
     seed: int,
-    train_samples: float,
     output_size: tuple[int, int] | None,
     final_validation_fraction: float | None = None,
 ) -> tuple[DDD17Dataset, DDD17Dataset]:
-    train_records = _record_subset_from_spec(
-        discover_ddd17_records(root, "train"), amount=train_samples, seed=seed
-    )
+    """Build the fixed train pool and held-out set.
+
+    ``--train-samples`` is applied later per epoch so each epoch can draw a
+    fresh random subset from this pool. Validation/test stay fixed.
+    """
+    all_train_records = discover_ddd17_records(root, "train")
     if final_validation_fraction is not None:
         if not (0.0 < final_validation_fraction < 0.5):
             raise ValueError("validation_fraction must satisfy 0 < value < 0.5")
-        if len(train_records) < 2:
+        if len(all_train_records) < 2:
             raise ValueError("at least two DDD17 training records are required")
         generator = torch.Generator().manual_seed(seed + 1)
-        order = torch.randperm(len(train_records), generator=generator).tolist()
-        validation_count = max(1, int(round(len(train_records) * final_validation_fraction)))
-        validation_count = min(validation_count, len(train_records) - 1)
-        validation_records = [train_records[index] for index in order[:validation_count]]
-        training_records = [train_records[index] for index in order[validation_count:]]
+        order = torch.randperm(len(all_train_records), generator=generator).tolist()
+        validation_count = max(
+            1, int(round(len(all_train_records) * final_validation_fraction))
+        )
+        validation_count = min(validation_count, len(all_train_records) - 1)
+        validation_records = [all_train_records[index] for index in order[:validation_count]]
+        training_records = [all_train_records[index] for index in order[validation_count:]]
         return (
             DDD17Dataset(
                 root, split="train", records=training_records, output_size=output_size
@@ -325,8 +329,31 @@ def _prepare_datasets(
     # branch for checkpoint selection in the canonical final-model run.
     test_records = discover_ddd17_records(root, "test")
     return (
-        DDD17Dataset(root, split="train", records=train_records, output_size=output_size),
+        DDD17Dataset(
+            root, split="train", records=all_train_records, output_size=output_size
+        ),
         DDD17Dataset(root, split="test", records=test_records, output_size=output_size),
+    )
+
+
+def _epoch_train_dataset(
+    train_pool: DDD17Dataset,
+    *,
+    train_samples: float,
+    seed: int,
+    epoch: int,
+) -> DDD17Dataset:
+    """Draw a fresh ``train_samples`` subset from the fixed train pool."""
+    epoch_records = _record_subset_from_spec(
+        train_pool.records,
+        amount=train_samples,
+        seed=seed + epoch * 1009,
+    )
+    return DDD17Dataset(
+        train_pool.root,
+        split="train",
+        records=epoch_records,
+        output_size=train_pool.output_size,
     )
 
 
@@ -432,25 +459,15 @@ def train_architecture(
     seed_everything(seed)
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
     loss_profile = loss_profile_for_suite(resolved_suite)
-    train_dataset, validation_dataset = _prepare_datasets(
+    train_pool, validation_dataset = _prepare_datasets(
         root,
         seed=seed,
-        train_samples=train_samples,
         output_size=output_size,
         final_validation_fraction=(
             validation_fraction if resolved_suite == "final" else None
         ),
     )
     collate = lambda batch: temporal_collate(batch, time_steps=time_steps)  # noqa: E731
-    generator = torch.Generator().manual_seed(seed)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        generator=generator,
-        num_workers=0,
-        collate_fn=collate,
-    )
     validation_loader = DataLoader(
         validation_dataset,
         batch_size=batch_size,
@@ -503,7 +520,7 @@ def train_architecture(
         )
     optimizer = torch.optim.AdamW(parameter_groups)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
-    class_weights = estimate_class_weights(train_dataset).to(resolved_device)
+    class_weights = estimate_class_weights(train_pool).to(resolved_device)
 
     raw_refinement_schedule = getattr(model, "refinement_schedule", None)
     refinement_schedule = (
@@ -659,12 +676,16 @@ def train_architecture(
     size_label = (
         f"{output_size[0]}x{output_size[1]}" if output_size is not None else "native"
     )
+    example_epoch_train = _epoch_train_dataset(
+        train_pool, train_samples=train_samples, seed=seed, epoch=1
+    )
     print(
         f"Training {architecture} | {resolved_device} | {precision} | "
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
         f"T={time_steps} size={size_label} | "
-        f"train={len(train_dataset)} val={len(validation_dataset)} | "
+        f"train_pool={len(train_pool)} epoch_train={len(example_epoch_train)} "
+        f"val={len(validation_dataset)} | "
         f"params={model.parameter_count():,}",
         flush=True,
     )
@@ -672,6 +693,17 @@ def train_architecture(
 
     for epoch in range(start_epoch, epochs + 1):
         model.train()
+        epoch_train_dataset = _epoch_train_dataset(
+            train_pool, train_samples=train_samples, seed=seed, epoch=epoch
+        )
+        train_loader = DataLoader(
+            epoch_train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            generator=torch.Generator().manual_seed(seed + epoch),
+            num_workers=0,
+            collate_fn=collate,
+        )
         training_phase, semantic_backbone_trainable = refinement_phase_for_epoch(
             epoch, epochs, refinement_schedule
         )
@@ -945,7 +977,7 @@ def train_architecture(
         architecture=architecture,
         seed=seed,
         epochs=epochs,
-        train_samples=len(train_dataset),
+        train_samples=len(example_epoch_train),
         validation_samples=len(validation_dataset),
         parameter_count=model.parameter_count(),
         mean_iou=float(metrics["mean_iou"]),
@@ -1082,7 +1114,10 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--time-steps", type=int, default=20)
     parser.add_argument(
         "--train-samples", type=float, default=2048.0,
-        help="0=all, 0<x<=1=fraction of available training records, x>1=absolute count",
+        help=(
+            "per-epoch random draw from the train pool: "
+            "0=all, 0<x<=1=fraction, x>1=absolute count (reshuffled each epoch)"
+        ),
     )
     parser.add_argument(
         "--validation-fraction",

@@ -58,13 +58,46 @@ def test_prepare_datasets_uses_train_and_test(tmp_path) -> None:
                 labels_dir / f"{split}_{index}.png"
             )
 
-    train_dataset, held_out = _prepare_datasets(
-        tmp_path, seed=17, train_samples=0, validation_samples=0, output_size=(32, 32)
+    train_pool, held_out = _prepare_datasets(
+        tmp_path, seed=17, output_size=(32, 32)
     )
-    assert len(train_dataset) == 4
+    assert len(train_pool) == 4
     assert len(held_out) == 3
     assert all(record.split == "test" for record in held_out.records)
     assert len(discover_ddd17_records(tmp_path, "train")) == 4
+
+
+def test_epoch_train_subset_changes_across_epochs(tmp_path) -> None:
+    import numpy as np
+    from PIL import Image
+    from eventspikeseg.train import _epoch_train_dataset
+
+    for split, count in (("train", 20), ("test", 2)):
+        events_dir = tmp_path / "events" / split
+        labels_dir = tmp_path / "labels" / split
+        events_dir.mkdir(parents=True)
+        labels_dir.mkdir(parents=True)
+        for index in range(count):
+            np.save(
+                events_dir / f"{split}_{index}.npy",
+                np.zeros((24, 32, 6), dtype=np.float32),
+            )
+            Image.fromarray(np.zeros((24, 32), dtype=np.uint8)).save(
+                labels_dir / f"{split}_{index}.png"
+            )
+
+    train_pool, _ = _prepare_datasets(tmp_path, seed=17, output_size=(32, 32))
+    epoch1 = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=1)
+    epoch2 = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=2)
+    epoch1_again = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=1)
+    assert len(epoch1) == 10
+    assert len(epoch2) == 10
+    assert [record.event_path for record in epoch1.records] == [
+        record.event_path for record in epoch1_again.records
+    ]
+    assert [record.event_path for record in epoch1.records] != [
+        record.event_path for record in epoch2.records
+    ]
 
 
 def test_architecture_suites_are_isolated() -> None:
