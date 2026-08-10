@@ -88,7 +88,7 @@ services:
       ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
        "--architecture", "EventSpikeSeg140k",
       #  "--device", "cuda", "--amp",
-       "--height", "212", "--width", "282",
+       "--height", "185", "--width", "320",
        "--suite", "final", "--seed", "17",
        "--epochs", "80", "--batch-size", "1",
        "--accumulate-steps", "4",
@@ -97,7 +97,7 @@ services:
        "--validation-fraction", "0.10",
        "--learning-rate", "0.0015",
        "--checkpoint-every", "1",
-      #  "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_last.pt",
+       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch005.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   # Canonical expanded ~238k final model.
@@ -114,7 +114,7 @@ services:
       ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
        "--architecture", "EventSpikeSeg",
       #  "--device", "cuda", "--amp",
-       "--height", "212", "--width", "282",
+       "--height", "185", "--width", "320",
        "--suite", "final", "--seed", "17",
        "--epochs", "70", "--batch-size", "1",
        "--accumulate-steps", "4",
