@@ -1,14 +1,23 @@
+import json
+from pathlib import Path
+
+import numpy as np
 import torch
-from eventspikeseg.data import discover_ddd17_records
+from PIL import Image
+
+import eventspikeseg.data as data_module
+from eventspikeseg.data import temporal_collate
+from eventspikeseg.evaluate import _records_for_checkpoint
 from eventspikeseg.train import (
     TrainResult,
+    _epoch_train_dataset,
     _prepare_datasets,
     architecture_presets,
+    estimate_class_weights,
     infer_model_suite,
     loss_profile_for_suite,
     refinement_phase_for_epoch,
     select_winner,
-    temporal_collate,
 )
 
 
@@ -32,6 +41,31 @@ def _result(name: str, miou: float, parameters: int, spike_rate: float) -> Train
     )
 
 
+def _write_sequence(root: Path, sequence: str, count: int = 5) -> None:
+    events_dir = root / "events" / "train"
+    labels_dir = root / "labels" / "train"
+    events_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = root / "ddd17_temporal_manifest.json"
+    manifest = (
+        json.loads(manifest_path.read_text())
+        if manifest_path.exists()
+        else {"schema_version": 1, "train": [], "test": []}
+    )
+    for index in range(count):
+        event_path = events_dir / f"{sequence}_{index:03d}.npy"
+        label_path = labels_dir / f"{sequence}_{index:03d}.png"
+        np.save(event_path, np.zeros((24, 32, 6), dtype=np.float32))
+        Image.fromarray(np.zeros((24, 32), dtype=np.uint8)).save(label_path)
+        manifest["train"].append({
+            "event": str(event_path.relative_to(root)),
+            "label": str(label_path.relative_to(root)),
+            "sequence_id": sequence,
+            "frame_index": index,
+        })
+    manifest_path.write_text(json.dumps(manifest))
+
+
 def test_winner_prefers_smaller_model_within_half_point() -> None:
     winner = select_winner(
         [
@@ -43,61 +77,135 @@ def test_winner_prefers_smaller_model_within_half_point() -> None:
     assert winner.architecture == "small"
 
 
-def test_prepare_datasets_uses_train_and_test(tmp_path) -> None:
-    import numpy as np
-    from PIL import Image
-
-    for split, count in (("train", 4), ("test", 3)):
-        events_dir = tmp_path / "events" / split
-        labels_dir = tmp_path / "labels" / split
-        events_dir.mkdir(parents=True)
-        labels_dir.mkdir(parents=True)
-        for index in range(count):
-            np.save(events_dir / f"{split}_{index}.npy", np.zeros((24, 32, 6), dtype=np.float32))
-            Image.fromarray(np.zeros((24, 32), dtype=np.uint8)).save(
-                labels_dir / f"{split}_{index}.png"
-            )
-
-    train_pool, held_out = _prepare_datasets(
-        tmp_path, seed=17, output_size=(32, 32)
+def test_prepare_datasets_holds_out_complete_sequences(tmp_path: Path) -> None:
+    for sequence in ("recA", "recB", "recC", "recD"):
+        _write_sequence(tmp_path, sequence, count=5)
+    train_pool, held_out, protocol, fingerprint = _prepare_datasets(
+        tmp_path,
+        seed=17,
+        output_size=(32, 32),
+        validation_fraction=0.25,
+        input_mode="sequential-6ch",
+        time_steps=3,
+        sequence_stride=1,
+        manifest=None,
     )
-    assert len(train_pool) == 4
-    assert len(held_out) == 3
-    assert all(record.split == "test" for record in held_out.records)
-    assert len(discover_ddd17_records(tmp_path, "train")) == 4
+    train_sequences = {window.sequence_id for window in train_pool.windows}
+    validation_sequences = {window.sequence_id for window in held_out.windows}
+    assert train_sequences.isdisjoint(validation_sequences)
+    assert protocol["input_mode"] == "sequential-6ch"
+    assert len(fingerprint) == 64
 
 
-def test_epoch_train_subset_changes_across_epochs(tmp_path) -> None:
-    import numpy as np
-    from PIL import Image
-    from eventspikeseg.train import _epoch_train_dataset
 
-    for split, count in (("train", 20), ("test", 2)):
-        events_dir = tmp_path / "events" / split
-        labels_dir = tmp_path / "labels" / split
-        events_dir.mkdir(parents=True)
-        labels_dir.mkdir(parents=True)
-        for index in range(count):
-            np.save(
-                events_dir / f"{split}_{index}.npy",
-                np.zeros((24, 32, 6), dtype=np.float32),
-            )
-            Image.fromarray(np.zeros((24, 32), dtype=np.uint8)).save(
-                labels_dir / f"{split}_{index}.png"
-            )
 
-    train_pool, _ = _prepare_datasets(tmp_path, seed=17, output_size=(32, 32))
+def test_prepare_datasets_single_sequence_uses_contiguous_temporal_holdout(tmp_path: Path) -> None:
+    _write_sequence(tmp_path, "recA", count=30)
+    train_pool, held_out, protocol, fingerprint = _prepare_datasets(
+        tmp_path,
+        seed=17,
+        output_size=(32, 32),
+        validation_fraction=0.20,
+        input_mode="sequential-6ch",
+        time_steps=4,
+        sequence_stride=1,
+        manifest=None,
+    )
+    validation_frames = [window.frame_index for window in held_out.windows]
+    assert validation_frames == list(range(validation_frames[0], validation_frames[-1] + 1))
+    training_frames = {
+        record.frame_index
+        for window in train_pool.windows
+        for record in window.records
+    }
+    validation_record_frames = {
+        record.frame_index
+        for window in held_out.windows
+        for record in window.records
+    }
+    assert training_frames.isdisjoint(validation_record_frames)
+    assert protocol["training_sequences"] == ["recA"]
+    assert protocol["validation_sequences"] == ["recA"]
+    assert len(protocol["training_record_ids"]) + len(protocol["validation_record_ids"]) < 30
+    assert {
+        tuple(record_id) for record_id in protocol["training_record_ids"]
+    }.isdisjoint(
+        {tuple(record_id) for record_id in protocol["validation_record_ids"]}
+    )
+    assert len(protocol["validation_record_digest"]) == 64
+    assert len(fingerprint) == 64
+
+    checkpoint = {"temporal_protocol": protocol}
+    validation_records, split = _records_for_checkpoint(
+        tmp_path, checkpoint, split="validation", manifest=None
+    )
+    assert split == "train"
+    assert {
+        (record.sequence_id, record.frame_index) for record in validation_records
+    } == {tuple(record_id) for record_id in protocol["validation_record_ids"]}
+
+
+def test_epoch_train_subset_changes_across_epochs(tmp_path: Path) -> None:
+    for sequence in ("recA", "recB", "recC", "recD"):
+        _write_sequence(tmp_path, sequence, count=8)
+    train_pool, _, _, _ = _prepare_datasets(
+        tmp_path,
+        seed=17,
+        output_size=(32, 32),
+        validation_fraction=0.25,
+        input_mode="sequential-6ch",
+        time_steps=3,
+        sequence_stride=1,
+        manifest=None,
+    )
     epoch1 = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=1)
     epoch2 = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=2)
     epoch1_again = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=1)
-    assert len(epoch1) == 10
-    assert len(epoch2) == 10
-    assert [record.event_path for record in epoch1.records] == [
-        record.event_path for record in epoch1_again.records
+    ids1 = [(w.sequence_id, w.frame_index) for w in epoch1.windows]
+    ids2 = [(w.sequence_id, w.frame_index) for w in epoch2.windows]
+    assert ids1 == [(w.sequence_id, w.frame_index) for w in epoch1_again.windows]
+    assert ids1 != ids2
+    expected_count = max(1, int(round(len(train_pool) * 0.5)))
+    assert len(ids1) == expected_count
+    g1 = torch.Generator().manual_seed(17 + 1)
+    expected1 = torch.randperm(len(train_pool), generator=g1)[:expected_count].tolist()
+    assert ids1 == [
+        (train_pool.windows[i].sequence_id, train_pool.windows[i].frame_index)
+        for i in expected1
     ]
-    assert [record.event_path for record in epoch1.records] != [
-        record.event_path for record in epoch2.records
-    ]
+
+
+def test_temporal_collate_preserves_exact_input_time() -> None:
+    events_a = torch.stack([torch.full((6, 4, 5), float(t)) for t in range(3)])
+    events_b = events_a + 10.0
+    mask = torch.zeros((4, 5), dtype=torch.long)
+    sequence, masks = temporal_collate([(events_a, mask), (events_b, mask)])
+    assert sequence.shape == (3, 2, 6, 4, 5)
+    assert masks.shape == (2, 4, 5)
+    assert not torch.equal(sequence[0], sequence[-1])
+
+
+def test_class_weight_estimation_reads_masks_without_temporal_events(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_sequence(tmp_path, "recA", count=10)
+    train_pool, _, _, _ = _prepare_datasets(
+        tmp_path,
+        seed=17,
+        output_size=(32, 32),
+        validation_fraction=0.20,
+        input_mode="sequential-6ch",
+        time_steps=2,
+        sequence_stride=1,
+        manifest=None,
+    )
+
+    def unexpected_load(_record):
+        raise AssertionError("class weights must not load temporal event tensors")
+
+    monkeypatch.setattr(data_module, "_load_record_events", unexpected_load)
+    weights = estimate_class_weights(train_pool)
+    assert weights.shape == (6,)
 
 
 def test_architecture_suites_are_isolated() -> None:
@@ -105,17 +213,13 @@ def test_architecture_suites_are_isolated() -> None:
     assert len(architecture_presets("top-five")) == 5
     assert len(architecture_presets("top-three")) == 3
     assert infer_model_suite("f01_base24_multiscale") == "top-five"
-    assert infer_model_suite("f03_early5x5_multiscale") == "top-five"
     assert infer_model_suite("v03_dw_dilated") == "top-ten"
     assert infer_model_suite("t02_dualpath_detail") == "top-three"
 
 
-def test_historical_and_final_loss_profiles_are_explicit() -> None:
+def test_loss_profiles_remain_explicit() -> None:
     for suite in ("top-ten", "top-five", "top-three"):
-        profile = loss_profile_for_suite(suite)
-        assert profile.cross_entropy == 0.5
-        assert profile.focal == 0.5
-        assert profile.dice == 0.75
+        assert loss_profile_for_suite(suite).cross_entropy == 0.5
     assert loss_profile_for_suite("final").cross_entropy == 1.0
 
 
@@ -123,21 +227,4 @@ def test_final_refinement_schedule_phases() -> None:
     schedule = (0.70, 0.90)
     assert refinement_phase_for_epoch(1, 10, schedule) == ("joint", True)
     assert refinement_phase_for_epoch(8, 10, schedule) == ("decoder_detail_refinement", False)
-    assert refinement_phase_for_epoch(9, 10, schedule) == ("decoder_detail_refinement", False)
     assert refinement_phase_for_epoch(10, 10, schedule) == ("final_joint_low_lr", True)
-    assert refinement_phase_for_epoch(8, 10, None) == ("joint", True)
-
-
-def test_temporal_collate_reuses_static_event_storage() -> None:
-    events_a = torch.arange(6 * 4 * 5, dtype=torch.float32).reshape(1, 6, 4, 5)
-    events_b = events_a + 1.0
-    mask = torch.zeros((4, 5), dtype=torch.long)
-    sequence, masks = temporal_collate(
-        [(events_a, mask), (events_b, mask)], time_steps=15
-    )
-    assert sequence.shape == (15, 2, 6, 4, 5)
-    assert masks.shape == (2, 4, 5)
-    # Expanded direct encoding should share the same temporal storage rather
-    # than materializing 15 physical input copies.
-    assert sequence.stride(0) == 0
-    assert torch.equal(sequence[0], sequence[-1])

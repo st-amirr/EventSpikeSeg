@@ -40,7 +40,6 @@ from .model_components import (
     SpikingStage,
 )
 
-
 # Selectable finals: EventSpikeSeg (~238k) and EventSpikeSeg140k (~140k).
 FINAL_ARCHITECTURE = SegmentationArchitecture(
     name="EventSpikeSeg",
@@ -444,7 +443,7 @@ class EventSpikeSeg(EventSpikeSegBase):
     def forward(self, sequence: Tensor) -> dict[str, Tensor]:
         if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
             raise ValueError(
-                f"expected [T,N,{self.input_channels},H,W] direct-encoded event sequence"
+                f"expected [T,N,{self.input_channels},H,W] temporal event sequence"
             )
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
         detail = self.detail3(self.detail2(self.detail1(x1)))
@@ -608,7 +607,7 @@ class EventSpikeSeg140k(EventSpikeSegBase):
     def forward(self, sequence: Tensor) -> dict[str, Tensor]:
         if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
             raise ValueError(
-                f"expected [T,N,{self.input_channels},H,W] direct-encoded event sequence"
+                f"expected [T,N,{self.input_channels},H,W] temporal event sequence"
             )
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
         detail = self.detail3(self.detail2(self.detail1(x1)))

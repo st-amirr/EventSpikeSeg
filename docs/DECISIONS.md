@@ -190,3 +190,31 @@ Keep `src/eventspikeseg/` limited to active runtime/training code plus frozen ar
 ## 2026-08-09 — Restrict canonical fLong to semantic encoder/context
 
 Decision: introduce a canonical-only `encoder_context` fLong scope. Historical `encoder` scope semantics remain unchanged. The final model no longer applies triangular fLong to the full-resolution stem/x1, custom detail branch, or auxiliary head; fLong begins at x2 after the first spatial downsampling and remains active through x2/x3/context. This matches the intended architecture and removes unnecessary per-pixel temporal state without reducing channels, T, precision, or gradient horizon. Final parameter count becomes 237,597. Stateless convolution plus affine current transforms are vectorized across the T×N batch dimension while PLIF/LIF updates remain sequential, preserving identical temporal dynamics and gradients. The training output contract also uses scalar activity rates instead of retaining complete hidden spike sequences.
+
+
+## 2026-08-14 — Supersede repeated-static direct encoding with temporal-v2
+
+The 2026-08-05 decision to repeat each six-channel Ev-SegNet sample over internal SNN timesteps is superseded. The timestep sweep and later checkpoint plateau showed that this protocol gives the recurrent neurons repeated current without new sensory evidence and leaves rare classes collapsed.
+
+Decision: remove repeated-static support rather than maintain backward compatibility. Every new sample must contain chronological evidence.
+
+Two supported representations are now first-class:
+
+- `sequential-6ch`: `T` strictly consecutive Ev-SegNet statistical samples from one sequence/interval; target is the final mask.
+- `raw-events`: original DDD17 events in a fixed physical interval ending at the label timestamp, divided into `T` ON/OFF count bins.
+
+Training/validation splits are made by complete `sequence_id`, not random frames. The generated dataset-root `ddd17_temporal_manifest.json` is the authoritative source of semantic sequence boundaries and frame order; the runtime no longer generates or infers that chronology from filenames. Raw mode deliberately does **not** store or consume `timestamp_us`/`raw_event` alignment in the manifest: it resolves the canonical `raw/rec<ID>.hdf5` recording and actual APS timestamp in memory from `sequence_id` + `frame_index`. Checkpoints freeze the temporal protocol through a manifest digest plus SHA-256 fingerprint. Checkpoints from the removed repeated-static protocol are deliberately not resumable/evaluable through the current runtime.
+
+Rationale: data chronology is now treated as part of the model contract. Architecture search should resume only after the chronological six-channel and raw-event baselines are measured.
+
+### 2026-08-14 — Raw alignment is runtime data loading, not manifest preprocessing
+
+Decision: remove the separate raw-manifest preparation command and all hard-coded full-dataset count checks. `DDD17RawEventDataset` resolves original DDD17 source frames and real APS timestamps during construction, caches each recording's timestamp table, and never mutates `ddd17_temporal_manifest.json`. The exact terminal-boundary export sample is supported only when its corresponding raw APS frame exists; larger indices fail. Timestamp units are explicit by dtype (float seconds, integer microseconds), and only well-defined raw HDF5 layouts are accepted. This keeps raw alignment in `data.py`, where input extraction belongs, and prevents paper totals from overriding the actual local dataset.
+
+### 2026-08-14 — Supersede HDF5 raw alignment with installed NumPy event bins
+
+The active dataset has no raw HDF5/event-list source. Its event files are dense `200×346×6` Ev-SegNet interval statistics. Exact within-interval `(t,x,y,p)` binning cannot be reconstructed from histogram/mean/std moments.
+
+Decision: make `event-bins` the default input. Each SNN timestep is one strictly consecutive manifest interval; input channels are the two polarity histograms mapped from the stored `[-1,1]` encoding to nonnegative `[0,1]`. Timestamp mean/std channels are not treated as time. `sequential-6ch` remains an ablation. Active training/evaluation has no HDF5 dependency, and the compatibility `train-ddd17-raw` command routes to `event-bins`.
+
+The indexed PNG target remains one class ID per pixel (0–5), while the network emits six spiking class maps. Dataset inspection must report event/label count mismatches; the current installation has 2,887 train event tensors and 10,001 train masks.

@@ -1,4 +1,4 @@
-"""Evaluate a DDD17 semantic-segmentation checkpoint and save visual summaries."""
+"""Evaluate a DDD17 temporal-v2 semantic-segmentation checkpoint."""
 
 from __future__ import annotations
 
@@ -15,13 +15,15 @@ from .data import (
     DDD17_CLASS_COUNT,
     DDD17_CLASS_NAMES,
     DEFAULT_DDD17_ROOT,
-    DDD17Dataset,
-    deterministic_record_subset,
+    TEMPORAL_PROTOCOL_VERSION,
+    build_temporal_dataset,
+    deterministic_dataset_subset,
     discover_ddd17_records,
     resolve_ddd17_root,
+    temporal_collate,
 )
 from .metrics import ConfusionMatrix
-from .train import build_experiment_model, temporal_collate
+from .train import build_experiment_model
 
 _PALETTE = np.array(
     [
@@ -37,13 +39,13 @@ _PALETTE = np.array(
 
 
 def _event_image(sequence: torch.Tensor) -> np.ndarray:
-    sample = sequence[0, 0].detach().cpu()
-    histogram_0 = sample[0].numpy()
-    histogram_1 = sample[1].numpy()
-    maximum = max(float(histogram_0.max()), float(histogram_1.max()), 1.0)
-    image = np.zeros((*histogram_0.shape, 3), dtype=np.uint8)
-    image[..., 0] = np.clip(histogram_1 / maximum * 255.0, 0, 255).astype(np.uint8)
-    image[..., 2] = np.clip(histogram_0 / maximum * 255.0, 0, 255).astype(np.uint8)
+    sample = sequence[:, 0].sum(dim=0).detach().cpu()
+    channel_0 = sample[0].numpy()
+    channel_1 = sample[1].numpy()
+    maximum = max(float(channel_0.max()), float(channel_1.max()), 1.0)
+    image = np.zeros((*channel_0.shape, 3), dtype=np.uint8)
+    image[..., 0] = np.clip(channel_1 / maximum * 255.0, 0, 255).astype(np.uint8)
+    image[..., 2] = np.clip(channel_0 / maximum * 255.0, 0, 255).astype(np.uint8)
     return image
 
 
@@ -69,8 +71,41 @@ def _save_visual(
     confidence = spikes[:, 0].sum(dim=0).amax(dim=0).detach().cpu().numpy()
     confidence = confidence / max(float(confidence.max()), 1.0)
     confidence_rgb = np.repeat((confidence[..., None] * 255).astype(np.uint8), 3, axis=2)
-    canvas = np.concatenate((event, target_rgb, prediction_rgb, confidence_rgb), axis=1)
-    Image.fromarray(canvas).save(destination / f"sample_{index:02d}.png")
+    comparison = np.concatenate(
+        (event, target_rgb, prediction_rgb, confidence_rgb), axis=1
+    )
+    Image.fromarray(comparison).save(destination / f"sample_{index:02d}.png")
+
+
+def _records_for_checkpoint(
+    root: Path,
+    checkpoint: dict[str, object],
+    *,
+    split: str,
+    manifest: Path | None,
+):
+    protocol = checkpoint["temporal_protocol"]
+    if not isinstance(protocol, dict):
+        raise ValueError("checkpoint temporal_protocol is malformed")
+    if split in {"train", "validation"}:
+        field = "training_record_ids" if split == "train" else "validation_record_ids"
+        raw_ids = protocol.get(field)
+        if not isinstance(raw_ids, list):
+            raise ValueError(
+                f"checkpoint temporal protocol is missing exact {split} record membership"
+            )
+        record_ids = {(str(value[0]), int(value[1])) for value in raw_ids}
+        records = [
+            record
+            for record in discover_ddd17_records(root, "train", manifest=manifest)
+            if (record.sequence_id, record.frame_index) in record_ids
+        ]
+        if len(records) != len(record_ids):
+            raise ValueError(
+                f"current manifest does not contain every checkpoint {split} record"
+            )
+        return records, "train"
+    return discover_ddd17_records(root, "test", manifest=manifest), "test"
 
 
 def evaluate(
@@ -83,32 +118,49 @@ def evaluate(
     visualizations: int,
     visualization_dir: Path,
     device: str,
+    manifest: Path | None = None,
 ) -> dict[str, object]:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    architecture = checkpoint["architecture"]
-    time_steps = int(checkpoint.get("time_steps", 20))
-    records = deterministic_record_subset(
-        discover_ddd17_records(root, split),
-        maximum=maximum_samples,
-        # Match train.py's held-out benchmark subset exactly.
-        seed=int(checkpoint["seed"]) + 1,
+    if checkpoint.get("temporal_protocol_version") != TEMPORAL_PROTOCOL_VERSION:
+        raise ValueError(
+            "legacy repeated-static checkpoints are obsolete and cannot be evaluated by temporal-v2"
+        )
+    architecture = str(checkpoint["architecture"])
+    protocol = checkpoint.get("temporal_protocol")
+    if not isinstance(protocol, dict):
+        raise ValueError("checkpoint is missing temporal_protocol")
+    input_mode = str(protocol["input_mode"])
+    time_steps = int(protocol["time_steps"])
+    sequence_stride = int(protocol.get("sequence_stride") or 1)
+    records, dataset_split = _records_for_checkpoint(
+        root, checkpoint, split=split, manifest=manifest
     )
     raw_output_size = checkpoint.get("output_size")
-    output_size = (
-        tuple(int(value) for value in raw_output_size)
-        if raw_output_size is not None
-        else None
+    output_size = tuple(int(v) for v in raw_output_size) if raw_output_size is not None else None
+    dataset = build_temporal_dataset(
+        root,
+        split=dataset_split,
+        input_mode=input_mode,
+        time_steps=time_steps,
+        output_size=output_size,
+        records=records,
+        sequence_stride=sequence_stride,
+        manifest=manifest,
     )
-    dataset = DDD17Dataset(root, split=split, records=records, output_size=output_size)
-    collate = lambda batch: temporal_collate(batch, time_steps=time_steps)  # noqa: E731
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate)
+    dataset = deterministic_dataset_subset(
+        dataset, maximum=maximum_samples, seed=int(checkpoint["seed"]) + 1
+    )
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=temporal_collate)
     if device == "auto":
         resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         resolved_device = torch.device(device)
     suite = str(checkpoint.get("model_suite", "auto"))
     model = build_experiment_model(
-        architecture, class_count=DDD17_CLASS_COUNT, suite=suite
+        architecture,
+        class_count=DDD17_CLASS_COUNT,
+        input_channels=int(checkpoint["input_channels"]),
+        suite=suite,
     ).to(resolved_device)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     model.eval()
@@ -129,12 +181,7 @@ def evaluate(
             spike_elements += spikes.numel()
             if saved < visualizations:
                 _save_visual(
-                    visualization_dir,
-                    saved,
-                    sequence,
-                    target[0],
-                    prediction[0],
-                    spikes,
+                    visualization_dir, saved, sequence, target[0], prediction[0], spikes
                 )
                 saved += 1
     metrics = confusion.compute().to_dict()
@@ -144,6 +191,9 @@ def evaluate(
             "checkpoint": str(checkpoint_path),
             "class_names": list(DDD17_CLASS_NAMES),
             "samples": len(dataset),
+            "split": split,
+            "input_mode": input_mode,
+            "time_steps": time_steps,
             "mean_spike_rate": spike_sum / max(1, spike_elements),
             "visualization_dir": str(visualization_dir),
         }
@@ -153,32 +203,24 @@ def evaluate(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--root",
-        type=Path,
-        default=DEFAULT_DDD17_ROOT,
-        help=f"DDD17 root (default: embedded {DEFAULT_DDD17_ROOT})",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        type=Path,
-        action="append",
-        required=True,
-        help="checkpoint to evaluate; repeat this option to compare several",
-    )
-    parser.add_argument("--split", choices=("train", "test"), default="test")
+    parser.add_argument("--root", type=Path, default=DEFAULT_DDD17_ROOT)
+    parser.add_argument("--checkpoint", type=Path, action="append", required=True)
+    parser.add_argument("--split", choices=("train", "validation", "test"), default="test")
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--visualizations", type=int, default=8)
     parser.add_argument("--visualization-dir", type=Path, default=Path("artifacts/Validation"))
+    parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
     root = resolve_ddd17_root(args.root)
-    results: list[dict[str, object]] = []
+    results = []
     for checkpoint_path in args.checkpoint:
-        destination = args.visualization_dir
-        if len(args.checkpoint) > 1:
-            destination = destination / checkpoint_path.stem
+        destination = (
+            args.visualization_dir / checkpoint_path.stem
+            if len(args.checkpoint) > 1
+            else args.visualization_dir
+        )
         results.append(
             evaluate(
                 root,
@@ -189,28 +231,10 @@ def main() -> None:
                 visualizations=args.visualizations,
                 visualization_dir=destination,
                 device=args.device,
+                manifest=args.manifest,
             )
         )
-    if len(results) == 1:
-        print(json.dumps(results[0], indent=2))
-        return
-    ranked = sorted(results, key=lambda item: float(item["mean_iou"]), reverse=True)
-    print(
-        json.dumps(
-            {
-                "results": results,
-                "ranking": [
-                    {
-                        "architecture": item["architecture"],
-                        "mean_iou": item["mean_iou"],
-                        "pixel_accuracy": item["pixel_accuracy"],
-                    }
-                    for item in ranked
-                ],
-            },
-            indent=2,
-        )
-    )
+    print(json.dumps(results[0] if len(results) == 1 else {"results": results}, indent=2))
 
 
 if __name__ == "__main__":

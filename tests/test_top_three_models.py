@@ -25,7 +25,11 @@ def test_top_three_registry_and_forward_backward() -> None:
         assert "auxiliary_logits" in outputs
         loss = outputs["segmentation_logits"].square().mean()
         loss.backward()
-        gradients = [parameter.grad for parameter in model.parameters() if parameter.grad is not None]
+        gradients = [
+            parameter.grad
+            for parameter in model.parameters()
+            if parameter.grad is not None
+        ]
         assert gradients
         assert all(torch.isfinite(gradient).all() for gradient in gradients)
 

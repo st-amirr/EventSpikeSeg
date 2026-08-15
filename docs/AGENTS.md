@@ -24,22 +24,29 @@ top_three_models.py   frozen completed accuracy top-three
 train.py              single trainer/benchmark engine for every suite
 ```
 
-Do not put experimental registries back into `model.py`. Keep completed top-ten/top-five/top-three definitions reproducible. `model.py` now contains only the post-ablation canonical candidate. Measured results belong in `RESULTS.md`, not in the canonical model registry.
+Do not put experimental registries back into `model.py`. Keep completed top-ten/top-five/top-three definitions as archival architecture references; do not preserve the removed static-repeat data protocol. `model.py` now contains only the post-ablation canonical candidate. Measured results belong in `RESULTS.md`, not in the canonical model registry.
 
-## Current evidence
+## Current evidence and active question
 
-- full-budget structural incumbent: `v10_fpga_hybrid`, seed-17 mIoU 0.3130
-- mechanism screen selected PLIF + learnable threshold + stem-only `peer_membrane` inhibition + local triangular threshold adaptation; hidden `winner_peer` inhibition caused severe feature starvation
-- completed structural top-five winner: `f05_compact16_dilated`, mIoU 0.2596 with only 21,491 parameters
-- `f02_wide32_multiscale` produced the best object IoU in that round (0.0141)
-- `f04_deep4_dilated` produced the strongest aggregate rare-class signal, especially nature (0.0712) and vehicle (0.1230)
-- early 5×5 processing was harmful; averaged parallel multiscale context did not beat the simpler dilated path
-- none of the completed top-five models superseded the 0.3130 incumbent
-- completed top-three: T2 dual-path detail 0.2728 mIoU, T1 0.1671, T3 0.1555
-- T2 validates a persistent high-resolution detail path; T3 extra depth/attention collapsed toward dominant classes
-- canonical candidate is `final_dualpath_wide32` (237,597 params); `v10_fpga_hybrid` remains the measured baseline until the new model is validated
+The earlier architecture ablations exposed useful structural/neuron behavior, but their accuracy numbers were produced with the now-removed repeated-static temporal representation. They are archival evidence, not a current baseline to resume or compare directly.
 
-The active question is now whether the scaled dual-path candidate can exceed the 0.3130 measured incumbent under larger/multi-seed training.
+The active data question is now primary:
+
+1. `event-bins`: does the SNN improve when `T` contains genuinely consecutive two-polarity histogram intervals instead of copies of one sample?
+2. `sequential-6ch`: do timestamp mean/std statistics add useful accuracy beyond the two histogram channels?
+
+Implementation contract:
+
+- no repeated-static/direct-encoding fallback;
+- no temporal padding by repeating samples;
+- temporal windows may not cross `sequence_id` boundaries or frame-index gaps;
+- validation holds out complete sequence/interval IDs;
+- `DDD17/ddd17_temporal_manifest.json` is authoritative for chronology; do not infer or generate sequence metadata in the runtime;
+- no HDF5/raw-recording dependency; installed NumPy intervals are the input source;
+- new checkpoints use `ddd17-temporal-v2` and a protocol fingerprint;
+- legacy checkpoints missing that protocol are rejected.
+
+No new mIoU claim is valid until one of these temporal-v2 paths is trained on the real dataset.
 
 ## Active neuron-dynamics contract
 
@@ -80,7 +87,7 @@ Use SpikingJelly public `activation_based` infrastructure where compatible: Spik
 
 Auxiliary heads are training-only and must be skipped in eval/inference. Canonical training schedule only: 0–70% joint, 70–90% semantic backbone frozen while detail/decoder/selector/heads refine, 90–100% all layers unfrozen at lower LR. Historical benchmark suites do not inherit this schedule. Historical suites are pinned to CE=0.5; the final suite uses CE=1.0.
 
-There is one training implementation: `eventspikeseg.train`. Do not recreate suite-specific training loops. Historical registries define models only. Final best-model selection uses a holdout from the training split, not the official test set.
+There is one training implementation: `eventspikeseg.train`. Do not recreate suite-specific training loops. All new runs use temporal-v2 data handling and sequence-level validation. The official test set is not used for best-checkpoint selection.
 
 ## Diagnostics
 

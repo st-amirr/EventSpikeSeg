@@ -34,7 +34,6 @@ from .model_components import (
     SpikingStage,
 )
 
-
 _COMMON_DYNAMICS: dict[str, object] = {
     "norm": "affine",
     "auxiliary_head": True,

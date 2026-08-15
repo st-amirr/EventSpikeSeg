@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from .model_components import EventSpikeSegBase, SegmentationArchitecture
 
-
 _COMMON_DYNAMICS: dict[str, object] = {
     "norm": "affine",
     "auxiliary_head": True,

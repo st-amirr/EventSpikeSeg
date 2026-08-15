@@ -32,16 +32,10 @@ x-ddd17: &ddd17
       source: ./artifacts
       target: /workspace/artifacts
     - type: bind
-      # Embedded host dataset folder; do not point this at a parent "search" directory.
       source: C:/Users/stamir/Desktop/Dataset/DDD17
       target: /datasets/DDD17
-      read_only: true
 
 services:
-  inspect-datasets:
-    <<: *ddd17
-    command: ["sh", "-lc", "echo 'Mounted DDD17:' && find /datasets/DDD17 -maxdepth 2 -type d -print | sort | head -100"]
-
   test:
     <<: *app
     command: ["python", "-m", "pytest", "-q"]
@@ -52,127 +46,97 @@ services:
 
   inspect-ddd17:
     <<: *ddd17
-    command: ["python", "-m", "eventspikeseg.train", "inspect", "--root", "/datasets/DDD17"]
+    command:
+      ["python", "-m", "eventspikeseg.data", "inspect",
+       "--root", "/datasets/DDD17"]
 
   train-ddd17-smoke:
     <<: *ddd17
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    gpus: all
     command:
-      ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
-       "--architecture", "EventSpikeSeg",
-       "--device", "cuda", "--amp",
-       "--suite", "final", "--seed", "17",
-       "--epochs", "1", "--batch-size", "1",
-       "--time-steps", "4",
-       "--height", "32",
-       "--width", "32",
-       "--train-samples", "2", "--checkpoint-dir", "artifacts/checkpoints"]
-
-  # Pre-expansion ~140k final model.
-  train-ddd17-140k:
-    <<: *ddd17
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    command:
-      ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
-       "--architecture", "EventSpikeSeg140k",
-      #  "--device", "cuda", "--amp",
-       "--height", "185", "--width", "320",
-       "--suite", "final", "--seed", "17",
-       "--epochs", "80", "--batch-size", "1",
-       "--accumulate-steps", "4",
-       "--time-steps", "10",
-       "--train-samples", "0.5",
-       "--validation-fraction", "0.10",
-       "--learning-rate", "0.0015",
-       "--checkpoint-every", "1",
-       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch005.pt",
+      ["python", "-m", "eventspikeseg.train", "single",
+       "--root", "/datasets/DDD17",
+       "--architecture", "EventSpikeSeg140k", "--suite", "final",
+       "--input-mode", "event-bins",
+       "--device", "auto", "--amp",
+       "--seed", "17", "--epochs", "1", "--batch-size", "1",
+       "--time-steps", "3", "--height", "32", "--width", "32",
+       "--train-samples", "2", "--validation-fraction", "0.10",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
-  # Canonical expanded ~238k final model.
+  # Lighter final candidate with chronological ON/OFF histogram bins.
+  train-ddd17-140k:
+    <<: *ddd17
+    # gpus: all
+    command:
+      ["python", "-m", "eventspikeseg.train", "single",
+       "--root", "/datasets/DDD17",
+       "--architecture", "EventSpikeSeg140k", "--suite", "final",
+       "--input-mode", "event-bins",
+      #  "--device", "auto", "--amp",
+       "--height", "185", "--width", "320",
+       "--seed", "17", "--epochs", "80", "--batch-size", "1",
+       "--accumulate-steps", "2", "--time-steps", "10",
+       "--train-samples", "0.5", "--validation-fraction", "0.10",
+       "--learning-rate", "0.0015", "--checkpoint-every", "1",
+       "--checkpoint-dir", "artifacts/checkpoints"]
+
+  # Canonical expanded final model with chronological ON/OFF histogram bins.
   train-ddd17:
     <<: *ddd17
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    gpus: all
     command:
-      ["python", "-m", "eventspikeseg.train", "single", "--root", "/datasets/DDD17",
-       "--architecture", "EventSpikeSeg",
-      #  "--device", "cuda", "--amp",
+      ["python", "-m", "eventspikeseg.train", "single",
+       "--root", "/datasets/DDD17",
+       "--architecture", "EventSpikeSeg", "--suite", "final",
+       "--input-mode", "event-bins",
+       "--device", "auto", "--amp",
        "--height", "185", "--width", "320",
-       "--suite", "final", "--seed", "17",
-       "--epochs", "70", "--batch-size", "1",
-       "--accumulate-steps", "4",
-       "--time-steps", "10",
-       "--train-samples", "0.8",
-       "--validation-fraction", "0.10",
-       "--learning-rate", "0.001",
-       "--checkpoint-every", "1",
-      #  "--load", "artifacts/checkpoints/EventSpikeSeg_seed17_last.pt",
+       "--seed", "17", "--epochs", "70", "--batch-size", "1",
+       "--accumulate-steps", "4", "--time-steps", "8",
+       "--train-samples", "0", "--validation-fraction", "0.10",
+       "--learning-rate", "0.001", "--checkpoint-every", "1",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   benchmark-top-ten:
-    <<: *ddd17
-    command:
-      ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
-       "--suite", "top-ten", "--seed", "17",
-       "--epochs", "10",
-       "--batch-size", "4", "--time-steps", "20",
-       "--height", "64", "--width", "64",
-       "--train-samples", "2048",
-       "--learning-rate", "0.002",
-       "--output-dir", "artifacts/ablation/top_ten"]
+      <<: *ddd17
+      command:
+        ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
+        "--suite", "top-ten", "--seed", "17",
+        "--epochs", "10",
+        "--batch-size", "4", "--time-steps", "20",
+        "--height", "64", "--width", "64",
+        "--train-samples", "2048",
+        "--learning-rate", "0.002",
+        "--output-dir", "artifacts/ablation/top_ten"]
 
   benchmark-top-five:
     <<: *ddd17
     command:
       ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
-       "--suite", "top-five", "--seed", "17",
-       "--epochs", "8",
-       "--batch-size", "14", "--time-steps", "15",
-       "--height", "64", "--width", "64",
-       "--train-samples", "2048",
-       "--learning-rate", "0.002",
-       "--output-dir", "artifacts/ablation/top_five"]
+      "--suite", "top-five", "--seed", "17",
+      "--epochs", "8",
+      "--batch-size", "14", "--time-steps", "15",
+      "--height", "64", "--width", "64",
+      "--train-samples", "2048",
+      "--learning-rate", "0.002",
+      "--output-dir", "artifacts/ablation/top_five"]
 
   benchmark-top-three:
     <<: *ddd17
     command:
       ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
-       "--suite", "top-three", "--seed", "17",
-       "--epochs", "8",
-       "--batch-size", "14", "--time-steps", "15",
-       "--height", "64", "--width", "64",
-       "--train-samples", "2048",
-       "--learning-rate", "0.002",
-       "--output-dir", "artifacts/ablation/top_three"]
+      "--suite", "top-three", "--seed", "17",
+      "--epochs", "8",
+      "--batch-size", "14", "--time-steps", "15",
+      "--height", "64", "--width", "64",
+      "--train-samples", "2048",
+      "--learning-rate", "0.002",
+      "--output-dir", "artifacts/ablation/top_three"]
 
 
   promote-top-three-winner:
-    <<: *app
-    command:
-      ["python", "-m", "eventspikeseg.train", "promote", "--summary", "artifacts/ablation/top_three/summary.json",
-       "--destination", "artifacts/checkpoints/top_three_winner.pt"]
-
-  eval-ddd17:
-    <<: *ddd17
-    command:
-      ["python", "-m", "eventspikeseg.evaluate", "--root", "/datasets/DDD17",
-       "--checkpoint", "artifacts/checkpoints/EventSpikeSeg_seed17.pt",
-       "--split", "test", "--batch-size", "1",
-       "--visualizations", "8", "--visualization-dir", "artifacts/Validation"]
+      <<: *app
+      command:
+        ["python", "-m", "eventspikeseg.train", "promote", "--summary", "artifacts/ablation/top_three/summary.json",
+        "--destination", "artifacts/checkpoints/top_three_winner.pt"]

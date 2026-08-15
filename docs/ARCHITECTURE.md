@@ -2,7 +2,12 @@
 
 ## Active task
 
-Six-class semantic segmentation of the Ev-SegNet DDD17 six-channel event-statistic representation. Input is `[T,N,6,H,W]`; direct encoding repeats one six-channel sample over `T` internal SNN updates.
+Six-class DDD17 semantic segmentation with **real temporal input only**. The repeated-static direct-encoding path is removed. The canonical runtime accepts either:
+
+- `event-bins`: `[T,N,2,H,W]` chronological Ev-SegNet intervals using only the two polarity histogram channels, mapped from stored `[-1,1]` values to nonnegative `[0,1]` activity; or
+- `sequential-6ch`: `[T,N,6,H,W]` chronological Ev-SegNet event-statistic intervals from one sequence.
+
+`T` therefore corresponds to distinct consecutive stored intervals. The target mask is the indexed class map aligned to the final interval. Timestamp mean/std channels are never reinterpreted as extra timesteps. No HDF5 input is required.
 
 ## File separation
 
@@ -113,7 +118,7 @@ Concatenation is treated as wiring/channel routing and does not itself require m
 The current EventSpikeSeg architecture is the 237,597-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
 
 ```text
-input 6
+input C (2 chronological polarity histograms or 6 interval statistics)
   → stem 32
   → encoder 32 + residual DW/PW refinement
   → stride-2 main path + 1×1 PLIF projected residual → encoder 64
@@ -159,7 +164,11 @@ The final loss profile uses CE coefficient `1.0`, focal `0.5`, Dice `0.75`, the 
 
 ### Training/evaluation data protocol
 
-For the final suite, best-checkpoint selection uses a deterministic holdout from the DDD17 training split (`--validation-fraction`) rather than the official test split. The official test split remains for final reporting. Omitting `--height/--width` preserves the stored dataset resolution. Historical architecture-search suites continue to use their recorded official-test benchmark protocol for reproducibility.
+The dataset-root `ddd17_temporal_manifest.json` is the authoritative temporal index for all current training and evaluation. It supplies the sequence/interval identity and chronological frame index for each NumPy event tensor and indexed PNG mask. The runtime does not reconstruct chronology from filenames and requires no HDF5 source.
+
+Training uses a deterministic temporal holdout from the DDD17 training split. With multiple `sequence_id` values, complete sequences are assigned to either training or validation. With a single sequence, validation is one contiguous block and a `T-1` record guard is removed from training around the block so temporal windows do not touch across the split. The official test split is reserved for explicit final reporting. Omitting `--height/--width` preserves stored resolution. Limited `--train-samples` budgets draw a deterministic random subset of complete chronological windows each epoch. Temporal order inside each `T`-step sample is preserved.
+
+Temporal samples are constructed before batching. Both modes require consecutive frame indices inside one `sequence_id`; `event-bins` extracts only polarity histograms and `sequential-6ch` retains all statistics. Checkpoints store exact train/validation record membership plus a temporal protocol fingerprint and reject a different manifest/split/T/binning contract. Historical repeated-static metrics remain documentation only.
 
 ## Historical architecture registries
 

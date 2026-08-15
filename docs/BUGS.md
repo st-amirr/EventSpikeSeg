@@ -2,7 +2,9 @@
 
 ## Dataset representation limitation
 
-The Ev-SegNet semantic download contains six aggregate event-statistic channels rather than raw asynchronous events. This limits direct claims about temporal sparsity and event-addressed FPGA execution. Raw-event validation requires original DDD17 recordings aligned to the semantic labels.
+**Status: partially resolved in software.**
+
+The Ev-SegNet download contains aggregate six-channel interval statistics rather than raw asynchronous event tuples. `event-bins` uses consecutive intervals and extracts only the two polarity histograms; `sequential-6ch` keeps all statistics. No HDF5 is required, and exact within-interval timing cannot be reconstructed.
 
 ## Rare-class collapse
 
@@ -40,9 +42,24 @@ PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, a
 
 ## Open: native-resolution CPU BPTT memory
 
-Native-resolution DDD17 training with full BPTT over `T=15` retains high-resolution PLIF/convolution autograd state across many layers. This can exceed 32 GB of system RAM even though model parameters are small. Lossless fixes already applied include a stride-0 repeated-input view, immediate per-batch graph/reference release, `set_to_none=True` gradient clearing, and skipping training-only auxiliary heads during evaluation. Activation checkpointing, lower precision, truncated BPTT, lower resolution, and shorter T are not enabled automatically because they trade compute or change the training calculation.
+Native-resolution DDD17 training with full BPTT over `T=15` retains high-resolution PLIF/convolution autograd state across many layers. This can exceed 32 GB of system RAM even though model parameters are small. Lossless fixes already applied include immediate per-batch graph/reference release, `set_to_none=True` gradient clearing, and skipping training-only auxiliary heads during evaluation. The old stride-0 repeated-input view was removed with temporal-v2. Activation checkpointing, lower precision, truncated BPTT, lower resolution, and shorter T are not enabled automatically because they trade compute or change the training calculation.
 
 
 ## 2026-08-09 — Native-resolution training memory root cause
 
 Native-resolution batch-1 training exposed an avoidable full-resolution temporal-state cost on top of intrinsic T=15 BPTT. The final model now keeps triangular fLong off on the stem/x1/detail path and enables it from x2 onward, where spatial state is 4× smaller. Stateless convolution plus affine current transforms are vectorized over the combined T×N batch dimension while PLIF/LIF updates remain sequential, preserving identical temporal dynamics and gradients. Training returns scalar activity-rate diagnostics instead of retaining complete hidden TNCHW spike sequences solely for regularization.
+
+
+## Resolved: fake temporal axis from repeated static input
+
+**Status:** resolved in code on 2026-08-14.
+
+Previously one six-channel Ev-SegNet sample was expanded across all `T` SNN updates. That made timestep sweeps primarily measure repeated membrane integration rather than chronological sensory context. The temporal-v2 loader forbids this behavior.
+
+Regression coverage verifies that sequential timesteps contain distinct source frames and that temporal windows cannot cross sequence boundaries or frame-index gaps.
+
+## Open: installed training event tensors are incomplete
+
+**Status:** dataset installation issue detected automatically.
+
+The installed `events/train` folder has 2,887 NumPy tensors while `labels/train` has 10,001 indexed masks. Only `rec1487339175_export` is represented in the active event manifest. This loss of recording diversity is a likely accuracy limiter and must be fixed at the dataset installation level; the loader reports the mismatch explicitly.

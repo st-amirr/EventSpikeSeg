@@ -143,8 +143,10 @@ class HardwareLIF(nn.Module):
 
     * ``legacy`` preserves the completed round-one/two checkpoints.
     * ``rate`` preserves the first v2 rate-homeostasis experiment.
-    * ``triangular_threshold`` uses retinotopic membrane-energy inhibition and local triangular threshold adaptation derived from Debat et al. (2021): inhibition and threshold penalty are
-      driven by the local mean squared membrane potential ``UPropInh``.  The
+    * ``triangular_threshold`` uses retinotopic membrane-energy inhibition and
+      local triangular threshold adaptation derived from Debat et al. (2021).
+      Inhibition and threshold penalty are driven by the local mean squared
+      membrane potential ``UPropInh``.  The
       published inverted-V threshold response is implemented directly as a
       triangular rise/fall process with a learnable continuous TThresh-like time
       scale.  UPropInh follows the supplementary equation as the local RMS of
@@ -342,9 +344,14 @@ class HardwareLIF(nn.Module):
                     device=current.device,
                     dtype=current.dtype,
                 )
-            elif self.threshold_adaptation_age.device != current.device or self.threshold_adaptation_age.dtype != current.dtype:
+            elif (
+                self.threshold_adaptation_age.device != current.device
+                or self.threshold_adaptation_age.dtype != current.dtype
+            ):
                 self.threshold_adaptation_age = self.threshold_adaptation_age.to(current)
-                self.threshold_adaptation_amplitude = self.threshold_adaptation_amplitude.to(current)
+                self.threshold_adaptation_amplitude = (
+                    self.threshold_adaptation_amplitude.to(current)
+                )
                 self.threshold_adaptation_penalty = self.threshold_adaptation_penalty.to(current)
 
     def _leaked_membrane(self) -> Tensor:
@@ -499,7 +506,11 @@ class HardwareLIF(nn.Module):
         spiked = spikes > 0
         # A new spike resets that neuron's triangular process. Existing ages
         # were advanced at the start of this forward step, before thresholding.
-        self.threshold_adaptation_age = torch.where(spiked, torch.zeros_like(self.threshold_adaptation_age), self.threshold_adaptation_age)
+        self.threshold_adaptation_age = torch.where(
+            spiked,
+            torch.zeros_like(self.threshold_adaptation_age),
+            self.threshold_adaptation_age,
+        )
         self.threshold_adaptation_amplitude = torch.where(
             spiked,
             scaled_amplitude.expand_as(self.threshold_adaptation_amplitude),
@@ -738,7 +749,11 @@ class SpikingStage(nn.Module):
             padding = tuple(dilation * (size // 2) for size in kernel_size)
         else:
             padding = dilation * (kernel_size // 2)
-        conv_type = sj_layer.Conv2d if SPIKINGJELLY_AVAILABLE and sj_layer is not None else nn.Conv2d
+        conv_type = (
+            sj_layer.Conv2d
+            if SPIKINGJELLY_AVAILABLE and sj_layer is not None
+            else nn.Conv2d
+        )
         conv_kwargs = dict(
             stride=stride,
             padding=padding,
@@ -1210,7 +1225,7 @@ class EventSpikeSegBase(nn.Module):
     def forward(self, sequence: Tensor) -> dict[str, Tensor]:
         if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
             raise ValueError(
-                f"expected [T,N,{self.input_channels},H,W] direct-encoded event sequence"
+                f"expected [T,N,{self.input_channels},H,W] temporal event sequence"
             )
         x1 = self.enc1(self.stem(sequence))
         x2 = self.enc2(self.down2(x1))
@@ -1262,4 +1277,3 @@ class EventSpikeSegBase(nn.Module):
             parameter.numel() for parameter in self.parameters()
             if parameter.requires_grad
         )
-

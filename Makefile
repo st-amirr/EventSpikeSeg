@@ -13,7 +13,7 @@ DDD17_SEED ?= 17
 DDD17_ARCHITECTURE ?= EventSpikeSeg
 DDD17_MODEL_SUITE ?= final
 
-.PHONY: setup test lint inspect-ddd17 train-ddd17-smoke train-ddd17 benchmark-top-ten benchmark-top-five benchmark-top-three promote-top-three-winner eval-ddd17
+.PHONY: setup test lint inspect-ddd17 train-ddd17-smoke train-ddd17-140k train-ddd17 train-ddd17-raw eval-ddd17
 
 setup:
 	$(VENV_CREATE)
@@ -27,53 +27,41 @@ lint:
 	$(RUFF) check src tests
 
 inspect-ddd17:
-	$(PYTHON) -m eventspikeseg.train inspect --root "$(DDD17_ROOT)"
+	$(PYTHON) -m eventspikeseg.data inspect --root "$(DDD17_ROOT)"
 
 train-ddd17-smoke:
 	$(PYTHON) -m eventspikeseg.train single --root "$(DDD17_ROOT)" \
-		--architecture "$(DDD17_ARCHITECTURE)" --suite "$(DDD17_MODEL_SUITE)" --seed $(DDD17_SEED) \
-		--epochs 1 --batch-size 1 --time-steps 4 --height 32 --width 32 \
-		--train-samples 2 --validation-samples 2 --checkpoint-dir artifacts/checkpoints
+		--architecture EventSpikeSeg140k --suite final --seed $(DDD17_SEED) \
+		--input-mode event-bins --epochs 1 --batch-size 1 --time-steps 3 \
+		--height 32 --width 32 --train-samples 2 --validation-fraction 0.10 \
+		--checkpoint-dir artifacts/checkpoints
+
+train-ddd17-140k:
+	$(PYTHON) -m eventspikeseg.train single --root "$(DDD17_ROOT)" \
+		--architecture EventSpikeSeg140k --suite final --seed $(DDD17_SEED) \
+		--input-mode event-bins --device auto --amp --epochs 80 --batch-size 1 \
+		--height 185 --width 320 --accumulate-steps 4 --time-steps 8 \
+		--train-samples 0.5 --validation-fraction 0.10 --learning-rate 0.0015 \
+		--checkpoint-every 1 --checkpoint-dir artifacts/checkpoints
 
 train-ddd17:
 	$(PYTHON) -m eventspikeseg.train single --root "$(DDD17_ROOT)" \
 		--architecture "$(DDD17_ARCHITECTURE)" --suite "$(DDD17_MODEL_SUITE)" --seed $(DDD17_SEED) \
-		--epochs 70 --batch-size 1 --time-steps 15 \
-		--train-samples 0 --validation-samples 0 --validation-fraction 0.10 \
-		--learning-rate 0.001 --checkpoint-every 5 --log-every-batches 1 \
-		--checkpoint-dir artifacts/checkpoints
+		--input-mode event-bins --device auto --amp --epochs 70 --batch-size 1 \
+		--height 185 --width 320 --accumulate-steps 4 --time-steps 8 \
+		--train-samples 0 --validation-fraction 0.10 --learning-rate 0.001 \
+		--checkpoint-every 5 --checkpoint-dir artifacts/checkpoints
 
-# Historical round-one protocol is intentionally preserved here.
-benchmark-top-ten:
-	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
-		--suite top-ten --seed $(DDD17_SEED) --epochs 10 --batch-size 4 --time-steps 20 \
-		--height 64 --width 64 \
-		--train-samples 2048 --validation-samples 512 \
-		--learning-rate 0.002 --output-dir artifacts/ablation/top_ten
-
-# Completed structural round.
-benchmark-top-five:
-	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
-		--suite top-five --seed $(DDD17_SEED) --epochs 8 --batch-size 14 --time-steps 15 \
-		--height 64 --width 64 \
-		--train-samples 2048 --validation-samples 512 \
-		--learning-rate 0.002 --output-dir artifacts/ablation/top_five
-
-# Completed accuracy-oriented round; retained for reproducibility.
-benchmark-top-three:
-	$(PYTHON) -m eventspikeseg.train benchmark --root "$(DDD17_ROOT)" \
-		--suite top-three --seed $(DDD17_SEED) --epochs 8 --batch-size 14 --time-steps 15 \
-		--height 64 --width 64 \
-		--train-samples 2048 --validation-samples 512 \
-		--learning-rate 0.002 --output-dir artifacts/ablation/top_three
-
-promote-top-three-winner:
-	$(PYTHON) -m eventspikeseg.train promote \
-		--summary artifacts/ablation/top_three/summary.json \
-		--destination artifacts/checkpoints/top_three_winner.pt
+train-ddd17-raw:
+	$(PYTHON) -m eventspikeseg.train single --root "$(DDD17_ROOT)" \
+		--architecture EventSpikeSeg140k --suite final --seed $(DDD17_SEED) \
+		--input-mode event-bins --device auto --amp --epochs 80 --batch-size 1 \
+		--height 185 --width 320 --accumulate-steps 4 --time-steps 10 \
+		--train-samples 0.5 --validation-fraction 0.10 \
+		--learning-rate 0.0015 --checkpoint-every 1 --checkpoint-dir artifacts/checkpoints
 
 eval-ddd17:
 	$(PYTHON) -m eventspikeseg.evaluate --root "$(DDD17_ROOT)" \
-		--checkpoint artifacts/checkpoints/EventSpikeSeg_seed17.pt \
+		--checkpoint artifacts/checkpoints/$(DDD17_ARCHITECTURE)_seed$(DDD17_SEED).pt \
 		--split test --batch-size 1 --visualizations 8 \
 		--visualization-dir artifacts/Validation

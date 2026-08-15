@@ -21,28 +21,36 @@ from .data import (
     DDD17_CLASS_NAMES,
     DEFAULT_DDD17_ROOT,
     IGNORE_INDEX,
-    DDD17Dataset,
-    deterministic_record_subset,
+    INPUT_MODES,
+    TEMPORAL_PROTOCOL_VERSION,
+    TemporalDataset,
+    build_temporal_dataset,
+    deterministic_dataset_subset,
     discover_ddd17_records,
     inspect_ddd17,
+    make_temporal_protocol,
     resolve_ddd17_root,
+    split_records_by_sequence,
+    temporal_collate,
 )
 from .metrics import ConfusionMatrix
 from .model import (
     FINAL_MODELS,
+)
+from .model import (
     build_model as build_final_model,
 )
 from .top_five_models import (
     TOP_FIVE_PRESETS,
     build_top_five_model,
 )
-from .top_three_models import (
-    TOP_THREE_PRESETS,
-    build_top_three_model,
-)
 from .top_ten_models import (
     TOP_TEN_PRESETS,
     build_top_ten_model,
+)
+from .top_three_models import (
+    TOP_THREE_PRESETS,
+    build_top_three_model,
 )
 
 torch.set_num_threads(10)
@@ -164,36 +172,6 @@ def seed_everything(seed: int) -> None:
     torch.use_deterministic_algorithms(True, warn_only=True)
 
 
-def temporal_collate(
-    batch: list[tuple[Tensor, Tensor]], *, time_steps: int
-) -> tuple[Tensor, Tensor]:
-    # Ev-SegNet DDD17 supplies one six-channel statistical event image per
-    # record. Direct encoding reuses that same current over all SNN timesteps.
-    # Keep this as an expanded *view* instead of cloning T physical copies.
-    if all(events.shape[0] == 1 for events, _ in batch):
-        static_batch = torch.stack([events[0] for events, _ in batch], dim=0)
-        sequence = static_batch.unsqueeze(0).expand(
-            time_steps, -1, -1, -1, -1
-        )
-        masks = torch.stack([mask for _, mask in batch])
-        return sequence, masks
-
-    sequences: list[Tensor] = []
-    masks: list[Tensor] = []
-    for events, mask in batch:
-        if events.shape[0] >= time_steps:
-            events = events[:time_steps]
-        else:
-            padding = torch.zeros(
-                (time_steps - events.shape[0], *events.shape[1:]), dtype=events.dtype
-            )
-            events = torch.cat((events, padding), dim=0)
-        sequences.append(events)
-        masks.append(mask)
-    # DataLoader convention is N first; model convention is T first.
-    return torch.stack(sequences).permute(1, 0, 2, 3, 4), torch.stack(masks)
-
-
 def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
     probabilities = logits.softmax(dim=1)
     valid = target != IGNORE_INDEX
@@ -207,12 +185,12 @@ def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
     return 1.0 - (numerator / denominator).mean()
 
 
-def estimate_class_weights(dataset: DDD17Dataset, maximum: int | None = None) -> Tensor:
+def estimate_class_weights(dataset: TemporalDataset, maximum: int | None = None) -> Tensor:
     """Estimate weights from the complete selected training subset by default."""
     counts = torch.zeros(DDD17_CLASS_COUNT, dtype=torch.float64)
     limit = len(dataset) if maximum is None else min(len(dataset), maximum)
     for index in range(limit):
-        _, mask = dataset[index]
+        mask = dataset.target_mask(index)
         valid = mask != IGNORE_INDEX
         counts += torch.bincount(mask[valid], minlength=DDD17_CLASS_COUNT)
     frequencies = counts / counts.sum().clamp_min(1.0)
@@ -263,30 +241,29 @@ def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
     excessive_hidden = torch.relu(hidden_rates - 0.25).mean()
     dead_output = torch.relu(0.01 - output_rate)
     excessive_output = torch.relu(output_rate - 0.25)
-    return 0.10 * dead_hidden + 0.01 * excessive_hidden + 0.50 * dead_output + 0.01 * excessive_output
+    return (
+        0.10 * dead_hidden
+        + 0.01 * excessive_hidden
+        + 0.50 * dead_output
+        + 0.01 * excessive_output
+    )
 
 
-def _record_subset_from_spec(
-    records: list, *, amount: float, seed: int
-) -> list:
-    """Select records by fraction or absolute count.
-
-    amount <= 0: all records
-    0 < amount <= 1: fraction of available records
-    amount > 1: absolute record count (must be integer-valued)
-    """
+def _dataset_subset_from_spec(
+    dataset: TemporalDataset, *, amount: float, seed: int
+) -> TemporalDataset:
+    """Select temporal samples by fraction or absolute count."""
     if amount <= 0:
         maximum = 0
     elif amount <= 1:
-        maximum = max(1, int(round(len(records) * amount)))
+        maximum = max(1, int(round(len(dataset) * amount)))
     else:
         if not float(amount).is_integer():
             raise ValueError(
-                "sample values above 1 must be integer counts; "
-                f"got {amount!r}"
+                "sample values above 1 must be integer counts; " f"got {amount!r}"
             )
         maximum = int(amount)
-    return deterministic_record_subset(records, maximum=maximum, seed=seed)
+    return deterministic_dataset_subset(dataset, maximum=maximum, seed=seed)
 
 
 def _prepare_datasets(
@@ -294,68 +271,82 @@ def _prepare_datasets(
     *,
     seed: int,
     output_size: tuple[int, int] | None,
-    final_validation_fraction: float | None = None,
-) -> tuple[DDD17Dataset, DDD17Dataset]:
-    """Build the fixed train pool and held-out set.
-
-    ``--train-samples`` is applied later per epoch so each epoch can draw a
-    fresh random subset from this pool. Validation/test stay fixed.
-    """
-    all_train_records = discover_ddd17_records(root, "train")
-    if final_validation_fraction is not None:
-        if not (0.0 < final_validation_fraction < 0.5):
-            raise ValueError("validation_fraction must satisfy 0 < value < 0.5")
-        if len(all_train_records) < 2:
-            raise ValueError("at least two DDD17 training records are required")
-        generator = torch.Generator().manual_seed(seed + 1)
-        order = torch.randperm(len(all_train_records), generator=generator).tolist()
-        validation_count = max(
-            1, int(round(len(all_train_records) * final_validation_fraction))
-        )
-        validation_count = min(validation_count, len(all_train_records) - 1)
-        validation_records = [all_train_records[index] for index in order[:validation_count]]
-        training_records = [all_train_records[index] for index in order[validation_count:]]
-        return (
-            DDD17Dataset(
-                root, split="train", records=training_records, output_size=output_size
-            ),
-            DDD17Dataset(
-                root, split="train", records=validation_records, output_size=output_size
-            ),
-        )
-
-    # Historical architecture-search behavior: benchmark against the official
-    # Ev-SegNet test split exactly as the completed rounds did. Do not use this
-    # branch for checkpoint selection in the canonical final-model run.
-    test_records = discover_ddd17_records(root, "test")
-    return (
-        DDD17Dataset(
-            root, split="train", records=all_train_records, output_size=output_size
-        ),
-        DDD17Dataset(root, split="test", records=test_records, output_size=output_size),
+    validation_fraction: float,
+    input_mode: str,
+    time_steps: int,
+    sequence_stride: int,
+    manifest: Path | None,
+) -> tuple[TemporalDataset, TemporalDataset, dict[str, object], str]:
+    """Build sequence-disjoint train/validation datasets and freeze their protocol."""
+    all_train_records = discover_ddd17_records(root, "train", manifest=manifest)
+    training_records, validation_records = split_records_by_sequence(
+        all_train_records,
+        validation_fraction=validation_fraction,
+        seed=seed,
+        guard_records=max(0, time_steps - 1),
     )
+    train_pool = build_temporal_dataset(
+        root,
+        split="train",
+        input_mode=input_mode,
+        time_steps=time_steps,
+        output_size=output_size,
+        records=training_records,
+        sequence_stride=sequence_stride,
+        manifest=manifest,
+    )
+    validation_dataset = build_temporal_dataset(
+        root,
+        split="train",
+        input_mode=input_mode,
+        time_steps=time_steps,
+        output_size=output_size,
+        records=validation_records,
+        sequence_stride=sequence_stride,
+        manifest=manifest,
+    )
+    protocol = make_temporal_protocol(
+        root,
+        input_mode=input_mode,
+        time_steps=time_steps,
+        sequence_stride=sequence_stride,
+        validation_fraction=validation_fraction,
+        training_records=training_records,
+        validation_records=validation_records,
+        manifest=manifest,
+    )
+    return train_pool, validation_dataset, protocol.to_dict(), protocol.fingerprint
 
 
 def _epoch_train_dataset(
-    train_pool: DDD17Dataset,
+    train_pool: TemporalDataset,
     *,
     train_samples: float,
     seed: int,
     epoch: int,
-) -> DDD17Dataset:
-    """Draw a fresh ``train_samples`` subset from the fixed train pool."""
-    epoch_records = _record_subset_from_spec(
-        train_pool.records,
-        amount=train_samples,
-        seed=seed + epoch * 1009,
-    )
-    return DDD17Dataset(
-        train_pool.root,
-        split="train",
-        records=epoch_records,
-        output_size=train_pool.output_size,
-    )
+) -> TemporalDataset:
+    """Select a deterministic random subset of complete temporal windows.
 
+    Each selected dataset item is already a valid chronological ``T``-step window,
+    so random epoch sampling improves coverage without disturbing temporal order
+    inside any sample. The seed changes with the epoch but is reproducible.
+    """
+    total = len(train_pool)
+    if train_samples <= 0:
+        return train_pool
+    if train_samples <= 1:
+        count = max(1, int(round(total * train_samples)))
+    else:
+        if not float(train_samples).is_integer():
+            raise ValueError(
+                "sample values above 1 must be integer counts; " f"got {train_samples!r}"
+            )
+        count = min(total, int(train_samples))
+    if count >= total:
+        return train_pool
+    generator = torch.Generator().manual_seed(seed + epoch)
+    indices = torch.randperm(total, generator=generator)[:count].tolist()
+    return train_pool.subset(indices)
 
 def evaluate_model(
     model: nn.Module,
@@ -445,6 +436,9 @@ def train_architecture(
     epochs: int,
     batch_size: int,
     time_steps: int,
+    input_mode: str,
+    sequence_stride: int,
+    manifest: Path | None,
     train_samples: float,
     validation_fraction: float,
     learning_rate: float,
@@ -459,15 +453,17 @@ def train_architecture(
     seed_everything(seed)
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
     loss_profile = loss_profile_for_suite(resolved_suite)
-    train_pool, validation_dataset = _prepare_datasets(
+    train_pool, validation_dataset, temporal_protocol, protocol_fingerprint = _prepare_datasets(
         root,
         seed=seed,
         output_size=output_size,
-        final_validation_fraction=(
-            validation_fraction if resolved_suite == "final" else None
-        ),
+        validation_fraction=validation_fraction,
+        input_mode=input_mode,
+        time_steps=time_steps,
+        sequence_stride=sequence_stride,
+        manifest=manifest,
     )
-    collate = lambda batch: temporal_collate(batch, time_steps=time_steps)  # noqa: E731
+    collate = temporal_collate
     validation_loader = DataLoader(
         validation_dataset,
         batch_size=batch_size,
@@ -482,7 +478,10 @@ def train_architecture(
     else:
         resolved_device = torch.device(device)
     model = build_experiment_model(
-        architecture, class_count=DDD17_CLASS_COUNT, suite=resolved_suite
+        architecture,
+        class_count=DDD17_CLASS_COUNT,
+        input_channels=train_pool.input_channels,
+        suite=resolved_suite,
     ).to(resolved_device)
     amp_enabled = bool(amp and resolved_device.type == "cuda")
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
@@ -492,8 +491,12 @@ def train_architecture(
         raise ValueError("checkpoint_every must be >= 1")
     base_neuron_tokens = ("beta_logit", "threshold_logit")
     mechanism_tokens = (
-        "adaptation_tau_logit", "adaptation_strength_logit", "target_rate_logit",
-        "inhibition_strength_logit", "threshold_adaptation_strength_logit", "adaptation_duration_logit",
+        "adaptation_tau_logit",
+        "adaptation_strength_logit",
+        "target_rate_logit",
+        "inhibition_strength_logit",
+        "threshold_adaptation_strength_logit",
+        "adaptation_duration_logit",
     )
     base_neuron_parameters = []
     mechanism_parameters = []
@@ -548,6 +551,9 @@ def train_architecture(
     best_mean_spike_rate = 0.0
     best_layer_spike_rates: dict[str, float] = {}
     best_neuron_diagnostics: dict[str, float] = {}
+    last_validation_metrics: dict[str, object] | None = None
+    last_validation_spike_rate = 0.0
+    last_validation_layer_rates: dict[str, float] = {}
     best_checkpoint_path = output_dir / f"{architecture}_seed{seed}_best.pt"
     last_checkpoint_path = output_dir / f"{architecture}_seed{seed}_last.pt"
     canonical_checkpoint_path = output_dir / f"{architecture}_seed{seed}.pt"
@@ -584,9 +590,12 @@ def train_architecture(
                 "epoch": epoch_number,
                 "epochs": epochs,
                 "time_steps": time_steps,
-                "held_out_split": "train_holdout" if is_final_run else "test",
-                "input_channels": 6,
-                "input_representation": "evsegnet_hist_mean_std_direct_encoding",
+                "held_out_split": "sequence_train_holdout",
+                "input_channels": train_pool.input_channels,
+                "input_representation": input_mode,
+                "temporal_protocol_version": TEMPORAL_PROTOCOL_VERSION,
+                "temporal_protocol": temporal_protocol,
+                "protocol_fingerprint": protocol_fingerprint,
                 "output_size": list(output_size) if output_size is not None else None,
                 "training_phase": training_phase_name,
                 "amp": amp_enabled,
@@ -613,6 +622,20 @@ def train_architecture(
             )
         if "model_state_dict" not in checkpoint:
             raise KeyError(f"checkpoint has no model_state_dict: {load_path}")
+        if checkpoint.get("temporal_protocol_version") != TEMPORAL_PROTOCOL_VERSION:
+            raise ValueError(
+                "checkpoint uses the obsolete repeated-static/legacy data protocol; "
+                "start a new temporal-v2 run instead of resuming it"
+            )
+        if checkpoint.get("protocol_fingerprint") != protocol_fingerprint:
+            raise ValueError(
+                "checkpoint temporal/data protocol does not match this run; "
+                "sequence split, manifest, input mode, T, stride, or raw window changed"
+            )
+        if int(checkpoint.get("input_channels", -1)) != train_pool.input_channels:
+            raise ValueError(
+                "checkpoint input channel count does not match temporal representation"
+            )
         model.load_state_dict(checkpoint["model_state_dict"])
 
         optimizer_state = checkpoint.get("optimizer_state_dict")
@@ -640,21 +663,26 @@ def train_architecture(
             else float("-inf")
         )
         best_mean_iou = float(checkpoint.get("best_mean_iou", checkpoint_miou))
-        best_epoch = int(checkpoint.get("best_epoch", loaded_epoch if checkpoint_miou > float("-inf") else 0))
+        fallback_best_epoch = loaded_epoch if checkpoint_miou > float("-inf") else 0
+        best_epoch = int(checkpoint.get("best_epoch", fallback_best_epoch))
         best_metrics = checkpoint.get("best_validation_metrics")
         if best_metrics is None and checkpoint.get("is_best"):
             best_metrics = checkpoint_metrics
         best_mean_spike_rate = float(
             checkpoint.get(
                 "best_validation_mean_spike_rate",
-                checkpoint.get("validation_mean_spike_rate", 0.0) if checkpoint.get("is_best") else 0.0,
+                checkpoint.get("validation_mean_spike_rate", 0.0)
+                if checkpoint.get("is_best")
+                else 0.0,
             )
             or 0.0
         )
         best_layer_spike_rates = dict(
             checkpoint.get(
                 "best_validation_layer_spike_rates",
-                checkpoint.get("validation_layer_spike_rates", {}) if checkpoint.get("is_best") else {},
+                checkpoint.get("validation_layer_spike_rates", {})
+                if checkpoint.get("is_best")
+                else {},
             )
             or {}
         )
@@ -683,7 +711,7 @@ def train_architecture(
         f"Training {architecture} | {resolved_device} | {precision} | "
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
-        f"T={time_steps} size={size_label} | "
+        f"mode={input_mode} T={time_steps} size={size_label} | "
         f"train_pool={len(train_pool)} epoch_train={len(example_epoch_train)} "
         f"val={len(validation_dataset)} | "
         f"params={model.parameter_count():,}",
@@ -772,7 +800,12 @@ def train_architecture(
             with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
                 outputs = model(sequence)
                 logits = outputs["segmentation_logits"]
-                ce = F.cross_entropy(logits, target, weight=class_weights, ignore_index=IGNORE_INDEX)
+                ce = F.cross_entropy(
+                    logits,
+                    target,
+                    weight=class_weights,
+                    ignore_index=IGNORE_INDEX,
+                )
                 focal = focal_cross_entropy(logits, target, class_weights)
                 dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
                 activity = _activity_regularizer(outputs)
@@ -885,6 +918,9 @@ def train_architecture(
             validation_metrics, validation_spike_rate, validation_layer_rates = evaluate_model(
                 model, validation_loader, device=resolved_device
             )
+            last_validation_metrics = validation_metrics
+            last_validation_spike_rate = validation_spike_rate
+            last_validation_layer_rates = validation_layer_rates
             validation_miou = float(validation_metrics["mean_iou"])
             improved = validation_miou > best_mean_iou
             if improved:
@@ -942,17 +978,16 @@ def train_architecture(
     if callable(set_competition):
         set_competition(True)
     if is_final_run:
-        # Preserve the last state for recovery, then expose the best-validation
-        # checkpoint at the historical canonical filename for compatibility.
-        final_metrics, final_spike_rate, final_layer_rates = evaluate_model(
-            model, validation_loader, device=resolved_device
-        )
+        # The final epoch was evaluated immediately after its optimizer step.
+        # Reuse that result instead of running an identical full validation pass.
+        if last_validation_metrics is None:
+            raise RuntimeError("final epoch validation metrics were not recorded")
         save_training_checkpoint(
             last_checkpoint_path,
             epoch_number=epochs,
-            validation_metrics=final_metrics,
-            validation_spike_rate=final_spike_rate,
-            validation_layer_rates=final_layer_rates,
+            validation_metrics=last_validation_metrics,
+            validation_spike_rate=last_validation_spike_rate,
+            validation_layer_rates=last_validation_layer_rates,
             training_phase_name=previous_training_phase or "joint",
         )
         if not best_checkpoint_path.is_file():
@@ -1000,9 +1035,12 @@ def train_architecture(
                 "class_names": DDD17_CLASS_NAMES,
                 "seed": seed,
                 "time_steps": time_steps,
-                "held_out_split": "test",
-                "input_channels": 6,
-                "input_representation": "evsegnet_hist_mean_std_direct_encoding",
+                "held_out_split": "sequence_train_holdout",
+                "input_channels": train_pool.input_channels,
+                "input_representation": input_mode,
+                "temporal_protocol_version": TEMPORAL_PROTOCOL_VERSION,
+                "temporal_protocol": temporal_protocol,
+                "protocol_fingerprint": protocol_fingerprint,
                 "output_size": list(output_size) if output_size is not None else None,
                 "result": result.to_dict(),
             },
@@ -1037,6 +1075,9 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             epochs=args.epochs,
             batch_size=args.batch_size,
             time_steps=args.time_steps,
+            input_mode=args.input_mode,
+            sequence_stride=args.sequence_stride,
+            manifest=args.manifest,
             train_samples=args.train_samples,
             validation_fraction=args.validation_fraction,
             learning_rate=args.learning_rate,
@@ -1062,6 +1103,9 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             "epochs": args.epochs,
             "batch_size": args.batch_size,
             "time_steps": args.time_steps,
+            "input_mode": args.input_mode,
+            "sequence_stride": args.sequence_stride,
+            "manifest": str(args.manifest) if args.manifest is not None else None,
             "train_samples": args.train_samples,
             "height": args.height,
             "width": args.width,
@@ -1111,7 +1155,25 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--time-steps", type=int, default=20)
+    parser.add_argument("--time-steps", type=int, default=8)
+    parser.add_argument(
+        "--input-mode",
+        choices=INPUT_MODES,
+        default="event-bins",
+        help="chronological ON/OFF histogram bins or full six-channel windows",
+    )
+    parser.add_argument(
+        "--sequence-stride",
+        type=int,
+        default=1,
+        help="target-frame stride between consecutive sequential-6ch windows",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="temporal metadata manifest (default: <root>/ddd17_temporal_manifest.json)",
+    )
     parser.add_argument(
         "--train-samples", type=float, default=2048.0,
         help=(
@@ -1168,6 +1230,7 @@ def main() -> None:
         default=DEFAULT_DDD17_ROOT,
         help=f"DDD17 root (default: embedded {DEFAULT_DDD17_ROOT})",
     )
+    inspect_parser.add_argument("--manifest", type=Path, default=None)
 
     single = subparsers.add_parser("single")
     _common_training_arguments(single)
@@ -1218,9 +1281,9 @@ def main() -> None:
     args = parser.parse_args()
     root = resolve_ddd17_root(args.root) if args.command != "promote" else None
     if args.command == "inspect":
-        print(json.dumps(inspect_ddd17(root).to_dict(), indent=2))
+        print(json.dumps(inspect_ddd17(root, manifest=args.manifest).to_dict(), indent=2))
     elif args.command == "single":
-        result = train_architecture(
+        train_architecture(
             root,
             architecture=args.architecture,
             suite=args.suite,
@@ -1228,6 +1291,9 @@ def main() -> None:
             epochs=args.epochs,
             batch_size=args.batch_size,
             time_steps=args.time_steps,
+            input_mode=args.input_mode,
+            sequence_stride=args.sequence_stride,
+            manifest=args.manifest,
             train_samples=args.train_samples,
             validation_fraction=args.validation_fraction,
             learning_rate=args.learning_rate,

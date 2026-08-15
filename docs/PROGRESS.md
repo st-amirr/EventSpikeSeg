@@ -2,7 +2,7 @@
 
 ## Working now
 
-- DDD17 six-channel semantic loader and deterministic bounded subsets
+- manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
 - canonical `model.py` contains the high-capacity spike-native `final_dualpath_wide32` candidate (237,597 params)
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
@@ -17,7 +17,7 @@
 
 ## Completed evidence
 
-### Structural incumbent
+### Historical structural incumbent
 
 `v10_fpga_hybrid`: mIoU 0.3130, pixel accuracy 0.7871, 44,016 parameters, output spike rate 0.1412 under the full round-one protocol.
 
@@ -47,7 +47,7 @@ Protocol: seed 17, 8 epochs, 2,048 train, 512 held-out, 64×64, 15 timesteps, ba
 | `f01_base24_multiscale` | 0.1626 | 46,423 | weak controlled baseline |
 | `f03_early5x5_multiscale` | 0.1482 | 49,111 | early 5×5 rejected |
 
-None beat the 0.3130 incumbent. The round indicates that feature preservation/fusion is a higher-priority accuracy problem than simply adding width or parameters.
+None beat the 0.3130 historical result under the then-current repeated-static input protocol. The architecture evidence remains useful, but those mIoU values are not direct baselines for the current temporal input protocol.
 
 ## Completed accuracy top three
 
@@ -72,23 +72,33 @@ None beat the 0.3130 incumbent. The round indicates that feature preservation/fu
 
 - all architecture suites now dispatch through `train.py`; the duplicate standalone top-three trainer is retired;
 - historical top-ten/top-five/top-three loss weights are explicit and separated from the final CE=1.0 profile;
-- final best-checkpoint selection uses a training-split holdout instead of the official DDD17 test split;
-- direct-encoded static inputs use a stride-0 temporal view instead of materializing T copies;
+- the generated `ddd17_temporal_manifest.json` is the required chronology source; the runtime neither generates it nor infers sequence boundaries from filenames;
+- `event-bins` and `sequential-6ch` are the supported input representations; neither requires HDF5;
+- final best-checkpoint selection uses a temporal training-split holdout: whole sequences when available, otherwise one contiguous guarded block inside a single sequence;
+- checkpoints fingerprint the manifest/split/T/binning protocol and reject incompatible pre-temporal checkpoints;
 - auxiliary heads are skipped in evaluation/inference;
 - native-resolution checkpoints are supported by `evaluate.py` when `output_size` is `None`;
-- consolidated local regression suite passes 29/29 tests after the cleanup; Ruff is not installed in the local execution environment, so `docker compose run --rm lint` remains the authoritative lint check;
+- single-sequence contiguous validation and exact checkpoint holdout reconstruction are covered by regression tests; limited per-epoch training preserves temporal order; class-weight estimation reads masks only;
 - obsolete `benchmark_top_three.py`, MEVDT/EventSCNN scripts, the dead `rtl-test` PowerShell wrapper, and checked-in `.ruff_cache` were removed; the completed DDD17 architecture-search plan is archived under `docs/exec-plans/completed/`.
 
 ## Open issues
 
 - rare-class IoU remains the dominant accuracy limitation;
-- the completed top-three hypotheses are measured; the new scaled canonical candidate has not yet been trained/evaluated;
+- the completed top-three hypotheses are measured only under the removed repeated-static protocol; the scaled canonical candidate has not yet been measured under the current temporal protocol;
+- the installed training data is incomplete: 2,887 event tensors versus 10,001 masks, leaving only one event recording usable;
+- with two-channel input, the lighter/expanded models have 140,089/236,445 parameters; prior evidence does not support blaming parameter count alone;
 - learned continuous neuron dynamics and learned attention thresholds remain unquantized;
-- `final_dualpath_wide32` is installed as the canonical candidate by design decision but still needs larger-budget/multi-seed/timestep and integer-reference gates before it is treated as the validated final/hardware-frozen model.
+- `final_dualpath_wide32` is installed as the canonical candidate by design decision but still needs temporal-input larger-budget/multi-seed/timestep and integer-reference gates before it is treated as the validated final/hardware-frozen model.
 
 ## Next action
 
-Run `docker compose run --rm lint`, `docker compose run --rm test`, then `docker compose run --rm train-ddd17-smoke`. If these pass, train `final_dualpath_wide32` and compare it directly with the measured 0.3130 `v10_fpga_hybrid` baseline before larger multi-seed and quantization/hardware validation.
+Restore the missing training event `.npy` files so event and label counts match, regenerate/extend the manifest for all available recordings, then compare `EventSpikeSeg140k` and `EventSpikeSeg` under the same `event-bins` protocol. A one-sequence manifest remains leakage-safe through a contiguous guarded holdout.
 
-- corrected final fLong scope so only semantic encoder/context stages use triangular homeostasis; stem/detail/auxiliary remain PLIF without fLong
-- reduced canonical training-output retention to logits + scalar activity rates; historical registries remain unchanged
+## 2026-08-14 no-HDF5 event-bin correction (supersedes raw alignment)
+
+- Installed event inputs are dense `200×346×6` interval statistics, not `(t,x,y,p)` lists; exact within-interval reconstruction is impossible.
+- `event-bins` uses `T` consecutive intervals and only channels 0/1, mapped from `[-1,1]` to `[0,1]`. Mean/std channels are excluded.
+- Targets remain one indexed PNG mask with class IDs 0–5, aligned to the final interval; the network emits six class maps.
+- Checkpoints freeze exact train/validation `(sequence_id, frame_index)` membership.
+- Startup avoids unused event reads for class weights and repeated final validation.
+- Current validation: Ruff passes, 45 tests pass, and inspection reports the 2,887-versus-10,001 train mismatch.

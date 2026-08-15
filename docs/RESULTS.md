@@ -134,3 +134,34 @@ Performance improves with more timesteps up to T=12, after which gains diminish 
 ## Reproducibility note
 
 The top-ten, top-five, and top-three registries are all trained through `eventspikeseg.train`. Historical suites are pinned to the objective used for the recorded architecture-search results (`0.5 CE + 0.5 focal + 0.75 Dice`, plus historical auxiliary supervision). The final suite intentionally uses CE coefficient `1.0`, validation-on-train-holdout best-checkpoint selection, and the canonical refinement schedule. The old standalone `benchmark_top_three.py` runner is retired; its unique protocol has been represented in the shared trainer/launch configuration.
+
+
+## 2026-08-14 — Temporal-v2 implementation validation
+
+The repeated-static data protocol was retired after diagnosis of the ~0.24 mIoU plateau in the long final-model run. Previous mIoU/timestep numbers above remain historical measurements of that obsolete protocol and must not be interpreted as temporal-v2 accuracy.
+
+Measured software validation for the replacement implementation:
+
+- `pytest -q`: **37 passed**;
+- sequential windows preserve chronological frame order;
+- sequence boundaries and frame-index gaps block window construction;
+- validation train/holdout sequence IDs are disjoint;
+- chronological event-bin loading preserves interval order and polarity-channel identity;
+- manifest schema/sequence validation and exact holdout reconstruction are covered;
+- both final models accept the two-channel event-bin representation;
+- the final verified suite passes **45 tests** and Ruff with no errors.
+
+Real dataset inspection found **2,887** train event tensors and **10,001** train masks. No temporal-v2 mIoU should be treated as representative until the missing training event tensors/recordings are restored.
+
+### Capacity assessment for event-bin input
+
+Exact two-channel parameter counts are:
+
+| model | parameters |
+| --- | ---: |
+| `EventSpikeSeg140k` | 140,089 |
+| `EventSpikeSeg` | 236,445 |
+
+Historical repeated-static experiments do not show a positive correlation between parameter count and mIoU: the 21,491-parameter structural model beat the 77,751- and 107,131-parameter alternatives, and the 24,211-parameter dual-path model beat the 63,147- and 108,781-parameter alternatives. This is evidence that parameter count alone was not the plateau cause, but it is not a temporal-v2 ranking. The next valid architecture test is a controlled 140,089-versus-236,445 comparison using the same complete `event-bins` dataset, seed, split, T, resolution, loss, and training budget.
+
+No new mIoU, pixel accuracy, spike-rate, latency, power, or FPGA-resource result is claimed for temporal-v2 yet.

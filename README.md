@@ -28,15 +28,23 @@ Expected host layout:
 
 ```text
 DDD17/
+├── ddd17_temporal_manifest.json
 ├── events/{train,test}/*.npy
 └── labels/{train,test}/*.png
 ```
 
-Each Ev-SegNet semantic sample contains six event-statistic channels (histogram, timestamp mean, timestamp standard deviation for both polarities). Direct encoding reuses that sample over the configured number of internal SNN updates. These are neural timesteps, not raw chronological event bins.
+The manifest is the authoritative semantic chronology: each row supplies the event/label file, `sequence_id`, and chronological `frame_index`. No HDF5 or separate raw recording is required.
+
+Two temporal representations are supported:
+
+- `event-bins` (default): `T` consecutive Ev-SegNet intervals using only the two polarity-histogram channels. Their stored `[-1,1]` encoding is mapped to nonnegative `[0,1]` activity, producing `[T,N,2,H,W]`.
+- `sequential-6ch`: `T` consecutive Ev-SegNet six-channel samples from one sequence/interval, with the final mask as target.
+
+The old repeated-static pseudo-time path has been removed, so every SNN timestep now contains chronological evidence.
 
 Classes: `flat`, `construction+sky`, `object`, `nature`, `human`, `vehicle`. Label `255` is ignored.
 
-If `--height` and `--width` are omitted, the stored dataset resolution is preserved. If they are provided, both must be supplied. `--train-samples` and `--validation-samples` accept `0` for all records, a fraction in `(0,1]`, or an absolute integer count greater than `1`.
+If `--height` and `--width` are omitted, the stored dataset resolution is preserved. If they are provided, both must be supplied. `--train-samples` accepts `0` for the full training pool, a fraction in `(0,1]`, or an absolute integer count greater than `1`. Fractional/limited training draws a deterministic random subset of complete chronological temporal windows each epoch. Temporal order inside every window is unchanged; only which valid windows are selected changes with the epoch.
 
 ## Main commands
 
@@ -45,18 +53,12 @@ docker compose run --rm inspect-ddd17
 docker compose run --rm lint
 docker compose run --rm test
 docker compose run --rm train-ddd17-smoke
+docker compose run --rm train-ddd17-140k
 docker compose run --rm train-ddd17
+docker compose run --rm train-ddd17-raw
 ```
 
-Historical ablations can still be reproduced through the same trainer:
-
-```powershell
-docker compose run --rm benchmark-top-ten
-docker compose run --rm benchmark-top-five
-docker compose run --rm benchmark-top-three
-```
-
-Historical suites use their frozen objective (`0.5 CE + 0.5 focal + 0.75 Dice`, plus historical auxiliary weights). The canonical final suite uses the current objective with CE coefficient `1.0` and its late refinement schedule.
+`inspect-ddd17` validates the manifest and reports installed event/label count mismatches. `train-ddd17-140k` is the recommended first temporal-capacity baseline; `train-ddd17` is the expanded comparison. The compatibility command `train-ddd17-raw` now uses the same no-HDF5 `event-bins` loader. Training services request CUDA and pass `--amp`; with `--device auto`, PyTorch uses CUDA when Docker exposes it, otherwise it falls back to CPU and AMP is disabled.
 
 ## Measured architecture-search evidence
 
@@ -79,7 +81,7 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 `final_dualpath_wide32` currently has **237,597 trainable parameters** and uses:
 
 ```text
-6-channel input
+temporal input (2-channel chronological histogram bins or 6-channel statistics)
 → 32/64/128 semantic encoder
 → projected PLIF residual bridges across downsampling
 → residual DW/PW refinement per scale
@@ -101,7 +103,7 @@ There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gat
 
 ## Canonical training
 
-The final model uses all available selected training data with a deterministic training-split validation holdout when `--validation-fraction` is set. The official DDD17 test split is reserved for final reporting rather than best-checkpoint selection.
+The final model uses a deterministic temporal holdout from the DDD17 training split when `--validation-fraction` is set. With multiple `sequence_id` groups, complete sequences are held out. If the manifest contains only one sequence, one contiguous validation block is held out with a `T-1` guard so train and validation windows do not touch. The official DDD17 test split is reserved for final reporting rather than best-checkpoint selection.
 
 The model exposes a late refinement schedule:
 
@@ -115,4 +117,4 @@ Final training validates after every epoch, saves the best validation-mIoU model
 
 ## Accuracy status
 
-`final_dualpath_wide32` is the canonical architecture by design, **not yet a measured accuracy claim**. It must be trained/evaluated under the larger final protocol and compared against the measured `0.3130` v10 baseline before hardware freezing. Rare-class IoU, especially `human` and `object`, remains the main accuracy risk.
+`final_dualpath_wide32` is the canonical architecture by design, **not yet a temporal-input accuracy claim**. The historical `0.3130` v10 result and old timestep sweep used repeated-static pseudo-time and remain architecture-search evidence only. The next accuracy gate is a fair `EventSpikeSeg140k` versus `EventSpikeSeg` comparison on `event-bins`. Rare-class IoU and the incomplete installed training-event set remain the main risks.

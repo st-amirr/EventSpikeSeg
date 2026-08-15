@@ -132,8 +132,10 @@ def test_triangular_threshold_adaptation_is_local_and_learnable() -> None:
     assert neuron.threshold_adaptation_penalty[0, 0, 0, 0].detach().item() > 0.0
     assert neuron.threshold_adaptation_penalty[0, 0, 1, 1].detach().item() == 0.0
     loss.backward()
-    assert neuron.threshold_adaptation_strength_logit is not None and neuron.threshold_adaptation_strength_logit.grad is not None
-    assert neuron.adaptation_duration_logit is not None and neuron.adaptation_duration_logit.grad is not None
+    assert neuron.threshold_adaptation_strength_logit is not None
+    assert neuron.threshold_adaptation_strength_logit.grad is not None
+    assert neuron.adaptation_duration_logit is not None
+    assert neuron.adaptation_duration_logit.grad is not None
 
 
 def test_peer_membrane_inhibition_reduces_peers_without_hard_gating() -> None:
@@ -154,7 +156,8 @@ def test_peer_membrane_inhibition_reduces_peers_without_hard_gating() -> None:
     # The non-spiking peer is inhibited below its uninhibited 0.2 membrane value.
     assert neuron.membrane[0, 2, 0, 0].detach().item() < 0.2
     neuron(torch.full((1, 3, 1, 1), 0.1)).sum().backward()
-    assert neuron.inhibition_strength_logit is not None and neuron.inhibition_strength_logit.grad is not None
+    assert neuron.inhibition_strength_logit is not None
+    assert neuron.inhibition_strength_logit.grad is not None
 
 
 
@@ -176,7 +179,8 @@ def test_winner_peer_inhibition_keeps_one_winner_and_inhibits_peers() -> None:
     assert neuron.membrane[0, 1, 0, 0].detach().item() < 0.7
     assert neuron.membrane[0, 2, 0, 0].detach().item() < 0.2
     neuron(torch.full((1, 3, 1, 1), 0.1)).sum().backward()
-    assert neuron.inhibition_strength_logit is not None and neuron.inhibition_strength_logit.grad is not None
+    assert neuron.inhibition_strength_logit is not None
+    assert neuron.inhibition_strength_logit.grad is not None
 
 def test_legacy_grouped_top_two_competition_is_preserved() -> None:
     neuron = HardwareLIF(
@@ -349,3 +353,10 @@ def test_hidden_peer_membrane_inhibition_can_warm_up_without_disabling_class_wta
     ]
     assert output_modules
     assert all(module.competition_enabled for module in output_modules)
+
+
+def test_final_model_accepts_raw_two_channel_temporal_input() -> None:
+    model = build_model(input_channels=2, architecture="EventSpikeSeg140k")
+    sequence = torch.zeros(2, 1, 2, 16, 16)
+    outputs = model(sequence)
+    assert outputs["segmentation_logits"].shape == (1, 6, 16, 16)
