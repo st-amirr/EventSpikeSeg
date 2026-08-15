@@ -2,9 +2,9 @@
 
 ## Dataset representation limitation
 
-**Status: partially resolved in software.**
+**Status: explicit approximation in software.**
 
-The Ev-SegNet download contains aggregate six-channel interval statistics rather than raw asynchronous event tuples. `event-bins` uses consecutive intervals and extracts only the two polarity histograms; `sequential-6ch` keeps all statistics. No HDF5 is required, and exact within-interval timing cannot be reconstructed.
+The Ev-SegNet download contains histogram activity plus per-polarity timestamp mean/std, not raw asynchronous event tuples. The scheduler conserves activity across three arrivals at mean and mean±std. Exact within-interval timing cannot be reconstructed, so hardware/accuracy reporting must describe this moment approximation.
 
 ## Rare-class collapse
 
@@ -33,16 +33,21 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The historical structural contenders span approximately 21k to 107k trainable parameters; the canonical model is now 237,597 parameters. Parameter count is only a proxy for FPGA cost; 5×5 kernels, wider pointwise layers, fourth-stage membrane state, event additions, memory banking, and line buffering must be measured/estimated separately before hardware selection.
+The historical structural contenders span approximately 21k to 107k trainable parameters; the canonical model is now 236,445 parameters. Parameter count is only a proxy for FPGA cost; wider pointwise layers, membrane state, event additions, memory banking, and line buffering must be measured separately before hardware selection.
 
 ## Open: continuous learned neuron parameters
 
 PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are still floating-point training variables. They require quantization and integer-reference regression before FPGA claims.
 
 
-## Open: native-resolution CPU BPTT memory
+## Open: native-resolution CPU stream-training cost
 
-Native-resolution DDD17 training with full BPTT over `T=15` retains high-resolution PLIF/convolution autograd state across many layers. This can exceed 32 GB of system RAM even though model parameters are small. Lossless fixes already applied include immediate per-batch graph/reference release, `set_to_none=True` gradient clearing, and skipping training-only auxiliary heads during evaluation. The old stride-0 repeated-input view was removed with temporal-v2. Activation checkpointing, lower precision, truncated BPTT, lower resolution, and shorter T are not enabled automatically because they trade compute or change the training calculation.
+Each 50 ms record executes ten internal clock updates. Training truncates BPTT at record boundaries while retaining numeric PLIF state, so memory no longer grows across the entire recording. CPU runtime remains substantial because dense software convolutions execute for every internal clock; parameter count alone does not predict this cost.
+
+Resolved on 2026-08-15: continuous state initially detached the project membrane
+but left SpikingJelly `ParametricLIFNode.v` attached to the completed autograd graph.
+The internal `v`/`w` references are now detached after each record, preventing the
+previous record graph from overlapping the next forward pass.
 
 
 ## 2026-08-09 — Native-resolution training memory root cause
@@ -54,9 +59,7 @@ Native-resolution batch-1 training exposed an avoidable full-resolution temporal
 
 **Status:** resolved in code on 2026-08-14.
 
-Previously one six-channel Ev-SegNet sample was expanded across all `T` SNN updates. That made timestep sweeps primarily measure repeated membrane integration rather than chronological sensory context. The temporal-v2 loader forbids this behavior.
-
-Regression coverage verifies that sequential timesteps contain distinct source frames and that temporal windows cannot cross sequence boundaries or frame-index gaps.
+Previously one six-channel sample was repeated or adjacent files were stacked as a synthetic `T` axis. The timestamp-stream loader forbids both. Internal clock updates now come from timestamp scheduling inside one physical interval, while stream continuity comes from retained PLIF state between records.
 
 ## Open: installed training event tensors are incomplete
 

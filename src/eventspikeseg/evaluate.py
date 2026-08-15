@@ -1,4 +1,4 @@
-"""Evaluate a DDD17 temporal-v2 semantic-segmentation checkpoint."""
+"""Evaluate a DDD17 timestamp-stream semantic-segmentation checkpoint."""
 
 from __future__ import annotations
 
@@ -39,7 +39,10 @@ _PALETTE = np.array(
 
 
 def _event_image(sequence: torch.Tensor) -> np.ndarray:
-    sample = sequence[:, 0].sum(dim=0).detach().cpu()
+    if sequence.ndim == 4:
+        sample = sequence[0, :2].detach().cpu()
+    else:
+        sample = sequence[:, 0].sum(dim=0).detach().cpu()
     channel_0 = sample[0].numpy()
     channel_1 = sample[1].numpy()
     maximum = max(float(channel_0.max()), float(channel_1.max()), 1.0)
@@ -120,18 +123,24 @@ def evaluate(
     device: str,
     manifest: Path | None = None,
 ) -> dict[str, object]:
+    if batch_size != 1:
+        raise ValueError("timestamp-stream evaluation requires batch_size=1")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     if checkpoint.get("temporal_protocol_version") != TEMPORAL_PROTOCOL_VERSION:
         raise ValueError(
-            "legacy repeated-static checkpoints are obsolete and cannot be evaluated by temporal-v2"
+            "legacy checkpoints are obsolete and cannot be evaluated by timestamp-stream v3"
         )
     architecture = str(checkpoint["architecture"])
     protocol = checkpoint.get("temporal_protocol")
     if not isinstance(protocol, dict):
         raise ValueError("checkpoint is missing temporal_protocol")
     input_mode = str(protocol["input_mode"])
-    time_steps = int(protocol["time_steps"])
-    sequence_stride = int(protocol.get("sequence_stride") or 1)
+    internal_updates = int(
+        protocol.get(
+            "internal_updates",
+            int(protocol["integration_window_us"]) // int(protocol["event_clock_us"]),
+        )
+    )
     records, dataset_split = _records_for_checkpoint(
         root, checkpoint, split=split, manifest=manifest
     )
@@ -141,10 +150,8 @@ def evaluate(
         root,
         split=dataset_split,
         input_mode=input_mode,
-        time_steps=time_steps,
         output_size=output_size,
         records=records,
-        sequence_stride=sequence_stride,
         manifest=manifest,
     )
     dataset = deterministic_dataset_subset(
@@ -161,6 +168,7 @@ def evaluate(
         class_count=DDD17_CLASS_COUNT,
         input_channels=int(checkpoint["input_channels"]),
         suite=suite,
+        internal_updates=internal_updates,
     ).to(resolved_device)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     model.eval()
@@ -169,10 +177,14 @@ def evaluate(
     spike_elements = 0
     saved = 0
     with torch.no_grad():
-        for sequence, target in loader:
+        for batch_index, (sequence, target) in enumerate(loader):
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
-            model.reset()
+            is_stream_start = getattr(dataset, "is_stream_start", None)
+            if batch_index == 0 or (
+                callable(is_stream_start) and is_stream_start(batch_index)
+            ):
+                model.reset()
             outputs = model(sequence)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
@@ -193,7 +205,9 @@ def evaluate(
             "samples": len(dataset),
             "split": split,
             "input_mode": input_mode,
-            "time_steps": time_steps,
+            "integration_window_us": protocol["integration_window_us"],
+            "internal_updates": internal_updates,
+            "event_clock_us": protocol["event_clock_us"],
             "mean_spike_rate": spike_sum / max(1, spike_elements),
             "visualization_dir": str(visualization_dir),
         }
@@ -206,7 +220,7 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=DEFAULT_DDD17_ROOT)
     parser.add_argument("--checkpoint", type=Path, action="append", required=True)
     parser.add_argument("--split", choices=("train", "validation", "test"), default="test")
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--visualizations", type=int, default=8)
     parser.add_argument("--visualization-dir", type=Path, default=Path("artifacts/Validation"))

@@ -3,7 +3,7 @@
 ## Working now
 
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
-- canonical `model.py` contains the high-capacity spike-native `final_dualpath_wide32` candidate (237,597 params)
+- canonical `model.py` contains the high-capacity spike-native `final_dualpath_wide32` candidate (236,445 params)
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -73,9 +73,10 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - all architecture suites now dispatch through `train.py`; the duplicate standalone top-three trainer is retired;
 - historical top-ten/top-five/top-three loss weights are explicit and separated from the final CE=1.0 profile;
 - the generated `ddd17_temporal_manifest.json` is the required chronology source; the runtime neither generates it nor infers sequence boundaries from filenames;
-- `event-bins` and `sequential-6ch` are the supported input representations; neither requires HDF5;
-- final best-checkpoint selection uses a temporal training-split holdout: whole sequences when available, otherwise one contiguous guarded block inside a single sequence;
-- checkpoints fingerprint the manifest/split/T/binning protocol and reject incompatible pre-temporal checkpoints;
+- `timestamp-events` is the sole input representation; HDF5/raw and multi-file window paths are removed;
+- one 50 ms record is scheduled over ten 5 ms input clocks and PLIF state persists across consecutive records;
+- final best-checkpoint selection uses whole held-out sequences when available, otherwise one contiguous block;
+- checkpoints fingerprint the manifest/split/physical-clock protocol and reject all older input protocols;
 - auxiliary heads are skipped in evaluation/inference;
 - native-resolution checkpoints are supported by `evaluate.py` when `output_size` is `None`;
 - single-sequence contiguous validation and exact checkpoint holdout reconstruction are covered by regression tests; limited per-epoch training preserves temporal order; class-weight estimation reads masks only;
@@ -92,13 +93,16 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 
 ## Next action
 
-Restore the missing training event `.npy` files so event and label counts match, regenerate/extend the manifest for all available recordings, then compare `EventSpikeSeg140k` and `EventSpikeSeg` under the same `event-bins` protocol. A one-sequence manifest remains leakage-safe through a contiguous guarded holdout.
+Restore missing training event `.npy` files if the inspection mismatch remains, then compare `EventSpikeSeg140k` and `EventSpikeSeg` under the same timestamp-stream v3 protocol. A one-sequence manifest remains leakage-safe through a contiguous holdout and mandatory reset at the resulting gap.
 
-## 2026-08-14 no-HDF5 event-bin correction (supersedes raw alignment)
+## 2026-08-15 timestamp-stream v3
 
-- Installed event inputs are dense `200×346×6` interval statistics, not `(t,x,y,p)` lists; exact within-interval reconstruction is impossible.
-- `event-bins` uses `T` consecutive intervals and only channels 0/1, mapped from `[-1,1]` to `[0,1]`. Mean/std channels are excluded.
-- Targets remain one indexed PNG mask with class IDs 0–5, aligned to the final interval; the network emits six class maps.
-- Checkpoints freeze exact train/validation `(sequence_id, frame_index)` membership.
-- Startup avoids unused event reads for class weights and repeated final validation.
-- Current validation: Ruff passes, 45 tests pass, and inspection reports the 2,887-versus-10,001 train mismatch.
+- one dataset item is one 50 ms NumPy interval and its same-record indexed mask;
+- stored `hist0,hist1,mean0,std0,mean1,std1` is decoded into per-polarity activity/mean/std;
+- mean and mean±std schedule conserved synaptic activity before the first PLIF layer;
+- DataLoader order is chronological, batch size is one, and fractions are contiguous;
+- recurrent numeric state carries across records; training detaches its graph after each record;
+- SpikingJelly's internal PLIF `v`/`w` references are also detached, removing a retained-graph RAM peak;
+- `--internal-updates` defaults to 10 and is frozen into each checkpoint protocol;
+- HDF5/raw readers, event-bin/sequential window datasets, T/stride flags, and raw compatibility commands are removed;
+- active parameter counts remain 140,089 and 236,445, so the input fix does not inflate the architecture.

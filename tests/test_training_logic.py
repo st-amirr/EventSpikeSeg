@@ -85,15 +85,16 @@ def test_prepare_datasets_holds_out_complete_sequences(tmp_path: Path) -> None:
         seed=17,
         output_size=(32, 32),
         validation_fraction=0.25,
-        input_mode="sequential-6ch",
-        time_steps=3,
-        sequence_stride=1,
+        input_mode="timestamp-events",
         manifest=None,
     )
-    train_sequences = {window.sequence_id for window in train_pool.windows}
-    validation_sequences = {window.sequence_id for window in held_out.windows}
+    train_sequences = {record.sequence_id for record in train_pool.records}
+    validation_sequences = {record.sequence_id for record in held_out.records}
     assert train_sequences.isdisjoint(validation_sequences)
-    assert protocol["input_mode"] == "sequential-6ch"
+    assert protocol["input_mode"] == "timestamp-events"
+    assert protocol["stateful_stream"] is True
+    assert protocol["internal_updates"] == 10
+    assert protocol["event_clock_us"] == 5_000
     assert len(fingerprint) == 64
 
 
@@ -106,27 +107,23 @@ def test_prepare_datasets_single_sequence_uses_contiguous_temporal_holdout(tmp_p
         seed=17,
         output_size=(32, 32),
         validation_fraction=0.20,
-        input_mode="sequential-6ch",
-        time_steps=4,
-        sequence_stride=1,
+        input_mode="timestamp-events",
         manifest=None,
     )
-    validation_frames = [window.frame_index for window in held_out.windows]
+    validation_frames = [record.frame_index for record in held_out.records]
     assert validation_frames == list(range(validation_frames[0], validation_frames[-1] + 1))
     training_frames = {
         record.frame_index
-        for window in train_pool.windows
-        for record in window.records
+        for record in train_pool.records
     }
     validation_record_frames = {
         record.frame_index
-        for window in held_out.windows
-        for record in window.records
+        for record in held_out.records
     }
     assert training_frames.isdisjoint(validation_record_frames)
     assert protocol["training_sequences"] == ["recA"]
     assert protocol["validation_sequences"] == ["recA"]
-    assert len(protocol["training_record_ids"]) + len(protocol["validation_record_ids"]) < 30
+    assert len(protocol["training_record_ids"]) + len(protocol["validation_record_ids"]) == 30
     assert {
         tuple(record_id) for record_id in protocol["training_record_ids"]
     }.isdisjoint(
@@ -153,36 +150,35 @@ def test_epoch_train_subset_changes_across_epochs(tmp_path: Path) -> None:
         seed=17,
         output_size=(32, 32),
         validation_fraction=0.25,
-        input_mode="sequential-6ch",
-        time_steps=3,
-        sequence_stride=1,
+        input_mode="timestamp-events",
         manifest=None,
     )
     epoch1 = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=1)
     epoch2 = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=2)
     epoch1_again = _epoch_train_dataset(train_pool, train_samples=0.5, seed=17, epoch=1)
-    ids1 = [(w.sequence_id, w.frame_index) for w in epoch1.windows]
-    ids2 = [(w.sequence_id, w.frame_index) for w in epoch2.windows]
-    assert ids1 == [(w.sequence_id, w.frame_index) for w in epoch1_again.windows]
+    ids1 = [(record.sequence_id, record.frame_index) for record in epoch1.records]
+    ids2 = [(record.sequence_id, record.frame_index) for record in epoch2.records]
+    assert ids1 == [
+        (record.sequence_id, record.frame_index) for record in epoch1_again.records
+    ]
     assert ids1 != ids2
     expected_count = max(1, int(round(len(train_pool) * 0.5)))
     assert len(ids1) == expected_count
-    g1 = torch.Generator().manual_seed(17 + 1)
-    expected1 = torch.randperm(len(train_pool), generator=g1)[:expected_count].tolist()
-    assert ids1 == [
-        (train_pool.windows[i].sequence_id, train_pool.windows[i].frame_index)
-        for i in expected1
-    ]
+    assert all(
+        current.frame_index == previous.frame_index + 1
+        for previous, current in zip(epoch1.records, epoch1.records[1:])
+        if previous.sequence_id == current.sequence_id
+    )
 
 
-def test_temporal_collate_preserves_exact_input_time() -> None:
-    events_a = torch.stack([torch.full((6, 4, 5), float(t)) for t in range(3)])
+def test_temporal_collate_preserves_one_record_per_batch_item() -> None:
+    events_a = torch.zeros((6, 4, 5))
     events_b = events_a + 10.0
     mask = torch.zeros((4, 5), dtype=torch.long)
     sequence, masks = temporal_collate([(events_a, mask), (events_b, mask)])
-    assert sequence.shape == (3, 2, 6, 4, 5)
+    assert sequence.shape == (2, 6, 4, 5)
     assert masks.shape == (2, 4, 5)
-    assert not torch.equal(sequence[0], sequence[-1])
+    assert not torch.equal(sequence[0], sequence[1])
 
 
 def test_class_weight_estimation_reads_masks_without_temporal_events(
@@ -194,9 +190,7 @@ def test_class_weight_estimation_reads_masks_without_temporal_events(
         seed=17,
         output_size=(32, 32),
         validation_fraction=0.20,
-        input_mode="sequential-6ch",
-        time_steps=2,
-        sequence_stride=1,
+        input_mode="timestamp-events",
         manifest=None,
     )
 

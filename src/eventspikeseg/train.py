@@ -20,6 +20,7 @@ from .data import (
     DDD17_CLASS_COUNT,
     DDD17_CLASS_NAMES,
     DEFAULT_DDD17_ROOT,
+    DEFAULT_INTERNAL_UPDATES,
     IGNORE_INDEX,
     INPUT_MODES,
     TEMPORAL_PROTOCOL_VERSION,
@@ -34,12 +35,8 @@ from .data import (
     temporal_collate,
 )
 from .metrics import ConfusionMatrix
-from .model import (
-    FINAL_MODELS,
-)
-from .model import (
-    build_model as build_final_model,
-)
+from .model import FINAL_MODELS
+from .model import build_model as build_final_model
 from .top_five_models import (
     TOP_FIVE_PRESETS,
     build_top_five_model,
@@ -87,6 +84,7 @@ def build_experiment_model(
     class_count: int = DDD17_CLASS_COUNT,
     input_channels: int = 6,
     suite: str = "auto",
+    internal_updates: int = DEFAULT_INTERNAL_UPDATES,
 ) -> nn.Module:
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
     if resolved_suite == "top-ten":
@@ -110,6 +108,7 @@ def build_experiment_model(
             class_count=class_count,
             input_channels=input_channels,
             architecture=architecture,
+            internal_updates=internal_updates,
         )
     raise ValueError(f"unknown model suite {resolved_suite!r}")
 
@@ -273,9 +272,8 @@ def _prepare_datasets(
     output_size: tuple[int, int] | None,
     validation_fraction: float,
     input_mode: str,
-    time_steps: int,
-    sequence_stride: int,
     manifest: Path | None,
+    internal_updates: int = DEFAULT_INTERNAL_UPDATES,
 ) -> tuple[TemporalDataset, TemporalDataset, dict[str, object], str]:
     """Build sequence-disjoint train/validation datasets and freeze their protocol."""
     all_train_records = discover_ddd17_records(root, "train", manifest=manifest)
@@ -283,36 +281,30 @@ def _prepare_datasets(
         all_train_records,
         validation_fraction=validation_fraction,
         seed=seed,
-        guard_records=max(0, time_steps - 1),
     )
     train_pool = build_temporal_dataset(
         root,
         split="train",
         input_mode=input_mode,
-        time_steps=time_steps,
         output_size=output_size,
         records=training_records,
-        sequence_stride=sequence_stride,
         manifest=manifest,
     )
     validation_dataset = build_temporal_dataset(
         root,
         split="train",
         input_mode=input_mode,
-        time_steps=time_steps,
         output_size=output_size,
         records=validation_records,
-        sequence_stride=sequence_stride,
         manifest=manifest,
     )
     protocol = make_temporal_protocol(
         root,
         input_mode=input_mode,
-        time_steps=time_steps,
-        sequence_stride=sequence_stride,
         validation_fraction=validation_fraction,
         training_records=training_records,
         validation_records=validation_records,
+        internal_updates=internal_updates,
         manifest=manifest,
     )
     return train_pool, validation_dataset, protocol.to_dict(), protocol.fingerprint
@@ -325,12 +317,7 @@ def _epoch_train_dataset(
     seed: int,
     epoch: int,
 ) -> TemporalDataset:
-    """Select a deterministic random subset of complete temporal windows.
-
-    Each selected dataset item is already a valid chronological ``T``-step window,
-    so random epoch sampling improves coverage without disturbing temporal order
-    inside any sample. The seed changes with the epoch but is reproducible.
-    """
+    """Select one deterministic contiguous stream segment for an epoch."""
     total = len(train_pool)
     if train_samples <= 0:
         return train_pool
@@ -345,7 +332,8 @@ def _epoch_train_dataset(
     if count >= total:
         return train_pool
     generator = torch.Generator().manual_seed(seed + epoch)
-    indices = torch.randperm(total, generator=generator)[:count].tolist()
+    start = int(torch.randint(0, total - count + 1, (1,), generator=generator).item())
+    indices = list(range(start, start + count))
     return train_pool.subset(indices)
 
 def evaluate_model(
@@ -369,10 +357,15 @@ def evaluate_model(
     scalar_rate_sums: dict[str, float] = {}
     scalar_rate_batches: dict[str, int] = {}
     with torch.no_grad():
-        for sequence, target in loader:
+        for batch_index, (sequence, target) in enumerate(loader):
             sequence = sequence.to(device)
             target = target.to(device)
-            model.reset()
+            dataset = loader.dataset
+            is_stream_start = getattr(dataset, "is_stream_start", None)
+            if batch_index == 0 or (
+                callable(is_stream_start) and is_stream_start(batch_index)
+            ):
+                model.reset()
             outputs = model(sequence)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
@@ -435,9 +428,7 @@ def train_architecture(
     seed: int,
     epochs: int,
     batch_size: int,
-    time_steps: int,
     input_mode: str,
-    sequence_stride: int,
     manifest: Path | None,
     train_samples: float,
     validation_fraction: float,
@@ -448,8 +439,11 @@ def train_architecture(
     checkpoint_every: int = 5,
     amp: bool = False,
     accumulate_steps: int = 1,
+    internal_updates: int = DEFAULT_INTERNAL_UPDATES,
     load: Path | None = None,
 ) -> TrainResult:
+    if batch_size != 1:
+        raise ValueError("timestamp-stream training requires batch_size=1")
     seed_everything(seed)
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
     loss_profile = loss_profile_for_suite(resolved_suite)
@@ -459,9 +453,8 @@ def train_architecture(
         output_size=output_size,
         validation_fraction=validation_fraction,
         input_mode=input_mode,
-        time_steps=time_steps,
-        sequence_stride=sequence_stride,
         manifest=manifest,
+        internal_updates=internal_updates,
     )
     collate = temporal_collate
     validation_loader = DataLoader(
@@ -482,6 +475,7 @@ def train_architecture(
         class_count=DDD17_CLASS_COUNT,
         input_channels=train_pool.input_channels,
         suite=resolved_suite,
+        internal_updates=internal_updates,
     ).to(resolved_device)
     amp_enabled = bool(amp and resolved_device.type == "cuda")
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
@@ -589,7 +583,6 @@ def train_architecture(
                 "seed": seed,
                 "epoch": epoch_number,
                 "epochs": epochs,
-                "time_steps": time_steps,
                 "held_out_split": "sequence_train_holdout",
                 "input_channels": train_pool.input_channels,
                 "input_representation": input_mode,
@@ -625,12 +618,32 @@ def train_architecture(
         if checkpoint.get("temporal_protocol_version") != TEMPORAL_PROTOCOL_VERSION:
             raise ValueError(
                 "checkpoint uses the obsolete repeated-static/legacy data protocol; "
-                "start a new temporal-v2 run instead of resuming it"
+                "start a new timestamp-stream run instead of resuming it"
             )
-        if checkpoint.get("protocol_fingerprint") != protocol_fingerprint:
+        checkpoint_protocol = checkpoint.get("temporal_protocol")
+        normalized_checkpoint_protocol = (
+            dict(checkpoint_protocol) if isinstance(checkpoint_protocol, dict) else None
+        )
+        if (
+            normalized_checkpoint_protocol is not None
+            and "internal_updates" not in normalized_checkpoint_protocol
+        ):
+            integration_us = int(
+                normalized_checkpoint_protocol.get("integration_window_us", 0)
+            )
+            event_clock_us = int(normalized_checkpoint_protocol.get("event_clock_us", 0))
+            if event_clock_us > 0 and integration_us % event_clock_us == 0:
+                normalized_checkpoint_protocol["internal_updates"] = (
+                    integration_us // event_clock_us
+                )
+        protocol_matches = (
+            checkpoint.get("protocol_fingerprint") == protocol_fingerprint
+            or normalized_checkpoint_protocol == temporal_protocol
+        )
+        if not protocol_matches:
             raise ValueError(
                 "checkpoint temporal/data protocol does not match this run; "
-                "sequence split, manifest, input mode, T, stride, or raw window changed"
+                "sequence split, manifest, input mode, or event-clock contract changed"
             )
         if int(checkpoint.get("input_channels", -1)) != train_pool.input_channels:
             raise ValueError(
@@ -711,7 +724,8 @@ def train_architecture(
         f"Training {architecture} | {resolved_device} | {precision} | "
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
-        f"mode={input_mode} T={time_steps} size={size_label} | "
+        f"mode={input_mode} internal_updates={internal_updates} "
+        f"continuous_state size={size_label} | "
         f"train_pool={len(train_pool)} epoch_train={len(example_epoch_train)} "
         f"val={len(validation_dataset)} | "
         f"params={model.parameter_count():,}",
@@ -727,8 +741,7 @@ def train_architecture(
         train_loader = DataLoader(
             epoch_train_dataset,
             batch_size=batch_size,
-            shuffle=True,
-            generator=torch.Generator().manual_seed(seed + epoch),
+            shuffle=False,
             num_workers=0,
             collate_fn=collate,
         )
@@ -796,7 +809,8 @@ def train_architecture(
         for batch_index, (sequence, target) in enumerate(progress, start=1):
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
-            model.reset()
+            if epoch_train_dataset.is_stream_start(batch_index - 1):
+                model.reset()
             with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
                 outputs = model(sequence)
                 logits = outputs["segmentation_logits"]
@@ -868,6 +882,9 @@ def train_architecture(
             # a larger batch without holding those samples in memory together.
             scaled_loss = loss / float(accumulate_steps)
             scaler.scale(scaled_loss).backward()
+            detach_state = getattr(model, "detach_state", None)
+            if callable(detach_state):
+                detach_state()
             should_step = (
                 batch_index % accumulate_steps == 0 or batch_index == total_batches
             )
@@ -1034,7 +1051,6 @@ def train_architecture(
                 "architecture_config": model.architecture.to_dict(),
                 "class_names": DDD17_CLASS_NAMES,
                 "seed": seed,
-                "time_steps": time_steps,
                 "held_out_split": "sequence_train_holdout",
                 "input_channels": train_pool.input_channels,
                 "input_representation": input_mode,
@@ -1074,9 +1090,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             seed=args.seed,
             epochs=args.epochs,
             batch_size=args.batch_size,
-            time_steps=args.time_steps,
             input_mode=args.input_mode,
-            sequence_stride=args.sequence_stride,
             manifest=args.manifest,
             train_samples=args.train_samples,
             validation_fraction=args.validation_fraction,
@@ -1087,6 +1101,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             checkpoint_every=args.checkpoint_every,
             amp=args.amp,
             accumulate_steps=args.accumulate_steps,
+            internal_updates=args.internal_updates,
             load=None,
         )
         for name in presets
@@ -1102,9 +1117,8 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
         "protocol": {
             "epochs": args.epochs,
             "batch_size": args.batch_size,
-            "time_steps": args.time_steps,
             "input_mode": args.input_mode,
-            "sequence_stride": args.sequence_stride,
+            "internal_updates": args.internal_updates,
             "manifest": str(args.manifest) if args.manifest is not None else None,
             "train_samples": args.train_samples,
             "height": args.height,
@@ -1154,19 +1168,21 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--time-steps", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument(
         "--input-mode",
         choices=INPUT_MODES,
-        default="event-bins",
-        help="chronological ON/OFF histogram bins or full six-channel windows",
+        default="timestamp-events",
+        help="one timestamp-statistic interval streamed into the input PLIF synapses",
     )
     parser.add_argument(
-        "--sequence-stride",
+        "--internal-updates",
         type=int,
-        default=1,
-        help="target-frame stride between consecutive sequential-6ch windows",
+        default=DEFAULT_INTERNAL_UPDATES,
+        help=(
+            "PLIF clock updates inside each 50 ms record (default: 10); "
+            "must divide 50,000 microseconds exactly"
+        ),
     )
     parser.add_argument(
         "--manifest",
@@ -1177,8 +1193,8 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--train-samples", type=float, default=2048.0,
         help=(
-            "per-epoch random draw from the train pool: "
-            "0=all, 0<x<=1=fraction, x>1=absolute count (reshuffled each epoch)"
+            "per-epoch contiguous stream: "
+            "0=all, 0<x<=1=fraction, x>1=absolute count"
         ),
     )
     parser.add_argument(
@@ -1290,9 +1306,7 @@ def main() -> None:
             seed=args.seed,
             epochs=args.epochs,
             batch_size=args.batch_size,
-            time_steps=args.time_steps,
             input_mode=args.input_mode,
-            sequence_stride=args.sequence_stride,
             manifest=args.manifest,
             train_samples=args.train_samples,
             validation_fraction=args.validation_fraction,
@@ -1303,6 +1317,7 @@ def main() -> None:
             checkpoint_every=args.checkpoint_every,
             amp=args.amp,
             accumulate_steps=args.accumulate_steps,
+            internal_updates=args.internal_updates,
             load=args.load,
         )
     elif args.command == "benchmark":

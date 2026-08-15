@@ -218,3 +218,23 @@ The active dataset has no raw HDF5/event-list source. Its event files are dense 
 Decision: make `event-bins` the default input. Each SNN timestep is one strictly consecutive manifest interval; input channels are the two polarity histograms mapped from the stored `[-1,1]` encoding to nonnegative `[0,1]`. Timestamp mean/std channels are not treated as time. `sequential-6ch` remains an ablation. Active training/evaluation has no HDF5 dependency, and the compatibility `train-ddd17-raw` command routes to `event-bins`.
 
 The indexed PNG target remains one class ID per pixel (0–5), while the network emits six spiking class maps. Dataset inspection must report event/label count mismatches; the current installation has 2,887 train event tensors and 10,001 train masks.
+
+## 2026-08-15 — Replace multi-file bins with timestamp-scheduled continuous state
+
+The 2026-08-14 multi-file `event-bins`/`sequential-6ch` decision is superseded.
+Each installed NumPy tensor already covers one 50 ms interval and remains one loader
+item. Stored order is `hist0,hist1,mean0,std0,mean1,std1`; the loader decodes this
+to activity, mean, and standard deviation per polarity.
+
+The input adapter schedules activity at mean and mean±std with weights 0.50/0.25/0.25
+over ten 5 ms hardware-clock updates. This conserves activity but is explicitly a
+moment approximation because the archive does not contain individual event tuples.
+PLIF state persists across consecutive records and resets at sequence/frame gaps.
+Training truncates BPTT after each record by detaching, not clearing, recurrent state.
+Shuffle, multi-file windows, HDF5/raw readers, user-configured T/stride, and their
+compatibility commands are removed. New checkpoints use `ddd17-timestamp-v3`.
+
+The internal clock count is exposed as `--internal-updates` with default 10. It
+must divide the physical 50,000 µs interval exactly and is fingerprinted. Continuous
+state cleanup includes both project buffers and SpikingJelly's internal PLIF `v`/`w`
+references so completed autograd graphs cannot overlap the next record.

@@ -35,16 +35,22 @@ DDD17/
 
 The manifest is the authoritative semantic chronology: each row supplies the event/label file, `sequence_id`, and chronological `frame_index`. No HDF5 or separate raw recording is required.
 
-Two temporal representations are supported:
+The sole active representation is `timestamp-events`. One loader item is one
+already-integrated 50 ms six-channel NumPy record, producing `[N,6,H,W]`; adjacent
+files are not stacked. The two histogram channels supply polarity activity. The
+per-polarity timestamp mean and standard deviation schedule three weighted arrivals
+over ten 5 ms input-clock updates by default before the first PLIF layer. PLIF state persists
+into the next consecutive record and resets at sequence/frame gaps.
 
-- `event-bins` (default): `T` consecutive Ev-SegNet intervals using only the two polarity-histogram channels. Their stored `[-1,1]` encoding is mapped to nonnegative `[0,1]` activity, producing `[T,N,2,H,W]`.
-- `sequential-6ch`: `T` consecutive Ev-SegNet six-channel samples from one sequence/interval, with the final mask as target.
+The archive stores timestamp moments rather than every raw event, so this is a
+moment-based arrival approximation, not reconstruction of exact event tuples.
 
-The old repeated-static pseudo-time path has been removed, so every SNN timestep now contains chronological evidence.
+`--internal-updates 10` controls the within-record PLIF clock count. It must divide
+the 50,000 µs interval exactly and is stored in the checkpoint protocol.
 
 Classes: `flat`, `construction+sky`, `object`, `nature`, `human`, `vehicle`. Label `255` is ignored.
 
-If `--height` and `--width` are omitted, the stored dataset resolution is preserved. If they are provided, both must be supplied. `--train-samples` accepts `0` for the full training pool, a fraction in `(0,1]`, or an absolute integer count greater than `1`. Fractional/limited training draws a deterministic random subset of complete chronological temporal windows each epoch. Temporal order inside every window is unchanged; only which valid windows are selected changes with the epoch.
+If `--height` and `--width` are omitted, stored resolution is preserved. `--train-samples` accepts `0` for the full pool, a fraction in `(0,1]`, or an absolute count. A limited run selects one deterministic contiguous stream segment per epoch. Records are not shuffled, and stateful training/evaluation requires batch size 1.
 
 ## Main commands
 
@@ -55,10 +61,9 @@ docker compose run --rm test
 docker compose run --rm train-ddd17-smoke
 docker compose run --rm train-ddd17-140k
 docker compose run --rm train-ddd17
-docker compose run --rm train-ddd17-raw
 ```
 
-`inspect-ddd17` validates the manifest and reports installed event/label count mismatches. `train-ddd17-140k` is the recommended first temporal-capacity baseline; `train-ddd17` is the expanded comparison. The compatibility command `train-ddd17-raw` now uses the same no-HDF5 `event-bins` loader. Training services request CUDA and pass `--amp`; with `--device auto`, PyTorch uses CUDA when Docker exposes it, otherwise it falls back to CPU and AMP is disabled.
+`inspect-ddd17` validates the manifest and reports installed event/label count mismatches. `train-ddd17-140k` is the recommended first capacity baseline; `train-ddd17` is the expanded comparison. No HDF5/raw-reader compatibility path remains.
 
 ## Measured architecture-search evidence
 
@@ -78,10 +83,10 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 
 ## Canonical EventSpikeSeg model
 
-`final_dualpath_wide32` currently has **237,597 trainable parameters** and uses:
+`final_dualpath_wide32` currently has **236,445 trainable parameters** and uses:
 
 ```text
-temporal input (2-channel chronological histogram bins or 6-channel statistics)
+timestamp/address scheduler → two-polarity synaptic activity → first PLIF layer
 → 32/64/128 semantic encoder
 → projected PLIF residual bridges across downsampling
 → residual DW/PW refinement per scale
@@ -103,7 +108,7 @@ There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gat
 
 ## Canonical training
 
-The final model uses a deterministic temporal holdout from the DDD17 training split when `--validation-fraction` is set. With multiple `sequence_id` groups, complete sequences are held out. If the manifest contains only one sequence, one contiguous validation block is held out with a `T-1` guard so train and validation windows do not touch. The official DDD17 test split is reserved for final reporting rather than best-checkpoint selection.
+The final model uses a deterministic temporal holdout from the DDD17 training split. With multiple sequence IDs, complete sequences are held out. With one sequence, one contiguous block is held out and the resulting frame-index gap forces a state reset. The official test split is reserved for final reporting.
 
 The model exposes a late refinement schedule:
 
@@ -117,4 +122,4 @@ Final training validates after every epoch, saves the best validation-mIoU model
 
 ## Accuracy status
 
-`final_dualpath_wide32` is the canonical architecture by design, **not yet a temporal-input accuracy claim**. The historical `0.3130` v10 result and old timestep sweep used repeated-static pseudo-time and remain architecture-search evidence only. The next accuracy gate is a fair `EventSpikeSeg140k` versus `EventSpikeSeg` comparison on `event-bins`. Rare-class IoU and the incomplete installed training-event set remain the main risks.
+`final_dualpath_wide32` is the canonical architecture by design, **not yet a timestamp-stream accuracy claim**. Historical input-protocol results remain architecture-search evidence only. The next accuracy gate is a fair 140,089-parameter `EventSpikeSeg140k` versus 236,445-parameter `EventSpikeSeg` comparison on the same timestamp stream.

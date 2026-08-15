@@ -2,7 +2,7 @@ document:
   title: Hardware-Oriented Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
   version: 1.0.0
-  status: temporal_v2_implemented_pending_real_accuracy_measurement
+  status: timestamp_stream_v3_implemented_pending_real_accuracy_measurement
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -13,14 +13,14 @@ document:
     - Interface contract between SpikingJelly/PyTorch training, integer reference, and custom VHDL backend
     - Foundation for a future article on lightweight event-based SNN semantic segmentation on FPGA
   central_interpretation: >-
-    The repeated-static input protocol is obsolete. Every active SNN timestep must receive
-    distinct chronological evidence. event-bins supplies T consecutive Ev-SegNet
-    intervals using their two polarity histogram channels, while sequential-6ch retains
-    all six event statistics. The
-    dataset-root temporal manifest is authoritative for semantic chronology. New
-    checkpoints use the ddd17-temporal-v2 protocol and fingerprint the manifest, split,
-    timestep and stride contract. No HDF5 input is required. Sparse FPGA claims still
-    require later integer/RTL validation.
+    One dataset item is one 50 ms Ev-SegNet interval, never a stack of adjacent files.
+    Histogram channels carry polarity activity; per-polarity normalized timestamp mean
+    and standard deviation schedule weighted synaptic arrivals at the model input. The
+    PLIF network executes ten 5 ms hardware-clock updates inside that physical interval
+    and retains neuron state into the next consecutive record. It resets at sequence or
+    frame-index gaps. The manifest is authoritative for stream order. New checkpoints
+    use ddd17-timestamp-v3 and fingerprint the manifest, split, representation, physical
+    interval, and event-clock contract. No HDF5 input is required.
   preservation_policy:
     retained_from_previous_specification:
       - Hardware-compatible LIF equations and power-of-two leakage
@@ -133,8 +133,8 @@ active_dataset:
       - polarity_0_histogram
       - polarity_1_histogram
       - polarity_0_normalized_timestamp_mean
-      - polarity_1_normalized_timestamp_mean
       - polarity_0_normalized_timestamp_standard_deviation
+      - polarity_1_normalized_timestamp_mean
       - polarity_1_normalized_timestamp_standard_deviation
     warning: >-
       These channels are summary statistics of an event interval. They must not be
@@ -151,13 +151,13 @@ active_dataset:
       5: vehicle
   split_policy:
     provided_splits: [train, test]
-    validation: sequence_disjoint_or_single_sequence_contiguous_guarded_holdout
+    validation: sequence_disjoint_or_single_sequence_contiguous_holdout
     default_validation_fraction: 0.1
     seed_controls_split: true
     official_test_policy: Reserve the provided test records for final reporting after architecture selection.
     leakage_prevention: >-
       Hold out complete sequence_id groups when more than one exists. With one sequence,
-      hold out one contiguous block and remove a T-1 training-record guard around it.
+      hold out one contiguous block. The resulting frame gap is a mandatory PLIF reset.
   discovery_requirements:
     - Do not recursively enumerate unrelated folders such as event_images.
     - Use bounded directory checks and os.scandir for large Windows bind mounts.
@@ -165,9 +165,11 @@ active_dataset:
     - Report event count, label count, selected folders, and mismatch errors explicitly.
     - Training must fail clearly when events/train exists without labels/train.
   current_input_limitation: >-
-    The installed archive contains dense per-interval statistics rather than individual
-    event tuples. Exact sub-interval bins cannot be reconstructed. event-bins therefore
-    uses consecutive stored intervals and their two polarity histograms.
+    The installed archive contains per-pixel histogram count plus timestamp mean and
+    standard deviation, not every original event tuple. Exact individual arrival times
+    cannot be recovered. The input scheduler therefore uses a deterministic three-arrival
+    moment approximation at mean and mean plus/minus standard deviation while conserving
+    each pixel/polarity histogram activity.
 
 future_datasets:
   raw_event_segmentation:
@@ -183,43 +185,62 @@ future_datasets:
     preserved_reason: Native DAVIS240C 240x180 raw events remain useful for FPGA throughput and tracking experiments.
 
 input_and_time:
-  software_interface:
-    model_shape: [T, N, C, H, W]
-    T: chronological_input_timestep_count
-    N: software_batch_of_independent_samples
-    C: 6_for_sequential_6ch_or_2_for_raw_events
+  loader_interface:
+    item_shape: [6, H, W]
+    batch_shape: [1, 6, H, W]
     deployment_batch: 1
-  sequential_6ch:
-    layout: [T, N, 6, H, W]
-    method: strictly_consecutive_manifest_frames_within_one_sequence
-    target_alignment: final_frame_mask
-    forbidden:
-      - repeated_static_samples
-      - temporal_padding_by_repetition
-      - windows_crossing_sequence_boundaries_or_frame_gaps
-  event_bins:
-    layout: [T, N, 2, H, W]
-    method: consecutive_numpy_intervals_using_on_off_histogram_channels
-    stored_value_mapping: minus_one_to_one_mapped_to_zero_to_one
-    target_alignment: final_interval_indexed_mask
-  default_search_time_steps: 8
-  recommended_fast_search_time_steps: 3
-  timestep_ablation: [4, 6, 8, 10, 12, 15]
-  selection_rule: Select the smallest T within 0.5 mIoU percentage points of the best validated T, unless spike-rate or stability evidence requires more steps.
+    record_duration_us: 50000
+    shuffle: false
+    state_policy: retain_across_consecutive_records_reset_at_sequence_or_frame_gap
+    fraction_policy: deterministic_contiguous_stream_segment_per_epoch
+  decoded_channel_contract:
+    - polarity_0_activity
+    - polarity_1_activity
+    - polarity_0_normalized_timestamp_mean
+    - polarity_1_normalized_timestamp_mean
+    - polarity_0_normalized_timestamp_standard_deviation
+    - polarity_1_normalized_timestamp_standard_deviation
+  input_scheduler:
+    default_internal_updates: 10
+    default_event_clock_us: 5000
+    configurability: internal_updates_must_divide_50000_us_exactly
+    arrival_approximation:
+      - {offset: mean, activity_fraction: 0.50}
+      - {offset: mean_minus_std, activity_fraction: 0.25}
+      - {offset: mean_plus_std, activity_fraction: 0.25}
+    invariant: scheduled_synaptic_activity_equals_histogram_activity
+    note: clock_updates_are_hardware_time_within_one_record_not_stacked_dataset_files
+  training_state:
+    truncated_bptt_boundary: one_50ms_record
+    after_backward: detach_autograd_history_but_retain_numeric_neuron_state
+    reset_conditions: [epoch_start, validation_start, sequence_change, frame_index_gap]
+  forbidden:
+    - repeated_static_samples
+    - stacking_adjacent_numpy_records_as_one_model_input
+    - shuffled_stream_records
+    - state_carry_across_sequence_boundaries_or_frame_gaps
+    - treating_timestamp_statistics_as_independent_image_channels_in_the_stem
   checkpoint_contract:
-    version: ddd17-temporal-v2
-    fingerprint_fields: [manifest_digest, exact_record_membership, split, T, input_mode, sequence_stride]
-    legacy_policy: reject_checkpoints_from_repeated_static_protocol
-  timestep_execution:
+    version: ddd17-timestamp-v3
+    fingerprint_fields:
+      - manifest_digest
+      - exact_record_membership
+      - input_mode
+      - integration_window_us
+      - internal_updates
+      - event_clock_us
+      - stateful_stream
+    legacy_policy: reject_all_older_input_protocol_checkpoints
+  clock_execution:
     timestep_barrier:
-      - Accumulate input events for timestep t
+      - Deliver scheduled polarity/address synaptic activity for hardware clock k
       - Complete each layer's synaptic-current updates
       - Apply leak and membrane update
       - Compare adaptive thresholds
       - Apply f_inst competition
       - Emit spikes and perform subtractive reset
       - Update f_long state
-      - Advance to timestep t+1
+      - Advance to hardware clock k+1
 
 neuron:
   name: HardwareLIF

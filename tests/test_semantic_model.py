@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from eventspikeseg.model import EventSpikeSeg, EventSpikeSeg140k, build_model
@@ -13,6 +14,14 @@ def _sample_sequence() -> torch.Tensor:
     sequence = torch.zeros((4, 1, 6, 16, 16))
     sequence[:, :, 0, 4:8, 4:8] = 1.0
     return sequence
+
+
+def _timestamp_statistics(size: int, *, batch: int = 1) -> torch.Tensor:
+    statistics = torch.zeros((batch, 6, size, size))
+    statistics[:, :2, size // 4 : size // 2, size // 4 : size // 2] = 1.0
+    statistics[:, 2:4] = 0.5
+    statistics[:, 4:6] = 0.1
+    return statistics
 
 
 def test_top_ten_presets_remain_buildable() -> None:
@@ -239,14 +248,14 @@ def test_final_model_contains_scaled_dualpath_architecture() -> None:
     # Independent spiking class neurons accumulate evidence over time instead
     # of using hard per-timestep class WTA.
     assert not model.architecture.output_f_inst_enabled
-    assert model.parameter_count() == 237_597
+    assert model.parameter_count() == 236_445
 
 
 def test_final_140k_model_is_selectable() -> None:
     model = build_model(architecture="EventSpikeSeg140k")
     assert isinstance(model, EventSpikeSeg140k)
     assert model.architecture.name == "EventSpikeSeg140k"
-    assert model.parameter_count() == 141_241
+    assert model.parameter_count() == 140_089
 
 
 def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
@@ -288,15 +297,15 @@ def test_final_model_richer_spiking_paths_and_residual_bridges() -> None:
     assert model.detail2.vertical.conv.kernel_size == (3, 1)
     assert model.detail2.horizontal.conv.kernel_size == (1, 3)
 
-    sequence = torch.zeros(2, 1, 6, 64, 64)
-    outputs = model(sequence)
+    statistics = _timestamp_statistics(64)
+    outputs = model(statistics)
     assert outputs["segmentation_logits"].shape == (1, 6, 64, 64)
     assert "segmentation_spikes" not in outputs
     assert outputs["segmentation_rate"].ndim == 0
     assert outputs["enc1_rate"].ndim == 0
     assert outputs["auxiliary_logits"].shape[-2:] == (32, 32)
     assert outputs["deep_auxiliary_logits"].shape[-2:] == (16, 16)
-    assert model.parameter_count() == 237597
+    assert model.parameter_count() == 236_445
 
 
 
@@ -304,17 +313,16 @@ def test_final_model_richer_spiking_paths_and_residual_bridges() -> None:
 def test_final_eval_keeps_only_output_spike_raster() -> None:
     model = build_model()
     model.eval()
-    sequence = torch.zeros(2, 1, 6, 16, 16)
+    statistics = _timestamp_statistics(16)
     with torch.no_grad():
-        outputs = model(sequence)
-    assert outputs["segmentation_spikes"].shape == (2, 1, 6, 16, 16)
+        outputs = model(statistics)
+    assert outputs["segmentation_spikes"].shape == (10, 1, 6, 16, 16)
     assert "enc1_spikes" not in outputs
     assert "decoder_spikes" not in outputs
 
 def test_final_deep_paths_receive_gradients() -> None:
     model = build_model()
-    sequence = torch.ones(2, 1, 6, 32, 32)
-    outputs = model(sequence)
+    outputs = model(_timestamp_statistics(32))
     loss = (
         outputs["segmentation_logits"].mean()
         + outputs["auxiliary_logits"].mean()
@@ -355,8 +363,52 @@ def test_hidden_peer_membrane_inhibition_can_warm_up_without_disabling_class_wta
     assert all(module.competition_enabled for module in output_modules)
 
 
-def test_final_model_accepts_raw_two_channel_temporal_input() -> None:
-    model = build_model(input_channels=2, architecture="EventSpikeSeg140k")
-    sequence = torch.zeros(2, 1, 2, 16, 16)
-    outputs = model(sequence)
-    assert outputs["segmentation_logits"].shape == (1, 6, 16, 16)
+def test_final_model_rejects_obsolete_two_channel_temporal_input() -> None:
+    with pytest.raises(ValueError, match="six source channels"):
+        build_model(input_channels=2, architecture="EventSpikeSeg140k")
+
+
+def test_timestamp_scheduler_conserves_activity_and_orders_arrivals() -> None:
+    model = build_model(architecture="EventSpikeSeg140k")
+    statistics = torch.zeros((1, 6, 2, 2))
+    statistics[:, 0, 0, 0] = 0.8
+    statistics[:, 2, 0, 0] = 0.5
+    statistics[:, 4, 0, 0] = 0.2
+    scheduled = model.timestamp_input(statistics)
+    assert scheduled.shape == (10, 1, 2, 2, 2)
+    assert scheduled[:, 0, 0, 0, 0].sum().item() == pytest.approx(0.8)
+    assert torch.count_nonzero(scheduled[:, 0, 0, 0, 0]) == 3
+
+    five_update_model = build_model(
+        architecture="EventSpikeSeg140k", internal_updates=5
+    )
+    assert five_update_model.timestamp_input.clock_updates == 5
+    with pytest.raises(ValueError, match="divide"):
+        build_model(architecture="EventSpikeSeg140k", internal_updates=7)
+
+
+def test_detach_state_keeps_membrane_values_without_autograd_history() -> None:
+    neuron = ParametricLIF(1, LIFConfig(threshold=2.0))
+    neuron(torch.ones((1, 1, 1, 1), requires_grad=True))
+    value = neuron.membrane.detach().clone()
+    neuron.detach_state()
+    assert torch.equal(neuron.membrane, value)
+    assert neuron.membrane.grad_fn is None
+
+
+def test_model_detach_clears_spikingjelly_internal_graph_roots() -> None:
+    model = build_model(architecture="EventSpikeSeg140k")
+    outputs = model(_timestamp_statistics(16))
+    outputs["segmentation_logits"].sum().backward()
+    active = [
+        module
+        for module in model.modules()
+        if isinstance(module, ParametricLIF)
+        and module.plif_core is not None
+        and isinstance(module.plif_core.v, torch.Tensor)
+        and module.plif_core.v.grad_fn is not None
+    ]
+    assert active
+    model.detach_state()
+    assert all(module.plif_core.v.grad_fn is None for module in active)
+    assert all(module.membrane.grad_fn is None for module in active)

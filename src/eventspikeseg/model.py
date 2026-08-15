@@ -31,6 +31,7 @@ from dataclasses import replace
 import torch
 from torch import Tensor, nn
 
+from .data import DEFAULT_INTERNAL_UPDATES, EVSEG_INTEGRATION_WINDOW_US
 from .model_components import (
     EventSpikeSegBase,
     LIFConfig,
@@ -38,6 +39,7 @@ from .model_components import (
     SpikingClassHead,
     SpikingConvBlock,
     SpikingStage,
+    TimestampEventInput,
 )
 
 # Selectable finals: EventSpikeSeg (~238k) and EventSpikeSeg140k (~140k).
@@ -289,11 +291,26 @@ class EventSpikeSeg(EventSpikeSegBase):
         FINAL_REFINEMENT_UNFREEZE_START,
     )
 
-    def __init__(self, *, class_count: int = 6, input_channels: int = 6) -> None:
+    def __init__(
+        self,
+        *,
+        class_count: int = 6,
+        input_channels: int = 6,
+        internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+    ) -> None:
+        if input_channels != TimestampEventInput.source_channels:
+            raise ValueError("timestamp-event models require six source channels")
+        if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
+            raise ValueError("internal_updates must divide the 50,000 us interval exactly")
         super().__init__(
             class_count=class_count,
-            input_channels=input_channels,
+            input_channels=TimestampEventInput.event_channels,
             architecture=FINAL_ARCHITECTURE,
+        )
+        self.source_input_channels = input_channels
+        self.timestamp_input = TimestampEventInput(
+            integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
+            event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
         )
         architecture = FINAL_ARCHITECTURE
         encoder_lif = _block_lif(self.enc1)
@@ -440,11 +457,8 @@ class EventSpikeSeg(EventSpikeSegBase):
             for parameter in module.parameters():
                 parameter.requires_grad_(trainable)
 
-    def forward(self, sequence: Tensor) -> dict[str, Tensor]:
-        if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
-            raise ValueError(
-                f"expected [T,N,{self.input_channels},H,W] temporal event sequence"
-            )
+    def forward(self, statistics: Tensor) -> dict[str, Tensor]:
+        sequence = self.timestamp_input(statistics)
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
         detail = self.detail3(self.detail2(self.detail1(x1)))
 
@@ -516,11 +530,26 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         FINAL_REFINEMENT_UNFREEZE_START,
     )
 
-    def __init__(self, *, class_count: int = 6, input_channels: int = 6) -> None:
+    def __init__(
+        self,
+        *,
+        class_count: int = 6,
+        input_channels: int = 6,
+        internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+    ) -> None:
+        if input_channels != TimestampEventInput.source_channels:
+            raise ValueError("timestamp-event models require six source channels")
+        if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
+            raise ValueError("internal_updates must divide the 50,000 us interval exactly")
         super().__init__(
             class_count=class_count,
-            input_channels=input_channels,
+            input_channels=TimestampEventInput.event_channels,
             architecture=replace(FINAL_ARCHITECTURE, name="EventSpikeSeg140k"),
+        )
+        self.source_input_channels = input_channels
+        self.timestamp_input = TimestampEventInput(
+            integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
+            event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
         )
         architecture = self.architecture
         encoder_lif = _block_lif(self.enc1)
@@ -604,11 +633,8 @@ class EventSpikeSeg140k(EventSpikeSegBase):
             for parameter in module.parameters():
                 parameter.requires_grad_(trainable)
 
-    def forward(self, sequence: Tensor) -> dict[str, Tensor]:
-        if sequence.ndim != 5 or sequence.shape[2] != self.input_channels:
-            raise ValueError(
-                f"expected [T,N,{self.input_channels},H,W] temporal event sequence"
-            )
+    def forward(self, statistics: Tensor) -> dict[str, Tensor]:
+        sequence = self.timestamp_input(statistics)
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
         detail = self.detail3(self.detail2(self.detail1(x1)))
 
@@ -663,6 +689,7 @@ def build_model(
     class_count: int = 6,
     input_channels: int = 6,
     architecture: str = "EventSpikeSeg",
+    internal_updates: int = DEFAULT_INTERNAL_UPDATES,
 ) -> EventSpikeSegBase:
     try:
         model_class = FINAL_MODELS[architecture]
@@ -671,4 +698,12 @@ def build_model(
             f"unknown final architecture {architecture!r}; "
             f"expected one of {tuple(FINAL_MODELS)}"
         ) from exc
-    return model_class(class_count=class_count, input_channels=input_channels)
+    if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
+        raise ValueError(
+            "internal_updates must be positive and divide the 50,000 us interval exactly"
+        )
+    return model_class(
+        class_count=class_count,
+        input_channels=input_channels,
+        internal_updates=internal_updates,
+    )

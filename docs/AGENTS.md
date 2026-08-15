@@ -30,23 +30,27 @@ Do not put experimental registries back into `model.py`. Keep completed top-ten/
 
 The earlier architecture ablations exposed useful structural/neuron behavior, but their accuracy numbers were produced with the now-removed repeated-static temporal representation. They are archival evidence, not a current baseline to resume or compare directly.
 
-The active data question is now primary:
-
-1. `event-bins`: does the SNN improve when `T` contains genuinely consecutive two-polarity histogram intervals instead of copies of one sample?
-2. `sequential-6ch`: do timestamp mean/std statistics add useful accuracy beyond the two histogram channels?
+The active input is `timestamp-events`: one installed six-channel 50 ms interval
+per loader item. Histogram channels carry polarity activity and timestamp mean/std
+schedule input-synapse arrivals within that interval. Adjacent files are streamed
+one at a time while PLIF state persists across consecutive records.
 
 Implementation contract:
 
 - no repeated-static/direct-encoding fallback;
-- no temporal padding by repeating samples;
-- temporal windows may not cross `sequence_id` boundaries or frame-index gaps;
+- no multi-file temporal windows or padding by repeating samples;
+- batch size is one and stream records are never shuffled;
+- reset PLIF state at `sequence_id` boundaries, frame-index gaps, and split/epoch starts;
+- detach recurrent state after each record during training without clearing its value;
 - validation holds out complete sequence/interval IDs;
 - `DDD17/ddd17_temporal_manifest.json` is authoritative for chronology; do not infer or generate sequence metadata in the runtime;
 - no HDF5/raw-recording dependency; installed NumPy intervals are the input source;
-- new checkpoints use `ddd17-temporal-v2` and a protocol fingerprint;
+- new checkpoints use `ddd17-timestamp-v3` and a protocol fingerprint;
 - legacy checkpoints missing that protocol are rejected.
 
-No new mIoU claim is valid until one of these temporal-v2 paths is trained on the real dataset.
+The stored statistics do not contain exact event tuples. The scheduler uses three
+weighted arrivals (mean and mean±std) over ten 5 ms hardware-clock updates and
+conserves histogram activity. This approximation must be stated in accuracy/hardware claims.
 
 ## Active neuron-dynamics contract
 
@@ -81,13 +85,13 @@ Fairness rule used: all three used the same seed, data subset, resolution, times
 
 ## Canonical post-ablation candidate
 
-`final_dualpath_wide32` is the 237,597-parameter EventSpikeSeg candidate. It uses a 32/64/128 semantic path, projected PLIF residual bridges across downsampling, residual DW/PW refinement, a persistent 32-channel high-resolution detail path with asymmetric refinement, serial dilation-2 context plus residual concatenated d1/d2/d4 context, one bottlenecked low-resolution spike-mask attention residual, concatenative mid-decoder fusion, and late semantic/shallow/detail concatenation. Final channel selection is a spike-driven 96→96 1×1 projection into PLIF selector neurons. No fourth downsampling level, dense softmax attention, GAP/MLP inference gate, BatchNorm dependency, or hard hidden WTA is used.
+`final_dualpath_wide32` is the 236,445-parameter EventSpikeSeg candidate. It uses a 32/64/128 semantic path, projected PLIF residual bridges across downsampling, residual DW/PW refinement, a persistent 32-channel high-resolution detail path with asymmetric refinement, serial dilation-2 context plus residual concatenated d1/d2/d4 context, one bottlenecked low-resolution spike-mask attention residual, concatenative mid-decoder fusion, and late semantic/shallow/detail concatenation. Final channel selection is a spike-driven 96→96 1×1 projection into PLIF selector neurons. No fourth downsampling level, dense softmax attention, GAP/MLP inference gate, BatchNorm dependency, or hard hidden WTA is used.
 
 Use SpikingJelly public `activation_based` infrastructure where compatible: SpikingJelly convolution/PLIF/surrogate behavior backs the software model, while project code keeps per-channel beta, dynamic threshold, fInst/fLong, and exact reset/order explicit for later integer/RTL/circuit reproduction.
 
 Auxiliary heads are training-only and must be skipped in eval/inference. Canonical training schedule only: 0–70% joint, 70–90% semantic backbone frozen while detail/decoder/selector/heads refine, 90–100% all layers unfrozen at lower LR. Historical benchmark suites do not inherit this schedule. Historical suites are pinned to CE=0.5; the final suite uses CE=1.0.
 
-There is one training implementation: `eventspikeseg.train`. Do not recreate suite-specific training loops. All new runs use temporal-v2 data handling and sequence-level validation. The official test set is not used for best-checkpoint selection.
+There is one training implementation: `eventspikeseg.train`. Do not recreate suite-specific training loops. All new runs use timestamp-stream v3 data handling and sequence-level validation. The official test set is not used for best-checkpoint selection.
 
 ## Diagnostics
 

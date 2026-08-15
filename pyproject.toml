@@ -13,7 +13,6 @@ dependencies = [
   "torch>=2.0,<2.3",
   "spikingjelly==0.0.0.0.14",
   "Pillow>=10,<12",
-  "h5py>=3.9,<4",
   "tqdm>=4.66,<5",
 ]
 

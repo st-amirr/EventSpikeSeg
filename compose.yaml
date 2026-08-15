@@ -57,14 +57,14 @@ services:
       ["python", "-m", "eventspikeseg.train", "single",
        "--root", "/datasets/DDD17",
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
-       "--input-mode", "event-bins",
+       "--input-mode", "timestamp-events",
        "--device", "auto", "--amp",
        "--seed", "17", "--epochs", "1", "--batch-size", "1",
-       "--time-steps", "3", "--height", "32", "--width", "32",
+       "--height", "32", "--width", "32", "--internal-updates", "10",
        "--train-samples", "2", "--validation-fraction", "0.10",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
-  # Lighter final candidate with chronological ON/OFF histogram bins.
+  # Lighter final candidate with timestamp-scheduled continuous input.
   train-ddd17-140k:
     <<: *ddd17
     # gpus: all
@@ -72,16 +72,16 @@ services:
       ["python", "-m", "eventspikeseg.train", "single",
        "--root", "/datasets/DDD17",
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
-       "--input-mode", "event-bins",
+       "--input-mode", "timestamp-events",
       #  "--device", "auto", "--amp",
        "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1",
-       "--accumulate-steps", "2", "--time-steps", "10",
+       "--accumulate-steps", "2", "--internal-updates", "10",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.0015", "--checkpoint-every", "1",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
-  # Canonical expanded final model with chronological ON/OFF histogram bins.
+  # Canonical expanded final model with timestamp-scheduled continuous input.
   train-ddd17:
     <<: *ddd17
     gpus: all
@@ -89,15 +89,14 @@ services:
       ["python", "-m", "eventspikeseg.train", "single",
        "--root", "/datasets/DDD17",
        "--architecture", "EventSpikeSeg", "--suite", "final",
-       "--input-mode", "event-bins",
+       "--input-mode", "timestamp-events",
        "--device", "auto", "--amp",
        "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "70", "--batch-size", "1",
-       "--accumulate-steps", "4", "--time-steps", "8",
+       "--accumulate-steps", "4", "--internal-updates", "10",
        "--train-samples", "0", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
        "--checkpoint-dir", "artifacts/checkpoints"]
-
   benchmark-top-ten:
       <<: *ddd17
       command:
@@ -116,7 +115,7 @@ services:
       ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
       "--suite", "top-five", "--seed", "17",
       "--epochs", "8",
-      "--batch-size", "14", "--time-steps", "15",
+      "--batch-size", "14",
       "--height", "64", "--width", "64",
       "--train-samples", "2048",
       "--learning-rate", "0.002",
@@ -128,7 +127,7 @@ services:
       ["python", "-m", "eventspikeseg.train", "benchmark", "--root", "/datasets/DDD17",
       "--suite", "top-three", "--seed", "17",
       "--epochs", "8",
-      "--batch-size", "14", "--time-steps", "15",
+      "--batch-size", "14",
       "--height", "64", "--width", "64",
       "--train-samples", "2048",
       "--learning-rate", "0.002",

@@ -2,12 +2,16 @@
 
 ## Active task
 
-Six-class DDD17 semantic segmentation with **real temporal input only**. The repeated-static direct-encoding path is removed. The canonical runtime accepts either:
+Six-class DDD17 semantic segmentation with timestamp-scheduled continuous input.
+The loader emits one installed 50 ms record as `[N,6,H,W]`; it does not create a
+time axis from adjacent files. By default, the input scheduler converts histogram activity and
+timestamp moments into `[10,N,2,H,W]` synaptic deliveries on a 5 ms hardware clock,
+before the first PLIF layer. PLIF state is carried into the next consecutive record.
 
-- `event-bins`: `[T,N,2,H,W]` chronological Ev-SegNet intervals using only the two polarity histogram channels, mapped from stored `[-1,1]` values to nonnegative `[0,1]` activity; or
-- `sequential-6ch`: `[T,N,6,H,W]` chronological Ev-SegNet event-statistic intervals from one sequence.
-
-`T` therefore corresponds to distinct consecutive stored intervals. The target mask is the indexed class map aligned to the final interval. Timestamp mean/std channels are never reinterpreted as extra timesteps. No HDF5 input is required.
+Stored channels are `hist0,hist1,mean0,std0,mean1,std1`; the loader decodes them to
+`activity0,activity1,mean0,mean1,std0,std1`. Three weighted arrivals at mean and
+mean±std conserve activity. This is necessarily an approximation because individual
+event tuples are absent. Sequence changes, frame gaps, and split/epoch starts reset state.
 
 ## File separation
 
@@ -115,7 +119,7 @@ Concatenation is treated as wiring/channel routing and does not itself require m
 
 ## Canonical `final_dualpath_wide32`
 
-The current EventSpikeSeg architecture is the 237,597-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
+The current EventSpikeSeg architecture is the 236,445-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
 
 ```text
 input C (2 chronological polarity histograms or 6 interval statistics)
@@ -164,11 +168,21 @@ The final loss profile uses CE coefficient `1.0`, focal `0.5`, Dice `0.75`, the 
 
 ### Training/evaluation data protocol
 
-The dataset-root `ddd17_temporal_manifest.json` is the authoritative temporal index for all current training and evaluation. It supplies the sequence/interval identity and chronological frame index for each NumPy event tensor and indexed PNG mask. The runtime does not reconstruct chronology from filenames and requires no HDF5 source.
+The dataset-root `ddd17_temporal_manifest.json` is the authoritative stream index.
+The loader reads exactly one NumPy event-statistic tensor and its same-record PNG mask
+per item. DataLoader order is chronological and batch size is one.
 
-Training uses a deterministic temporal holdout from the DDD17 training split. With multiple `sequence_id` values, complete sequences are assigned to either training or validation. With a single sequence, validation is one contiguous block and a `T-1` record guard is removed from training around the block so temporal windows do not touch across the split. The official test split is reserved for explicit final reporting. Omitting `--height/--width` preserves stored resolution. Limited `--train-samples` budgets draw a deterministic random subset of complete chronological windows each epoch. Temporal order inside each `T`-step sample is preserved.
+With multiple sequence IDs, validation holds out complete sequences. With one sequence,
+validation is one contiguous block; removing it creates a frame gap and therefore a
+state reset. A limited per-epoch training fraction is one deterministic contiguous
+segment, not a shuffled selection.
 
-Temporal samples are constructed before batching. Both modes require consecutive frame indices inside one `sequence_id`; `event-bins` extracts only polarity histograms and `sequential-6ch` retains all statistics. Checkpoints store exact train/validation record membership plus a temporal protocol fingerprint and reject a different manifest/split/T/binning contract. Historical repeated-static metrics remain documentation only.
+During training, backward ends at each 50 ms record. The model then detaches recurrent
+autograd history while preserving membrane, adaptation, and threshold state for the
+next consecutive record. Evaluation carries the same numeric state under `no_grad`.
+Checkpoints freeze exact record membership and the `ddd17-timestamp-v3` physical
+interval/event-clock contract. `--internal-updates` is configurable, defaults to 10,
+must divide 50,000 µs exactly, and is part of the protocol fingerprint.
 
 ## Historical architecture registries
 

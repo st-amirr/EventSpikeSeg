@@ -318,7 +318,14 @@ class HardwareLIF(nn.Module):
         self.threshold_timer.zero_()
         self.threshold_adaptation_age = torch.empty(0, device=self.adaptation.device)
         self.threshold_adaptation_amplitude = torch.empty(0, device=self.adaptation.device)
-        self.threshold_adaptation_penalty = torch.empty(0, device=self.adaptation.device)
+
+    def detach_state(self) -> None:
+        """Keep streaming neuron values while truncating the autograd history."""
+        self.membrane = self.membrane.detach()
+        self.adaptation = self.adaptation.detach()
+        self.threshold_adaptation_age = self.threshold_adaptation_age.detach()
+        self.threshold_adaptation_amplitude = self.threshold_adaptation_amplitude.detach()
+        self.threshold_adaptation_penalty = self.threshold_adaptation_penalty.detach()
 
     def set_homeostasis_scale(self, value: float) -> None:
         self.homeostasis_scale.fill_(float(value))
@@ -680,6 +687,63 @@ class ParametricLIF(HardwareLIF):
                 if callable(reset):
                     reset()
 
+    def detach_state(self) -> None:
+        """Detach both project-visible and SpikingJelly-internal PLIF state."""
+        super().detach_state()
+        if self.plif_core is None:
+            return
+        # ``neuronal_charge`` leaves its result in ``core.v``. Keeping that
+        # tensor attached roots the completed record's entire autograd graph,
+        # which can overlap with allocation of the next record. The canonical
+        # membrane already contains the post-reset/post-inhibition state.
+        self.plif_core.v = self.membrane
+        core_w = getattr(self.plif_core, "w", None)
+        if isinstance(core_w, Tensor):
+            self.plif_core.w = core_w.detach()
+
+
+class TimestampEventInput(nn.Module):
+    """Schedule one Ev-SegNet 50 ms statistic tensor as input synaptic events.
+
+    Input channels are ``activity_0, activity_1, mean_0, mean_1, std_0,
+    std_1``. Means select physical clock arrival; standard deviation produces
+    two lower-weight arrivals around the mean. Total delivered synaptic strength
+    remains equal to the histogram activity. This module has no trainable state
+    and maps directly to timestamp/address scheduling ahead of the first PLIF
+    synapse on neuromorphic hardware.
+    """
+
+    source_channels = 6
+    event_channels = 2
+
+    def __init__(self, *, integration_window_us: int, event_clock_us: int) -> None:
+        super().__init__()
+        if integration_window_us <= 0 or event_clock_us <= 0:
+            raise ValueError("integration window and event clock must be positive")
+        if integration_window_us % event_clock_us != 0:
+            raise ValueError("integration window must be divisible by event clock")
+        self.integration_window_us = integration_window_us
+        self.event_clock_us = event_clock_us
+        self.clock_updates = integration_window_us // event_clock_us
+
+    def forward(self, statistics: Tensor) -> Tensor:
+        if statistics.ndim != 4 or statistics.shape[1] != self.source_channels:
+            raise ValueError("expected [N,6,H,W] timestamp-event statistics")
+        activity = statistics[:, :2].clamp(0.0, 1.0)
+        mean = statistics[:, 2:4].clamp(0.0, 1.0)
+        deviation = statistics[:, 4:6].clamp(0.0, 1.0)
+        shape = (self.clock_updates, *activity.shape)
+        scheduled = activity.new_zeros(shape)
+        scale = float(max(1, self.clock_updates - 1))
+        for arrival, weight in (
+            (mean, 0.50),
+            ((mean - deviation).clamp(0.0, 1.0), 0.25),
+            ((mean + deviation).clamp(0.0, 1.0), 0.25),
+        ):
+            clock_index = torch.round(arrival * scale).long().unsqueeze(0)
+            scheduled.scatter_add_(0, clock_index, (activity * weight).unsqueeze(0))
+        return scheduled
+
 
 
 class ChannelAffine(nn.Module):
@@ -786,13 +850,13 @@ class SpikingStage(nn.Module):
         # graph instead of T independent graphs, then keep the neuron update
         # strictly sequential to preserve PLIF/LIF temporal dynamics and BPTT.
         if self.norm_kind != "bn":
-            time_steps, batch_size = sequence.shape[:2]
+            clock_updates, batch_size = sequence.shape[:2]
             flat = sequence.reshape(
-                time_steps * batch_size, *sequence.shape[2:]
+                clock_updates * batch_size, *sequence.shape[2:]
             ).float()
             currents = self.transform(self.conv(flat))
             currents = currents.reshape(
-                time_steps, batch_size, *currents.shape[1:]
+                clock_updates, batch_size, *currents.shape[1:]
             )
             return torch.stack([self.neuron(current) for current in currents])
 
@@ -1153,6 +1217,12 @@ class EventSpikeSegBase(nn.Module):
             reset = getattr(module, "reset", None)
             if callable(reset) and not isinstance(module, EventSpikeSegBase):
                 reset()
+
+    def detach_state(self) -> None:
+        """Retain membrane/homeostasis values across stream records without full BPTT."""
+        for module in self.modules():
+            if isinstance(module, HardwareLIF):
+                module.detach_state()
 
     def set_homeostasis_scale(self, value: float) -> None:
         for module in self.modules():
