@@ -12,6 +12,7 @@ from eventspikeseg.train import (
     TrainResult,
     _epoch_train_dataset,
     _prepare_datasets,
+    apply_resume_learning_rate,
     architecture_presets,
     estimate_class_weights,
     infer_model_suite,
@@ -222,3 +223,29 @@ def test_final_refinement_schedule_phases() -> None:
     assert refinement_phase_for_epoch(1, 10, schedule) == ("joint", True)
     assert refinement_phase_for_epoch(8, 10, schedule) == ("decoder_detail_refinement", False)
     assert refinement_phase_for_epoch(10, 10, schedule) == ("final_joint_low_lr", True)
+
+
+def test_resume_cli_learning_rate_overrides_checkpoint_parameter_groups() -> None:
+    parameter = torch.nn.Parameter(torch.ones(()))
+    optimizer = torch.optim.AdamW([{"params": [parameter], "lr": 0.0015}])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=80)
+    checkpoint_optimizer = optimizer.state_dict()
+    checkpoint_scheduler = scheduler.state_dict()
+
+    resumed_parameter = torch.nn.Parameter(torch.ones(()))
+    resumed_optimizer = torch.optim.AdamW([{"params": [resumed_parameter], "lr": 0.001}])
+    resumed_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        resumed_optimizer, T_max=80
+    )
+    resumed_optimizer.load_state_dict(checkpoint_optimizer)
+    resumed_scheduler.load_state_dict(checkpoint_scheduler)
+    applied = apply_resume_learning_rate(
+        resumed_optimizer,
+        resumed_scheduler,
+        learning_rate=0.001,
+        group_multipliers=[1.0],
+    )
+
+    assert applied == [0.001]
+    assert resumed_optimizer.param_groups[0]["lr"] == 0.001
+    assert resumed_scheduler.base_lrs == [0.001]

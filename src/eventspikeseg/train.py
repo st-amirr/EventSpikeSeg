@@ -78,6 +78,30 @@ def infer_model_suite(architecture: str) -> str:
     raise KeyError(f"unknown architecture {architecture!r}")
 
 
+def apply_resume_learning_rate(
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    *,
+    learning_rate: float,
+    group_multipliers: list[float],
+) -> list[float]:
+    """Apply the CLI LR after restoring optimizer/scheduler state.
+
+    Checkpoints retain Adam moments and the scheduler's elapsed epoch, but the
+    optimizer state also contains its old parameter-group LRs. A supplied CLI
+    value explicitly replaces those rates on resume.
+    """
+    if len(optimizer.param_groups) != len(group_multipliers):
+        raise ValueError("checkpoint optimizer groups do not match this model")
+    group_rates = [learning_rate * multiplier for multiplier in group_multipliers]
+    for group, rate in zip(optimizer.param_groups, group_rates):
+        group["lr"] = rate
+        group["initial_lr"] = rate
+    scheduler.base_lrs = list(group_rates)
+    scheduler._last_lr = list(group_rates)
+    return group_rates
+
+
 def build_experiment_model(
     architecture: str,
     *,
@@ -505,16 +529,19 @@ def train_architecture(
     parameter_groups = [
         {"params": weight_parameters, "lr": learning_rate, "weight_decay": 1e-4}
     ]
+    learning_rate_multipliers = [1.0]
     if base_neuron_parameters:
         parameter_groups.append(
             {"params": base_neuron_parameters, "lr": learning_rate * 2.0, "weight_decay": 0.0}
         )
+        learning_rate_multipliers.append(2.0)
     if mechanism_parameters:
         # fInst/fLong/TThresh-like parameters alter recurrent dynamics directly;
         # use the base LR so they do not outrun feature learning early on.
         parameter_groups.append(
             {"params": mechanism_parameters, "lr": learning_rate, "weight_decay": 0.0}
         )
+        learning_rate_multipliers.append(1.0)
     optimizer = torch.optim.AdamW(parameter_groups)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
     class_weights = estimate_class_weights(train_pool).to(resolved_device)
@@ -658,6 +685,12 @@ def train_architecture(
             optimizer.load_state_dict(optimizer_state)
         if scheduler_state is not None:
             scheduler.load_state_dict(scheduler_state)
+        resumed_group_rates = apply_resume_learning_rate(
+            optimizer,
+            scheduler,
+            learning_rate=learning_rate,
+            group_multipliers=learning_rate_multipliers,
+        )
         if scaler_state is not None and amp_enabled:
             scaler.load_state_dict(scaler_state)
 
@@ -709,7 +742,8 @@ def train_architecture(
         previous_training_phase = checkpoint.get("training_phase")
         print(
             f"Resuming {architecture} from {load_path} | "
-            f"completed_epoch={loaded_epoch} next_epoch={start_epoch} target_epoch={epochs}",
+            f"completed_epoch={loaded_epoch} next_epoch={start_epoch} target_epoch={epochs} | "
+            f"CLI LR applied: {', '.join(f'{rate:.2e}' for rate in resumed_group_rates)}",
             flush=True,
         )
 
@@ -1203,7 +1237,12 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         default=0.10,
         help="fraction of the DDD17 training split reserved for validation in the final suite",
     )
-    parser.add_argument("--learning-rate", type=float, default=2e-3)
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=1e-3,
+        help="base LR; overrides checkpoint parameter-group LRs when resuming",
+    )
     parser.add_argument(
         "--height", type=int, default=None,
         help="optional resize height; omit together with --width to preserve native dataset size",

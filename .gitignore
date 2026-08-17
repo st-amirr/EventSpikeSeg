@@ -13,3 +13,5 @@ artifacts/**/** */ /**/**/**
 artifacts/ablation/top_five/checkpoints/**
 desktop.ini
 *.pt
+kaggle/
+Icon
