@@ -19,6 +19,7 @@ from eventspikeseg.train import (
     loss_profile_for_suite,
     refinement_phase_for_epoch,
     select_winner,
+    soft_dice_loss,
 )
 
 
@@ -229,6 +230,14 @@ def test_loss_profiles_remain_explicit() -> None:
     for suite in ("top-ten", "top-five", "top-three"):
         assert loss_profile_for_suite(suite).cross_entropy == 0.5
     assert loss_profile_for_suite("final").cross_entropy == 1.0
+
+
+def test_soft_dice_loss_reports_each_class() -> None:
+    logits = torch.zeros((1, 6, 2, 2))
+    target = torch.tensor([[[0, 1], [2, 3]]])
+    losses = soft_dice_loss(logits, target, class_count=6)
+    assert losses.shape == (6,)
+    assert torch.all((losses >= 0.0) & (losses <= 1.0))
 
 
 def test_final_refinement_schedule_phases() -> None:

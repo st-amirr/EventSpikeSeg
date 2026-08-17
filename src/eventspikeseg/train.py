@@ -196,6 +196,7 @@ def seed_everything(seed: int) -> None:
 
 
 def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
+    """Differentiable Dice loss for each semantic class in the current batch."""
     probabilities = logits.softmax(dim=1)
     valid = target != IGNORE_INDEX
     safe_target = target.masked_fill(~valid, 0)
@@ -205,7 +206,7 @@ def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
     one_hot = one_hot * valid_mask
     numerator = 2.0 * (probabilities * one_hot).sum(dim=(0, 2, 3)) + 1.0
     denominator = probabilities.sum(dim=(0, 2, 3)) + one_hot.sum(dim=(0, 2, 3)) + 1.0
-    return 1.0 - (numerator / denominator).mean()
+    return 1.0 - numerator / denominator
 
 
 def estimate_class_weights(dataset: TemporalDataset, maximum: int | None = None) -> Tensor:
@@ -773,6 +774,10 @@ def train_architecture(
         ),
         flush=True,
     )
+    print(
+        "Batch Dice-loss order | " + ", ".join(DDD17_CLASS_NAMES),
+        flush=True,
+    )
 
 
     for epoch in range(start_epoch, epochs + 1):
@@ -838,6 +843,7 @@ def train_architecture(
         if callable(set_hidden_inhibition):
             set_hidden_inhibition(hidden_inhibition_enabled)
         running_loss = 0.0
+        running_dice_losses = torch.zeros(DDD17_CLASS_COUNT, dtype=torch.float64)
         total_batches = len(train_loader)
         progress = tqdm(
             train_loader,
@@ -863,7 +869,8 @@ def train_architecture(
                     ignore_index=IGNORE_INDEX,
                 )
                 focal = focal_cross_entropy(logits, target, class_weights)
-                dice = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
+                dice_losses = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
+                dice = dice_losses.mean()
                 activity = _activity_regularizer(outputs)
                 loss = (
                     loss_profile.cross_entropy * ce
@@ -939,6 +946,8 @@ def train_architecture(
                 optimizer.zero_grad(set_to_none=True)
             batch_loss = float(loss.detach())
             running_loss += batch_loss
+            detached_dice_losses = dice_losses.detach().cpu()
+            running_dice_losses += detached_dice_losses.double()
             output_spike_rate = float(
                 outputs["segmentation_rate"].detach()
                 if "segmentation_rate" in outputs
@@ -949,6 +958,9 @@ def train_architecture(
                 avg=f"{running_loss / batch_index:.4f}",
                 lr=f"{optimizer.param_groups[0]['lr']:.2e}",
                 spike=f"{output_spike_rate:.4f}",
+                dice_loss="/".join(
+                    f"{value:.2f}" for value in detached_dice_losses.tolist()
+                ),
                 phase=training_phase,
                 refresh=False,
             )
@@ -958,17 +970,25 @@ def train_architecture(
             # forward pass. Python locals otherwise keep the large output/aux
             # tensors alive until they are overwritten during the next batch,
             # which can nearly double peak host RAM at native resolution.
-            del outputs, logits, loss, scaled_loss, ce, focal, dice, activity
+            del outputs, logits, loss, scaled_loss, ce, focal, dice, dice_losses, activity
             del auxiliary, auxiliary_ce, auxiliary_focal
             del deep_auxiliary, deep_auxiliary_ce, deep_auxiliary_focal
             del auxiliary_term, deep_auxiliary_term, gradient_norm
             del sequence, target
         scheduler.step()
         mean_epoch_loss = running_loss / max(1, len(train_loader))
+        mean_epoch_dice_losses = running_dice_losses / max(1, len(train_loader))
         print(
             f"Epoch {epoch:02d}/{epochs:02d} complete | "
             f"loss={mean_epoch_loss:.4f} | phase={training_phase} | "
-            f"homeostasis={homeostasis_scale:.2f}",
+            f"homeostasis={homeostasis_scale:.2f} | "
+            "dice_loss="
+            + ", ".join(
+                f"{class_name}={value:.3f}"
+                for class_name, value in zip(
+                    DDD17_CLASS_NAMES, mean_epoch_dice_losses.tolist()
+                )
+            ),
             flush=True,
         )
 
