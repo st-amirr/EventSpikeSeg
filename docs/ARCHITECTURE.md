@@ -13,6 +13,15 @@ Stored channels are `hist0,hist1,mean0,std0,mean1,std1`; the loader decodes them
 mean±std conserve activity. This is necessarily an approximation because individual
 event tuples are absent. Sequence changes, frame gaps, and split/epoch starts reset state.
 
+The DSEC-Semantic extension uses the same learned `EventSpikeSeg140k` feature
+architecture with a dataset-required eleven-population spiking class head. It does
+not use the DDD17 moment scheduler. Raw `(t,x,y,p)` events are read only for the
+50 ms preceding each semantic timestamp, rectified with `rectify_map.h5`, cropped
+to the 640×440 label view, and converted to binary ON/OFF planes on the configured
+physical clocks. The resulting `[T,N,2,H,W]` tensor enters the existing first PLIF
+synaptic stage directly. Thus DSEC timing is measured rather than reconstructed;
+the only temporal quantization is the selected hardware clock width.
+
 ## Fully spiking layer semantics
 
 `SpikingStage` is the canonical learned layer in both final models. It combines a
@@ -138,7 +147,7 @@ Concatenation is treated as wiring/channel routing and does not itself require m
 The current EventSpikeSeg architecture is the 236,445-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
 
 ```text
-input C (2 chronological polarity histograms or 6 interval statistics)
+input C (2 chronological raw-event polarity clocks or 6 DDD17 interval statistics)
   → stem 32
   → encoder 32 + residual DW/PW refinement
   → stride-2 main path + 1×1 PLIF projected residual → encoder 64

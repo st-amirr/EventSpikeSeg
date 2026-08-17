@@ -1,4 +1,4 @@
-"""Train the final DDD17 model or benchmark isolated architecture suites."""
+"""Train spike-native semantic models on DDD17 or raw-event DSEC."""
 
 from __future__ import annotations
 
@@ -18,19 +18,25 @@ from tqdm.auto import tqdm
 
 from .data import (
     DDD17_CLASS_COUNT,
-    DDD17_CLASS_NAMES,
     DEFAULT_DDD17_ROOT,
+    DEFAULT_DSEC_ROOT,
     DEFAULT_INTERNAL_UPDATES,
+    DSEC_INPUT_MODE,
     IGNORE_INDEX,
     INPUT_MODES,
-    TEMPORAL_PROTOCOL_VERSION,
+    DSECRawEventDataset,
     TemporalDataset,
     build_temporal_dataset,
     deterministic_dataset_subset,
     discover_ddd17_records,
+    discover_dsec_records,
+    dsec_temporal_collate,
     inspect_ddd17,
+    inspect_dsec,
+    make_dsec_protocol,
     make_temporal_protocol,
     resolve_ddd17_root,
+    resolve_dsec_root,
     split_records_by_sequence,
     temporal_collate,
 )
@@ -211,12 +217,13 @@ def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
 
 def estimate_class_weights(dataset: TemporalDataset, maximum: int | None = None) -> Tensor:
     """Use capped median-frequency balancing over the selected training subset."""
-    counts = torch.zeros(DDD17_CLASS_COUNT, dtype=torch.float64)
+    class_count = int(getattr(dataset, "class_count", DDD17_CLASS_COUNT))
+    counts = torch.zeros(class_count, dtype=torch.float64)
     limit = len(dataset) if maximum is None else min(len(dataset), maximum)
     for index in range(limit):
         mask = dataset.target_mask(index)
         valid = mask != IGNORE_INDEX
-        counts += torch.bincount(mask[valid], minlength=DDD17_CLASS_COUNT)
+        counts += torch.bincount(mask[valid], minlength=class_count)
     frequencies = counts / counts.sum().clamp_min(1.0)
     median_frequency = frequencies[counts > 0].median().clamp_min(1e-6)
     weights = median_frequency / frequencies.clamp_min(1e-6)
@@ -300,8 +307,52 @@ def _prepare_datasets(
     manifest: Path | None,
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
     stateful_stream: bool = True,
+    dataset_name: str = "ddd17",
 ) -> tuple[TemporalDataset, TemporalDataset, dict[str, object], str]:
     """Build sequence-disjoint train/validation datasets and freeze their protocol."""
+    if dataset_name == "dsec":
+        if input_mode != DSEC_INPUT_MODE:
+            raise ValueError("DSEC requires --input-mode raw-events")
+        if manifest is not None:
+            raise ValueError("DSEC chronology comes from sequence timestamp files, not --manifest")
+        all_train_records = discover_dsec_records(root, "train")
+        training_records, validation_records = split_records_by_sequence(
+            all_train_records,
+            validation_fraction=validation_fraction,
+            seed=seed,
+        )
+        train_pool = DSECRawEventDataset(
+            root,
+            split="train",
+            output_size=output_size,
+            internal_updates=internal_updates,
+            records=training_records,
+        )
+        validation_dataset = DSECRawEventDataset(
+            root,
+            split="train",
+            output_size=output_size,
+            internal_updates=internal_updates,
+            records=validation_records,
+        )
+        protocol = make_dsec_protocol(
+            root,
+            validation_fraction=validation_fraction,
+            training_records=training_records,
+            validation_records=validation_records,
+            internal_updates=internal_updates,
+            stateful_stream=stateful_stream,
+        )
+        return (
+            train_pool,
+            validation_dataset,
+            protocol.to_dict(),
+            protocol.fingerprint,
+        )
+    if dataset_name != "ddd17":
+        raise ValueError(f"unknown dataset {dataset_name!r}")
+    if input_mode not in INPUT_MODES:
+        raise ValueError("DDD17 requires --input-mode timestamp-events")
     all_train_records = discover_ddd17_records(root, "train", manifest=manifest)
     training_records, validation_records = split_records_by_sequence(
         all_train_records,
@@ -371,7 +422,8 @@ def evaluate_model(
     stateful_stream: bool = True,
 ) -> tuple[dict[str, object], float, dict[str, float]]:
     model.eval()
-    confusion = ConfusionMatrix(DDD17_CLASS_COUNT, IGNORE_INDEX)
+    class_count = int(loader.dataset.class_count)
+    confusion = ConfusionMatrix(class_count, IGNORE_INDEX)
     tracked_spike_keys = (
         "enc1_spikes", "enc2_spikes", "enc3_spikes", "enc4_spikes",
         "decoder_spikes", "segmentation_spikes",
@@ -469,6 +521,7 @@ def train_architecture(
     accumulate_steps: int = 1,
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
     continuous_state: bool = True,
+    dataset_name: str = "ddd17",
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
@@ -485,8 +538,9 @@ def train_architecture(
         manifest=manifest,
         internal_updates=internal_updates,
         stateful_stream=continuous_state,
+        dataset_name=dataset_name,
     )
-    collate = temporal_collate
+    collate = dsec_temporal_collate if dataset_name == "dsec" else temporal_collate
     validation_loader = DataLoader(
         validation_dataset,
         batch_size=batch_size,
@@ -500,9 +554,12 @@ def train_architecture(
         )
     else:
         resolved_device = torch.device(device)
+    class_count = int(train_pool.class_count)
+    class_names = tuple(str(name) for name in train_pool.class_names)
+    protocol_version = str(train_pool.protocol_version)
     model = build_experiment_model(
         architecture,
-        class_count=DDD17_CLASS_COUNT,
+        class_count=class_count,
         input_channels=train_pool.input_channels,
         suite=resolved_suite,
         internal_updates=internal_updates,
@@ -612,14 +669,15 @@ def train_architecture(
                 "architecture": architecture,
                 "model_suite": resolved_suite,
                 "architecture_config": model.architecture.to_dict(),
-                "class_names": DDD17_CLASS_NAMES,
+                "class_names": class_names,
+                "dataset": dataset_name,
                 "seed": seed,
                 "epoch": epoch_number,
                 "epochs": epochs,
                 "held_out_split": "sequence_train_holdout",
                 "input_channels": train_pool.input_channels,
                 "input_representation": input_mode,
-                "temporal_protocol_version": TEMPORAL_PROTOCOL_VERSION,
+                "temporal_protocol_version": protocol_version,
                 "temporal_protocol": temporal_protocol,
                 "protocol_fingerprint": protocol_fingerprint,
                 "output_size": list(output_size) if output_size is not None else None,
@@ -648,7 +706,7 @@ def train_architecture(
             )
         if "model_state_dict" not in checkpoint:
             raise KeyError(f"checkpoint has no model_state_dict: {load_path}")
-        if checkpoint.get("temporal_protocol_version") != TEMPORAL_PROTOCOL_VERSION:
+        if checkpoint.get("temporal_protocol_version") != protocol_version:
             raise ValueError(
                 "checkpoint uses the obsolete repeated-static/legacy data protocol; "
                 "start a new timestamp-stream run instead of resuming it"
@@ -761,7 +819,7 @@ def train_architecture(
         train_pool, train_samples=train_samples, seed=seed, epoch=1
     )
     print(
-        f"Training {architecture} | {resolved_device} | {precision} | "
+        f"Training {architecture} | dataset={dataset_name} | {resolved_device} | {precision} | "
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
         f"mode={input_mode} internal_updates={internal_updates} "
@@ -775,12 +833,12 @@ def train_architecture(
         "Median-frequency class weights | "
         + ", ".join(
             f"{class_name}={weight:.3f}"
-            for class_name, weight in zip(DDD17_CLASS_NAMES, class_weights.tolist())
+            for class_name, weight in zip(class_names, class_weights.tolist())
         ),
         flush=True,
     )
     print(
-        "Batch Dice-loss order | " + ", ".join(DDD17_CLASS_NAMES),
+        "Batch Dice-loss order | " + ", ".join(class_names),
         flush=True,
     )
 
@@ -855,7 +913,7 @@ def train_architecture(
         if callable(set_hidden_inhibition):
             set_hidden_inhibition(hidden_inhibition_enabled)
         running_loss = 0.0
-        running_dice_losses = torch.zeros(DDD17_CLASS_COUNT, dtype=torch.float64)
+        running_dice_losses = torch.zeros(class_count, dtype=torch.float64)
         total_batches = len(train_loader)
         progress = tqdm(
             train_loader,
@@ -881,7 +939,7 @@ def train_architecture(
                     ignore_index=IGNORE_INDEX,
                 )
                 focal = focal_cross_entropy(logits, target, class_weights)
-                dice_losses = soft_dice_loss(logits, target, DDD17_CLASS_COUNT)
+                dice_losses = soft_dice_loss(logits, target, class_count)
                 dice = dice_losses.mean()
                 activity = _activity_regularizer(outputs)
                 loss = (
@@ -998,7 +1056,7 @@ def train_architecture(
             + ", ".join(
                 f"{class_name}={value:.3f}"
                 for class_name, value in zip(
-                    DDD17_CLASS_NAMES, mean_epoch_dice_losses.tolist()
+                    class_names, mean_epoch_dice_losses.tolist()
                 )
             ),
             flush=True,
@@ -1129,12 +1187,13 @@ def train_architecture(
                 "architecture": architecture,
                 "model_suite": resolved_suite,
                 "architecture_config": model.architecture.to_dict(),
-                "class_names": DDD17_CLASS_NAMES,
+                "class_names": class_names,
+                "dataset": dataset_name,
                 "seed": seed,
                 "held_out_split": "sequence_train_holdout",
                 "input_channels": train_pool.input_channels,
                 "input_representation": input_mode,
-                "temporal_protocol_version": TEMPORAL_PROTOCOL_VERSION,
+                "temporal_protocol_version": protocol_version,
                 "temporal_protocol": temporal_protocol,
                 "protocol_fingerprint": protocol_fingerprint,
                 "output_size": list(output_size) if output_size is not None else None,
@@ -1160,7 +1219,11 @@ def select_winner(results: list[TrainResult]) -> TrainResult:
 
 
 def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
-    root = resolve_ddd17_root(args.root)
+    root = (
+        resolve_dsec_root(args.root)
+        if args.dataset == "dsec"
+        else resolve_ddd17_root(args.root)
+    )
     presets = architecture_presets(args.suite)
     results = [
         train_architecture(
@@ -1183,6 +1246,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             accumulate_steps=args.accumulate_steps,
             internal_updates=args.internal_updates,
             continuous_state=args.continuous_state,
+            dataset_name=args.dataset,
             load=None,
         )
         for name in presets
@@ -1199,6 +1263,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             "epochs": args.epochs,
             "batch_size": args.batch_size,
             "input_mode": args.input_mode,
+            "dataset": args.dataset,
             "internal_updates": args.internal_updates,
             "manifest": str(args.manifest) if args.manifest is not None else None,
             "train_samples": args.train_samples,
@@ -1242,19 +1307,28 @@ def _resolve_output_size(height: int | None, width: int | None) -> tuple[int, in
 
 def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
+        "--dataset",
+        choices=("ddd17", "dsec"),
+        default="ddd17",
+        help="dataset contract to use (DSEC consumes raw HDF5 events)",
+    )
+    parser.add_argument(
         "--root",
         type=Path,
-        default=DEFAULT_DDD17_ROOT,
-        help=f"DDD17 root (default: embedded {DEFAULT_DDD17_ROOT})",
+        default=None,
+        help=(
+            f"dataset root (defaults: DDD17={DEFAULT_DDD17_ROOT}; "
+            f"DSEC={DEFAULT_DSEC_ROOT})"
+        ),
     )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument(
         "--input-mode",
-        choices=INPUT_MODES,
+        choices=(*INPUT_MODES, DSEC_INPUT_MODE),
         default="timestamp-events",
-        help="one timestamp-statistic interval streamed into the input PLIF synapses",
+        help="DDD17 timestamp statistics or rectified raw DSEC polarity events",
     )
     parser.add_argument(
         "--internal-updates",
@@ -1278,7 +1352,7 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         "--manifest",
         type=Path,
         default=None,
-        help="temporal metadata manifest (default: <root>/ddd17_temporal_manifest.json)",
+        help="DDD17 temporal manifest; DSEC instead uses per-sequence timestamp files",
     )
     parser.add_argument(
         "--train-samples", type=float, default=2048.0,
@@ -1291,7 +1365,7 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         "--validation-fraction",
         type=float,
         default=0.10,
-        help="fraction of the DDD17 training split reserved for validation in the final suite",
+        help="fraction of training sequences reserved for validation in the final suite",
     )
     parser.add_argument(
         "--learning-rate",
@@ -1336,10 +1410,13 @@ def main() -> None:
 
     inspect_parser = subparsers.add_parser("inspect")
     inspect_parser.add_argument(
+        "--dataset", choices=("ddd17", "dsec"), default="ddd17"
+    )
+    inspect_parser.add_argument(
         "--root",
         type=Path,
-        default=DEFAULT_DDD17_ROOT,
-        help=f"DDD17 root (default: embedded {DEFAULT_DDD17_ROOT})",
+        default=None,
+        help="dataset root; defaults according to --dataset",
     )
     inspect_parser.add_argument("--manifest", type=Path, default=None)
 
@@ -1390,9 +1467,20 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    root = resolve_ddd17_root(args.root) if args.command != "promote" else None
+    root = None
+    if args.command != "promote":
+        root = (
+            resolve_dsec_root(args.root)
+            if args.dataset == "dsec"
+            else resolve_ddd17_root(args.root)
+        )
     if args.command == "inspect":
-        print(json.dumps(inspect_ddd17(root, manifest=args.manifest).to_dict(), indent=2))
+        inspection = (
+            inspect_dsec(root)
+            if args.dataset == "dsec"
+            else inspect_ddd17(root, manifest=args.manifest)
+        )
+        print(json.dumps(inspection.to_dict(), indent=2))
     elif args.command == "single":
         train_architecture(
             root,
@@ -1414,6 +1502,7 @@ def main() -> None:
             accumulate_steps=args.accumulate_steps,
             internal_updates=args.internal_updates,
             continuous_state=args.continuous_state,
+            dataset_name=args.dataset,
             load=args.load,
         )
     elif args.command == "benchmark":

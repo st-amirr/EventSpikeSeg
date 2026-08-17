@@ -2,7 +2,9 @@
 
 ## Mission
 
-Build a lightweight event-camera SNN for six-class DDD17 semantic segmentation, select a strong spike-native architecture, then map the confirmed model to sparse fixed-point VHDL.
+Build a lightweight event-camera SNN for six-class DDD17 and eleven-class raw-event
+DSEC-Semantic segmentation, select a strong spike-native architecture, then map the
+confirmed model to sparse fixed-point VHDL.
 
 ## Source-of-truth order
 
@@ -44,7 +46,11 @@ Implementation contract:
 - detach recurrent state after each record during training without clearing its value;
 - validation holds out complete sequence/interval IDs;
 - `DDD17/ddd17_temporal_manifest.json` is authoritative for chronology; do not infer or generate sequence metadata in the runtime;
-- no HDF5/raw-recording dependency; installed NumPy intervals are the input source;
+- DDD17 has no HDF5 dependency; installed NumPy intervals are its input source;
+- DSEC uses its official continuous `events.h5`, semantic timestamp text, and
+  `rectify_map.h5`; slice only the preceding 50 ms and never preload a recording;
+- DSEC raw events become binary chronological polarity clocks and bypass the DDD17
+  timestamp-moment scheduler without changing learned feature stages;
 - new checkpoints use `ddd17-timestamp-v3` and a protocol fingerprint;
 - legacy checkpoints missing that protocol are rejected.
 

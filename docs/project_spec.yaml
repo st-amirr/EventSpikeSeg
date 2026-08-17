@@ -20,7 +20,10 @@ document:
     and retains neuron state into the next consecutive record. It resets at sequence or
     frame-index gaps. The manifest is authoritative for stream order. New checkpoints
     use ddd17-timestamp-v3 and fingerprint the manifest, split, representation, physical
-    interval, and event-clock contract. No HDF5 input is required.
+    interval, and event-clock contract. DDD17 requires no HDF5 input. The DSEC
+    extension instead slices exact raw events from each sequence HDF5 file using
+    the semantic timestamp text and supplied rectification map, then sends binary
+    polarity clocks directly to the same learned feature architecture.
   preservation_policy:
     retained_from_previous_specification:
       - Hardware-compatible LIF equations and power-of-two leakage
@@ -174,12 +177,20 @@ active_dataset:
 
 future_datasets:
   raw_event_segmentation:
-    objective: Validate chronological event binning and truly sparse event-address inference.
+    status: dsec_semantic_implemented_pending_accuracy_measurement
+    objective: Validate chronological event clocks and truly sparse event-address inference.
     candidates:
       - DDD17 raw recordings aligned with semantic labels where accessible
-      - DSEC-Semantic
+      - DSEC-Semantic (implemented as dsec-raw-events-v1)
     required_fields: [timestamp, x, y, polarity, semantic_label_alignment]
     role: final_algorithm_and_hardware_validation
+    dsec_contract:
+      classes: 11
+      label_frequency_hz: 20
+      interval_us: 50000
+      spatial_alignment: rectify_map_then_bottom_40_row_crop
+      input: binary_ON_OFF_event_occupancy_per_hardware_clock
+      full_recording_preload: false
   legacy_mevdt:
     role: optional_future_detection_and_tracking_extension
     status: inactive_for_current_semantic_segmentation_project

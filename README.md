@@ -1,6 +1,8 @@
 # EventSpikeSeg
 
-Fully spiking event-camera semantic segmentation for the Ev-SegNet semantic extension of DDD17, designed so the learned inference path can later be mapped to FPGA, neuromorphic hardware, or custom circuits.
+Fully spiking event-camera semantic segmentation for DDD17 and DSEC-Semantic,
+designed so the learned inference path can later be mapped to FPGA, neuromorphic
+hardware, or custom circuits.
 
 ## Repository layout
 
@@ -11,6 +13,7 @@ src/eventspikeseg/top_ten_models.py     frozen round-one model registry
 src/eventspikeseg/top_five_models.py    frozen structural top-five registry
 src/eventspikeseg/top_three_models.py   frozen accuracy top-three registry
 src/eventspikeseg/train.py              single training/benchmark engine for all suites
+src/eventspikeseg/data.py               DDD17 and raw DSEC temporal data loading
 src/eventspikeseg/evaluate.py           checkpoint evaluation and visualizations
 scripts/                                utility/diagnostic scripts only
 docs/ARCHITECTURE.md                    current architecture and runtime contract
@@ -52,18 +55,43 @@ Classes: `flat`, `construction+sky`, `object`, `nature`, `human`, `vehicle`. Lab
 
 If `--height` and `--width` are omitted, stored resolution is preserved. `--train-samples` accepts `0` for the full pool, a fraction in `(0,1]`, or an absolute count. A limited run selects one deterministic contiguous stream segment per epoch. Records are not shuffled, and stateful training/evaluation requires batch size 1.
 
+## DSEC-Semantic raw-event input
+
+The DSEC path consumes each sequence's continuous `events.h5`, `rectify_map.h5`,
+semantic timestamp text file, and `11classes` PNG masks. Both the installed flat
+layout and the official nested DSEC-Semantic layout are recognized.
+
+Semantic timestamps are nominally 20 Hz: the installed files measure approximately
+50,000 µs between masks. One item slices raw events from `[label_time-50ms,
+label_time)`, applies the supplied raw-to-rectified coordinate map, removes the
+bottom 40 rows outside the 640×440 semantic view, and dispatches each polarity event
+into its timestamp-selected PLIF clock. Input planes are binary: multiple events at
+the same pixel, polarity, and clock remain one input spike. No histogram intensity,
+timestamp mean/std reconstruction, or whole-recording preload is used.
+
+`internal_updates=10` therefore means ten chronological 5 ms event clocks for one
+mask—not ten repeated copies. The model receives `[T,N,2,H,W]` directly. The 140k
+feature architecture is unchanged; DSEC necessarily replaces the six-population
+DDD17 class head with eleven spiking output populations: `sky`, `building`, `fence`,
+`person`, `pole`, `road`, `sidewalk`, `vegetation`, `vehicle`, `wall`, and
+`traffic-sign`.
+
 ## Main commands
 
 ```powershell
 docker compose run --rm inspect-ddd17
+docker compose run --rm inspect-dsec
 docker compose run --rm lint
 docker compose run --rm test
 docker compose run --rm train-ddd17-smoke
 docker compose run --rm train-ddd17-140k
+docker compose run --rm train-dsec-140k
 docker compose run --rm train-ddd17
 ```
 
-`inspect-ddd17` validates the manifest and reports installed event/label count mismatches. `train-ddd17-140k` is the recommended first capacity baseline; `train-ddd17` is the expanded comparison. No HDF5/raw-reader compatibility path remains.
+`inspect-ddd17` validates the DDD17 manifest. `inspect-dsec` verifies sequence event,
+rectification, timestamp, and label alignment. `train-ddd17-140k` remains the DDD17
+capacity baseline; `train-dsec-140k` is its raw-event, eleven-class DSEC counterpart.
 
 ## Measured architecture-search evidence
 

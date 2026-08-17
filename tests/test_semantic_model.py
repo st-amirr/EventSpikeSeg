@@ -363,9 +363,10 @@ def test_hidden_peer_membrane_inhibition_can_warm_up_without_disabling_class_wta
     assert all(module.competition_enabled for module in output_modules)
 
 
-def test_final_model_rejects_obsolete_two_channel_temporal_input() -> None:
-    with pytest.raises(ValueError, match="six source channels"):
-        build_model(input_channels=2, architecture="EventSpikeSeg140k")
+def test_final_model_bypasses_statistic_scheduler_for_raw_event_clocks() -> None:
+    model = build_model(input_channels=2, architecture="EventSpikeSeg140k")
+    assert model.source_input_channels == 2
+    assert model.timestamp_input.__class__.__name__ == "Identity"
 
 
 def test_timestamp_scheduler_conserves_activity_and_orders_arrivals() -> None:

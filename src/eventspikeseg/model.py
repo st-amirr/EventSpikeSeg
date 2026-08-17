@@ -298,8 +298,13 @@ class EventSpikeSeg(EventSpikeSegBase):
         input_channels: int = 6,
         internal_updates: int = DEFAULT_INTERNAL_UPDATES,
     ) -> None:
-        if input_channels != TimestampEventInput.source_channels:
-            raise ValueError("timestamp-event models require six source channels")
+        if input_channels not in (
+            TimestampEventInput.source_channels,
+            TimestampEventInput.event_channels,
+        ):
+            raise ValueError(
+                "final models require six timestamp statistics or two raw-event channels"
+            )
         if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
             raise ValueError("internal_updates must divide the 50,000 us interval exactly")
         super().__init__(
@@ -308,9 +313,13 @@ class EventSpikeSeg(EventSpikeSegBase):
             architecture=FINAL_ARCHITECTURE,
         )
         self.source_input_channels = input_channels
-        self.timestamp_input = TimestampEventInput(
-            integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
-            event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
+        self.timestamp_input = (
+            TimestampEventInput(
+                integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
+                event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
+            )
+            if input_channels == TimestampEventInput.source_channels
+            else nn.Identity()
         )
         architecture = FINAL_ARCHITECTURE
         encoder_lif = _block_lif(self.enc1)
@@ -457,8 +466,8 @@ class EventSpikeSeg(EventSpikeSegBase):
             for parameter in module.parameters():
                 parameter.requires_grad_(trainable)
 
-    def forward(self, statistics: Tensor) -> dict[str, Tensor]:
-        sequence = self.timestamp_input(statistics)
+    def forward(self, source: Tensor) -> dict[str, Tensor]:
+        sequence = self.timestamp_input(source)
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
         detail = self.detail3(self.detail2(self.detail1(x1)))
 
@@ -537,8 +546,13 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         input_channels: int = 6,
         internal_updates: int = DEFAULT_INTERNAL_UPDATES,
     ) -> None:
-        if input_channels != TimestampEventInput.source_channels:
-            raise ValueError("timestamp-event models require six source channels")
+        if input_channels not in (
+            TimestampEventInput.source_channels,
+            TimestampEventInput.event_channels,
+        ):
+            raise ValueError(
+                "final models require six timestamp statistics or two raw-event channels"
+            )
         if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
             raise ValueError("internal_updates must divide the 50,000 us interval exactly")
         super().__init__(
@@ -547,9 +561,13 @@ class EventSpikeSeg140k(EventSpikeSegBase):
             architecture=replace(FINAL_ARCHITECTURE, name="EventSpikeSeg140k"),
         )
         self.source_input_channels = input_channels
-        self.timestamp_input = TimestampEventInput(
-            integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
-            event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
+        self.timestamp_input = (
+            TimestampEventInput(
+                integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
+                event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
+            )
+            if input_channels == TimestampEventInput.source_channels
+            else nn.Identity()
         )
         architecture = self.architecture
         encoder_lif = _block_lif(self.enc1)
@@ -633,8 +651,8 @@ class EventSpikeSeg140k(EventSpikeSegBase):
             for parameter in module.parameters():
                 parameter.requires_grad_(trainable)
 
-    def forward(self, statistics: Tensor) -> dict[str, Tensor]:
-        sequence = self.timestamp_input(statistics)
+    def forward(self, source: Tensor) -> dict[str, Tensor]:
+        sequence = self.timestamp_input(source)
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
         detail = self.detail3(self.detail2(self.detail1(x1)))
 

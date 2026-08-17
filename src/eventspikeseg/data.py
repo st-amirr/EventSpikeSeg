@@ -1,4 +1,4 @@
-"""Timestamp-aware DDD17 semantic data loading.
+"""Temporal semantic data loading for DDD17 and raw-event DSEC.
 
 The active representation is made directly from one installed Ev-SegNet NumPy
 tensor and its aligned semantic mask:
@@ -19,11 +19,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+try:  # Registers the Blosc compression filters used by official DSEC event files.
+    import hdf5plugin  # noqa: F401
+except ImportError:  # pragma: no cover - exercised only by an incomplete installation
+    hdf5plugin = None
+
+import h5py
 import numpy as np
 import torch
 from PIL import Image
@@ -375,6 +382,9 @@ class DDD17TimestampEventDataset(Dataset[tuple[Tensor, Tensor]]):
 
     input_channels = 6
     input_mode = "timestamp-events"
+    class_count = DDD17_CLASS_COUNT
+    class_names = DDD17_CLASS_NAMES
+    protocol_version = TEMPORAL_PROTOCOL_VERSION
     streaming = True
 
     def __init__(
@@ -599,6 +609,453 @@ def write_inspection(
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
         json.dumps(inspect_ddd17(root, manifest=manifest).to_dict(), indent=2), encoding="utf-8"
+    )
+
+
+DSEC_CLASS_NAMES = (
+    "sky",
+    "building",
+    "fence",
+    "person",
+    "pole",
+    "road",
+    "sidewalk",
+    "vegetation",
+    "vehicle",
+    "wall",
+    "traffic-sign",
+)
+DSEC_CLASS_COUNT = len(DSEC_CLASS_NAMES)
+DSEC_INPUT_MODE = "raw-events"
+DSEC_PROTOCOL_VERSION = "dsec-raw-events-v1"
+DSEC_SENSOR_HEIGHT = 480
+DSEC_SENSOR_WIDTH = 640
+DSEC_LABEL_HEIGHT = 440
+DSEC_LABEL_WIDTH = 640
+DEFAULT_DSEC_ROOT = Path(r"C:\Users\stamir\Desktop\Dataset\DSEC")
+
+
+@dataclass(frozen=True)
+class DSECRecord:
+    split: str
+    sequence_id: str
+    frame_index: int
+    timestamp_us: int
+    event_path: Path
+    rectify_path: Path
+    label_path: Path
+
+    def identity(self, root: Path | None = None) -> dict[str, object]:
+        def relative(path: Path) -> str:
+            if root is not None:
+                try:
+                    return str(path.resolve().relative_to(root.resolve()))
+                except ValueError:
+                    pass
+            return str(path)
+
+        return {
+            "split": self.split,
+            "sequence_id": self.sequence_id,
+            "frame_index": self.frame_index,
+            "timestamp_us": self.timestamp_us,
+            "event": relative(self.event_path),
+            "rectify": relative(self.rectify_path),
+            "label": relative(self.label_path),
+        }
+
+
+@dataclass(frozen=True)
+class DSECInspection:
+    root: str
+    records: dict[str, int]
+    sequences: dict[str, int]
+    label_interval_us: dict[str, tuple[int, int]]
+    warnings: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def resolve_dsec_root(root: Path | str | None = None) -> Path:
+    return (DEFAULT_DSEC_ROOT if root is None else Path(root)).expanduser().resolve()
+
+
+def _first_existing(sequence: Path, candidates: Sequence[str]) -> Path | None:
+    for candidate in candidates:
+        path = sequence / candidate
+        if path.is_file():
+            return path
+    return None
+
+
+def _label_directory(sequence: Path) -> Path | None:
+    candidates = (
+        sequence / "11classes",
+        sequence / "semantic" / "11classes" / "data",
+        sequence / "semantic" / "left" / "11classes" / "data",
+    )
+    return next((path for path in candidates if path.is_dir()), None)
+
+
+def _sequence_layout(sequence: Path) -> tuple[Path, Path, Path, Path]:
+    event_path = _first_existing(
+        sequence, ("events.h5", "events/left/events.h5")
+    )
+    rectify_path = _first_existing(
+        sequence, ("rectify_map.h5", "events/left/rectify_map.h5")
+    )
+    timestamp_path = _first_existing(
+        sequence,
+        (
+            f"{sequence.name}_semantic_timestamps.txt",
+            "semantic/timestamps.txt",
+            "semantic/left/timestamps.txt",
+        ),
+    )
+    label_dir = _label_directory(sequence)
+    missing = [
+        name
+        for name, path in (
+            ("events.h5", event_path),
+            ("rectify_map.h5", rectify_path),
+            ("semantic timestamps", timestamp_path),
+            ("11classes labels", label_dir),
+        )
+        if path is None
+    ]
+    if missing:
+        raise TemporalMetadataError(
+            f"DSEC sequence {sequence.name} is missing {', '.join(missing)}"
+        )
+    assert event_path is not None
+    assert rectify_path is not None
+    assert timestamp_path is not None
+    assert label_dir is not None
+    return event_path, rectify_path, timestamp_path, label_dir
+
+
+def _event_time_offset(event_path: Path) -> int:
+    with h5py.File(event_path, "r") as handle:
+        if "t_offset" not in handle:
+            raise TemporalMetadataError(f"DSEC event file lacks t_offset: {event_path}")
+        return int(handle["t_offset"][()])
+
+
+def discover_dsec_records(
+    root: Path | str | None = None, split: str = "train"
+) -> list[DSECRecord]:
+    root = resolve_dsec_root(root)
+    split_root = root / split
+    if split not in ("train", "test"):
+        raise ValueError("DSEC split must be 'train' or 'test'")
+    if not split_root.is_dir():
+        raise FileNotFoundError(f"DSEC split directory does not exist: {split_root}")
+
+    records: list[DSECRecord] = []
+    for sequence in sorted(path for path in split_root.iterdir() if path.is_dir()):
+        event_path, rectify_path, timestamp_path, label_dir = _sequence_layout(sequence)
+        timestamps = np.atleast_1d(np.loadtxt(timestamp_path, dtype=np.int64))
+        labels = sorted(label_dir.glob("*.png"))
+        if len(labels) != int(timestamps.size):
+            raise TemporalMetadataError(
+                f"DSEC {sequence.name} has {len(labels)} labels but "
+                f"{timestamps.size} timestamps"
+            )
+        offset = _event_time_offset(event_path)
+        for frame_index, (timestamp, label_path) in enumerate(zip(timestamps, labels)):
+            timestamp_us = int(timestamp)
+            # The first published label is commonly only hundreds of microseconds
+            # after the HDF5 origin and therefore has no complete preceding window.
+            if timestamp_us - EVSEG_INTEGRATION_WINDOW_US < offset:
+                continue
+            records.append(
+                DSECRecord(
+                    split=split,
+                    sequence_id=sequence.name,
+                    frame_index=frame_index,
+                    timestamp_us=timestamp_us,
+                    event_path=event_path,
+                    rectify_path=rectify_path,
+                    label_path=label_path,
+                )
+            )
+    if not records:
+        raise TemporalMetadataError(f"no usable DSEC raw-event records found in {split_root}")
+    return records
+
+
+def _canonical_dsec_mask(path: Path, output_size: tuple[int, int] | None) -> Tensor:
+    with Image.open(path) as image:
+        mask = torch.as_tensor(np.array(image, copy=True)).long().squeeze()
+    if mask.ndim != 2:
+        raise ValueError(f"unsupported DSEC semantic mask shape: {tuple(mask.shape)}")
+    mask[(mask < 0) | (mask >= DSEC_CLASS_COUNT)] = IGNORE_INDEX
+    if output_size is not None:
+        mask = F.interpolate(
+            mask[None, None].float(), size=output_size, mode="nearest"
+        )[0, 0].long()
+    return mask
+
+
+class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor]]):
+    """One rectified 50 ms DSEC event slice and its timestamp-aligned mask."""
+
+    input_channels = 2
+    input_mode = DSEC_INPUT_MODE
+    class_count = DSEC_CLASS_COUNT
+    class_names = DSEC_CLASS_NAMES
+    protocol_version = DSEC_PROTOCOL_VERSION
+    streaming = True
+
+    def __init__(
+        self,
+        root: Path | str | None = None,
+        *,
+        split: str,
+        output_size: tuple[int, int] | None = None,
+        internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+        records: Sequence[DSECRecord] | None = None,
+    ) -> None:
+        if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
+            raise ValueError("internal_updates must divide the 50,000 us DSEC interval")
+        self.root = resolve_dsec_root(root)
+        self.split = split
+        self.output_size = output_size
+        self.internal_updates = internal_updates
+        self.records = list(records) if records is not None else discover_dsec_records(
+            self.root, split
+        )
+        if not self.records:
+            raise TemporalMetadataError(f"no DSEC records available for split {split}")
+        self._event_handles: dict[Path, h5py.File] = {}
+        self._rectify_maps: dict[Path, np.ndarray] = {}
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def _event_handle(self, path: Path) -> h5py.File:
+        if hdf5plugin is None:
+            raise RuntimeError(
+                "DSEC event files use Blosc compression, but hdf5plugin is not "
+                "installed in this runtime. Rebuild the Docker image with "
+                "`docker compose build` before training."
+            )
+        handle = self._event_handles.get(path)
+        if handle is None:
+            handle = h5py.File(path, "r")
+            self._event_handles[path] = handle
+        return handle
+
+    def _rectify_map(self, path: Path) -> np.ndarray:
+        rectify = self._rectify_maps.get(path)
+        if rectify is None:
+            with h5py.File(path, "r") as handle:
+                rectify = np.asarray(handle["rectify_map"][()], dtype=np.float32)
+            if rectify.ndim != 3 or rectify.shape[2] != 2:
+                raise ValueError(f"invalid DSEC rectify map shape: {rectify.shape}")
+            self._rectify_maps[path] = rectify
+        return rectify
+
+    @staticmethod
+    def _coarse_event_indices(
+        handle: h5py.File, start_relative_us: int, end_relative_us: int
+    ) -> tuple[int, int]:
+        ms_to_idx = handle["ms_to_idx"]
+        maximum = len(handle["events/t"])
+        start_ms = max(0, start_relative_us // 1_000)
+        end_ms = max(0, (end_relative_us + 999) // 1_000)
+        start_index = int(ms_to_idx[min(start_ms, len(ms_to_idx) - 1)])
+        end_index = (
+            int(ms_to_idx[end_ms])
+            if end_ms < len(ms_to_idx)
+            else maximum
+        )
+        return max(0, start_index), min(maximum, max(start_index, end_index))
+
+    def _read_interval(self, record: DSECRecord) -> tuple[np.ndarray, ...]:
+        handle = self._event_handle(record.event_path)
+        offset = int(handle["t_offset"][()])
+        start_relative = record.timestamp_us - EVSEG_INTEGRATION_WINDOW_US - offset
+        end_relative = record.timestamp_us - offset
+        coarse_start, coarse_end = self._coarse_event_indices(
+            handle, start_relative, end_relative
+        )
+        try:  # noqa: SIM105 - contextlib globals may be cleared during shutdown
+            timestamps = np.asarray(handle["events/t"][coarse_start:coarse_end])
+            x = np.asarray(handle["events/x"][coarse_start:coarse_end])
+            y = np.asarray(handle["events/y"][coarse_start:coarse_end])
+            polarity = np.asarray(handle["events/p"][coarse_start:coarse_end])
+        except OSError as exc:
+            if hdf5plugin is None:
+                raise RuntimeError(
+                    "compressed DSEC events require the hdf5plugin package"
+                ) from exc
+            raise
+        valid = (timestamps >= start_relative) & (timestamps < end_relative)
+        return x[valid], y[valid], timestamps[valid], polarity[valid]
+
+    def _schedule_events(self, record: DSECRecord) -> Tensor:
+        x, y, timestamps, polarity = self._read_interval(record)
+        output_height, output_width = self.output_size or (
+            DSEC_LABEL_HEIGHT,
+            DSEC_LABEL_WIDTH,
+        )
+        scheduled = np.zeros(
+            (self.internal_updates, 2, output_height, output_width), dtype=np.uint8
+        )
+        if timestamps.size == 0:
+            return torch.from_numpy(scheduled).float()
+
+        rectify = self._rectify_map(record.rectify_path)
+        xy_rect = rectify[y.astype(np.int64), x.astype(np.int64)]
+        x_rect = xy_rect[:, 0]
+        y_rect = xy_rect[:, 1]
+        valid = (
+            np.isfinite(x_rect)
+            & np.isfinite(y_rect)
+            & (x_rect >= 0.0)
+            & (x_rect < DSEC_LABEL_WIDTH)
+            & (y_rect >= 0.0)
+            & (y_rect < DSEC_LABEL_HEIGHT)
+            & ((polarity == 0) | (polarity == 1))
+        )
+        if not np.any(valid):
+            return torch.from_numpy(scheduled).float()
+
+        x_out = np.floor(x_rect[valid] * output_width / DSEC_LABEL_WIDTH).astype(np.int64)
+        y_out = np.floor(y_rect[valid] * output_height / DSEC_LABEL_HEIGHT).astype(np.int64)
+        p_out = polarity[valid].astype(np.int64)
+        absolute_t = timestamps[valid].astype(np.int64) + int(
+            self._event_handle(record.event_path)["t_offset"][()]
+        )
+        relative_t = absolute_t - (record.timestamp_us - EVSEG_INTEGRATION_WINDOW_US)
+        clock = np.floor_divide(
+            relative_t * self.internal_updates, EVSEG_INTEGRATION_WINDOW_US
+        ).clip(0, self.internal_updates - 1)
+
+        flat_index = (
+            ((clock * 2 + p_out) * output_height + y_out) * output_width + x_out
+        )
+        scheduled.reshape(-1)[np.unique(flat_index)] = 1
+        return torch.from_numpy(scheduled).float()
+
+    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+        record = self.records[index]
+        return self._schedule_events(record), _canonical_dsec_mask(
+            record.label_path, self.output_size
+        )
+
+    def target_mask(self, index: int) -> Tensor:
+        return _canonical_dsec_mask(self.records[index].label_path, self.output_size)
+
+    def is_stream_start(self, index: int) -> bool:
+        if index == 0:
+            return True
+        previous = self.records[index - 1]
+        current = self.records[index]
+        return (
+            current.sequence_id != previous.sequence_id
+            or current.frame_index != previous.frame_index + 1
+        )
+
+    def subset(self, indices: Sequence[int]) -> DSECRawEventDataset:
+        return DSECRawEventDataset(
+            self.root,
+            split=self.split,
+            output_size=self.output_size,
+            internal_updates=self.internal_updates,
+            records=[self.records[index] for index in indices],
+        )
+
+    def close(self) -> None:
+        for handle in self._event_handles.values():
+            handle.close()
+        self._event_handles.clear()
+
+    def __del__(self) -> None:  # pragma: no cover - interpreter shutdown is nondeterministic
+        active_handles = getattr(self, "_event_handles", None)
+        if sys is not None and not sys.is_finalizing() and active_handles:
+            self.close()
+
+
+def dsec_temporal_collate(batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor]:
+    if not batch:
+        raise ValueError("cannot collate an empty DSEC batch")
+    shapes = {tuple(events.shape) for events, _ in batch}
+    if len(shapes) != 1 or batch[0][0].ndim != 4:
+        raise ValueError(f"DSEC samples must share [T,2,H,W], got {sorted(shapes)}")
+    # T,C,H,W items become T,N,C,H,W; N remains one for stateful training.
+    sequence = torch.stack([events for events, _ in batch], dim=1)
+    masks = torch.stack([mask for _, mask in batch])
+    return sequence, masks
+
+
+def _record_digest(records: Sequence[DSECRecord], root: Path) -> str:
+    payload = [record.identity(root) for record in records]
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def make_dsec_protocol(
+    root: Path | str | None,
+    *,
+    validation_fraction: float,
+    training_records: Sequence[DSECRecord],
+    validation_records: Sequence[DSECRecord],
+    internal_updates: int,
+    stateful_stream: bool,
+) -> TemporalProtocol:
+    root = resolve_dsec_root(root)
+    if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
+        raise ValueError("internal_updates must divide the 50,000 us DSEC interval")
+    all_records = [*training_records, *validation_records]
+    return TemporalProtocol(
+        version=DSEC_PROTOCOL_VERSION,
+        input_mode=DSEC_INPUT_MODE,
+        input_channels=2,
+        integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
+        internal_updates=internal_updates,
+        event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
+        stateful_stream=stateful_stream,
+        validation_fraction=validation_fraction,
+        manifest_digest=_record_digest(all_records, root),
+        training_sequences=tuple(sorted({r.sequence_id for r in training_records})),
+        validation_sequences=tuple(sorted({r.sequence_id for r in validation_records})),
+        training_record_ids=tuple((r.sequence_id, r.frame_index) for r in training_records),
+        validation_record_ids=tuple((r.sequence_id, r.frame_index) for r in validation_records),
+        validation_record_digest=_record_digest(validation_records, root),
+    )
+
+
+def inspect_dsec(root: Path | str | None = None) -> DSECInspection:
+    root = resolve_dsec_root(root)
+    record_counts: dict[str, int] = {}
+    sequence_counts: dict[str, int] = {}
+    intervals: dict[str, tuple[int, int]] = {}
+    warnings: list[str] = []
+    for split in ("train", "test"):
+        try:
+            records = discover_dsec_records(root, split)
+            record_counts[split] = len(records)
+            sequence_counts[split] = len({record.sequence_id for record in records})
+            deltas = [
+                current.timestamp_us - previous.timestamp_us
+                for previous, current in zip(records, records[1:])
+                if previous.sequence_id == current.sequence_id
+            ]
+            intervals[split] = (min(deltas), max(deltas)) if deltas else (0, 0)
+        except (FileNotFoundError, TemporalMetadataError, OSError) as exc:
+            record_counts[split] = 0
+            sequence_counts[split] = 0
+            intervals[split] = (0, 0)
+            warnings.append(f"{split}: {exc}")
+    return DSECInspection(
+        root=str(root),
+        records=record_counts,
+        sequences=sequence_counts,
+        label_interval_us=intervals,
+        warnings=tuple(warnings),
     )
 
 

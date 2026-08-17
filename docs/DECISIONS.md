@@ -238,3 +238,25 @@ The internal clock count is exposed as `--internal-updates` with default 10. It
 must divide the physical 50,000 µs interval exactly and is fingerprinted. Continuous
 state cleanup includes both project buffers and SpikingJelly's internal PLIF `v`/`w`
 references so completed autograd graphs cannot overlap the next record.
+
+## 2026-08-17 — Add DSEC-Semantic as an exact raw-event input contract
+
+DSEC-Semantic is a separate dataset contract, not a conversion into DDD17 moment
+maps. The installed eight training sequences contain 8,082 masks and the three test
+sequences contain 2,809 masks. Their semantic timestamp files are approximately
+50,000 µs apart (20 Hz), despite the historical ESS loader also supporting a 100 ms
+subsampled setup.
+
+For every usable label, read `[timestamp-50,000us, timestamp)` directly from the
+sequence HDF5 stream using `ms_to_idx`; apply `t_offset`, rectify raw coordinates
+with the supplied map, crop to the 640×440 semantic view, and schedule binary ON/OFF
+input spikes into `internal_updates` equal physical clocks. Collisions within one
+pixel/polarity/clock are binary rather than analog counts. Preserve PLIF state only
+across consecutive labels of the same sequence and detach recurrent autograd history
+after each mask-aligned record.
+
+The `EventSpikeSeg140k` learned feature topology is unchanged. Its input adapter may
+bypass DDD17 moment reconstruction for an already scheduled two-polarity stream, and
+its semantic head expands from six to the dataset-required eleven spiking class
+populations. DSEC checkpoints use `dsec-raw-events-v1` so they cannot be mixed with
+DDD17 checkpoints.

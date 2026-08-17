@@ -35,6 +35,20 @@ x-ddd17: &ddd17
       source: C:/Users/stamir/Desktop/Dataset/DDD17
       target: /datasets/DDD17
 
+x-dsec: &dsec
+  <<: *app
+  volumes:
+    - type: bind
+      source: .
+      target: /workspace
+      read_only: true
+    - type: bind
+      source: ./artifacts
+      target: /workspace/artifacts
+    - type: bind
+      source: C:/Users/stamir/Desktop/Dataset/DSEC
+      target: /datasets/DSEC
+
 services:
   test:
     <<: *app
@@ -49,6 +63,12 @@ services:
     command:
       ["python", "-m", "eventspikeseg.data", "inspect",
        "--root", "/datasets/DDD17"]
+
+  inspect-dsec:
+    <<: *dsec
+    command:
+      ["python", "-m", "eventspikeseg.train", "inspect",
+       "--dataset", "dsec", "--root", "/datasets/DSEC"]
 
   train-ddd17-smoke:
     <<: *ddd17
@@ -82,6 +102,24 @@ services:
        "--learning-rate", "0.001", "--checkpoint-every", "1",
        "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch015.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
+
+  # Same 140k feature architecture, with an 11-class head and exact DSEC raw-event clocks.
+  train-dsec-140k:
+    <<: *dsec
+    # gpus: all
+    command:
+      ["python", "-m", "eventspikeseg.train", "single",
+       "--dataset", "dsec", "--root", "/datasets/DSEC",
+       "--architecture", "EventSpikeSeg140k", "--suite", "final",
+       "--input-mode", "raw-events",
+      #  "--device", "auto", "--amp",
+       "--height", "220", "--width", "320",
+      #  "--height", "185", "--width", "320",
+       "--seed", "17", "--epochs", "80", "--batch-size", "1",
+       "--accumulate-steps", "2", 
+       "--train-samples", "0.5", "--validation-fraction", "0.10",
+       "--learning-rate", "0.001", "--checkpoint-every", "1",
+       "--checkpoint-dir", "artifacts/checkpoints/dsec"]
 
   # Canonical expanded final model with timestamp-scheduled continuous input.
   train-ddd17:
