@@ -203,6 +203,19 @@ def test_class_weight_estimation_reads_masks_without_temporal_events(
     assert weights.shape == (6,)
 
 
+def test_class_weight_estimation_uses_capped_median_frequency_weights() -> None:
+    class ToyDataset:
+        def __len__(self) -> int:
+            return 1
+
+        def target_mask(self, _index: int) -> torch.Tensor:
+            return torch.tensor([0] * 100 + [1] * 50 + [2] * 20 + [3] * 10 + [4] * 5 + [5])
+
+    weights = estimate_class_weights(ToyDataset())
+    assert weights[0] < weights[1] < weights[2] < weights[3] < weights[4]
+    assert weights[5] == 8.0
+
+
 def test_architecture_suites_are_isolated() -> None:
     assert len(architecture_presets("top-ten")) == 10
     assert len(architecture_presets("top-five")) == 5

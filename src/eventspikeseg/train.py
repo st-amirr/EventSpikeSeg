@@ -209,7 +209,7 @@ def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
 
 
 def estimate_class_weights(dataset: TemporalDataset, maximum: int | None = None) -> Tensor:
-    """Estimate weights from the complete selected training subset by default."""
+    """Use capped median-frequency balancing over the selected training subset."""
     counts = torch.zeros(DDD17_CLASS_COUNT, dtype=torch.float64)
     limit = len(dataset) if maximum is None else min(len(dataset), maximum)
     for index in range(limit):
@@ -217,8 +217,8 @@ def estimate_class_weights(dataset: TemporalDataset, maximum: int | None = None)
         valid = mask != IGNORE_INDEX
         counts += torch.bincount(mask[valid], minlength=DDD17_CLASS_COUNT)
     frequencies = counts / counts.sum().clamp_min(1.0)
-    weights = 1.0 / torch.sqrt(frequencies.clamp_min(1e-6))
-    weights /= weights.mean().clamp_min(1e-8)
+    median_frequency = frequencies[counts > 0].median().clamp_min(1e-6)
+    weights = median_frequency / frequencies.clamp_min(1e-6)
     return weights.float().clamp(max=8.0)
 
 
@@ -763,6 +763,14 @@ def train_architecture(
         f"train_pool={len(train_pool)} epoch_train={len(example_epoch_train)} "
         f"val={len(validation_dataset)} | "
         f"params={model.parameter_count():,}",
+        flush=True,
+    )
+    print(
+        "Median-frequency class weights | "
+        + ", ".join(
+            f"{class_name}={weight:.3f}"
+            for class_name, weight in zip(DDD17_CLASS_NAMES, class_weights.tolist())
+        ),
         flush=True,
     )
 
