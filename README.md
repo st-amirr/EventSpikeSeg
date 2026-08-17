@@ -76,6 +76,15 @@ DDD17 class head with eleven spiking output populations: `sky`, `building`, `fen
 `person`, `pole`, `road`, `sidewalk`, `vegetation`, `vehicle`, `wall`, and
 `traffic-sign`.
 
+For memory-constrained training, `--sequential-chunks K` divides those clocks into
+`K` equal chronological truncated-BPTT segments. For example,
+`--internal-updates 10 --sequential-chunks 2` runs clocks 0–4, backpropagates,
+preserves the numeric PLIF state while detaching its gradient history, and then runs
+clocks 5–9. Chunk losses are averaged, and the optimizer still steps only after the
+complete record (subject to `--accumulate-steps`). The default `1` retains the
+original full-record forward/backward. Values above one are DSEC-only and must divide
+`internal_updates` exactly.
+
 ## Main commands
 
 ```powershell

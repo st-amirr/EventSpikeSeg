@@ -209,6 +209,13 @@ Checkpoints freeze exact record membership and the `ddd17-timestamp-v3` physical
 interval/event-clock contract. `--internal-updates` is configurable, defaults to 10,
 must divide 50,000 µs exactly, and is part of the protocol fingerprint.
 
+DSEC training may additionally use `--sequential-chunks`. A value above one keeps
+the raw-event clock resolution and numeric PLIF state but performs backward after
+each equal chronological chunk, then detaches recurrent autograd history before the
+next chunk. This is truncated BPTT: it reduces peak saved-activation memory, while
+gradients do not cross chunk boundaries. `sequential_chunks=1` preserves the original
+full-record calculation.
+
 ## Historical architecture registries
 
 `top_ten_models.py`, `top_five_models.py`, and `top_three_models.py` preserve the measured ablation definitions and checkpoint-facing behavior. All three are dispatched through `train.py`; there is no separate top-three training implementation. Historical results remain in `RESULTS.md` and the design interpretation in `DECISIONS.md`.

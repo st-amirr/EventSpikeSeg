@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 from PIL import Image
 
@@ -20,6 +21,7 @@ from eventspikeseg.train import (
     refinement_phase_for_epoch,
     select_winner,
     soft_dice_loss,
+    split_temporal_chunks,
 )
 
 
@@ -196,6 +198,24 @@ def test_temporal_collate_preserves_one_record_per_batch_item() -> None:
     assert sequence.shape == (2, 6, 4, 5)
     assert masks.shape == (2, 4, 5)
     assert not torch.equal(sequence[0], sequence[1])
+
+
+def test_sequential_chunks_preserve_chronological_raw_event_order() -> None:
+    sequence = torch.arange(10).view(10, 1, 1, 1, 1)
+    chunks = split_temporal_chunks(sequence, 2)
+    assert [chunk.flatten().tolist() for chunk in chunks] == [
+        [0, 1, 2, 3, 4],
+        [5, 6, 7, 8, 9],
+    ]
+    assert split_temporal_chunks(sequence, 1)[0] is sequence
+
+
+def test_sequential_chunks_reject_invalid_temporal_partitions() -> None:
+    sequence = torch.zeros((10, 1, 2, 4, 5))
+    with pytest.raises(ValueError, match="divide evenly"):
+        split_temporal_chunks(sequence, 3)
+    with pytest.raises(ValueError, match="raw-event"):
+        split_temporal_chunks(torch.zeros((1, 6, 4, 5)), 2)
 
 
 def test_class_weight_estimation_reads_masks_without_temporal_events(

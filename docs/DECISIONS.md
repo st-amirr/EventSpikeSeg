@@ -260,3 +260,14 @@ bypass DDD17 moment reconstruction for an already scheduled two-polarity stream,
 its semantic head expands from six to the dataset-required eleven spiking class
 populations. DSEC checkpoints use `dsec-raw-events-v1` so they cannot be mixed with
 DDD17 checkpoints.
+
+## 2026-08-17 — Add explicit sequential truncated BPTT for DSEC
+
+Dense PyTorch training at ten raw-event clocks retains substantially more temporal
+activation memory than model-weight memory. Add `--sequential-chunks`, defaulting to
+one so existing training is unchanged. For values above one, divide `[T,N,2,H,W]`
+into equal chronological chunks, compute and backpropagate an equally weighted loss
+for each chunk immediately, preserve PLIF membrane/homeostasis values, and detach
+their gradient history before continuing. Optimizer and gradient-accumulation steps
+remain record-based rather than chunk-based. This preserves all input clocks and the
+forward state trajectory but deliberately truncates gradients at chunk boundaries.

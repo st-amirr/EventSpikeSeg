@@ -225,6 +225,11 @@ input_and_time:
   training_state:
     truncated_bptt_boundary: one_50ms_record
     after_backward: detach_autograd_history_but_retain_numeric_neuron_state
+    dsec_sequential_chunks:
+      cli_default: 1
+      compose_8gb_profile: 5
+      behavior: backward_each_equal_chronological_chunk_then_detach_state_history
+      invariant: preserve_numeric_plif_state_and_all_internal_event_clocks
     reset_conditions: [epoch_start, validation_start, sequence_change, frame_index_gap]
   forbidden:
     - repeated_static_samples

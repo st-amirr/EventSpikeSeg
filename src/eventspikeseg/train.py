@@ -280,6 +280,95 @@ def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
     )
 
 
+def split_temporal_chunks(sequence: Tensor, chunk_count: int) -> tuple[Tensor, ...]:
+    """Split raw-event TNC inputs into equal chronological TBPTT chunks."""
+    if chunk_count < 1:
+        raise ValueError("sequential_chunks must be >= 1")
+    if chunk_count == 1:
+        return (sequence,)
+    if sequence.ndim != 5:
+        raise ValueError(
+            "sequential_chunks > 1 requires a raw-event [T,N,C,H,W] input"
+        )
+    if sequence.shape[0] % chunk_count != 0:
+        raise ValueError(
+            f"time dimension {sequence.shape[0]} must divide evenly into "
+            f"{chunk_count} sequential chunks"
+        )
+    return tuple(sequence.chunk(chunk_count, dim=0))
+
+
+def _training_objective(
+    outputs: dict[str, Tensor],
+    target: Tensor,
+    *,
+    class_weights: Tensor,
+    class_count: int,
+    loss_profile: LossProfile,
+    is_final_run: bool,
+    training_phase: str,
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Build one chunk's objective and detached reporting spike rate."""
+    logits = outputs["segmentation_logits"]
+    ce = F.cross_entropy(
+        logits,
+        target,
+        weight=class_weights,
+        ignore_index=IGNORE_INDEX,
+    )
+    focal = focal_cross_entropy(logits, target, class_weights)
+    dice_losses = soft_dice_loss(logits, target, class_count)
+    loss = (
+        loss_profile.cross_entropy * ce
+        + loss_profile.focal * focal
+        + loss_profile.dice * dice_losses.mean()
+        + _activity_regularizer(outputs)
+    )
+    if "auxiliary_logits" in outputs:
+        auxiliary = F.interpolate(
+            outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
+        )
+        auxiliary_ce = F.cross_entropy(
+            auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
+        )
+        auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
+        auxiliary_weight = (
+            0.30
+            if is_final_run and training_phase == "decoder_detail_refinement"
+            else None
+        )
+        loss = loss + (
+            (loss_profile.auxiliary_ce if auxiliary_weight is None else auxiliary_weight)
+            * auxiliary_ce
+            + (
+                loss_profile.auxiliary_focal
+                if auxiliary_weight is None
+                else auxiliary_weight
+            )
+            * auxiliary_focal
+        )
+    if "deep_auxiliary_logits" in outputs:
+        deep_auxiliary = F.interpolate(
+            outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
+        )
+        deep_auxiliary_ce = F.cross_entropy(
+            deep_auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
+        )
+        deep_auxiliary_focal = focal_cross_entropy(
+            deep_auxiliary, target, class_weights
+        )
+        deep_auxiliary_scale = (
+            0.20 if training_phase == "decoder_detail_refinement" else 0.10
+        )
+        loss = loss + deep_auxiliary_scale * (
+            deep_auxiliary_ce + deep_auxiliary_focal
+        )
+    output_spike_rate = outputs.get("segmentation_rate")
+    if output_spike_rate is None:
+        output_spike_rate = outputs["segmentation_spikes"].mean()
+    return loss, dice_losses, output_spike_rate.detach()
+
+
 def _dataset_subset_from_spec(
     dataset: TemporalDataset, *, amount: float, seed: int
 ) -> TemporalDataset:
@@ -520,12 +609,23 @@ def train_architecture(
     amp: bool = False,
     accumulate_steps: int = 1,
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+    sequential_chunks: int = 1,
     continuous_state: bool = True,
     dataset_name: str = "ddd17",
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
         raise ValueError("timestamp-stream training requires batch_size=1")
+    if sequential_chunks < 1:
+        raise ValueError("sequential_chunks must be >= 1")
+    if sequential_chunks > 1 and dataset_name != "dsec":
+        raise ValueError(
+            "sequential_chunks > 1 is supported only for DSEC raw-event inputs"
+        )
+    if internal_updates % sequential_chunks != 0:
+        raise ValueError(
+            "internal_updates must divide evenly by sequential_chunks"
+        )
     seed_everything(seed)
     resolved_suite = infer_model_suite(architecture) if suite == "auto" else suite
     loss_profile = loss_profile_for_suite(resolved_suite)
@@ -683,6 +783,7 @@ def train_architecture(
                 "output_size": list(output_size) if output_size is not None else None,
                 "training_phase": training_phase_name,
                 "amp": amp_enabled,
+                "sequential_chunks": sequential_chunks,
                 "validation_metrics": validation_metrics,
                 "validation_mean_spike_rate": validation_spike_rate,
                 "validation_layer_spike_rates": validation_layer_rates or {},
@@ -823,6 +924,8 @@ def train_architecture(
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
         f"mode={input_mode} internal_updates={internal_updates} "
+        f"sequential_chunks={sequential_chunks} "
+        f"chunk_updates={internal_updates // sequential_chunks} "
         f"{'continuous_state' if continuous_state else 'stateless_records'} size={size_label} | "
         f"train_pool={len(train_pool)} epoch_train={len(example_epoch_train)} "
         f"val={len(validation_dataset)} | "
@@ -929,81 +1032,45 @@ def train_architecture(
             target = target.to(resolved_device)
             if not continuous_state or epoch_train_dataset.is_stream_start(batch_index - 1):
                 model.reset()
-            with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
-                outputs = model(sequence)
-                logits = outputs["segmentation_logits"]
-                ce = F.cross_entropy(
-                    logits,
-                    target,
-                    weight=class_weights,
-                    ignore_index=IGNORE_INDEX,
+            chunks = split_temporal_chunks(sequence, sequential_chunks)
+            batch_loss = 0.0
+            detached_dice_losses = torch.zeros(class_count, dtype=torch.float64)
+            output_spike_rate = 0.0
+            for chunk in chunks:
+                with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
+                    outputs = model(chunk)
+                    chunk_loss, chunk_dice_losses, chunk_spike_rate = _training_objective(
+                        outputs,
+                        target,
+                        class_weights=class_weights,
+                        class_count=class_count,
+                        loss_profile=loss_profile,
+                        is_final_run=is_final_run,
+                        training_phase=training_phase,
+                    )
+                if not torch.isfinite(chunk_loss):
+                    raise RuntimeError(
+                        f"non-finite loss for {architecture} at epoch {epoch}"
+                    )
+                # Average over temporal chunks and accumulated records. Backward
+                # immediately so this chunk's large activation graph can be freed
+                # before the next chronological chunk is evaluated.
+                scaled_loss = chunk_loss / float(
+                    accumulate_steps * sequential_chunks
                 )
-                focal = focal_cross_entropy(logits, target, class_weights)
-                dice_losses = soft_dice_loss(logits, target, class_count)
-                dice = dice_losses.mean()
-                activity = _activity_regularizer(outputs)
-                loss = (
-                    loss_profile.cross_entropy * ce
-                    + loss_profile.focal * focal
-                    + loss_profile.dice * dice
-                    + activity
+                scaler.scale(scaled_loss).backward()
+                batch_loss += float(chunk_loss.detach()) / sequential_chunks
+                detached_dice_losses += (
+                    chunk_dice_losses.detach().cpu().double() / sequential_chunks
                 )
-                auxiliary = auxiliary_ce = auxiliary_focal = None
-                deep_auxiliary = deep_auxiliary_ce = deep_auxiliary_focal = None
-                auxiliary_term = logits.new_zeros(())
-                deep_auxiliary_term = logits.new_zeros(())
-                if "auxiliary_logits" in outputs:
-                    auxiliary = F.interpolate(
-                        outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
-                    )
-                    auxiliary_ce = F.cross_entropy(
-                        auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
-                    )
-                    auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
-                    auxiliary_ce_weight = (
-                        0.30
-                        if is_final_run and training_phase == "decoder_detail_refinement"
-                        else loss_profile.auxiliary_ce
-                    )
-                    auxiliary_focal_weight = (
-                        0.30
-                        if is_final_run and training_phase == "decoder_detail_refinement"
-                        else loss_profile.auxiliary_focal
-                    )
-                    auxiliary_term = (
-                        auxiliary_ce_weight * auxiliary_ce
-                        + auxiliary_focal_weight * auxiliary_focal
-                    )
-                    loss = loss + auxiliary_term
-                if "deep_auxiliary_logits" in outputs:
-                    deep_auxiliary = F.interpolate(
-                        outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
-                    )
-                    deep_auxiliary_ce = F.cross_entropy(
-                        deep_auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
-                    )
-                    deep_auxiliary_focal = focal_cross_entropy(
-                        deep_auxiliary, target, class_weights
-                    )
-                    # The deepest head is optimization-only and deliberately weaker
-                    # than the mid-decoder head so it improves gradient flow without
-                    # overpowering the final dense segmentation objective.
-                    deep_auxiliary_scale = (
-                        0.20 if training_phase == "decoder_detail_refinement" else 0.10
-                    )
-                    deep_auxiliary_term = deep_auxiliary_scale * (
-                        deep_auxiliary_ce + deep_auxiliary_focal
-                    )
-                    loss = loss + deep_auxiliary_term
-            if not torch.isfinite(loss):
-                raise RuntimeError(f"non-finite loss for {architecture} at epoch {epoch}")
-            # Average gradients across micro-batches so accumulate_steps mimics
-            # a larger batch without holding those samples in memory together.
-            scaled_loss = loss / float(accumulate_steps)
-            scaler.scale(scaled_loss).backward()
-            detach_state = getattr(model, "detach_state", None)
-            if callable(detach_state):
-                detach_state()
+                output_spike_rate += float(chunk_spike_rate) / sequential_chunks
+
+                # Preserve numeric membrane/homeostasis values but truncate their
+                # autograd history at every chunk boundary (sequential TBPTT).
+                detach_state = getattr(model, "detach_state", None)
+                if callable(detach_state):
+                    detach_state()
+                del outputs, chunk_loss, chunk_dice_losses, chunk_spike_rate, scaled_loss
             should_step = (
                 batch_index % accumulate_steps == 0 or batch_index == total_batches
             )
@@ -1014,15 +1081,8 @@ def train_architecture(
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
-            batch_loss = float(loss.detach())
             running_loss += batch_loss
-            detached_dice_losses = dice_losses.detach().cpu()
             running_dice_losses += detached_dice_losses.double()
-            output_spike_rate = float(
-                outputs["segmentation_rate"].detach()
-                if "segmentation_rate" in outputs
-                else outputs["segmentation_spikes"].detach().mean()
-            )
             progress.set_postfix(
                 loss=f"{batch_loss:.4f}",
                 avg=f"{running_loss / batch_index:.4f}",
@@ -1036,15 +1096,7 @@ def train_architecture(
             )
 
 
-            # Do not carry a completed batch's autograd graph into the next
-            # forward pass. Python locals otherwise keep the large output/aux
-            # tensors alive until they are overwritten during the next batch,
-            # which can nearly double peak host RAM at native resolution.
-            del outputs, logits, loss, scaled_loss, ce, focal, dice, dice_losses, activity
-            del auxiliary, auxiliary_ce, auxiliary_focal
-            del deep_auxiliary, deep_auxiliary_ce, deep_auxiliary_focal
-            del auxiliary_term, deep_auxiliary_term, gradient_norm
-            del sequence, target
+            del chunks, gradient_norm, sequence, target
         scheduler.step()
         mean_epoch_loss = running_loss / max(1, len(train_loader))
         mean_epoch_dice_losses = running_dice_losses / max(1, len(train_loader))
@@ -1245,6 +1297,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             amp=args.amp,
             accumulate_steps=args.accumulate_steps,
             internal_updates=args.internal_updates,
+            sequential_chunks=args.sequential_chunks,
             continuous_state=args.continuous_state,
             dataset_name=args.dataset,
             load=None,
@@ -1402,6 +1455,15 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
             "step (effective batch = batch-size * accumulate-steps; memory stays ~batch-size)"
         ),
     )
+    parser.add_argument(
+        "--sequential-chunks",
+        type=int,
+        default=1,
+        help=(
+            "number of equal chronological DSEC chunks used for truncated BPTT; "
+            "1 preserves the original full-record forward/backward"
+        ),
+    )
 
 
 def main() -> None:
@@ -1501,6 +1563,7 @@ def main() -> None:
             amp=args.amp,
             accumulate_steps=args.accumulate_steps,
             internal_updates=args.internal_updates,
+            sequential_chunks=args.sequential_chunks,
             continuous_state=args.continuous_state,
             dataset_name=args.dataset,
             load=args.load,

@@ -106,17 +106,18 @@ services:
   # Same 140k feature architecture, with an 11-class head and exact DSEC raw-event clocks.
   train-dsec-140k:
     <<: *dsec
-    # gpus: all
+    gpus: all
     command:
       ["python", "-m", "eventspikeseg.train", "single",
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
        "--input-mode", "raw-events",
-      #  "--device", "auto", "--amp",
+       "--device", "auto", "--amp",
        "--height", "220", "--width", "320",
       #  "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1",
-       "--accumulate-steps", "2", 
+       "--accumulate-steps", "2", "--internal-updates", "10",
+       "--sequential-chunks", "5", ## divide the internal-updates by this to get batch
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
        "--checkpoint-dir", "artifacts/checkpoints/dsec"]
