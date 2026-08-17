@@ -135,7 +135,7 @@ For the canonical circuit-oriented path, replace the top-three count-domain MLP 
 
 ## 2026-08-09 — Use SpikingJelly as the PLIF/convolution infrastructure layer
 
-Keep PyTorch as the tensor/autograd/optimizer substrate, but use SpikingJelly public `activation_based` components where they match the hardware contract. `SpikingStage` uses the SpikingJelly `Conv2d` wrapper when available, and `ParametricLIF` delegates its charge equation to SpikingJelly `ParametricLIFNode`. Preserve the already-benchmarked per-channel beta by feeding a per-channel reciprocal-tau tensor into the SpikingJelly PLIF charge equation. Custom dynamic threshold, `peer_membrane` fInst, triangular fLong/TThresh, reset ordering, and hardware-visible state remain explicit project code. A mathematically equivalent fallback remains for lightweight tests without SpikingJelly.
+Keep PyTorch as the tensor/autograd/optimizer substrate, but require SpikingJelly public `activation_based` components for learned synaptic stages. `SpikingStage` uses the SpikingJelly `Conv2d` synapse layer, and `ParametricLIF` delegates its charge equation to SpikingJelly `ParametricLIFNode`. Preserve the already-benchmarked per-channel beta by feeding a per-channel reciprocal-tau tensor into the SpikingJelly PLIF charge equation. Custom dynamic threshold, `peer_membrane` fInst, triangular fLong/TThresh, reset ordering, and hardware-visible state remain explicit project code. There is no conventional PyTorch Conv2d model fallback.
 
 ## 2026-08-09 — Add late decoder/detail refinement training
 

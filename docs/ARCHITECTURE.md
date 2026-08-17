@@ -13,10 +13,26 @@ Stored channels are `hist0,hist1,mean0,std0,mean1,std1`; the loader decodes them
 mean±std conserve activity. This is necessarily an approximation because individual
 event tuples are absent. Sequence changes, frame gaps, and split/epoch starts reset state.
 
+## Fully spiking layer semantics
+
+`SpikingStage` is the canonical learned layer in both final models. It combines a
+3×3 or 1×1 spike-driven synaptic kernel with one PLIF neuron population:
+
+```text
+input spikes -> synaptic current -> PLIF membrane/leak/threshold/reset -> output spikes
+```
+
+It is not an analog convolution followed by a conventional activation. The model
+requires `spikingjelly.activation_based.layer.Conv2d` for the synaptic kernel and
+fails clearly when SpikingJelly is unavailable. A depthwise/pointwise block has two such PLIF populations: a 3×3
+depthwise spatial population followed by a 1×1 pointwise channel-mixing population.
+They must not be collapsed into one dense 3×3 layer because that would remove an
+intermediate membrane state, change the computation, and sharply increase parameters.
+
 ## File separation
 
 - `model.py`: canonical post-ablation high-accuracy candidate (`final_dualpath_wide32`)
-- `model_components.py`: shared convolution, encoder/decoder, PLIF, inhibition, and threshold-adaptation primitives
+- `model_components.py`: shared spiking-synapse, encoder/decoder, PLIF, inhibition, and threshold-adaptation primitives
 - `top_ten_models.py`: frozen completed ten-model structural benchmark
 - `top_five_models.py`: completed five-model structural search
 - `top_three_models.py`: frozen completed accuracy-oriented three-model search

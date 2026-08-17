@@ -77,9 +77,9 @@ services:
        "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1",
        "--accumulate-steps", "2", "--internal-updates", "8",
-       "--train-samples", "0.5", "--validation-fraction", "0.10",
+       "--train-samples", "0.7", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch013.pt",
+       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch015.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   # Canonical expanded final model with timestamp-scheduled continuous input.

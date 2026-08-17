@@ -83,8 +83,9 @@ framework:
     use_in_current_code:
       - SpikingJelly ATan surrogate gradient when installed
       - Custom HardwareLIF for exact leak, threshold, reset, f_inst, and f_long behavior
-      - PyTorch Conv2d and interpolation for trainable dense software execution
-    fallback: A local differentiable ATan-style surrogate is permitted for lightweight tests when SpikingJelly is unavailable.
+      - SpikingJelly activation_based Conv2d as the active spike-driven synaptic kernel
+      - PyTorch nearest-neighbor interpolation for non-learned decoder routing
+    requirement: SpikingJelly is mandatory for model construction; there is no conventional Conv2d fallback.
   custom_framework_decision:
     decision: Do not build a custom autograd or training framework.
     reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, and data loading.

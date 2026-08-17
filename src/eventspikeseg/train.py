@@ -809,13 +809,20 @@ def train_architecture(
         previous_training_phase = training_phase
 
         if mechanism_round:
-            # Start exactly as the stable PLIF/threshold model, then introduce
-            # triangular threshold adaptation smoothly over half the run.
-            if epoch == 1:
+            # Keep the initial PLIF representation unconstrained for the first
+            # 12.5% of a run, then ramp homeostasis to full strength by 50%.
+            # Fractions preserve the same schedule when --epochs changes.
+            homeostasis_start_fraction = 0.2
+            homeostasis_full_fraction = 0.6
+            epoch_fraction = epoch / float(epochs)
+
+            if epoch_fraction <= homeostasis_start_fraction:
                 homeostasis_scale = 0.0
             else:
                 homeostasis_scale = min(
-                    1.0, (epoch - 1) / float(max(1, warmup_epochs - 1))
+                    1.0,
+                    (epoch_fraction - homeostasis_start_fraction)
+                    / (homeostasis_full_fraction - homeostasis_start_fraction),
                 )
             # Keep mutually-exclusive semantic class WTA active from the start.
             # ``peer_membrane`` is safe to enable immediately because its membrane

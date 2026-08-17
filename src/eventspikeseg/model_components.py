@@ -813,11 +813,10 @@ class SpikingStage(nn.Module):
             padding = tuple(dilation * (size // 2) for size in kernel_size)
         else:
             padding = dilation * (kernel_size // 2)
-        conv_type = (
-            sj_layer.Conv2d
-            if SPIKINGJELLY_AVAILABLE and sj_layer is not None
-            else nn.Conv2d
-        )
+        if sj_layer is None:
+            raise RuntimeError(
+                "SpikingStage requires SpikingJelly's spike-driven Conv2d synapse layer"
+            )
         conv_kwargs = dict(
             stride=stride,
             padding=padding,
@@ -825,9 +824,8 @@ class SpikingStage(nn.Module):
             groups=groups,
             bias=False,
         )
-        if SPIKINGJELLY_AVAILABLE:
-            conv_kwargs["step_mode"] = "s"
-        self.conv = conv_type(
+        conv_kwargs["step_mode"] = "s"
+        self.conv = sj_layer.Conv2d(
             in_channels,
             out_channels,
             kernel_size,

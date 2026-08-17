@@ -104,6 +104,16 @@ timestamp/address scheduler → two-polarity synaptic activity → first PLIF la
 
 Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, stem-only `peer_membrane` fInst, and encoder/context triangular fLong/TThresh. PyTorch provides tensors/autograd/optimization; SpikingJelly supplies compatible spiking convolution/PLIF/surrogate infrastructure while project-specific dynamics stay explicit.
 
+### What “fully spiking” means here
+
+Every learned spatial or channel-mixing stage in `EventSpikeSeg` and `EventSpikeSeg140k` is a spike-driven synapse population coupled directly to PLIF neurons:
+
+```text
+input spikes → learned 3×3 or 1×1 synaptic kernel → membrane current → PLIF spike output
+```
+
+The 3×3 and 1×1 kernels are synaptic weights, not conventional analog `Conv → ReLU` layers; there is no ReLU/GELU/sigmoid activation in the final learned feature or class-map path. These kernels require `spikingjelly.activation_based.layer.Conv2d` (40 `SpikingStage` populations in `EventSpikeSeg140k`); model construction fails clearly if SpikingJelly is unavailable. Depthwise/pointwise blocks deliberately contain two PLIF populations—3×3 spatial filtering followed by 1×1 channel mixing—so collapsing them would remove an intermediate spiking state and alter both connectivity and temporal dynamics.
+
 There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gate, analog classifier, fourth downsampling stage, or hard hidden winner-peer WTA in the canonical path.
 
 ## Canonical training
