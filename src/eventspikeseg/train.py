@@ -299,6 +299,7 @@ def _prepare_datasets(
     input_mode: str,
     manifest: Path | None,
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+    stateful_stream: bool = True,
 ) -> tuple[TemporalDataset, TemporalDataset, dict[str, object], str]:
     """Build sequence-disjoint train/validation datasets and freeze their protocol."""
     all_train_records = discover_ddd17_records(root, "train", manifest=manifest)
@@ -330,6 +331,7 @@ def _prepare_datasets(
         training_records=training_records,
         validation_records=validation_records,
         internal_updates=internal_updates,
+        stateful_stream=stateful_stream,
         manifest=manifest,
     )
     return train_pool, validation_dataset, protocol.to_dict(), protocol.fingerprint
@@ -366,6 +368,7 @@ def evaluate_model(
     loader: DataLoader,
     *,
     device: torch.device,
+    stateful_stream: bool = True,
 ) -> tuple[dict[str, object], float, dict[str, float]]:
     model.eval()
     confusion = ConfusionMatrix(DDD17_CLASS_COUNT, IGNORE_INDEX)
@@ -387,7 +390,7 @@ def evaluate_model(
             target = target.to(device)
             dataset = loader.dataset
             is_stream_start = getattr(dataset, "is_stream_start", None)
-            if batch_index == 0 or (
+            if not stateful_stream or batch_index == 0 or (
                 callable(is_stream_start) and is_stream_start(batch_index)
             ):
                 model.reset()
@@ -465,6 +468,7 @@ def train_architecture(
     amp: bool = False,
     accumulate_steps: int = 1,
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+    continuous_state: bool = True,
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
@@ -480,6 +484,7 @@ def train_architecture(
         input_mode=input_mode,
         manifest=manifest,
         internal_updates=internal_updates,
+        stateful_stream=continuous_state,
     )
     collate = temporal_collate
     validation_loader = DataLoader(
@@ -760,7 +765,7 @@ def train_architecture(
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
         f"mode={input_mode} internal_updates={internal_updates} "
-        f"continuous_state size={size_label} | "
+        f"{'continuous_state' if continuous_state else 'stateless_records'} size={size_label} | "
         f"train_pool={len(train_pool)} epoch_train={len(example_epoch_train)} "
         f"val={len(validation_dataset)} | "
         f"params={model.parameter_count():,}",
@@ -864,7 +869,7 @@ def train_architecture(
         for batch_index, (sequence, target) in enumerate(progress, start=1):
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
-            if epoch_train_dataset.is_stream_start(batch_index - 1):
+            if not continuous_state or epoch_train_dataset.is_stream_start(batch_index - 1):
                 model.reset()
             with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
                 outputs = model(sequence)
@@ -1002,7 +1007,10 @@ def train_architecture(
 
         if is_final_run:
             validation_metrics, validation_spike_rate, validation_layer_rates = evaluate_model(
-                model, validation_loader, device=resolved_device
+                model,
+                validation_loader,
+                device=resolved_device,
+                stateful_stream=continuous_state,
             )
             last_validation_metrics = validation_metrics
             last_validation_spike_rate = validation_spike_rate
@@ -1088,7 +1096,10 @@ def train_architecture(
         checkpoint_path = canonical_checkpoint_path
     else:
         metrics, mean_spike_rate, layer_spike_rates = evaluate_model(
-            model, validation_loader, device=resolved_device
+            model,
+            validation_loader,
+            device=resolved_device,
+            stateful_stream=continuous_state,
         )
         diagnostics_fn = getattr(model, "neuron_diagnostics", None)
         neuron_diagnostics = diagnostics_fn() if callable(diagnostics_fn) else {}
@@ -1171,6 +1182,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             amp=args.amp,
             accumulate_steps=args.accumulate_steps,
             internal_updates=args.internal_updates,
+            continuous_state=args.continuous_state,
             load=None,
         )
         for name in presets
@@ -1251,6 +1263,15 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         help=(
             "PLIF clock updates inside each 50 ms record (default: 10); "
             "must divide 50,000 microseconds exactly"
+        ),
+    )
+    parser.add_argument(
+        "--no-continuous-state",
+        action="store_false",
+        dest="continuous_state",
+        help=(
+            "reset all PLIF state before every 50 ms record; useful only for "
+            "the independent-record ablation"
         ),
     )
     parser.add_argument(
@@ -1392,6 +1413,7 @@ def main() -> None:
             amp=args.amp,
             accumulate_steps=args.accumulate_steps,
             internal_updates=args.internal_updates,
+            continuous_state=args.continuous_state,
             load=args.load,
         )
     elif args.command == "benchmark":

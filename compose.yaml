@@ -77,6 +77,7 @@ services:
        "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1",
        "--accumulate-steps", "2", "--internal-updates", "8",
+       # Add "--no-continuous-state" here only for the stateless-record ablation.
        "--train-samples", "0.7", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
        "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch015.pt",

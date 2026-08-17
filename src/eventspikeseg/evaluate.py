@@ -141,6 +141,7 @@ def evaluate(
             int(protocol["integration_window_us"]) // int(protocol["event_clock_us"]),
         )
     )
+    stateful_stream = bool(protocol.get("stateful_stream", True))
     records, dataset_split = _records_for_checkpoint(
         root, checkpoint, split=split, manifest=manifest
     )
@@ -181,7 +182,7 @@ def evaluate(
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
             is_stream_start = getattr(dataset, "is_stream_start", None)
-            if batch_index == 0 or (
+            if not stateful_stream or batch_index == 0 or (
                 callable(is_stream_start) and is_stream_start(batch_index)
             ):
                 model.reset()

@@ -503,6 +503,7 @@ def make_temporal_protocol(
     training_records: Sequence[DDD17Record],
     validation_records: Sequence[DDD17Record],
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+    stateful_stream: bool = True,
     manifest: Path | str | None = None,
 ) -> TemporalProtocol:
     if internal_updates < 1:
@@ -518,7 +519,7 @@ def make_temporal_protocol(
         integration_window_us=EVSEG_INTEGRATION_WINDOW_US,
         internal_updates=internal_updates,
         event_clock_us=EVSEG_INTEGRATION_WINDOW_US // internal_updates,
-        stateful_stream=True,
+        stateful_stream=stateful_stream,
         validation_fraction=validation_fraction,
         manifest_digest=manifest_digest(root, manifest=manifest),
         training_sequences=tuple(sorted({record.sequence_id for record in training_records})),

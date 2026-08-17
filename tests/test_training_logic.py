@@ -144,6 +144,21 @@ def test_prepare_datasets_single_sequence_uses_contiguous_temporal_holdout(tmp_p
     } == {tuple(record_id) for record_id in protocol["validation_record_ids"]}
 
 
+def test_prepare_datasets_can_freeze_stateless_record_protocol(tmp_path: Path) -> None:
+    for sequence in ("recA", "recB"):
+        _write_sequence(tmp_path, sequence, count=5)
+    _, _, protocol, _ = _prepare_datasets(
+        tmp_path,
+        seed=17,
+        output_size=(32, 32),
+        validation_fraction=0.20,
+        input_mode="timestamp-events",
+        manifest=None,
+        stateful_stream=False,
+    )
+    assert protocol["stateful_stream"] is False
+
+
 def test_epoch_train_subset_changes_across_epochs(tmp_path: Path) -> None:
     for sequence in ("recA", "recB", "recC", "recD"):
         _write_sequence(tmp_path, sequence, count=8)
