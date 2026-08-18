@@ -113,13 +113,14 @@ services:
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
        "--input-mode", "raw-events",
        "--device", "auto", "--amp",
-       "--height", "220", "--width", "320",
+       "--height", "241", "--width", "351",
       #  "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1",
        "--accumulate-steps", "2", "--internal-updates", "10",
        "--sequential-chunks", "5", ## divide the internal-updates by this to get batch
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
+       "--load", "artifacts/checkpoints/dsec/EventSpikeSeg140k_seed17_epoch003.pt",
        "--checkpoint-dir", "artifacts/checkpoints/dsec"]
 
   # Canonical expanded final model with timestamp-scheduled continuous input.

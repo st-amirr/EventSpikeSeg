@@ -570,7 +570,8 @@ class HardwareLIF(nn.Module):
         raw = self.spike_function(candidate - threshold)
         above = candidate >= threshold
         gate = self._competition_gate(candidate, above)
-        spikes = raw * gate.to(raw.dtype)
+        hard_spikes = raw * gate.to(raw.dtype)
+        spikes = raw + (hard_spikes - raw).detach()
         reset = gate.to(candidate.dtype) * threshold
         loser = (above & ~gate).to(candidate.dtype) * self.config.competitor_decrement
         self.membrane = candidate - reset - loser

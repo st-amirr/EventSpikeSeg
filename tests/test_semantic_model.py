@@ -397,6 +397,16 @@ def test_detach_state_keeps_membrane_values_without_autograd_history() -> None:
     assert neuron.membrane.grad_fn is None
 
 
+def test_silent_neuron_keeps_surrogate_gradient_below_threshold() -> None:
+    neuron = ParametricLIF(1, LIFConfig(threshold=2.0))
+    current = torch.ones((1, 1, 1, 1), requires_grad=True)
+    spikes = neuron(current)
+    assert spikes.item() == 0.0
+    spikes.sum().backward()
+    assert current.grad is not None
+    assert current.grad.abs().item() > 0.0
+
+
 def test_model_detach_clears_spikingjelly_internal_graph_roots() -> None:
     model = build_model(architecture="EventSpikeSeg140k")
     outputs = model(_timestamp_statistics(16))

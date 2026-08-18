@@ -271,3 +271,16 @@ for each chunk immediately, preserve PLIF membrane/homeostasis values, and detac
 their gradient history before continuing. Optimizer and gradient-accumulation steps
 remain record-based rather than chunk-based. This preserves all input clocks and the
 forward state trajectory but deliberately truncates gradients at chunk boundaries.
+
+## 2026-08-18 — Preserve surrogate gradients through hard spike gates
+
+A DSEC run remained at zero output spikes and mIoU 0.0081 for six epochs even
+though encoder and decoder spike rates were healthy. The loader was not dead: real
+records delivered roughly 140k scheduled input spikes and validation showed nonzero
+hidden activity. The failure was the neuron output expression `raw * hard_gate`.
+When a neuron was below threshold, the hard Boolean gate also multiplied its
+surrogate derivative by zero, so a silent class head could never learn toward its
+threshold and weight decay pushed it further into silence. Keep the identical binary,
+competition-gated forward spike, but use a straight-through expression whose backward
+derivative is the surrogate derivative of `raw`. A regression test requires a
+subthreshold PLIF neuron to emit zero forward while retaining nonzero input gradient.
