@@ -1,7 +1,11 @@
 import pytest
 import torch
 
-from eventspikeseg.model import EventSpikeSeg, EventSpikeSeg140k, build_model
+from eventspikeseg.model import (
+    EventSpikeSeg140k,
+    EventSpikeSegXL,
+    build_model,
+)
 from eventspikeseg.model_components import HardwareLIF, LIFConfig, ParametricLIF
 from eventspikeseg.top_five_models import (
     TOP_FIVE_PRESETS,
@@ -229,10 +233,13 @@ def test_legacy_t_thresh_behavior_is_preserved() -> None:
     assert torch.allclose(neuron.adaptation, torch.tensor([0.05]))
 
 
-def test_final_model_contains_scaled_dualpath_architecture() -> None:
+def test_canonical_model_is_140k_and_xl_is_selectable() -> None:
     model = build_model()
-    assert isinstance(model, EventSpikeSeg)
-    assert model.architecture.name == "EventSpikeSeg"
+    assert isinstance(model, EventSpikeSeg140k)
+    assert model.architecture.name == "EventSpikeSeg140k"
+    xl = build_model(architecture="EventSpikeSegXL")
+    assert isinstance(xl, EventSpikeSegXL)
+    assert xl.architecture.name == "EventSpikeSegXL"
     assert model.architecture.channel_schedule == (32, 64, 128)
     assert model.architecture.neuron_kind == "plif"
     assert model.architecture.inhibition_kind == "peer_membrane"
@@ -248,7 +255,8 @@ def test_final_model_contains_scaled_dualpath_architecture() -> None:
     # Independent spiking class neurons accumulate evidence over time instead
     # of using hard per-timestep class WTA.
     assert not model.architecture.output_f_inst_enabled
-    assert model.parameter_count() == 236_445
+    assert model.parameter_count() == 140_089
+    assert xl.parameter_count() == 236_445
 
 
 def test_final_140k_model_is_selectable() -> None:
@@ -285,8 +293,8 @@ def test_final_channel_selector_is_plif_spike_native() -> None:
     assert torch.all((selected == 0) | (selected == 1))
 
 
-def test_final_model_richer_spiking_paths_and_residual_bridges() -> None:
-    model = build_model()
+def test_xl_model_richer_spiking_paths_and_residual_bridges() -> None:
+    model = build_model(architecture="EventSpikeSegXL")
     assert model.bridge12.conv.kernel_size == (1, 1)
     assert model.bridge12.conv.stride == (2, 2)
     assert model.bridge23.conv.kernel_size == (1, 1)
@@ -320,8 +328,8 @@ def test_final_eval_keeps_only_output_spike_raster() -> None:
     assert "enc1_spikes" not in outputs
     assert "decoder_spikes" not in outputs
 
-def test_final_deep_paths_receive_gradients() -> None:
-    model = build_model()
+def test_xl_deep_paths_receive_gradients() -> None:
+    model = build_model(architecture="EventSpikeSegXL")
     outputs = model(_timestamp_statistics(32))
     loss = (
         outputs["segmentation_logits"].mean()

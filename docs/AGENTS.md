@@ -2,9 +2,12 @@
 
 ## Mission
 
-Build a lightweight event-camera SNN for six-class DDD17 and eleven-class raw-event
-DSEC-Semantic segmentation, select a strong spike-native architecture, then map the
-confirmed model to sparse fixed-point VHDL.
+Build and validate the canonical `EventSpikeSeg140k` (~140k registered parameters for the
+six-class DDD17 configuration), then map its spike-native PLIF inference graph to
+**mixed-signal neuromorphic hardware**. Training remains PyTorch + SpikingJelly; the
+runtime goal is physical synaptic/neuron dynamics with digital event routing/control.
+The FPGA/VHDL path is a secondary deterministic reference/fallback, not the primary
+neuromorphic target.
 
 ## Source-of-truth order
 
@@ -12,104 +15,107 @@ confirmed model to sparse fixed-point VHDL.
 2. `AGENTS.md`
 3. `docs/ARCHITECTURE.md`
 4. `docs/DECISIONS.md`
-5. active ablation plan
-6. tests and executable commands
+5. tests and executable code
 
-## Model-file contract
+Python constructors/forward methods remain authoritative if older diagrams disagree.
 
-```text
-model.py              canonical architecture only
-model_components.py   shared tested primitives
-top_ten_models.py     frozen completed ten-model benchmark
-top_five_models.py    frozen completed structural top-five
-top_three_models.py   frozen completed accuracy top-three
-train.py              single trainer/benchmark engine for every suite
-```
+## Canonical naming
 
-Do not put experimental registries back into `model.py`. Keep completed top-ten/top-five/top-three definitions as archival architecture references; do not preserve the removed static-repeat data protocol. `model.py` now contains only the post-ablation canonical candidate. Measured results belong in `RESULTS.md`, not in the canonical model registry.
+- `EventSpikeSeg140k`: canonical ~140k topology; all new work uses this name.
+- `EventSpikeSegXL`: 236,445-parameter expanded comparison only.
 
-## Current evidence and active question
+Do not re-promote XL without an explicit new decision.
 
-The earlier architecture ablations exposed useful structural/neuron behavior, but their accuracy numbers were produced with the now-removed repeated-static temporal representation. They are archival evidence, not a current baseline to resume or compare directly.
+## Exact inference semantics
 
-The active input is `timestamp-events`: one installed six-channel 50 ms interval
-per loader item. Histogram channels carry polarity activity and timestamp mean/std
-schedule input-synapse arrivals within that interval. Adjacent files are streamed
-one at a time while PLIF state persists across consecutive records.
+A learned `SpikingStage` is `SpikingJelly Conv2d (synapses) -> optional ChannelAffine ->
+ParametricLIF -> binary spikes`. Convolution kernels are synaptic weights; the output
+feature-map elements are PLIF neurons. DW/PW blocks contain two distinct PLIF
+populations and must not be collapsed.
 
-Implementation contract:
+Canonical six-class accounting:
 
-- no repeated-static/direct-encoding fallback;
-- no multi-file temporal windows or padding by repeating samples;
-- batch size is one and stream records are never shuffled;
-- reset PLIF state at `sequence_id` boundaries, frame-index gaps, and split/epoch starts;
-- detach recurrent state after each record during training without clearing its value;
-- validation holds out complete sequence/interval IDs;
-- `DDD17/ddd17_temporal_manifest.json` is authoritative for chronology; do not infer or generate sequence metadata in the runtime;
-- DDD17 has no HDF5 dependency; installed NumPy intervals are its input source;
-- DSEC uses its official continuous `events.h5`, semantic timestamp text, and
-  `rectify_map.h5`; slice only the preceding 50 ms and never preload a recording;
-- DSEC raw events become binary chronological polarity clocks and bypass the DDD17
-  timestamp-moment scheduler without changing learned feature stages;
-- new checkpoints use `ddd17-timestamp-v3` and a protocol fingerprint;
-- legacy checkpoints missing that protocol are rejected.
+- registered parameters: 140,089
+- executed training-forward parameters: 135,033
+- executed inference-forward parameters: 134,637
+- registered-but-dead `refine2`: 5,056 parameters / 2 SpikingStage populations
+- training-only auxiliary head: 396 parameters
+- executed inference SpikingStage populations: 37
 
-The stored statistics do not contain exact event tuples. The scheduler uses three
-weighted arrivals (mean and mean±std) over ten 5 ms hardware-clock updates and
-conserves histogram activity. This approximation must be stated in accuracy/hardware claims.
+Hardware deployment implements the executed inference graph only.
 
-## Active neuron-dynamics contract
+## PLIF physical mapping contract
 
-All current structural contenders use:
+Per output channel, `beta=sigmoid(beta_logit)` and threshold are learned. Spatial
+neurons keep individual membrane state. Software charge is equivalent to
+`candidate = beta * membrane + current` before dynamic threshold/reset effects.
 
-- PLIF with learnable per-channel beta
-- learnable per-channel base threshold
-- affine channel scaling
-- residual paths
-- auxiliary semantic supervision
-- stem-only `peer_membrane` inhibition
-- local triangular threshold adaptation in encoder/context
-- independent output semantic class spikes with final temporal count argmax
+For a chosen physical time interval `Delta_t`, use the continuous-time equivalent
+`tau_m = -Delta_t / ln(beta)` as the starting physical membrane-time-constant target.
+Do not interpret training membrane/current/threshold numbers directly as volts/amps.
+Target-specific calibration must choose a consistent voltage/current scale and verify
+measured retention, threshold, and synaptic response against golden traces.
 
-`peer_membrane` preserves simultaneous suprathreshold feature spikes while reducing peer membrane state using retinotopic membrane energy. Do not use hidden `winner_peer` gating in the canonical model.
+## Mixed-signal deployment rule
 
-The triangular threshold process uses learnable threshold-adaptation strength and continuous adaptation duration. These are training parameters only until fixed-point quantization and integer-reference regression pass.
+The primary target is not a strict all-analog system. It is a mixed-signal neuromorphic
+runtime in which:
 
-## Completed top-three accuracy search
+- membrane integration/leak/threshold and preferably synaptic current generation are
+  physical analog/mixed-signal dynamics;
+- AER/event routing, address remapping, configuration, counters, gating, and final
+  semantic readout may be digital;
+- CPU/GPU dense inference is absent from the deployed learned feature path.
 
-The three completed contenders intentionally tested different accuracy mechanisms while preserving a hardware-oriented spiking datapath:
+### Scalable execution rule
 
-- `t01_spike_pyramid_concat`: 24/48/96 encoder; concatenate d1/d2/d4 depthwise spike branches, apply binary spike-count channel selection, fuse with spiking 1×1, and concatenate decoder skips before spiking refinement.
-- `t02_dualpath_detail`: compact 16/32/64 semantic path plus a persistent 16-channel high-resolution spiking detail path; concatenate semantic/shallow/detail evidence before binary selection and final spiking fusion.
-- `t03_deep_attention_fpn`: 24/48/96/128 encoder; low-resolution binary Q/K coincidence attention with accumulation/comparison/V masking; concatenative FPN restores x4→x3→x2→x1 detail.
+Do not assume one physical PLIF circuit per logical `[C,H,W]` state. Prefer a reusable
+coarse-grained analog/mixed-signal synapse+PLIF tile with convolutional weight sharing.
+Inactive logical membrane/adaptation state may be saved/restored through a state store;
+small/hot populations may remain physically resident. State save/restore must preserve
+numeric dynamics and is part of the target-equivalent verification contract.
 
-Parameter counts are 63,147 / 24,211 / 108,781. A ~100k model is acceptable when it provides a meaningful accuracy gain, but prefer the smaller model when accuracy is effectively equivalent.
+### Natural mappings
 
-Do not introduce dense softmax spatial attention. Attention forward behavior should remain expressible as spike counts, binary masks, accumulators, comparators, and sparse/1×1 projections that can later be quantized.
+- Conv weights -> programmable signed synaptic efficacy/current
+- PLIF beta -> calibrated membrane time constant/leak
+- learned threshold -> calibrated threshold/bias
+- ChannelAffine -> fold into synaptic efficacy
+- concat -> channel routing
+- nearest upsample -> spike-address fan-out
+- residual spike add/clamp -> event merge/dedup
+- class spike sum/argmax -> digital event counters/comparator
 
-Fairness rule used: all three used the same seed, data subset, resolution, timestep count, optimizer/loss, and benchmark budget. Do not tune one contender differently during the ranking run.
+### Mapping risks requiring explicit validation
 
-## Canonical post-ablation candidate
+- stem `peer_membrane` fInst uses retinotopic cross-channel membrane energy;
+- encoder/context triangular fLong uses adaptation age/amplitude and dynamic threshold;
+- final selector uses a global spatial binary enable after a 96->96 PLIF projection.
 
-`final_dualpath_wide32` is the 236,445-parameter EventSpikeSeg candidate. It uses a 32/64/128 semantic path, projected PLIF residual bridges across downsampling, residual DW/PW refinement, a persistent 32-channel high-resolution detail path with asymmetric refinement, serial dilation-2 context plus residual concatenated d1/d2/d4 context, one bottlenecked low-resolution spike-mask attention residual, concatenative mid-decoder fusion, and late semantic/shallow/detail concatenation. Final channel selection is a spike-driven 96→96 1×1 projection into PLIF selector neurons. No fourth downsampling level, dense softmax attention, GAP/MLP inference gate, BatchNorm dependency, or hard hidden WTA is used.
+Do not silently replace these. If hardware cannot reproduce them, define an explicit
+hardware-compatible approximation and revalidate/fine-tune accuracy.
 
-Use SpikingJelly public `activation_based` infrastructure where compatible: SpikingJelly convolution/PLIF/surrogate behavior backs the software model, while project code keeps per-channel beta, dynamic threshold, fInst/fLong, and exact reset/order explicit for later integer/RTL/circuit reproduction.
+## Input contracts
 
-Auxiliary heads are training-only and must be skipped in eval/inference. Canonical training schedule only: 0–70% joint, 70–90% semantic backbone frozen while detail/decoder/selector/heads refine, 90–100% all layers unfrozen at lower LR. Historical benchmark suites do not inherit this schedule. Historical suites are pinned to CE=0.5; the final suite uses CE=1.0.
+DDD17 uses the 50 ms statistic scheduler and is an approximation because raw tuples are
+unavailable. DSEC uses exact raw rectified events and bypasses the moment scheduler;
+DSEC is therefore the cleaner physical event-camera deployment path.
 
-There is one training implementation: `eventspikeseg.train`. Do not recreate suite-specific training loops. All new runs use timestamp-stream v3 data handling and sequence-level validation. The official test set is not used for best-checkpoint selection.
+## Verification
 
-## Diagnostics
+For every hardware target, preserve a staged golden comparison:
 
-Every active benchmark run must record:
+1. SpikingJelly trained model
+2. exported parameter/graph representation
+3. target-equivalent simulator/model
+4. mapped hardware
 
-- mIoU and per-class IoU
-- ground-truth and predicted pixels per class
-- pixel accuracy
-- trainable parameter count
-- per-layer spike rates, including deep-stage activity when present
-- learned beta, threshold, inhibition strength, threshold-adaptation strength, and adaptation duration
+Compare layer spike traces, membrane trajectories where observable, output spike counts,
+semantic accuracy, latency, energy/power, and mapping utilization. Hardware power and
+latency claims require actual device measurement; simulator estimates must be labeled.
 
-## Finalization gates
+## FPGA secondary path
 
-`model.py` now contains the post-ablation candidate by explicit project decision, but do not call it the validated final architecture from design reasoning alone. Require a larger-budget rerun, seeds 17/101/2026, timestep sensitivity, rare-class diagnostics, quantized neuron validation, and hardware-cost comparison before hardware freeze or accuracy claims.
+Keep the VHDL/ZCU104 implementation work as a deterministic digital reference and
+fallback publication route. It may use post-route timing/activity power estimates and
+later board measurements, but it no longer defines the primary model-design objective.

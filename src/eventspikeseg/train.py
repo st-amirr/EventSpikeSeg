@@ -1529,7 +1529,7 @@ def main() -> None:
             + tuple(TOP_THREE_PRESETS)
             + tuple(FINAL_MODELS)
         ),
-        default="EventSpikeSeg",
+        default="EventSpikeSeg140k",
     )
     single.add_argument(
         "--suite", choices=("auto", "top-ten", "top-five", "top-three", "final"), default="auto"

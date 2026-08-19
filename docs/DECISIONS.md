@@ -255,7 +255,7 @@ pixel/polarity/clock are binary rather than analog counts. Preserve PLIF state o
 across consecutive labels of the same sequence and detach recurrent autograd history
 after each mask-aligned record.
 
-The `EventSpikeSeg140k` learned feature topology is unchanged. Its input adapter may
+The canonical `EventSpikeSeg140k` learned feature topology is unchanged. Its input adapter may
 bypass DDD17 moment reconstruction for an already scheduled two-polarity stream, and
 its semantic head expands from six to the dataset-required eleven spiking class
 populations. DSEC checkpoints use `dsec-raw-events-v1` so they cannot be mixed with
@@ -314,3 +314,42 @@ DSEC base LR from `1e-3` to `5e-4`; remove the historical `2x` multiplier on PLI
 beta/threshold parameters; and average soft Dice only over classes present in the
 current target. Continue reporting the full per-class Dice vector. Median-frequency
 class weights remain unchanged for this intervention so their effect can be isolated.
+
+## 2026-08-19 — Keep EventSpikeSeg140k canonical and target mixed-signal neuromorphic inference
+
+Canonical model naming is `EventSpikeSeg140k` for the ~140k deployment baseline and
+`EventSpikeSegXL` for the optional 236,445-parameter expanded comparison. This naming
+policy does not alter the trained canonical forward topology or parameters.
+
+The canonical six-class model has 140,089 registered parameters, but its executed
+inference graph uses 134,637. The inherited `refine2` block (5,056 parameters) is
+registered but never called; the 396-parameter auxiliary head is training-only. Future
+hardware implementations must target the executed inference graph, not dead/training-only
+modules.
+
+Implementation priority changes from custom FPGA as the end goal to **mixed-signal
+neuromorphic deployment**. PyTorch/SpikingJelly remains the training and golden-reference
+stack. Convolution kernels are interpreted as synaptic weight/connectivity projections;
+PLIF feature-map elements are neuron populations. Learned per-channel beta is mapped to
+physical membrane time constant/leak only after a target time scale is chosen and
+calibrated (`tau_m = -Delta_t / ln(beta)`). Learned thresholds and synaptic weights are
+mapped through target-specific voltage/current scales rather than treated as literal
+volts/amps.
+
+Mixed-signal means analog/mixed-signal synapse/neuron dynamics plus digital event
+routing, configuration, gating, counters, and semantic readout. The canonical inference
+path contains no softmax. Non-PLIF mapping risks are the stem peer-membrane fInst rule,
+triangular fLong/TThresh adaptation, and the final selector's global spatial binary
+enable. These must be reproduced, explicitly approximated with revalidation, or removed
+only through a new architecture/fine-tuning decision.
+
+For scale, mixed-signal deployment should use a coarse-grained reusable synapse/PLIF
+tile rather than one physical neuron per logical feature-map location. Convolutional
+weights remain shared. Logical PLIF membrane/adaptation state that cannot remain
+resident may be saved and restored between tile visits; smaller or high-activity
+populations may remain resident when capacity allows. This state virtualization trades
+area for latency/state bandwidth while preserving physical neuron dynamics during active
+updates.
+
+The custom VHDL/ZCU104 implementation remains a secondary exact digital reference and
+fallback publication path, not the primary neuromorphic objective.

@@ -11,7 +11,7 @@ from .data import (
     resolve_ddd17_root,
     resolve_dsec_root,
 )
-from .model import EventSpikeSeg, EventSpikeSeg140k, build_model
+from .model import EventSpikeSeg140k, EventSpikeSegXL, build_model
 
 DDD17Dataset = DDD17TimestampEventDataset
 
@@ -23,8 +23,8 @@ __all__ = [
     "DDD17TimestampEventDataset",
     "DSEC_CLASS_NAMES",
     "DSECRawEventDataset",
-    "EventSpikeSeg",
     "EventSpikeSeg140k",
+    "EventSpikeSegXL",
     "build_model",
     "build_temporal_dataset",
     "resolve_ddd17_root",

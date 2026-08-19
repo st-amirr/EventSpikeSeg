@@ -84,8 +84,8 @@ services:
        "--train-samples", "2", "--validation-fraction", "0.10",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
-  # Lighter final candidate with timestamp-scheduled continuous input.
-  train-ddd17-140k:
+  # Canonical EventSpikeSeg140k (~140k) with timestamp-scheduled continuous input.
+  train-ddd17:
     <<: *ddd17
     # gpus: all
     command:
@@ -103,8 +103,8 @@ services:
        "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch015.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
-  # Same 140k feature architecture, with an 11-class head and exact DSEC raw-event clocks.
-  train-dsec-140k:
+  # Canonical EventSpikeSeg140k with an 11-class head and exact DSEC raw-event clocks.
+  train-dsec:
     <<: *dsec
     gpus: all
     command:
@@ -123,14 +123,14 @@ services:
        "--load", "artifacts/checkpoints/dsec/EventSpikeSeg140k_seed17_epoch012.pt",
        "--checkpoint-dir", "artifacts/checkpoints/dsec"]
 
-  # Canonical expanded final model with timestamp-scheduled continuous input.
-  train-ddd17:
+  # Optional expanded EventSpikeSegXL comparison model.
+  train-ddd17-xl:
     <<: *ddd17
     gpus: all
     command:
       ["python", "-m", "eventspikeseg.train", "single",
        "--root", "/datasets/DDD17",
-       "--architecture", "EventSpikeSeg", "--suite", "final",
+       "--architecture", "EventSpikeSegXL", "--suite", "final",
        "--input-mode", "timestamp-events",
        "--device", "auto", "--amp",
        "--height", "185", "--width", "320",

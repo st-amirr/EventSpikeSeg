@@ -3,7 +3,7 @@
 ## Working now
 
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
-- canonical `model.py` contains the high-capacity spike-native `final_dualpath_wide32` candidate (236,445 params)
+- canonical `model.py` exposes `EventSpikeSeg140k` (~140k); the 236,445-parameter expansion is `EventSpikeSegXL`
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -89,11 +89,11 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - the installed training data is incomplete: 2,887 event tensors versus 10,001 masks, leaving only one event recording usable;
 - with two-channel input, the lighter/expanded models have 140,089/236,445 parameters; prior evidence does not support blaming parameter count alone;
 - learned continuous neuron dynamics and learned attention thresholds remain unquantized;
-- `final_dualpath_wide32` is installed as the canonical candidate by design decision but still needs temporal-input larger-budget/multi-seed/timestep and integer-reference gates before it is treated as the validated final/hardware-frozen model.
+- canonical `EventSpikeSeg140k` is the mixed-signal deployment baseline; `EventSpikeSegXL` is comparison-only.
 
 ## Next action
 
-Restore missing training event `.npy` files if the inspection mismatch remains, then compare `EventSpikeSeg140k` and `EventSpikeSeg` under the same timestamp-stream v3 protocol. A one-sequence manifest remains leakage-safe through a contiguous holdout and mandatory reset at the resulting gap.
+Restore missing training event `.npy` files if the inspection mismatch remains, then compare canonical `EventSpikeSeg140k` and `EventSpikeSegXL` under the same timestamp-stream v3 protocol. A one-sequence manifest remains leakage-safe through a contiguous holdout and mandatory reset at the resulting gap.
 
 ## 2026-08-15 timestamp-stream v3
 
@@ -106,3 +106,17 @@ Restore missing training event `.npy` files if the inspection mismatch remains, 
 - `--internal-updates` defaults to 10 and is frozen into each checkpoint protocol;
 - HDF5/raw readers, event-bin/sequential window datasets, T/stride flags, and raw compatibility commands are removed;
 - active parameter counts remain 140,089 and 236,445, so the input fix does not inflate the architecture.
+
+
+## 2026-08-19 mixed-signal implementation direction
+
+- canonical public model names are `EventSpikeSeg140k` and optional `EventSpikeSegXL`;
+- canonical DDD17 accounting: 140,089 registered / 135,033 training-forward / 134,637 inference-forward parameters;
+- deployment omits inherited dead `refine2` and the training-only auxiliary head;
+- primary hardware target is now mixed-signal neuromorphic inference with physical membrane/synaptic dynamics;
+- learned PLIF beta is treated as a dimensionless retention and mapped to calibrated physical `tau_m`, not directly to volts;
+- convolution kernels map to signed synaptic efficacy/current, while PLIF feature-map elements map to physical neuron populations;
+- no softmax exists in the canonical deployed path;
+- remaining target-specific risks are peer-membrane fInst, triangular fLong/TThresh, and the selector's global spatial binary enable;
+- scalable mixed-signal mapping uses reusable synapse/PLIF tiles with state virtualization instead of one physical neuron per logical feature-map state;
+- FPGA/VHDL remains the deterministic digital reference/fallback implementation.

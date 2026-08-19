@@ -1,13 +1,13 @@
 # EventSpikeSeg
 
 Fully spiking event-camera semantic segmentation for DDD17 and DSEC-Semantic,
-designed so the learned inference path can later be mapped to FPGA, neuromorphic
-hardware, or custom circuits.
+designed so the learned inference path can be mapped to mixed-signal neuromorphic
+hardware with physical neuron/synapse dynamics; FPGA remains a deterministic digital reference.
 
 ## Repository layout
 
 ```text
-src/eventspikeseg/model.py              canonical EventSpikeSeg model (`final_dualpath_wide32`)
+src/eventspikeseg/model.py              canonical EventSpikeSeg140k (~140k) plus optional EventSpikeSegXL
 src/eventspikeseg/model_components.py   shared PLIF/SNN/convolution primitives
 src/eventspikeseg/top_ten_models.py     frozen round-one model registry
 src/eventspikeseg/top_five_models.py    frozen structural top-five registry
@@ -113,14 +113,13 @@ docker compose run --rm inspect-dsec
 docker compose run --rm lint
 docker compose run --rm test
 docker compose run --rm train-ddd17-smoke
-docker compose run --rm train-ddd17-140k
-docker compose run --rm train-dsec-140k
+docker compose run --rm train-ddd17
+docker compose run --rm train-dsec
 docker compose run --rm train-ddd17
 ```
 
 `inspect-ddd17` validates the DDD17 manifest. `inspect-dsec` verifies sequence event,
-rectification, timestamp, and label alignment. `train-ddd17-140k` remains the DDD17
-capacity baseline; `train-dsec-140k` is its raw-event, eleven-class DSEC counterpart.
+rectification, timestamp, and label alignment. `train-ddd17` is the canonical DDD17 run; `train-dsec` is the same canonical feature architecture with the raw-event, eleven-class DSEC head.
 
 ## Measured architecture-search evidence
 
@@ -138,24 +137,26 @@ The completed structural top-five selected `f05_compact16_dilated` at mIoU `0.25
 
 Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological interpretation is in `docs/DECISIONS.md`.
 
-## Canonical EventSpikeSeg model
+## Canonical EventSpikeSeg140k model
 
-`final_dualpath_wide32` currently has **236,445 trainable parameters** and uses:
+`EventSpikeSeg140k` is the canonical **140,089-parameter** spike-native model. The optional 236,445-parameter expanded comparison is **`EventSpikeSegXL`**.
+
+For DDD17, 140,089 is the registered parameter count; the executed training forward uses 135,033 parameters and deployed inference uses 134,637 because inherited `refine2` (5,056 parameters) is never called and the 396-parameter auxiliary head is training-only. The canonical topology uses:
 
 ```text
-timestamp/address scheduler → two-polarity synaptic activity → first PLIF layer
-→ 32/64/128 semantic encoder
-→ projected PLIF residual bridges across downsampling
-→ residual DW/PW refinement per scale
-→ serial dilation-2 context ×2
-→ residual parallel d1/d2/d4 context with PLIF 1×1 fusion
-→ one bottlenecked low-resolution spike-mask attention residual
-→ persistent high-resolution 32-channel detail path with asymmetric refinement
-→ concatenative 64+64 mid-decoder fusion
+timestamp/raw-event input → two-polarity synaptic activity → 32-ch PLIF stem
+→ Encoder 1: two residual DW/PW-PLIF blocks at full resolution
+   ├─ persistent 32-ch detail path: three residual DW/PW-PLIF blocks
+   └─ main semantic path
+→ Encoder 2: stride-2 DW/PW-PLIF + two 64-ch residual refinements
+→ Encoder 3: stride-2 DW/PW-PLIF + two 128-ch residual refinements
+→ serial dilation-2 residual context ×2
+→ project 128→64 PLIF + upsample + 64-ch skip + residual refinement
+→ project 64→32 PLIF + upsample
 → late semantic32 + shallow32 + detail32 concatenation
-→ 96→96 PLIF cross-channel selector
-→ DW/PW final fusion/refinement
-→ six independent spiking class populations
+→ 96→96 1×1 synaptic projection + PLIF selector + binary channel enable
+→ DW96/PW32 PLIF fusion + residual 32-ch refinement
+→ independent spiking class populations
 → temporal spike-count argmax
 ```
 
@@ -163,13 +164,13 @@ Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, ste
 
 ### What “fully spiking” means here
 
-Every learned spatial or channel-mixing stage in `EventSpikeSeg` and `EventSpikeSeg140k` is a spike-driven synapse population coupled directly to PLIF neurons:
+Every learned spatial or channel-mixing stage in `EventSpikeSeg140k` is a spike-driven synapse population coupled directly to PLIF neurons:
 
 ```text
 input spikes → learned 3×3 or 1×1 synaptic kernel → membrane current → PLIF spike output
 ```
 
-The 3×3 and 1×1 kernels are synaptic weights, not conventional analog `Conv → ReLU` layers; there is no ReLU/GELU/sigmoid activation in the final learned feature or class-map path. These kernels require `spikingjelly.activation_based.layer.Conv2d` (40 `SpikingStage` populations in `EventSpikeSeg140k`); model construction fails clearly if SpikingJelly is unavailable. Depthwise/pointwise blocks deliberately contain two PLIF populations—3×3 spatial filtering followed by 1×1 channel mixing—so collapsing them would remove an intermediate spiking state and alter both connectivity and temporal dynamics.
+The 3×3 and 1×1 kernels are synaptic weights, not conventional analog `Conv → ReLU` layers; there is no ReLU/GELU/sigmoid activation in the final learned feature or class-map path. These kernels require `spikingjelly.activation_based.layer.Conv2d` (40 registered `SpikingStage` populations; 37 execute during canonical inference); model construction fails clearly if SpikingJelly is unavailable. Depthwise/pointwise blocks deliberately contain two PLIF populations—3×3 spatial filtering followed by 1×1 channel mixing—so collapsing them would remove an intermediate spiking state and alter both connectivity and temporal dynamics.
 
 There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gate, analog classifier, fourth downsampling stage, or hard hidden winner-peer WTA in the canonical path.
 
@@ -189,4 +190,18 @@ Final training validates after every epoch, saves the best validation-mIoU model
 
 ## Accuracy status
 
-`final_dualpath_wide32` is the canonical architecture by design, **not yet a timestamp-stream accuracy claim**. Historical input-protocol results remain architecture-search evidence only. The next accuracy gate is a fair 140,089-parameter `EventSpikeSeg140k` versus 236,445-parameter `EventSpikeSeg` comparison on the same timestamp stream.
+`EventSpikeSeg140k` is the canonical architecture by design; its historical architecture-search numbers are not automatically timestamp-stream accuracy claims. Historical input-protocol results remain architecture-search evidence only. The next optional capacity comparison is canonical `EventSpikeSeg140k` versus `EventSpikeSegXL` on the same timestamp stream; mixed-signal deployment work is based on canonical `EventSpikeSeg140k`.
+
+
+## Mixed-signal neuromorphic implementation target
+
+Training remains PyTorch + SpikingJelly. Deployment interprets each `SpikingStage` as a synaptic projection followed by a physical PLIF/LIF neuron population: convolution kernels are synaptic strengths/connectivity, while feature-map positions are neuron states. Learned per-channel `beta` is a dimensionless discrete retention; after choosing the hardware time scale, it is mapped to a calibrated membrane time constant with `tau_m = -Delta_t / ln(beta)`. Thresholds and weights are mapped through target-specific voltage/current scaling rather than treated as literal volts or amperes.
+
+The canonical inference path has no softmax, ReLU/GELU, BatchNorm, or dense count-domain MLP. `ChannelAffine` can be folded into synaptic efficacy; concat is channel routing; nearest upsample is spike-address fan-out; residual clamp is event merge/dedup; final temporal spike counting/argmax is a small digital readout. The target is mixed-signal rather than strictly all-analog: physical synaptic/neuron dynamics are analog/mixed-signal while AER routing, configuration, non-local gating, counters, and semantic readout may be digital.
+
+
+The scalable hardware mapping is expected to be **coarse-grained and time-multiplexed**, not a one-physical-neuron-per-logical-feature-map unrolling. A programmable analog/mixed-signal synapse+PLIF tile may be reused across spatial partitions and network stages while preserving convolutional weight sharing. Logical PLIF membrane/adaptation state that cannot remain physically resident may be saved in a state store and restored when that tile is revisited; smaller/hot populations may remain resident where hardware capacity permits. This trades physical neuron count for state bandwidth and latency while keeping active synaptic integration, membrane leak, thresholding, and spike generation in the mixed-signal domain.
+
+The three target-specific fidelity challenges are stem peer-membrane fInst, encoder/context triangular fLong/TThresh adaptation, and the 96-channel selector's global spatial binary enable. These must be reproduced or explicitly approximated and revalidated; they must not be silently removed. DSEC raw events are the preferred physical deployment input because they bypass the DDD17 moment scheduler.
+
+The VHDL/ZCU104 path remains a secondary exact digital reference and fallback implementation.

@@ -1,236 +1,246 @@
-# Architecture
+# EventSpikeSeg Architecture
 
-## Active task
+## Canonical model
 
-Six-class DDD17 semantic segmentation with timestamp-scheduled continuous input.
-The loader emits one installed 50 ms record as `[N,6,H,W]`; it does not create a
-time axis from adjacent files. By default, the input scheduler converts histogram activity and
-timestamp moments into `[10,N,2,H,W]` synaptic deliveries on a 5 ms hardware clock,
-before the first PLIF layer. PLIF state is carried into the next consecutive record.
+`EventSpikeSeg140k` is the project's primary ~140k architecture. `EventSpikeSegXL` is an
+optional expanded ~236k comparison and is not the deployment baseline. New runs,
+checkpoints, documentation, and deployment work use only these canonical names.
 
-Stored channels are `hist0,hist1,mean0,std0,mean1,std1`; the loader decodes them to
-`activity0,activity1,mean0,mean1,std0,std1`. Three weighted arrivals at mean and
-mean±std conserve activity. This is necessarily an approximation because individual
-event tuples are absent. Sequence changes, frame gaps, and split/epoch starts reset state.
+For the six-class DDD17 configuration, canonical `EventSpikeSeg140k` has **140,089
+registered trainable parameters**. The Python module tree also contains an inherited
+`refine2` block (5,056 parameters, two SpikingStage populations) that is never called
+by the canonical forward graph. The training forward therefore executes **135,033**
+parameters including the 396-parameter auxiliary head; inference executes **134,637**
+parameters. Mixed-signal deployment must implement the executed inference graph, not
+the dead inherited block or training-only auxiliary head.
 
-The DSEC-Semantic extension uses the same learned `EventSpikeSeg140k` feature
-architecture with a dataset-required eleven-population spiking class head. It does
-not use the DDD17 moment scheduler. Raw `(t,x,y,p)` events are read only for the
-50 ms preceding each semantic timestamp, rectified with `rectify_map.h5`, cropped
-to the 640×440 label view, and converted to binary ON/OFF planes on the configured
-physical clocks. The resulting `[T,N,2,H,W]` tensor enters the existing first PLIF
-synaptic stage directly. Thus DSEC timing is measured rather than reconstructed;
-the only temporal quantization is the selected hardware clock width.
+The semantic class count is dataset-dependent: DDD17 uses 6 class populations and
+DSEC-Semantic uses 11. The feature architecture is otherwise shared.
 
-## Fully spiking layer semantics
+## Exact computational primitive
 
-`SpikingStage` is the canonical learned layer in both final models. It combines a
-3×3 or 1×1 spike-driven synaptic kernel with one PLIF neuron population:
+Every learned `SpikingStage` is implemented as:
 
 ```text
-input spikes -> synaptic current -> PLIF membrane/leak/threshold/reset -> output spikes
+input spike/event activity
+  -> SpikingJelly Conv2d synaptic projection (bias=False)
+  -> optional per-channel affine current gain
+  -> ParametricLIF neuron population
+  -> binary output spikes
 ```
 
-It is not an analog convolution followed by a conventional activation. The model
-requires `spikingjelly.activation_based.layer.Conv2d` for the synaptic kernel and
-fails clearly when SpikingJelly is unavailable. A depthwise/pointwise block has two such PLIF populations: a 3×3
-depthwise spatial population followed by a 1×1 pointwise channel-mixing population.
-They must not be collapsed into one dense 3×3 layer because that would remove an
-intermediate membrane state, change the computation, and sharply increase parameters.
+The convolution is **not itself a neuron**. Its learned kernel values are synaptic
+weights/connectivity. The output feature map is the PLIF neuron population. Thus a
+3x3 or 1x1 stage has a direct neuromorphic interpretation: presynaptic spikes activate
+weighted synapses, synaptic currents are accumulated by postsynaptic PLIF membranes,
+and those neurons emit the next spike map.
 
-## File separation
-
-- `model.py`: canonical post-ablation high-accuracy candidate (`final_dualpath_wide32`)
-- `model_components.py`: shared spiking-synapse, encoder/decoder, PLIF, inhibition, and threshold-adaptation primitives
-- `top_ten_models.py`: frozen completed ten-model structural benchmark
-- `top_five_models.py`: completed five-model structural search
-- `top_three_models.py`: frozen completed accuracy-oriented three-model search
-- `train.py`: the single training/benchmark engine for historical suites and the final model
-
-## Shared neuron dynamics carried into the structural and accuracy rounds
-
-The completed top-five held these dynamics fixed, and the top-three keeps the same spike-neuron basis while changing feature fusion/attention structure:
+Depthwise/pointwise blocks intentionally contain two separate spiking populations:
 
 ```text
-PLIF with learnable per-channel beta
-+ learnable per-channel base threshold
-+ stem-only peer-membrane inhibition
-+ encoder/context triangular threshold adaptation
-+ affine channel scaling
-+ residual paths
-+ auxiliary semantic supervision
-+ historical structural/top-three output class winner-take-all
+spikes -> DW 3x3 synapses -> PLIF -> spikes
+       -> PW 1x1 synapses -> PLIF -> spikes
 ```
 
-`peer_membrane` inhibition preserves simultaneous suprathreshold feature spikes but subtracts a learned retinotopic membrane-energy-scaled amount from peer membrane states. Hidden one-winner gating is not used in the current search because the completed mechanism run showed severe deep-layer sparsification with `winner_peer`.
+The intermediate PLIF population is part of the trained temporal state and must not
+be collapsed during deployment.
 
-Triangular threshold adaptation is local in `(x,y)`: activity starts a threshold process that rises for `adaptation_duration`, falls for another `adaptation_duration`, then returns to zero. The adaptation strength and duration remain learnable continuous training parameters and require later fixed-point/shift-compatible conversion.
+## PLIF dynamics used by the trained model
 
-## Structural configuration support
-
-`SegmentationArchitecture` now supports:
-
-- explicit `channel_schedule` with three or four encoder scales;
-- configurable `stem_kernel_size`;
-- configurable `first_block_kernel_size`;
-- existing depthwise/pointwise blocks;
-- `none`, single-dilated, or parallel multiscale context.
-
-Three-scale models retain the original state/module layout. Four-scale models add `down4`, `enc4`, `project4`, and `refine3`, with a deep skip into the decoder. Validation diagnostics include `enc4_spikes` when present.
-
-## Completed structural top five
-
-| model | channels | early kernels | encoder scales | context | purpose |
-| --- | --- | --- | ---: | --- | --- |
-| `f01_base24_multiscale` | 24/48/96 | 3×3 | 3 | multiscale 1/2/4 | controlled baseline |
-| `f02_wide32_multiscale` | 32/64/128 | 3×3 | 3 | multiscale 1/2/4 | capacity test |
-| `f03_early5x5_multiscale` | 24/48/96 | 5×5 stem + first block | 3 | multiscale 1/2/4 | larger early event receptive field |
-| `f04_deep4_dilated` | 24/48/96/128 | 3×3 | 4 | dilation 2 | depth/context test |
-| `f05_compact16_dilated` | 16/32/64 | 3×3 | 3 | dilation 2 | FPGA-efficiency test |
-
-All later spatial depthwise/standard kernels remain 3×3; pointwise projections and semantic heads remain 1×1.
-
-## Semantic readout
-
-The learned output remains fully spiking. Historical benchmark models retain their recorded class-head behavior. The canonical `final_dualpath_wide32` uses six independent spiking class populations with no hard per-timestep class WTA; final class selection is temporal spike-count argmax. There is no analog softmax inference head.
-
-## Hardware interpretation
-
-The completed top-five and current top-three runs use floating-point training. Before FPGA promotion, learned beta, thresholds, inhibition strength, threshold-adaptation strength, and adaptation duration must be quantized and checked against an integer reference. Larger kernels, wider channels, and a fourth encoder level must also be compared by estimated/synthesized memory and event-addition cost rather than mIoU alone.
-
-
-## Completed accuracy-oriented top three
-
-The completed structural round established three useful facts: the compact three-stage/single-dilation path was the strongest overall, the wide path helped `object`, and the four-stage path recovered the best aggregate rare-class signal. That round therefore tested feature preservation and fusion rather than simply adding parameters.
-
-### `t01_spike_pyramid_concat` — 63,147 parameters
-
-- encoder: `24 → 48 → 96`, all 3×3 spatial processing;
-- context bottleneck: `96 → 48`;
-- three depthwise spike branches at dilation `1/2/4`;
-- branch outputs are concatenated, not averaged;
-- binary spike-count channel attention selects concatenated channels;
-- a spiking 1×1 stage fuses the selected channels back to the semantic width;
-- decoder merges projected semantic and shallow skip spikes by concatenation before depthwise/pointwise spiking refinement.
-
-The hypothesis is that the earlier multiscale implementation destroyed branch-specific sparse evidence by averaging and that additive skip fusion mixed spatial and semantic features too early.
-
-### `t02_dualpath_detail` — 24,211 parameters
-
-- semantic encoder: compact `16 → 32 → 64`;
-- semantic context: single depthwise dilation-2 path;
-- parallel 16-channel high-resolution spiking detail path remains near the input resolution;
-- final fusion concatenates semantic, shallow encoder, and detail spikes;
-- binary spike-count channel selection precedes the final spiking fusion.
-
-The hypothesis is that `object`, `human`, and thin vehicle boundaries are disappearing during downsampling. A narrow detail stream is cheaper than widening the entire encoder.
-
-### `t03_deep_attention_fpn` — 108,781 parameters
-
-- encoder: `24 → 48 → 96 → 128`;
-- low-resolution dilation-2 semantic context;
-- a 32-channel, four-head spike-driven binary-mask attention block at the deepest low-resolution stage;
-- Q/K spike coincidence is accumulated within each head and compared against a learned threshold; the resulting hard binary mask gates V spikes;
-- no dense spatial `N×N` softmax attention matrix is formed;
-- decoder is a concatenative FPN that progressively restores `x4 → x3 → x2 → x1` information;
-- auxiliary semantic supervision is retained.
-
-This tests whether the rare-class semantics seen in the four-stage top-five model can be retained when the decoder explicitly restores high-resolution features. The attention block is kept only at low spatial resolution to control memory and event-addition cost.
-
-## Spike-oriented fusion and attention rule
-
-Concatenation is treated as wiring/channel routing and does not itself require multiply-accumulate operations. Learned fusion occurs afterward through spiking 1×1 projections. Channel attention uses spike counts and a hard binary gate in the forward path. Deep attention uses binary Q/K coincidence, accumulation, comparison, and V masking rather than conventional floating-point softmax attention. These operations remain compatible with an eventual counter/comparator/accumulator FPGA mapping, subject to later quantization and bit-accurate validation.
-
-
-## Canonical `final_dualpath_wide32`
-
-The current EventSpikeSeg architecture is the 236,445-parameter high-capacity spike-native revision assembled after the completed top-ten/top-five/top-three searches. It scales capacity without adding a fourth downsampling stage.
+`ParametricLIF` preserves explicit project-visible state while using SpikingJelly's
+`ParametricLIFNode` charge equation. For each output channel `c`, the model learns a
+shared retention `beta[c]` and a shared base threshold `theta[c]`; each spatial neuron
+`(c,y,x)` keeps its own membrane state.
 
 ```text
-input C (2 chronological raw-event polarity clocks or 6 DDD17 interval statistics)
-  → stem 32
-  → encoder 32 + residual DW/PW refinement
-  → stride-2 main path + 1×1 PLIF projected residual → encoder 64
-  → stride-2 main path + 1×1 PLIF projected residual → encoder 128
-  → serial residual dilation-2 context ×2
-  → residual parallel DW d1/d2/d4 context → concat → PLIF 1×1 fusion
-  → one bottlenecked 32-channel / 4-head spike-mask attention residual
-  → deep auxiliary semantic head (training only)
-  → project/upsample + CONCAT encoder64 → DW/PW PLIF fusion/refinement 64
-  → mid auxiliary semantic head (training only)
-  → project/upsample to 32
-  → CONCAT semantic32 + shallow32 + persistent detail32
-  → 96→96 spike-driven 1×1 projection + PLIF selector gate
-  → DW/PW 96→32 + residual refinement
-  → six independent spiking class populations
-  → temporal spike-count argmax
+candidate[c,y,x] = beta[c] * membrane[c,y,x] + current[c,y,x]
+spike             = H(candidate - dynamic_threshold)
+membrane          = candidate - reset - competition effects
 ```
 
-The high-resolution detail stream is persistent from the shallow 32-channel feature and contains DW/PW residual refinement plus a spike-native asymmetric `3×1 → 1×3 → 1×1` residual block. The parallel multiscale context is not the failed historical branch *average*: branch identities are concatenated and mixed by a learned spiking 1×1 stage, while the simpler serial dilation-2 path remains intact.
+Exact training/runtime facts:
 
-The low-resolution attention block is also not the failed T3 architecture as a whole. Only one bottlenecked residual block is used at the deepest 128-channel scale. Q/K are binary PLIF spike streams; coincidence is accumulated per head and compared with a learned threshold; the resulting binary mask gates V spikes. There is no dense spatial softmax or analog NxN attention matrix.
+- initial beta: `0.9375` (`beta_shift=4` initialization)
+- beta: learnable per output channel
+- SpikingJelly reciprocal tau: `1 - beta`
+- initial base threshold: `0.5`
+- base threshold: learnable per output channel
+- threshold bounds: `[0.15, 1.25]`
+- training surrogate: ATan
+- inference spike: hard binary forward value
+- reset: subtractive threshold reset (`v_reset=None` in the SpikingJelly core)
+- membrane state persists through consecutive stream records and resets at sequence/gap boundaries
 
-### Neuron/runtime contract
+### Physical mixed-signal interpretation
 
-- PLIF with learnable per-channel beta and base threshold;
-- stem-only `peer_membrane` fInst;
-- downsampled encoder/context triangular fLong/TThresh;
-- no hard hidden `winner_peer` gating;
-- independent output class spiking populations;
-- temporal spike-count class decision;
-- affine channel scaling rather than BatchNorm;
-- PyTorch for tensors/autograd/optimizer;
-- SpikingJelly convolution/PLIF/surrogate infrastructure where compatible;
-- project-specific fInst/fLong/reset ordering remains explicit for hardware translation.
+Training values are dimensionless numerical states, not literal volts or amperes.
+Deployment transfers the **dynamics**, not the numerical membrane value. After a
+physical update interval `Delta_t` is chosen, a learned retention can be represented by
+an equivalent continuous-time membrane constant:
 
-Auxiliary heads are optimization-only: they are computed while `model.training` is true and skipped in evaluation/inference. This does not change deployed logits and avoids unnecessary inference state.
+```text
+beta[c] = exp(-Delta_t / tau_m[c])
+tau_m[c] = -Delta_t / ln(beta[c])
+```
 
-### Canonical training refinement
+A mixed-signal target then calibrates capacitor/leak/bias settings so the measured
+physical membrane retention over `Delta_t` matches the trained `beta[c]`. Thresholds
+and synaptic weights are mapped using a target-specific voltage/current scale; they
+must not be interpreted as direct volt or ampere values without that calibration.
 
-Only the final model exposes the late refinement schedule: joint training through 70% of epochs; freeze stem/semantic encoder/context during 70–90% while detail path, decoder/fusion, selector, auxiliary heads, and class head continue; then unfreeze all layers for the final 10% with an additional `0.25×` LR multiplier on top of cosine decay.
+## Input protocols
 
-The final loss profile uses CE coefficient `1.0`, focal `0.5`, Dice `0.75`, the existing activity regularizer, mid auxiliary CE/focal `0.15/0.15` normally and `0.30/0.30` during frozen-backbone refinement, and deep auxiliary CE/focal `0.10/0.10` normally and `0.20/0.20` during refinement. Historical suites are pinned separately to their recorded CE coefficient `0.5`.
+### DDD17
 
-### Training/evaluation data protocol
+One record is a 50 ms six-channel event-statistic tensor. `TimestampEventInput`
+schedules histogram activity into two polarity synaptic-input channels. With the
+default 10 internal updates, the software reference uses 5 ms updates and three
+weighted arrivals at `mean`, `mean-std`, and `mean+std` with weights `0.50/0.25/0.25`.
+Because exact event tuples are absent, this is an input approximation. On mixed-signal
+hardware it can be realized as timed current-pulse amplitudes or an equivalent event
+encoding before the first PLIF population.
 
-The dataset-root `ddd17_temporal_manifest.json` is the authoritative stream index.
-The loader reads exactly one NumPy event-statistic tensor and its same-record PNG mask
-per item. DataLoader order is chronological and batch size is one.
+### DSEC-Semantic
 
-With multiple sequence IDs, validation holds out complete sequences. With one sequence,
-validation is one contiguous block; removing it creates a frame gap and therefore a
-state reset. A limited per-epoch training fraction is one deterministic contiguous
-segment, not a shuffled selection.
+DSEC is the preferred physical event-camera deployment path. Exact raw `(t,x,y,p)`
+events are sliced before each semantic timestamp, rectified, and delivered as two
+chronological polarity event channels. The DDD17 moment scheduler is bypassed. This
+maps naturally to AER/event routing into the first synaptic/PLIF stage.
 
-During training, backward ends at each 50 ms record. The model then detaches recurrent
-autograd history while preserving membrane, adaptation, and threshold state for the
-next consecutive record. Evaluation carries the same numeric state under `no_grad`.
-Checkpoints freeze exact record membership and the `ddd17-timestamp-v3` physical
-interval/event-clock contract. `--internal-updates` is configurable, defaults to 10,
-must divide 50,000 µs exactly, and is part of the protocol fingerprint.
+## Canonical EventSpikeSeg140k forward graph
 
-DSEC training may additionally use `--sequential-chunks`. A value above one keeps
-the raw-event clock resolution and numeric PLIF state but performs backward after
-each equal chronological chunk, then detaches recurrent autograd history before the
-next chunk. This is truncated BPTT: it reduces peak saved-activation memory, while
-gradients do not cross chunk boundaries. `sequential_chunks=1` preserves the original
-full-record calculation.
+```text
+2-channel scheduled/raw event input
+  -> stem: 3x3 synaptic Conv -> affine -> PLIF, 32 ch
+  -> Encoder 1: two residual DW3x3-PLIF / PW1x1-PLIF blocks, 32 ch
+       |-> persistent detail path: three residual DW/PW-PLIF blocks, 32 ch
+       |-> shallow32 late-fusion route
+       `-> Encoder 2
+  -> Encoder 2: stride-2 DW/PW-PLIF + two residual refinements, 64 ch
+       |-> 64-ch decoder skip
+       `-> Encoder 3
+  -> Encoder 3: stride-2 DW/PW-PLIF + two residual refinements, 128 ch
+  -> semantic context: two serial residual dilation-2 DW/PW-PLIF blocks
+  -> project3 128->64 PLIF -> nearest event upsample -> add/clamp x2 -> residual refine
+  -> project2 64->32 PLIF -> nearest event upsample -> semantic32
+  -> concatenate semantic32 + shallow32 + detail32 -> 96 channels
+  -> PLIF selector: 1x1 96->96 synapses -> PLIF -> spatial binary channel enable
+  -> final fuse: DW3x3 96->96 PLIF -> PW1x1 96->32 PLIF
+  -> final residual 32-ch DW/PW-PLIF refinement
+  -> semantic head: 1x1 32->Nclass synapses -> independent PLIF class populations
+  -> temporal spike count -> per-pixel class argmax
+```
 
-DSEC uses a fixed, sequence-disjoint validation policy whose sequence count scales
-with the active training fraction. `train_samples <= 0.5` holds out one complete
-sequence, while a larger fraction holds out two. The subset closest to the validation
-target scaled by the active fraction is selected once, with split seed 17 as the
-deterministic tie-breaker. Fractional per-epoch training sampling is stratified by
-the remaining sequence IDs: one contiguous window of the requested fraction is
-taken from every training sequence. This preserves local chronology, represents
-every training route each epoch, and prevents recurrent state from crossing sequence
-boundaries.
+There is **no softmax inference head**, no ReLU/GELU feature activation, no BatchNorm
+dependency, and no dense count-domain MLP in the deployed canonical model.
 
-## Historical architecture registries
+## Homeostatic/competitive dynamics
 
-`top_ten_models.py`, `top_five_models.py`, and `top_three_models.py` preserve the measured ablation definitions and checkpoint-facing behavior. All three are dispatched through `train.py`; there is no separate top-three training implementation. Historical results remain in `RESULTS.md` and the design interpretation in `DECISIONS.md`.
+### fInst
 
+Stem-only `peer_membrane` inhibition is enabled. Its exact software rule uses a
+retinotopic RMS-like membrane-energy term across feature channels and subtracts a
+learned scaled decrement from peer membranes after a local spike event. This is more
+complex than basic PLIF and is a mixed-signal mapping item: a target may implement the
+exact function with mixed analog/digital support or validate a calibrated lateral-
+inhibition approximation before claiming equivalence.
 
-## fLong scope and native-resolution memory
+### fLong / TThresh
 
-The canonical model uses triangular fLong only on semantic encoder/context stages (`f_long_scope=encoder_context`). The full-resolution stem and custom detail branch remain PLIF with learnable thresholds but do not allocate per-pixel triangular fLong age/amplitude state. Historical benchmark presets retain the older `encoder` scope semantics for reproducibility. During training the canonical forward returns scalar activity rates for regularization instead of retaining full hidden TNCHW spike sequences.
+Triangular threshold adaptation is enabled on `down2`, `enc2`, `enc2_extra`, `down3`,
+`enc3`, `enc3_extra`, `context1`, and `context2`. It is disabled on the full-resolution
+Encoder-1/detail path and decoder. Each spiking neuron maintains adaptation age and
+amplitude; the resulting retinotopic penalty is added to the base threshold. A physical
+mapping may use programmable threshold bias/adaptation current or mixed-signal state,
+but its time course must be measured against the software reference.
+
+## Non-PLIF operations and mixed-signal treatment
+
+The goal is **mixed-signal neuromorphic inference**, meaning synaptic integration and
+PLIF membrane/leak/threshold dynamics should execute in physical analog/mixed-signal
+neuron/synapse circuitry while digital event routing/control/readout is allowed. This
+is the realistic architecture of available mixed-signal neuromorphic processors; a
+strict all-analog end-to-end segmentation pipeline is not required.
+
+| Software operation | Exact role | Deployment interpretation |
+| --- | --- | --- |
+| `ChannelAffine` | per-channel current gain | fold into synaptic efficacy/current scale |
+| residual `add + clamp(0,1)` | merge binary spike routes | event merge/dedup or equivalent routing logic |
+| nearest upsample | duplicate spatial spike locations | address fan-out/remapping |
+| `torch.cat` | concatenate channel groups | channel/address remapping; no arithmetic |
+| 96-ch selector `amax(H,W)` | binary global channel enable | digital event-control periphery or target-specific neuromorphic replacement |
+| temporal spike sum | class evidence | event counters/readout |
+| argmax | final semantic label | small digital readout comparator |
+| DDD17 timestamp scheduler | reconstruct approximate timed deliveries | digital/event preprocessor or pulse scheduler |
+
+The selector's 1x1 synaptic projection and PLIF population remain neuromorphic; only
+the subsequent spatial global enable is non-local control logic. If a target requires
+strictly local analog computation, this gate is the first candidate for replacement
+and would require an accuracy revalidation/fine-tune rather than being silently changed.
+
+## Primary implementation goal: mixed-signal neuromorphic hardware
+
+The canonical deployment objective is now:
+
+1. keep PyTorch/SpikingJelly as the digital training/reference implementation;
+2. export learned convolution weights, per-channel beta, per-channel thresholds,
+   fInst strength, and fLong parameters;
+3. convert beta to calibrated physical membrane time constants and map synaptic weights
+   to target-supported signed synaptic efficacy/current parameters;
+4. map each executed `SpikingStage` to a synaptic projection plus a physical PLIF/LIF
+   neuron population;
+5. use digital AER/event routing only for connectivity, address transforms, gating,
+   counters, configuration, and semantic readout;
+6. compare membrane/spike traces against the SpikingJelly golden reference;
+7. report real device latency, energy/power, accuracy, and mapping utilization only from
+   actual mixed-signal hardware measurements.
+
+Candidate hardware classes are analog/mixed-signal systems with programmable LIF/AdEx
+membrane time constants and synaptic efficacy. Hardware selection is constrained by
+network scale, convolution/connectivity mapping, per-channel parameter programmability,
+and availability of measured latency/energy telemetry.
+
+## Scalable mixed-signal execution
+
+The deployment architecture should preserve convolutional weight sharing and reuse a
+coarse-grained programmable synapse+PLIF tile across spatial partitions and stages rather
+than physically unrolling every logical feature-map neuron. PLIF state is the limiting
+resource: a logical population cannot simply be overwritten while its membrane/adaptation
+state is still needed. The preferred implementation therefore supports state virtualization:
+
+```text
+logical PLIF state store -> restore tile state -> physical synapse/PLIF update
+                         -> emit spikes -> save updated state -> reconfigure/reuse tile
+```
+
+Where capacity permits, frequently active or small populations may remain physically
+resident. If membrane/adaptation state is digitized between visits, the system is a
+mixed-signal virtualized neuromorphic accelerator rather than a continuously analog
+physical neuron for every logical state. This is an explicit area/latency/state-bandwidth
+trade-off, not a change to the trained SNN semantics.
+
+## Secondary implementation path: FPGA digital reference
+
+The existing VHDL/ZCU104 path remains useful as a deterministic digital reference and
+fallback publication implementation. It can reproduce the same PLIF equations with
+fixed-point arithmetic and provides synthesis/place-route latency and power estimates.
+It is no longer the primary neuromorphic end goal.
+
+## EventSpikeSegXL
+
+`EventSpikeSegXL` is the 236,445-parameter expanded comparison model. It retains the same
+32/64/128 PLIF basis but adds projected residual bridges, parallel d1/d2/d4 context,
+a bottlenecked spike-mask attention residual, stronger mid-decoder concatenation,
+asymmetric detail refinement, and a second training-only auxiliary head. It remains
+available for accuracy/capacity comparison but is not the baseline for mixed-signal
+mapping because its extra non-local/routing structures increase deployment complexity.
+
+## Canonical naming
+
+- `EventSpikeSeg140k`: canonical ~140k topology; use for all new runs and deployment work.
+- `EventSpikeSegXL`: optional expanded ~236k comparison.
+
+Legacy checkpoint architecture metadata is normalized internally during load and is
+not exposed as a model class, registry entry, CLI architecture, or new checkpoint name.
+Historical top-ten/top-five/top-three architecture-search results retain their original
+names and measured values.

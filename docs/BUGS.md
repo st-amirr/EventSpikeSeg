@@ -33,11 +33,11 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The historical structural contenders span approximately 21k to 107k trainable parameters; the canonical model is now 236,445 parameters. Parameter count is only a proxy for FPGA cost; wider pointwise layers, membrane state, event additions, memory banking, and line buffering must be measured separately before hardware selection.
+The historical structural contenders span approximately 21k to 107k trainable parameters. The canonical `EventSpikeSeg` model is the former ~140k topology: 140,089 registered trainable parameters for DDD17, of which 134,637 participate in the deployed inference forward graph. The larger 236,445-parameter expansion is retained as `EventSpikeSegXL`. Parameter count is only a proxy for implementation cost; mixed-signal deployment is additionally constrained by physical neuron/synapse capacity, routing fan-out, programmable time-constant/threshold ranges, calibration spread, and non-local digital support operations. FPGA cost still depends on pointwise width, membrane state, event additions, memory banking, and line buffering.
 
 ## Open: continuous learned neuron parameters
 
-PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are still floating-point training variables. They require quantization and integer-reference regression before FPGA claims.
+PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are learned numerical training variables. For the primary mixed-signal target they require conversion into target-specific physical neuron/synapse parameters and calibration against measured hardware dynamics; for the secondary FPGA reference they require fixed-point quantization and integer-reference regression.
 
 
 ## Open: native-resolution CPU stream-training cost

@@ -1,9 +1,9 @@
-"""Canonical high-accuracy DDD17 spiking semantic-segmentation model.
+"""Canonical EventSpikeSeg models.
 
-This model is the post-ablation architecture assembled from the completed ten-model,
-structural top-five, and accuracy top-three experiments.  It deliberately scales the
-successful three-resolution dual-path design rather than adding another downsampling
-level or dense attention:
+``EventSpikeSeg140k`` is the ~140k spike-native dual-path model and is the project's primary architecture for accuracy evaluation and mixed-signal neuromorphic
+deployment. ``EventSpikeSegXL`` is the larger ~236k expansion retained as an
+optional high-capacity comparison. The XL variant adds features beyond the canonical
+model:
 
 * 32/64/128 semantic encoder with residual depthwise/pointwise refinement;
 * persistent 32-channel high-resolution detail stream;
@@ -42,9 +42,9 @@ from .model_components import (
     TimestampEventInput,
 )
 
-# Selectable finals: EventSpikeSeg (~238k) and EventSpikeSeg140k (~140k).
+# Selectable finals: canonical EventSpikeSeg140k (~140k) and EventSpikeSegXL (~236k).
 FINAL_ARCHITECTURE = SegmentationArchitecture(
-    name="EventSpikeSeg",
+    name="EventSpikeSeg140k",
     channel_schedule=(32, 64, 128),
     context="none",  # custom serial dilation-2 context below
     norm="affine",
@@ -283,8 +283,8 @@ class DeepAuxiliaryHead(nn.Module):
         return self.classifier(self.project(sequence))
 
 
-class EventSpikeSeg(EventSpikeSegBase):
-    """Scaled dual-path fully-spiking DDD17 semantic segmentation network."""
+class EventSpikeSegXL(EventSpikeSegBase):
+    """Expanded ~236k fully-spiking model retained as the XL comparison."""
 
     refinement_schedule = (
         FINAL_REFINEMENT_FREEZE_START,
@@ -310,7 +310,7 @@ class EventSpikeSeg(EventSpikeSegBase):
         super().__init__(
             class_count=class_count,
             input_channels=TimestampEventInput.event_channels,
-            architecture=FINAL_ARCHITECTURE,
+            architecture=replace(FINAL_ARCHITECTURE, name="EventSpikeSegXL"),
         )
         self.source_input_channels = input_channels
         self.timestamp_input = (
@@ -321,7 +321,7 @@ class EventSpikeSeg(EventSpikeSegBase):
             if input_channels == TimestampEventInput.source_channels
             else nn.Identity()
         )
-        architecture = FINAL_ARCHITECTURE
+        architecture = self.architecture
         encoder_lif = _block_lif(self.enc1)
         context_lif = _block_lif(self.enc3)
         decoder_lif = self.project3.neuron.config
@@ -532,7 +532,7 @@ class EventSpikeSeg(EventSpikeSegBase):
 
 
 class EventSpikeSeg140k(EventSpikeSegBase):
-    """Pre-expansion ~140k dual-path final model."""
+    """Canonical ~140k dual-path fully-spiking segmentation model."""
 
     refinement_schedule = (
         FINAL_REFINEMENT_FREEZE_START,
@@ -558,7 +558,7 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         super().__init__(
             class_count=class_count,
             input_channels=TimestampEventInput.event_channels,
-            architecture=replace(FINAL_ARCHITECTURE, name="EventSpikeSeg140k"),
+            architecture=FINAL_ARCHITECTURE,
         )
         self.source_input_channels = input_channels
         self.timestamp_input = (
@@ -697,8 +697,8 @@ class EventSpikeSeg140k(EventSpikeSegBase):
 
 
 FINAL_MODELS = {
-    "EventSpikeSeg": EventSpikeSeg,
     "EventSpikeSeg140k": EventSpikeSeg140k,
+    "EventSpikeSegXL": EventSpikeSegXL,
 }
 
 
@@ -706,7 +706,7 @@ def build_model(
     *,
     class_count: int = 6,
     input_channels: int = 6,
-    architecture: str = "EventSpikeSeg",
+    architecture: str = "EventSpikeSeg140k",
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
 ) -> EventSpikeSegBase:
     try:
