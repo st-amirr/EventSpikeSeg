@@ -15,12 +15,13 @@ from eventspikeseg.train import (
     _epoch_train_dataset,
     _prepare_datasets,
     _training_objective,
-    apply_resume_learning_rate,
     architecture_presets,
     estimate_class_weights,
+    format_class_validation_report,
     infer_model_suite,
     loss_profile_for_suite,
     refinement_phase_for_epoch,
+    restored_resume_learning_rates,
     select_winner,
     soft_dice_loss,
     split_temporal_chunks,
@@ -311,12 +312,16 @@ def test_final_refinement_schedule_phases() -> None:
     assert refinement_phase_for_epoch(10, 10, schedule) == ("final_joint_low_lr", True)
 
 
-def test_resume_cli_learning_rate_overrides_checkpoint_parameter_groups() -> None:
+def test_resume_preserves_checkpoint_learning_rate_and_scheduler_position() -> None:
     parameter = torch.nn.Parameter(torch.ones(()))
     optimizer = torch.optim.AdamW([{"params": [parameter], "lr": 0.0015}])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=80)
+    for _ in range(12):
+        optimizer.step()
+        scheduler.step()
     checkpoint_optimizer = optimizer.state_dict()
     checkpoint_scheduler = scheduler.state_dict()
+    checkpoint_rate = optimizer.param_groups[0]["lr"]
 
     resumed_parameter = torch.nn.Parameter(torch.ones(()))
     resumed_optimizer = torch.optim.AdamW([{"params": [resumed_parameter], "lr": 0.001}])
@@ -325,12 +330,25 @@ def test_resume_cli_learning_rate_overrides_checkpoint_parameter_groups() -> Non
     )
     resumed_optimizer.load_state_dict(checkpoint_optimizer)
     resumed_scheduler.load_state_dict(checkpoint_scheduler)
-    applied = apply_resume_learning_rate(
-        resumed_optimizer,
-        resumed_scheduler,
-        learning_rate=0.001,
-    )
+    restored = restored_resume_learning_rates(resumed_optimizer, resumed_scheduler)
 
-    assert applied == [0.001]
-    assert resumed_optimizer.param_groups[0]["lr"] == 0.001
-    assert resumed_scheduler.base_lrs == [0.001]
+    assert restored == [checkpoint_rate]
+    assert resumed_optimizer.param_groups[0]["lr"] == checkpoint_rate
+    assert resumed_scheduler.last_epoch == 12
+    resumed_optimizer.step()
+    resumed_scheduler.step()
+    assert resumed_optimizer.param_groups[0]["lr"] < checkpoint_rate
+
+
+def test_class_validation_report_tracks_iou_and_prediction_share() -> None:
+    report = format_class_validation_report(
+        ("road", "person"),
+        {
+            "per_class_iou": [0.625, 0.0],
+            "predicted_pixels": [75, 25],
+        },
+    )
+    assert report == (
+        "Validation classes | road: IoU=0.6250, pred=75.00% | "
+        "person: IoU=0.0000, pred=25.00%"
+    )

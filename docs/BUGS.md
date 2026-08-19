@@ -33,11 +33,11 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The historical structural contenders span approximately 21k to 107k trainable parameters. The canonical `EventSpikeSeg` model is the former ~140k topology: 140,089 registered trainable parameters for DDD17, of which 134,637 participate in the deployed inference forward graph. The larger 236,445-parameter expansion is retained as `EventSpikeSegXL`. Parameter count is only a proxy for implementation cost; mixed-signal deployment is additionally constrained by physical neuron/synapse capacity, routing fan-out, programmable time-constant/threshold ranges, calibration spread, and non-local digital support operations. FPGA cost still depends on pointwise width, membrane state, event additions, memory banking, and line buffering.
+The historical structural contenders span approximately 21k to 107k trainable parameters. The canonical `EventSpikeSeg140k` model is the ~140k topology: 140,089 registered trainable parameters for DDD17, of which 134,637 participate in the deployed inference forward graph. The larger 236,445-parameter expansion is retained as `EventSpikeSegXL`. Parameter count is only a proxy for FPGA implementation cost. The dominant hardware constraints include pointwise width, persistent membrane/adaptation state, event-address generation, shared-weight bandwidth, BRAM/URAM banking, line/tile buffering, FIFO pressure, and the arithmetic cost of learned beta/fInst/fLong dynamics.
 
 ## Open: continuous learned neuron parameters
 
-PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are learned numerical training variables. For the primary mixed-signal target they require conversion into target-specific physical neuron/synapse parameters and calibration against measured hardware dynamics; for the secondary FPGA reference they require fixed-point quantization and integer-reference regression.
+PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are learned numerical training variables. For FPGA deployment they require frozen fixed-point formats, deterministic rounding/saturation, and integer-reference regression. The baseline preserves quantized per-channel beta; shift-only/power-of-two leakage is an optional optimization that requires accuracy revalidation.
 
 
 ## Open: native-resolution CPU stream-training cost

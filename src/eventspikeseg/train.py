@@ -85,25 +85,48 @@ def infer_model_suite(architecture: str) -> str:
     raise KeyError(f"unknown architecture {architecture!r}")
 
 
-def apply_resume_learning_rate(
+def restored_resume_learning_rates(
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
-    *,
-    learning_rate: float,
 ) -> list[float]:
-    """Apply the CLI LR after restoring optimizer/scheduler state.
+    """Return and preserve the parameter-group LRs restored from a checkpoint.
 
-    Checkpoints retain Adam moments and the scheduler's elapsed epoch, but the
-    optimizer state also contains its old parameter-group LRs. A supplied CLI
-    value explicitly replaces those rates on resume.
+    Loading the optimizer restores the exact rates used for its saved Adam
+    moments. Loading the scheduler restores its matching elapsed epoch and
+    ``_last_lr`` values. Do not replace either with the CLI's scratch-run LR:
+    doing so restarts a late run near its initial step size while retaining
+    mature optimizer moments.
     """
-    group_rates = [learning_rate] * len(optimizer.param_groups)
-    for group, rate in zip(optimizer.param_groups, group_rates):
-        group["lr"] = rate
-        group["initial_lr"] = rate
-    scheduler.base_lrs = list(group_rates)
-    scheduler._last_lr = list(group_rates)
+    group_rates = [float(group["lr"]) for group in optimizer.param_groups]
+    scheduler_rates = [float(rate) for rate in scheduler.get_last_lr()]
+    if len(scheduler_rates) != len(group_rates) or not np.allclose(
+        scheduler_rates, group_rates, rtol=1e-7, atol=1e-12
+    ):
+        raise ValueError(
+            "checkpoint optimizer and scheduler learning rates do not match: "
+            f"optimizer={group_rates!r}, scheduler={scheduler_rates!r}"
+        )
     return group_rates
+
+
+def format_class_validation_report(
+    class_names: tuple[str, ...], metrics: dict[str, object]
+) -> str:
+    """Format per-class IoU and prediction share for epoch-level tracking."""
+    per_class_iou = tuple(float(value) for value in metrics["per_class_iou"])
+    predicted_pixels = tuple(int(value) for value in metrics["predicted_pixels"])
+    if len(class_names) != len(per_class_iou) or len(class_names) != len(predicted_pixels):
+        raise ValueError("class names and validation metric lengths do not match")
+    predicted_total = sum(predicted_pixels)
+    prediction_shares = (
+        tuple(pixel_count / predicted_total for pixel_count in predicted_pixels)
+        if predicted_total > 0
+        else (0.0,) * len(predicted_pixels)
+    )
+    return "Validation classes | " + " | ".join(
+        f"{name}: IoU={iou:.4f}, pred={share:.2%}"
+        for name, iou, share in zip(class_names, per_class_iou, prediction_shares)
+    )
 
 
 def build_experiment_model(
@@ -875,11 +898,7 @@ def train_architecture(
             optimizer.load_state_dict(optimizer_state)
         if scheduler_state is not None:
             scheduler.load_state_dict(scheduler_state)
-        resumed_group_rates = apply_resume_learning_rate(
-            optimizer,
-            scheduler,
-            learning_rate=learning_rate,
-        )
+        resumed_group_rates = restored_resume_learning_rates(optimizer, scheduler)
         if scaler_state is not None and amp_enabled:
             scaler.load_state_dict(scaler_state)
 
@@ -932,7 +951,8 @@ def train_architecture(
         print(
             f"Resuming {architecture} from {load_path} | "
             f"completed_epoch={loaded_epoch} next_epoch={start_epoch} target_epoch={epochs} | "
-            f"CLI LR applied: {', '.join(f'{rate:.2e}' for rate in resumed_group_rates)}",
+            f"checkpoint LR preserved: "
+            f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)}",
             flush=True,
         )
 
@@ -1204,6 +1224,10 @@ def train_architecture(
                 f"spike={validation_spike_rate:.4f} | "
                 f"best={best_mean_iou:.4f} (epoch {best_epoch})"
                 f"{best_marker}{checkpoint_marker}",
+                flush=True,
+            )
+            print(
+                format_class_validation_report(class_names, validation_metrics),
                 flush=True,
             )
 

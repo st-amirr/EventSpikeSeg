@@ -120,7 +120,7 @@ services:
        "--sequential-chunks", "5", ## divide the internal-updates by this to get batch
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load", "artifacts/checkpoints/dsec/EventSpikeSeg140k_seed17_epoch012.pt",
+       "--load", "artifacts/checkpoints/dsec/EventSpikeSeg140k_seed17_epoch014.pt",
        "--checkpoint-dir", "artifacts/checkpoints/dsec"]
 
   # Optional expanded EventSpikeSegXL comparison model.

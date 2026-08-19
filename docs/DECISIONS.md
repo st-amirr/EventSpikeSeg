@@ -315,7 +315,7 @@ beta/threshold parameters; and average soft Dice only over classes present in th
 current target. Continue reporting the full per-class Dice vector. Median-frequency
 class weights remain unchanged for this intervention so their effect can be isolated.
 
-## 2026-08-19 — Keep EventSpikeSeg140k canonical and target mixed-signal neuromorphic inference
+## 2026-08-19 — Keep EventSpikeSeg140k canonical and target digital neuromorphic FPGA inference
 
 Canonical model naming is `EventSpikeSeg140k` for the ~140k deployment baseline and
 `EventSpikeSegXL` for the optional 236,445-parameter expanded comparison. This naming
@@ -323,33 +323,35 @@ policy does not alter the trained canonical forward topology or parameters.
 
 The canonical six-class model has 140,089 registered parameters, but its executed
 inference graph uses 134,637. The inherited `refine2` block (5,056 parameters) is
-registered but never called; the 396-parameter auxiliary head is training-only. Future
-hardware implementations must target the executed inference graph, not dead/training-only
-modules.
+registered but never called; the 396-parameter auxiliary head is training-only. FPGA
+deployment targets the executed inference graph only.
 
-Implementation priority changes from custom FPGA as the end goal to **mixed-signal
-neuromorphic deployment**. PyTorch/SpikingJelly remains the training and golden-reference
-stack. Convolution kernels are interpreted as synaptic weight/connectivity projections;
-PLIF feature-map elements are neuron populations. Learned per-channel beta is mapped to
-physical membrane time constant/leak only after a target time scale is chosen and
-calibrated (`tau_m = -Delta_t / ln(beta)`). Learned thresholds and synaptic weights are
-mapped through target-specific voltage/current scales rather than treated as literal
-volts/amps.
+The primary hardware direction is **custom VHDL-2008 on ZCU104**. PyTorch/SpikingJelly
+remains the training and floating-point golden-reference stack. Convolution kernels are
+shared synaptic weights/connectivity; PLIF feature-map elements are logical neuron states.
+FPGA inference represents weights, membrane/current, beta, thresholds, and adaptation
+with deterministic fixed-point numbers rather than physical voltages/currents.
 
-Mixed-signal means analog/mixed-signal synapse/neuron dynamics plus digital event
-routing, configuration, gating, counters, and semantic readout. The canonical inference
-path contains no softmax. Non-PLIF mapping risks are the stem peer-membrane fInst rule,
-triangular fLong/TThresh adaptation, and the final selector's global spatial binary
-enable. These must be reproduced, explicitly approximated with revalidation, or removed
-only through a new architecture/fine-tuning decision.
+The hardware should stay as neuromorphic as practical despite being fully digital:
+inter-layer communication is binary spikes/events, active spike addresses trigger shared
+weight additions, PLIF state persists in banked memory, and inactivity-aware scheduling
+should suppress unnecessary work. The baseline preserves learned per-channel beta with a
+quantized coefficient; shift-only/power-of-two leakage is an optimization only if
+bit-level behavior and semantic accuracy are revalidated.
 
-For scale, mixed-signal deployment should use a coarse-grained reusable synapse/PLIF
-tile rather than one physical neuron per logical feature-map location. Convolutional
-weights remain shared. Logical PLIF membrane/adaptation state that cannot remain
-resident may be saved and restored between tile visits; smaller or high-activity
-populations may remain resident when capacity allows. This state virtualization trades
-area for latency/state bandwidth while preserving physical neuron dynamics during active
-updates.
+Scale is handled with reusable coarse-grained synaptic-accumulator + PLIF processing
+elements, not one datapath per logical neuron. The same PEs are time-multiplexed across
+spatial tiles/channels/stages while membrane/adaptation state remains in BRAM/URAM/
+LUTRAM. Start with exact full/tiled execution, then consider touched-address lists,
+active-neuron lists, lazy decay, and clock-enable optimizations.
 
-The custom VHDL/ZCU104 implementation remains a secondary exact digital reference and
-fallback publication path, not the primary neuromorphic objective.
+Nontrivial RTL items are the stem peer-membrane fInst rule, triangular fLong/TThresh
+adaptation, and the selector's global binary channel enable. The selector `amax(H,W)` can
+be implemented efficiently as a per-channel any-spike flag because selector outputs are
+binary. Do not silently remove any of these mechanisms; approximations require
+revalidation/fine-tuning.
+
+Verification proceeds from SpikingJelly float to a bit-exact integer reference, VHDL RTL
+simulation, Vivado synthesis/place-and-route, post-implementation timing simulation, and
+representative-event SAIF/VCD power analysis. These Vivado results are estimates. Only
+instrumented ZCU104 results may be called measured hardware power/latency.

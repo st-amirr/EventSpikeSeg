@@ -1,8 +1,8 @@
 # EventSpikeSeg
 
 Fully spiking event-camera semantic segmentation for DDD17 and DSEC-Semantic,
-designed so the learned inference path can be mapped to mixed-signal neuromorphic
-hardware with physical neuron/synapse dynamics; FPGA remains a deterministic digital reference.
+designed so the learned inference path can be mapped to a custom digital neuromorphic
+FPGA accelerator with fixed-point PLIF state, sparse spike routing, and event-driven synaptic updates.
 
 ## Repository layout
 
@@ -170,9 +170,9 @@ Every learned spatial or channel-mixing stage in `EventSpikeSeg140k` is a spike-
 input spikes → learned 3×3 or 1×1 synaptic kernel → membrane current → PLIF spike output
 ```
 
-The 3×3 and 1×1 kernels are synaptic weights, not conventional analog `Conv → ReLU` layers; there is no ReLU/GELU/sigmoid activation in the final learned feature or class-map path. These kernels require `spikingjelly.activation_based.layer.Conv2d` (40 registered `SpikingStage` populations; 37 execute during canonical inference); model construction fails clearly if SpikingJelly is unavailable. Depthwise/pointwise blocks deliberately contain two PLIF populations—3×3 spatial filtering followed by 1×1 channel mixing—so collapsing them would remove an intermediate spiking state and alter both connectivity and temporal dynamics.
+The 3×3 and 1×1 kernels are synaptic weights, not conventional ANN `Conv → ReLU` layers; there is no ReLU/GELU/sigmoid activation in the final learned feature or class-map path. These kernels require `spikingjelly.activation_based.layer.Conv2d` (40 registered `SpikingStage` populations; 37 execute during canonical inference); model construction fails clearly if SpikingJelly is unavailable. Depthwise/pointwise blocks deliberately contain two PLIF populations—3×3 spatial filtering followed by 1×1 channel mixing—so collapsing them would remove an intermediate spiking state and alter both connectivity and temporal dynamics.
 
-There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gate, analog classifier, fourth downsampling stage, or hard hidden winner-peer WTA in the canonical path.
+There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gate, dense real-valued classifier, fourth downsampling stage, or hard hidden winner-peer WTA in the canonical path.
 
 ## Canonical training
 
@@ -190,18 +190,42 @@ Final training validates after every epoch, saves the best validation-mIoU model
 
 ## Accuracy status
 
-`EventSpikeSeg140k` is the canonical architecture by design; its historical architecture-search numbers are not automatically timestamp-stream accuracy claims. Historical input-protocol results remain architecture-search evidence only. The next optional capacity comparison is canonical `EventSpikeSeg140k` versus `EventSpikeSegXL` on the same timestamp stream; mixed-signal deployment work is based on canonical `EventSpikeSeg140k`.
+`EventSpikeSeg140k` is the canonical architecture by design; its historical architecture-search numbers are not automatically timestamp-stream accuracy claims. Historical input-protocol results remain architecture-search evidence only. The next optional capacity comparison is canonical `EventSpikeSeg140k` versus `EventSpikeSegXL` on the same timestamp stream; FPGA deployment work is based on canonical `EventSpikeSeg140k`.
 
 
-## Mixed-signal neuromorphic implementation target
+## Digital neuromorphic FPGA implementation target
 
-Training remains PyTorch + SpikingJelly. Deployment interprets each `SpikingStage` as a synaptic projection followed by a physical PLIF/LIF neuron population: convolution kernels are synaptic strengths/connectivity, while feature-map positions are neuron states. Learned per-channel `beta` is a dimensionless discrete retention; after choosing the hardware time scale, it is mapped to a calibrated membrane time constant with `tau_m = -Delta_t / ln(beta)`. Thresholds and weights are mapped through target-specific voltage/current scaling rather than treated as literal volts or amperes.
+Training remains PyTorch + SpikingJelly. Deployment keeps the same spike-native
+semantics in VHDL-2008 on ZCU104: convolution kernels remain shared synaptic weights,
+feature-map positions remain logical PLIF states, hidden communication remains binary
+spikes/events, and membrane/adaptation state persists across clocks and records. The
+values are fixed-point numerical membrane/current states—not physical voltages or
+currents.
 
-The canonical inference path has no softmax, ReLU/GELU, BatchNorm, or dense count-domain MLP. `ChannelAffine` can be folded into synaptic efficacy; concat is channel routing; nearest upsample is spike-address fan-out; residual clamp is event merge/dedup; final temporal spike counting/argmax is a small digital readout. The target is mixed-signal rather than strictly all-analog: physical synaptic/neuron dynamics are analog/mixed-signal while AER routing, configuration, non-local gating, counters, and semantic readout may be digital.
+The canonical inference path has no softmax, ReLU/GELU, BatchNorm, or dense count-domain
+MLP. `ChannelAffine` can be folded into quantized weights/scales; concat is channel-ID
+routing; nearest upsample is spike-address fan-out; residual clamp is event merge/OR;
+final temporal spike counting/argmax is implemented with integer counters and a
+comparator. The selector's binary `amax(H,W)` can be implemented as one `seen_spike`
+flag per channel rather than a dense floating-point reduction.
 
+The scalable implementation is **coarse-grained and time-multiplexed**. A reusable
+digital synaptic-accumulator + PLIF processing tile operates across spatial partitions,
+channels, and stages while preserving convolutional weight sharing. Logical PLIF
+membrane/adaptation state resides in banked BRAM/URAM/LUTRAM between visits. After an
+exact full/tiled implementation is established, event sparsity can be exploited with
+touched-address queues, active-neuron lists, lazy decay, and clock-enable during idle
+periods. This trades processing-element count for latency and memory bandwidth without
+changing the trained SNN semantics.
 
-The scalable hardware mapping is expected to be **coarse-grained and time-multiplexed**, not a one-physical-neuron-per-logical-feature-map unrolling. A programmable analog/mixed-signal synapse+PLIF tile may be reused across spatial partitions and network stages while preserving convolutional weight sharing. Logical PLIF membrane/adaptation state that cannot remain physically resident may be saved in a state store and restored when that tile is revisited; smaller/hot populations may remain resident where hardware capacity permits. This trades physical neuron count for state bandwidth and latency while keeping active synaptic integration, membrane leak, thresholding, and spike generation in the mixed-signal domain.
+The three implementation-sensitive mechanisms are stem peer-membrane fInst,
+encoder/context triangular fLong/TThresh adaptation, and the 96-channel selector global
+binary enable. The first RTL version should reproduce them under the fixed-point golden
+contract; any simplification requires explicit accuracy revalidation. DSEC raw events are
+the preferred direct event-stream input, while DDD17 uses its existing digital moment
+scheduler.
 
-The three target-specific fidelity challenges are stem peer-membrane fInst, encoder/context triangular fLong/TThresh adaptation, and the 96-channel selector's global spatial binary enable. These must be reproduced or explicitly approximated and revalidated; they must not be silently removed. DSEC raw events are the preferred physical deployment input because they bypass the DDD17 moment scheduler.
-
-The VHDL/ZCU104 path remains a secondary exact digital reference and fallback implementation.
+The verification flow is `SpikingJelly float -> bit-exact integer reference -> VHDL RTL
+-> Vivado synthesis/place-route -> post-implementation timing + representative SAIF/VCD
+power analysis -> optional ZCU104 measurement`. Vivado latency/power are reported as
+estimates unless validated on an instrumented board.

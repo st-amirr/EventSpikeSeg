@@ -1,17 +1,17 @@
 document:
-  title: Mixed-Signal Neuromorphic Event-Camera Spiking Neural Network for Semantic Segmentation
-  short_name: EventSpikeSeg-MixedSignal
-  version: 1.1.0
-  status: canonical_140k_promoted_mixed_signal_mapping_defined
+  title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
+  short_name: EventSpikeSeg-FPGA
+  version: 1.2.0
+  status: canonical_140k_promoted_fpga_mapping_defined
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
     - minimal semantic-segmentation project_spec.yaml created during repository cleanup
   intended_uses:
-    - Executable software and mixed-signal neuromorphic implementation specification
+    - Executable software and digital-neuromorphic FPGA implementation specification
     - Source of truth for architecture search and experiment tracking
-    - Interface contract between SpikingJelly/PyTorch training and mixed-signal neuromorphic deployment
-    - Foundation for an article on lightweight event-based SNN semantic segmentation with physical neuromorphic inference
+    - Interface contract between SpikingJelly/PyTorch training and custom VHDL/FPGA deployment
+    - Foundation for an article on lightweight event-based SNN semantic segmentation with sparse digital FPGA inference
   central_interpretation: >-
     One dataset item is one 50 ms Ev-SegNet interval, never a stack of adjacent files.
     Histogram channels carry polarity activity; per-polarity normalized timestamp mean
@@ -31,7 +31,7 @@ document:
       - f_long/T_thresh feature-map homeostasis
       - Sparse shared-kernel event-address accumulation
       - Fixed-point formats, saturation, and bit-accurate equivalence requirements
-      - Custom VHDL-2008 backend and ZCU104 target as a secondary deterministic reference
+      - Custom VHDL-2008 backend and ZCU104 as the primary deployment target
       - SpikingJelly surrogate-gradient training strategy
       - Synthetic fixtures, golden vectors, and staged hardware verification
       - Synthesis-guided BRAM/LUTRAM/register memory mapping
@@ -50,13 +50,13 @@ project_goal:
   primary_goal: >-
     Design, train, compare, quantize, and eventually deploy a lightweight fully spiking
     semantic-segmentation network for event-camera data, with an architecture chosen for
-    physical mixed-signal neuromorphic inference rather than GPU efficiency alone.
+    sparse digital neuromorphic FPGA inference rather than GPU efficiency alone.
   primary_research_question: >-
     Which combination of lightweight convolution, multi-scale context, normalization,
     skip fusion, recurrent spiking dynamics, and auxiliary supervision provides the best
-    DDD17/DSEC semantic-segmentation accuracy while retaining a clear mapping to physical PLIF/synaptic dynamics?
+    DDD17/DSEC semantic-segmentation accuracy while retaining a clear mapping to fixed-point PLIF state and event-driven synaptic updates?
   hardware_research_question: >-
-    Can the selected PLIF model be mapped to mixed-signal neuromorphic hardware where learned membrane retention, thresholds, and synaptic weights are realized as calibrated physical neuron/synapse parameters while preserving semantic accuracy and low energy/latency?
+    Can the selected PLIF model be mapped to a custom VHDL FPGA accelerator where learned membrane retention, thresholds, and shared synaptic weights are realized as fixed-point digital state and event-driven arithmetic while preserving semantic accuracy and low energy/latency?
   secondary_questions:
     - How many internal SNN timesteps are necessary before mIoU saturates?
     - Does depthwise-pointwise convolution preserve accuracy while reducing parameters and synaptic additions?
@@ -66,8 +66,8 @@ project_goal:
     - Do adaptive thresholds improve firing balance and multi-seed stability?
     - Is one encoder skip sufficient, or are two additive skips required for boundaries and small classes?
     - What accuracy is lost after weight, membrane, threshold, and accumulator quantization?
-    - Which operations dominate neuron/synapse capacity, event routing, and energy on mixed-signal neuromorphic hardware?
-    - Which non-local operations require digital event-control periphery or hardware-aware replacement?
+    - Which operations dominate BRAM/URAM state, LUT/DSP usage, event routing, memory bandwidth, and energy on FPGA?
+    - Which non-local operations require dedicated reduction/control logic or a hardware-aware replacement?
   working_hypotheses:
     - Depthwise-pointwise blocks greatly reduce parameters and weight memory but require pointwise channel mixing.
     - Additive skips recover spatial detail with less memory and bandwidth than concatenation.
@@ -92,15 +92,16 @@ framework:
     decision: Do not build a custom autograd or training framework.
     reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, and data loading.
   hardware_backend:
-    primary_type: mixed_signal_neuromorphic_target
+    primary_type: custom_VHDL_2008_digital_neuromorphic_FPGA
+    primary_target: Xilinx_ZCU104
     primary_goal: >-
-      Execute synaptic integration and PLIF membrane/leak/threshold dynamics using
-      physical analog/mixed-signal neuron and synapse circuitry, with digital AER
-      routing, configuration, gating, counters, and semantic readout permitted.
-    secondary_reference: custom_VHDL_2008_ZCU104
-    secondary_reason: >-
-      Preserve a deterministic digital implementation for exact-equivalence checks,
-      synthesis/timing/power estimation, and a fallback hardware publication path.
+      Execute the trained spike-native graph as a digital event-driven accelerator:
+      shared convolutional weights generate sparse synaptic additions, PLIF membrane/
+      adaptation state is stored in fixed-point memory, and only emitted spikes are
+      routed between learned stages. Avoid dense ANN-style feature processing where
+      event sparsity can be exploited.
+    software_reference: SpikingJelly_float_plus_bit_exact_integer_reference
+    implementation_flow: [integer_reference, VHDL_RTL, RTL_simulation, synthesis, place_and_route, post_implementation_timing, activity_based_power, optional_ZCU104_measurement]
   spiker_plus:
     implementation_status: literature_and_design_inspiration_only
     retained_takeaways:
@@ -1241,8 +1242,11 @@ active_top_three_accuracy_search:
     canonical_model_file_unchanged_until_pass: true
 
 
-mixed_signal_deployment_2026_08_19:
+fpga_deployment_2026_08_19:
   priority: primary_hardware_goal
+  target: Xilinx_ZCU104
+  rtl_language: VHDL_2008
+  implementation_character: digital_neuromorphic_event_driven
   canonical_model:
     public_name: EventSpikeSeg140k
     expanded_comparison_name: EventSpikeSegXL
@@ -1258,14 +1262,14 @@ mixed_signal_deployment_2026_08_19:
     executed_inference_spiking_stage_populations: 37
   model_semantics:
     SpikingStage: synaptic_Conv2d_bias_false_then_optional_affine_current_gain_then_PLIF
-    convolution_interpretation: learned_synaptic_weight_and_connectivity_projection
-    feature_map_interpretation: spatial_PLIF_neuron_population
+    convolution_interpretation: learned_shared_synaptic_weight_and_connectivity_projection
+    feature_map_interpretation: logical_spatial_PLIF_neuron_population
     depthwise_pointwise_rule: two_distinct_synaptic_projection_plus_PLIF_populations
     deployed_softmax: false
     deployed_batchnorm: false
     deployed_relu_gelu: false
     output: independent_spiking_class_populations_then_temporal_spike_count_argmax
-  plif_mapping:
+  plif_digital_mapping:
     initial_beta: 0.9375
     beta: learnable_per_output_channel
     reciprocal_tau_in_spikingjelly: one_minus_beta
@@ -1273,72 +1277,81 @@ mixed_signal_deployment_2026_08_19:
     threshold: learnable_per_output_channel
     threshold_bounds: [0.15, 1.25]
     hard_binary_forward_spikes: true
-    physical_mapping_equation: tau_m = -Delta_t / ln(beta)
     interpretation_rule: >-
-      Training membrane/current/threshold values are dimensionless numerical states,
-      not literal volts or amperes. Choose a target-specific voltage/current scale and
-      calibrate physical membrane retention, threshold, and synaptic response against
-      golden software traces.
-    spatial_state: one_membrane_state_per_channel_y_x
+      Training membrane, synaptic-current, beta, and threshold values are numerical SNN
+      state, not literal volts or amperes. FPGA inference preserves the same discrete
+      PLIF equation using deterministic fixed-point arithmetic. The baseline export keeps
+      a quantized per-channel beta coefficient; shift-only or power-of-two leak
+      approximations are optional optimizations and require bit/accuracy revalidation.
+    baseline_equation: V_next = beta_q * V + I_q
+    baseline_formats_ref: quantization.initial_formats
+    spatial_state: one_logical_membrane_state_per_channel_y_x
+    state_storage: BRAM_URAM_or_banked_distributed_memory
     channel_shared_parameters: [beta, base_threshold]
-  natural_mixed_signal_mapping:
-    convolution_weights: signed_synaptic_efficacy_or_current_pulse_strength
-    ChannelAffine: fold_into_synaptic_efficacy
-    PLIF_membrane: physical_capacitive_or_equivalent_analog_state
-    PLIF_leak: calibrated_conductance_bias_or_target_time_constant
-    PLIF_threshold: calibrated_threshold_bias
-    concat: digital_channel_address_remap
-    nearest_upsample: digital_event_address_fanout
-    residual_add_clamp: digital_event_merge_dedup_or_equivalent
-    temporal_spike_sum_argmax: digital_readout_counter_and_comparator
+  natural_fpga_mapping:
+    convolution_weights: signed_shared_fixed_point_weight_tables
+    hidden_binary_spikes: event_addresses_trigger_weight_additions_no_spike_multiply
+    ChannelAffine: fold_into_quantized_synaptic_weight_or_scale
+    PLIF_membrane: signed_fixed_point_state_memory
+    PLIF_leak: per_channel_quantized_beta_multiply_or_verified_shift_approximation
+    PLIF_threshold: quantized_per_channel_threshold_compare
+    concat: channel_address_remap
+    nearest_upsample: event_address_fanout
+    residual_add_clamp: event_merge_or_binary_OR_dedup_equivalent
+    temporal_spike_sum_argmax: integer_class_counters_and_comparator
   scalable_execution_strategy:
-    preferred: coarse_grained_time_multiplexed_mixed_signal_tiles
-    physical_tile: programmable_synaptic_array_plus_PLIF_population
-    convolution_weight_sharing: preserve_shared_kernels_do_not_spatially_replicate_unless_target_requires
-    reuse: reconfigure_same_tile_across_spatial_partitions_and_network_stages
-    state_constraint: logical_PLIF_membrane_and_adaptation_state_must_survive_between_visits
-    state_virtualization:
-      inactive_state_store: digital_memory_or_target_specific_retention_store
-      restore_before_tile_execution: true
-      save_after_tile_execution: true
-      fidelity_rule: state_restore_must_match_target_equivalent_golden_dynamics
-      classification: mixed_signal_virtualized_if_state_is_digitized_between_visits
-    resident_state_optimization: keep_small_or_high_activity_populations_physical_when_capacity_allows
-    principal_tradeoff: physical_neuron_area_vs_latency_and_state_bandwidth
+    preferred: coarse_grained_time_multiplexed_digital_tiles
+    processing_tile: synaptic_accumulator_plus_PLIF_update_processing_elements
+    convolution_weight_sharing: preserve_shared_kernels_and_reuse_across_spatial_locations
+    reuse: schedule_same_processing_elements_across_spatial_tiles_channels_and_network_stages
+    persistent_state: logical_PLIF_membrane_and_adaptation_state_remains_in_banked_memory_between_visits
+    baseline_state_policy: exact_full_or_tiled_state_update
+    sparse_optimizations_after_equivalence:
+      - touched_address_queue
+      - active_neuron_list
+      - lazy_decay_with_last_update_timestamp
+      - clock_enable_or_local_clock_suppression_when_idle
+    principal_tradeoff: processing_element_parallelism_vs_latency_memory_bandwidth_and_logic_area
   fidelity_risks:
     peer_membrane_fInst:
       scope: stem_only
       issue: uses_retinotopic_cross_channel_membrane_energy_and_peer_decrement
-      rule: reproduce_or_explicitly_approximate_and_revalidate
+      rule: implement_fixed_point_exactly_first; any cheaper approximation_requires_revalidation
     triangular_fLong_TThresh:
       scope: [down2, enc2, enc2_extra, down3, enc3, enc3_extra, context1, context2]
       issue: dynamic_threshold_uses_adaptation_age_amplitude_and_retinotopic_sum
-      rule: map_to_physical_adaptation_or_mixed_signal_state_and_verify_time_course
+      rule: store_integer_adaptation_state_and_reproduce_time_course_bit_exactly
     final_selector_global_gate:
-      synaptic_part: 1x1_96_to_96_plus_PLIF_is_natural
+      synaptic_part: 1x1_96_to_96_plus_PLIF
       nonlocal_part: spatial_amax_binary_channel_enable
-      rule: digital_event_control_periphery_or_hardware_aware_replacement_with_revalidation
+      FPGA_rule: implement_as_per_channel_any_spike_flag_or_OR_reduction_over_emitted_events
   input_priority:
-    DSEC: preferred_physical_event_camera_path_exact_raw_events_bypass_moment_scheduler
-    DDD17: supported_but_requires_50ms_moment_based_timed_delivery_scheduler
+    DSEC: preferred_direct_raw_event_stream_path
+    DDD17: supported_with_50ms_moment_based_timed_delivery_scheduler
   target_definition: >-
-    Mixed-signal means physical analog/mixed-signal synapse/neuron dynamics with
-    digital event routing, control, configuration, counters, and semantic readout.
-    Strict all-analog end-to-end routing/readout is not required.
+    Digital neuromorphic FPGA means the substrate is fully digital, but the runtime
+    preserves SNN semantics: persistent PLIF state, binary spike communication, sparse
+    event-address-triggered synaptic accumulation, shared convolution kernels, and
+    inactivity-aware scheduling. Membrane and current are fixed-point numerical states,
+    not physical analog voltages or currents.
   verification_chain:
     - SpikingJelly_float_golden
-    - exported_target_equivalent_model
-    - mixed_signal_simulator_or_calibrated_model
-    - physical_hardware
+    - bit_exact_fixed_point_integer_reference
+    - VHDL_unit_and_full_RTL_simulation
+    - Vivado_synthesis_and_place_route
+    - post_implementation_timing_simulation
+    - representative_event_activity_SAIF_or_VCD_power_analysis
+    - optional_ZCU104_board_measurement
   publishable_metrics:
-    - semantic_accuracy
-    - measured_latency
-    - measured_power_or_energy
-    - energy_per_semantic_output
-    - mapped_neuron_and_synapse_utilization
+    - semantic_accuracy_after_quantization
+    - LUT_FF_BRAM_URAM_DSP_utilization
+    - achieved_clock_frequency
+    - cycle_count_and_post_route_latency
+    - sustained_event_throughput
+    - estimated_dynamic_static_total_power_with_activity_source_disclosed
+    - estimated_energy_per_semantic_output
+    - measured_power_latency_energy_if_board_available
     - spike_activity_and_event_traffic
-  fpga_role:
-    priority: secondary_reference_and_fallback
-    target: Xilinx_ZCU104
-    rtl: VHDL_2008
-    use: [exact_digital_reference, post_route_latency_estimate, activity_based_power_estimate, optional_board_measurement]
+  reporting_rule: >-
+    Vivado post-implementation timing and power results are estimates and must be labeled
+    as such. Only board-instrumented values may be called measured FPGA power/latency.

@@ -89,7 +89,7 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - the installed training data is incomplete: 2,887 event tensors versus 10,001 masks, leaving only one event recording usable;
 - with two-channel input, the lighter/expanded models have 140,089/236,445 parameters; prior evidence does not support blaming parameter count alone;
 - learned continuous neuron dynamics and learned attention thresholds remain unquantized;
-- canonical `EventSpikeSeg140k` is the mixed-signal deployment baseline; `EventSpikeSegXL` is comparison-only.
+- canonical `EventSpikeSeg140k` is the FPGA deployment baseline; `EventSpikeSegXL` is comparison-only.
 
 ## Next action
 
@@ -108,15 +108,16 @@ Restore missing training event `.npy` files if the inspection mismatch remains, 
 - active parameter counts remain 140,089 and 236,445, so the input fix does not inflate the architecture.
 
 
-## 2026-08-19 mixed-signal implementation direction
+## 2026-08-19 FPGA implementation direction
 
 - canonical public model names are `EventSpikeSeg140k` and optional `EventSpikeSegXL`;
 - canonical DDD17 accounting: 140,089 registered / 135,033 training-forward / 134,637 inference-forward parameters;
-- deployment omits inherited dead `refine2` and the training-only auxiliary head;
-- primary hardware target is now mixed-signal neuromorphic inference with physical membrane/synaptic dynamics;
-- learned PLIF beta is treated as a dimensionless retention and mapped to calibrated physical `tau_m`, not directly to volts;
-- convolution kernels map to signed synaptic efficacy/current, while PLIF feature-map elements map to physical neuron populations;
+- FPGA deployment omits inherited dead `refine2` and the training-only auxiliary head;
+- primary hardware target is custom VHDL-2008 on Xilinx ZCU104;
+- PLIF membrane/current/beta/threshold/adaptation are digital fixed-point SNN states, not physical voltages/currents;
+- convolution kernels remain shared synaptic weights, while emitted hidden spikes are event addresses that trigger weight additions;
 - no softmax exists in the canonical deployed path;
-- remaining target-specific risks are peer-membrane fInst, triangular fLong/TThresh, and the selector's global spatial binary enable;
-- scalable mixed-signal mapping uses reusable synapse/PLIF tiles with state virtualization instead of one physical neuron per logical feature-map state;
-- FPGA/VHDL remains the deterministic digital reference/fallback implementation.
+- coarse-grained synaptic-accumulator + PLIF processing elements are time-multiplexed across spatial tiles/channels/stages while persistent state stays in banked memory;
+- first hardware milestone is bit-exact integer/RTL equivalence; sparse touched-address/lazy-decay/clock-enable optimizations follow only after exactness;
+- remaining RTL-sensitive mechanisms are peer-membrane fInst, triangular fLong/TThresh, and the selector's global any-spike channel enable;
+- evaluation flow is RTL simulation -> synthesis/place-route -> post-implementation timing -> representative SAIF/VCD Vivado power -> optional ZCU104 measurement.

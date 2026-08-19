@@ -3,11 +3,10 @@
 ## Mission
 
 Build and validate the canonical `EventSpikeSeg140k` (~140k registered parameters for the
-six-class DDD17 configuration), then map its spike-native PLIF inference graph to
-**mixed-signal neuromorphic hardware**. Training remains PyTorch + SpikingJelly; the
-runtime goal is physical synaptic/neuron dynamics with digital event routing/control.
-The FPGA/VHDL path is a secondary deterministic reference/fallback, not the primary
-neuromorphic target.
+six-class DDD17 configuration), then map its spike-native PLIF inference graph to a
+**custom digital neuromorphic FPGA accelerator**. Training remains PyTorch + SpikingJelly;
+the deployment target is VHDL-2008 on ZCU104 with fixed-point PLIF state, sparse
+event/spike routing, shared-kernel synaptic additions, and activity-aware execution.
 
 ## Source-of-truth order
 
@@ -44,47 +43,51 @@ Canonical six-class accounting:
 
 Hardware deployment implements the executed inference graph only.
 
-## PLIF physical mapping contract
+## PLIF digital FPGA mapping contract
 
 Per output channel, `beta=sigmoid(beta_logit)` and threshold are learned. Spatial
 neurons keep individual membrane state. Software charge is equivalent to
 `candidate = beta * membrane + current` before dynamic threshold/reset effects.
 
-For a chosen physical time interval `Delta_t`, use the continuous-time equivalent
-`tau_m = -Delta_t / ln(beta)` as the starting physical membrane-time-constant target.
-Do not interpret training membrane/current/threshold numbers directly as volts/amps.
-Target-specific calibration must choose a consistent voltage/current scale and verify
-measured retention, threshold, and synaptic response against golden traces.
+FPGA values are fixed-point numerical SNN states, not physical volts/amps. Freeze the
+weight, beta, threshold, membrane, accumulator, adaptation, rounding, saturation, and
+overflow formats in the integer export contract. The baseline must preserve the learned
+per-channel beta with a quantized coefficient. Shift-only/power-of-two leak is an
+optional optimization only after bit-exact and semantic-accuracy revalidation.
 
-## Mixed-signal deployment rule
+## Digital neuromorphic FPGA deployment rule
 
-The primary target is not a strict all-analog system. It is a mixed-signal neuromorphic
-runtime in which:
+The primary runtime is fully digital but must preserve neuromorphic/SNN execution:
 
-- membrane integration/leak/threshold and preferably synaptic current generation are
-  physical analog/mixed-signal dynamics;
-- AER/event routing, address remapping, configuration, counters, gating, and final
-  semantic readout may be digital;
+- PLIF membrane and adaptation state persist in fixed-point memory;
+- hidden binary spikes are represented as events/addresses and trigger shared-weight
+  additions rather than dense multiply-by-zero work;
+- convolution remains shared local synaptic connectivity;
+- event FIFOs/address logic route only emitted spikes between stages;
+- clock-enable/inactivity suppression should be used where safe;
 - CPU/GPU dense inference is absent from the deployed learned feature path.
 
 ### Scalable execution rule
 
-Do not assume one physical PLIF circuit per logical `[C,H,W]` state. Prefer a reusable
-coarse-grained analog/mixed-signal synapse+PLIF tile with convolutional weight sharing.
-Inactive logical membrane/adaptation state may be saved/restored through a state store;
-small/hot populations may remain physically resident. State save/restore must preserve
-numeric dynamics and is part of the target-equivalent verification contract.
+Do not instantiate one hardware PLIF datapath per logical `[C,H,W]` state. Prefer a
+reusable coarse-grained digital synaptic-accumulator + PLIF tile, with logical
+membrane/adaptation state stored in banked BRAM/URAM/LUTRAM. Reuse the tile across
+spatial partitions, channels, and stages while preserving shared convolution kernels.
+Start with exact full/tiled state execution; sparse touched-address/lazy-decay
+optimizations come only after bit-exact equivalence is demonstrated.
 
 ### Natural mappings
 
-- Conv weights -> programmable signed synaptic efficacy/current
-- PLIF beta -> calibrated membrane time constant/leak
-- learned threshold -> calibrated threshold/bias
-- ChannelAffine -> fold into synaptic efficacy
-- concat -> channel routing
+- Conv weights -> shared signed fixed-point weight tables
+- binary hidden spikes -> event addresses that trigger weight additions
+- PLIF beta -> quantized per-channel leak coefficient
+- learned threshold -> quantized per-channel comparator threshold
+- membrane/adaptation -> banked fixed-point state memory
+- ChannelAffine -> fold into quantized weight/scale
+- concat -> channel-ID routing
 - nearest upsample -> spike-address fan-out
-- residual spike add/clamp -> event merge/dedup
-- class spike sum/argmax -> digital event counters/comparator
+- residual spike add/clamp -> event merge / OR-dedup
+- class spike sum/argmax -> integer event counters/comparator
 
 ### Mapping risks requiring explicit validation
 
@@ -99,23 +102,21 @@ hardware-compatible approximation and revalidate/fine-tune accuracy.
 
 DDD17 uses the 50 ms statistic scheduler and is an approximation because raw tuples are
 unavailable. DSEC uses exact raw rectified events and bypasses the moment scheduler;
-DSEC is therefore the cleaner physical event-camera deployment path.
+DSEC is therefore the cleaner direct event-stream FPGA deployment path.
 
 ## Verification
 
-For every hardware target, preserve a staged golden comparison:
+For the FPGA target, preserve this staged golden comparison:
 
-1. SpikingJelly trained model
-2. exported parameter/graph representation
-3. target-equivalent simulator/model
-4. mapped hardware
+1. SpikingJelly floating-point trained model
+2. exported bit-exact fixed-point integer reference
+3. VHDL unit/full RTL simulation
+4. Vivado synthesis + place-and-route + post-implementation timing simulation
+5. representative-event SAIF/VCD power analysis
+6. optional instrumented ZCU104 measurement
 
-Compare layer spike traces, membrane trajectories where observable, output spike counts,
-semantic accuracy, latency, energy/power, and mapping utilization. Hardware power and
-latency claims require actual device measurement; simulator estimates must be labeled.
+Compare layer currents, membrane trajectories, spikes, output spike counts, semantic
+accuracy, cycle counts, and overflow/saturation behavior. Post-route timing and Vivado
+power are estimates and must be labeled as such; only instrumented board results may be
+called measured FPGA power/latency.
 
-## FPGA secondary path
-
-Keep the VHDL/ZCU104 implementation work as a deterministic digital reference and
-fallback publication route. It may use post-route timing/activity power estimates and
-later board measurements, but it no longer defines the primary model-design objective.
