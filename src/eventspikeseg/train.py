@@ -37,6 +37,7 @@ from .data import (
     make_temporal_protocol,
     resolve_ddd17_root,
     resolve_dsec_root,
+    split_dsec_records_by_sequence,
     split_records_by_sequence,
     temporal_collate,
 )
@@ -394,6 +395,7 @@ def _prepare_datasets(
     validation_fraction: float,
     input_mode: str,
     manifest: Path | None,
+    train_samples: float = 0.0,
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
     stateful_stream: bool = True,
     dataset_name: str = "ddd17",
@@ -405,10 +407,10 @@ def _prepare_datasets(
         if manifest is not None:
             raise ValueError("DSEC chronology comes from sequence timestamp files, not --manifest")
         all_train_records = discover_dsec_records(root, "train")
-        training_records, validation_records = split_records_by_sequence(
+        training_records, validation_records = split_dsec_records_by_sequence(
             all_train_records,
             validation_fraction=validation_fraction,
-            seed=seed,
+            train_samples=train_samples,
         )
         train_pool = DSECRawEventDataset(
             root,
@@ -488,6 +490,23 @@ def _epoch_train_dataset(
     total = len(train_pool)
     if train_samples <= 0:
         return train_pool
+    if isinstance(train_pool, DSECRawEventDataset) and train_samples < 1:
+        grouped_indices: dict[str, list[int]] = {}
+        for index, record in enumerate(train_pool.records):
+            grouped_indices.setdefault(record.sequence_id, []).append(index)
+        generator = torch.Generator().manual_seed(seed + epoch)
+        selected_indices: list[int] = []
+        for sequence_id in sorted(grouped_indices):
+            indices = grouped_indices[sequence_id]
+            count = max(1, int(round(len(indices) * train_samples)))
+            maximum_start = len(indices) - count
+            start = (
+                int(torch.randint(0, maximum_start + 1, (1,), generator=generator).item())
+                if maximum_start > 0
+                else 0
+            )
+            selected_indices.extend(indices[start : start + count])
+        return train_pool.subset(selected_indices)
     if train_samples <= 1:
         count = max(1, int(round(total * train_samples)))
     else:
@@ -636,6 +655,7 @@ def train_architecture(
         validation_fraction=validation_fraction,
         input_mode=input_mode,
         manifest=manifest,
+        train_samples=train_samples,
         internal_updates=internal_updates,
         stateful_stream=continuous_state,
         dataset_name=dataset_name,
@@ -932,6 +952,19 @@ def train_architecture(
         f"params={model.parameter_count():,}",
         flush=True,
     )
+    if dataset_name == "dsec":
+        validation_sequences = ",".join(
+            sorted({record.sequence_id for record in validation_dataset.records})
+        )
+        actual_validation_fraction = len(validation_dataset) / (
+            len(train_pool) + len(validation_dataset)
+        )
+        print(
+            f"DSEC fixed validation | sequences={validation_sequences} | "
+            f"records={len(validation_dataset)} "
+            f"({actual_validation_fraction:.1%} of complete training data)",
+            flush=True,
+        )
     print(
         "Median-frequency class weights | "
         + ", ".join(

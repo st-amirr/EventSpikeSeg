@@ -284,3 +284,23 @@ threshold and weight decay pushed it further into silence. Keep the identical bi
 competition-gated forward spike, but use a straight-through expression whose backward
 derivative is the surrogate derivative of `raw`. A regression test requires a
 subthreshold PLIF neuron to emit zero forward while retaining nonzero input gradient.
+
+## 2026-08-18 — Scale the fixed DSEC validation split with training coverage
+
+The earlier generic greedy sequence split could overshoot a 10% request severely:
+it selected `zurich_city_02_a` and the large `zurich_city_05_a`, producing 1,986
+validation records (24.6%) and excluding that large route from training. Validation
+coverage should instead scale with the amount of data active in each training epoch.
+
+For `train_samples <= 0.5`, exhaustively choose one complete validation sequence;
+for a larger fractional training coverage, choose two. Minimize distance from
+`total_records × validation_fraction × active_train_fraction`; split seed 17 fixes
+ties, and membership remains fixed for the run. On the installed 8,074 usable
+records, `train_samples=0.5` selects only the 234-record `zurich_city_02_a`, leaving
+7,840 records in the pool and 3,920 in each half-sampled epoch. At `0.7`, validation
+uses `zurich_city_01_a` plus `zurich_city_02_a` (914 records).
+
+Fractional training sampling remains independent within every non-validation
+sequence, using one deterministic contiguous window per sequence per epoch. Exact
+record membership is checkpoint-fingerprinted, so checkpoints from earlier DSEC
+splits are not resumed.

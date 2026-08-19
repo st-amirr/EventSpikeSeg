@@ -8,10 +8,13 @@ from PIL import Image
 from eventspikeseg.data import (
     DSEC_CLASS_COUNT,
     DSECRawEventDataset,
+    DSECRecord,
     discover_dsec_records,
     dsec_temporal_collate,
+    split_dsec_records_by_sequence,
 )
 from eventspikeseg.model import build_model
+from eventspikeseg.train import _epoch_train_dataset
 
 
 def _write_dsec_sequence(root: Path, name: str) -> None:
@@ -90,3 +93,69 @@ def test_140k_accepts_pre_scheduled_raw_event_clocks() -> None:
     with torch.no_grad():
         outputs = model(source)
     assert outputs["segmentation_logits"].shape == (1, DSEC_CLASS_COUNT, 16, 16)
+
+
+def test_dsec_validation_scales_complete_sequence_count_with_train_fraction() -> None:
+    counts = {
+        "zurich_city_00_a": 938,
+        "zurich_city_01_a": 680,
+        "zurich_city_02_a": 234,
+        "zurich_city_04_a": 700,
+        "zurich_city_05_a": 1752,
+        "zurich_city_06_a": 1522,
+        "zurich_city_07_a": 1462,
+        "zurich_city_08_a": 786,
+    }
+    records = [
+        DSECRecord(
+            split="train",
+            sequence_id=sequence_id,
+            frame_index=index,
+            timestamp_us=(index + 1) * 50_000,
+            event_path=Path(f"{sequence_id}/events.h5"),
+            rectify_path=Path(f"{sequence_id}/rectify_map.h5"),
+            label_path=Path(f"{sequence_id}/{index:06d}.png"),
+        )
+        for sequence_id, count in counts.items()
+        for index in range(count)
+    ]
+    half_training, half_validation = split_dsec_records_by_sequence(
+        records, validation_fraction=0.10, train_samples=0.5
+    )
+    half_sequences = {record.sequence_id for record in half_validation}
+    assert half_sequences == {"zurich_city_02_a"}
+    assert len(half_validation) == 234
+    assert {record.sequence_id for record in half_training}.isdisjoint(half_sequences)
+
+    broad_training, broad_validation = split_dsec_records_by_sequence(
+        records, validation_fraction=0.10, train_samples=0.7
+    )
+    broad_sequences = {record.sequence_id for record in broad_validation}
+    assert broad_sequences == {"zurich_city_01_a", "zurich_city_02_a"}
+    assert len(broad_validation) == 914
+    assert {record.sequence_id for record in broad_training}.isdisjoint(broad_sequences)
+
+
+def test_dsec_fractional_epoch_samples_every_training_sequence(tmp_path: Path) -> None:
+    for sequence_id in (
+        "zurich_city_00_a",
+        "zurich_city_01_a",
+        "zurich_city_02_a",
+        "zurich_city_04_a",
+    ):
+        _write_dsec_sequence(tmp_path, sequence_id)
+    dataset = DSECRawEventDataset(
+        tmp_path,
+        split="train",
+        internal_updates=10,
+    )
+    epoch_dataset = _epoch_train_dataset(
+        dataset, train_samples=0.5, seed=17, epoch=1
+    )
+    assert len(epoch_dataset) == 4
+    assert {record.sequence_id for record in epoch_dataset.records} == {
+        "zurich_city_00_a",
+        "zurich_city_01_a",
+        "zurich_city_02_a",
+        "zurich_city_04_a",
+    }

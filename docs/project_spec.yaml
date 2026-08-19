@@ -191,6 +191,19 @@ future_datasets:
       spatial_alignment: rectify_map_then_bottom_40_row_crop
       input: binary_ON_OFF_event_occupancy_per_hardware_clock
       full_recording_preload: false
+      validation_split:
+        sequence_count:
+          train_fraction_through_0_5: 1
+          train_fraction_above_0_5: 2
+        selection: complete_sequence_subset_closest_to_active_scaled_validation_target
+        split_seed: 17
+        fixed_for_run: true
+        installed_at_train_0_5: [zurich_city_02_a]
+        installed_at_train_0_7: [zurich_city_01_a, zurich_city_02_a]
+      fractional_epoch_sampling:
+        scope: independently_per_training_sequence
+        selection: one_contiguous_window_per_sequence_per_epoch
+        shuffle: false
   legacy_mevdt:
     role: optional_future_detection_and_tracking_extension
     status: inactive_for_current_semantic_segmentation_project
@@ -204,7 +217,9 @@ input_and_time:
     record_duration_us: 50000
     shuffle: false
     state_policy: retain_across_consecutive_records_reset_at_sequence_or_frame_gap
-    fraction_policy: deterministic_contiguous_stream_segment_per_epoch
+    fraction_policy:
+      ddd17: deterministic_contiguous_stream_segment_per_epoch
+      dsec: deterministic_contiguous_segment_from_every_training_sequence_per_epoch
   decoded_channel_contract:
     - polarity_0_activity
     - polarity_1_activity

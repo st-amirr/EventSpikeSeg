@@ -22,6 +22,7 @@ import os
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -633,6 +634,8 @@ DSEC_SENSOR_WIDTH = 640
 DSEC_LABEL_HEIGHT = 440
 DSEC_LABEL_WIDTH = 640
 DEFAULT_DSEC_ROOT = Path(r"C:\Users\stamir\Desktop\Dataset\DSEC")
+DSEC_SPLIT_SEED = 17
+DSEC_VALIDATION_SEQUENCE_COUNT = 2
 
 
 @dataclass(frozen=True)
@@ -675,6 +678,57 @@ class DSECInspection:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+def split_dsec_records_by_sequence(
+    records: Sequence[DSECRecord],
+    *,
+    validation_fraction: float,
+    train_samples: float = 0.0,
+    split_seed: int = DSEC_SPLIT_SEED,
+    validation_sequence_count: int | None = None,
+) -> tuple[list[DSECRecord], list[DSECRecord]]:
+    """Hold out complete sequences scaled to the active training fraction."""
+    if not (0.0 < validation_fraction < 0.5):
+        raise ValueError("validation_fraction must satisfy 0 < value < 0.5")
+    if not records:
+        raise TemporalMetadataError("cannot split an empty DSEC record set")
+    grouped: dict[str, list[DSECRecord]] = {}
+    for record in records:
+        grouped.setdefault(record.sequence_id, []).append(record)
+    for sequence_records in grouped.values():
+        sequence_records.sort(key=lambda record: record.frame_index)
+    sequence_ids = sorted(grouped)
+    if train_samples <= 0:
+        active_fraction = 1.0
+    elif train_samples <= 1:
+        active_fraction = train_samples
+    else:
+        active_fraction = min(1.0, train_samples / len(records))
+    if validation_sequence_count is None:
+        validation_sequence_count = (
+            1 if active_fraction <= 0.5 else DSEC_VALIDATION_SEQUENCE_COUNT
+        )
+    if not (1 <= validation_sequence_count < len(sequence_ids)):
+        raise TemporalMetadataError(
+            "DSEC validation_sequence_count must leave at least one training sequence"
+        )
+
+    candidates = list(combinations(sequence_ids, validation_sequence_count))
+    generator = torch.Generator().manual_seed(split_seed)
+    tie_order = torch.randperm(len(candidates), generator=generator).tolist()
+    candidates = [candidates[index] for index in tie_order]
+    target = len(records) * validation_fraction * active_fraction
+    validation_ids = min(
+        candidates,
+        key=lambda candidate: abs(
+            sum(len(grouped[sequence_id]) for sequence_id in candidate) - target
+        ),
+    )
+    validation_set = set(validation_ids)
+    training = [record for record in records if record.sequence_id not in validation_set]
+    validation = [record for record in records if record.sequence_id in validation_set]
+    return training, validation
 
 
 def resolve_dsec_root(root: Path | str | None = None) -> Path:

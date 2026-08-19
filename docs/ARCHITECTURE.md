@@ -216,6 +216,16 @@ next chunk. This is truncated BPTT: it reduces peak saved-activation memory, whi
 gradients do not cross chunk boundaries. `sequential_chunks=1` preserves the original
 full-record calculation.
 
+DSEC uses a fixed, sequence-disjoint validation policy whose sequence count scales
+with the active training fraction. `train_samples <= 0.5` holds out one complete
+sequence, while a larger fraction holds out two. The subset closest to the validation
+target scaled by the active fraction is selected once, with split seed 17 as the
+deterministic tie-breaker. Fractional per-epoch training sampling is stratified by
+the remaining sequence IDs: one contiguous window of the requested fraction is
+taken from every training sequence. This preserves local chronology, represents
+every training route each epoch, and prevents recurrent state from crossing sequence
+boundaries.
+
 ## Historical architecture registries
 
 `top_ten_models.py`, `top_five_models.py`, and `top_three_models.py` preserve the measured ablation definitions and checkpoint-facing behavior. All three are dispatched through `train.py`; there is no separate top-three training implementation. Historical results remain in `RESULTS.md` and the design interpretation in `DECISIONS.md`.

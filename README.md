@@ -53,13 +53,26 @@ the 50,000 µs interval exactly and is stored in the checkpoint protocol.
 
 Classes: `flat`, `construction+sky`, `object`, `nature`, `human`, `vehicle`. Label `255` is ignored.
 
-If `--height` and `--width` are omitted, stored resolution is preserved. `--train-samples` accepts `0` for the full pool, a fraction in `(0,1]`, or an absolute count. A limited run selects one deterministic contiguous stream segment per epoch. Records are not shuffled, and stateful training/evaluation requires batch size 1.
+If `--height` and `--width` are omitted, stored resolution is preserved. `--train-samples` accepts `0` for the full pool, a fraction in `(0,1]`, or an absolute count. For DDD17, a limited run selects one deterministic contiguous stream segment per epoch. Records are not shuffled, and stateful training/evaluation requires batch size 1.
 
 ## DSEC-Semantic raw-event input
 
 The DSEC path consumes each sequence's continuous `events.h5`, `rectify_map.h5`,
 semantic timestamp text file, and `11classes` PNG masks. Both the installed flat
 layout and the official nested DSEC-Semantic layout are recognized.
+
+DSEC validation holds out complete sequences, with coverage scaled by
+`--train-samples`. Fractions through `0.5` hold out one sequence; fractions above
+`0.5` hold out two. The complete-sequence choice closest to
+`total_records × validation_fraction × active_train_fraction` is fixed for the run,
+with split seed 17 used only for tie-breaking. On the installed data,
+`--train-samples 0.5 --validation-fraction 0.10` selects the 234-record
+`zurich_city_02_a`; `--train-samples 0.7` selects `zurich_city_01_a` plus
+`zurich_city_02_a` (914 records). Fractional training sampling is then applied
+separately to every remaining sequence: `0.5` selects one chronological contiguous
+half-window from each training sequence, rather than half of the pooled records from
+only some folders. Window locations change deterministically by epoch; record order
+is never shuffled.
 
 Semantic timestamps are nominally 20 Hz: the installed files measure approximately
 50,000 µs between masks. One item slices raw events from `[label_time-50ms,
