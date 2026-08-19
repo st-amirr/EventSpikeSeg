@@ -98,6 +98,13 @@ complete record (subject to `--accumulate-steps`). The default `1` retains the
 original full-record forward/backward. Values above one are DSEC-only and must divide
 `internal_updates` exactly.
 
+The DSEC stability profile uses a base learning rate of `5e-4` for both synaptic
+weights and learnable PLIF beta/threshold parameters; neuron parameters receive no
+additional multiplier. Per-class soft-Dice values are still reported for all
+classes, but the scalar Dice objective averages only semantic classes present in the
+current target mask. This prevents an absent rare class from being trained toward
+zero on every record where it has no labelled pixels.
+
 ## Main commands
 
 ```powershell

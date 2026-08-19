@@ -304,3 +304,13 @@ Fractional training sampling remains independent within every non-validation
 sequence, using one deterministic contiguous window per sequence per epoch. Exact
 record membership is checkpoint-fingerprinted, so checkpoints from earlier DSEC
 splits are not resumed.
+
+## 2026-08-19 — Stabilize DSEC semantic-head optimization
+
+Epoch-12 checkpoint inspection showed a real class collapse: 82.7% of validation
+pixels were assigned to building, despite finite model/optimizer tensors and active
+hidden spike rates. Three compounding optimizer choices were corrected. Reduce the
+DSEC base LR from `1e-3` to `5e-4`; remove the historical `2x` multiplier on PLIF
+beta/threshold parameters; and average soft Dice only over classes present in the
+current target. Continue reporting the full per-class Dice vector. Median-frequency
+class weights remain unchanged for this intervention so their effect can be isolated.

@@ -90,7 +90,6 @@ def apply_resume_learning_rate(
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     *,
     learning_rate: float,
-    group_multipliers: list[float],
 ) -> list[float]:
     """Apply the CLI LR after restoring optimizer/scheduler state.
 
@@ -98,9 +97,7 @@ def apply_resume_learning_rate(
     optimizer state also contains its old parameter-group LRs. A supplied CLI
     value explicitly replaces those rates on resume.
     """
-    if len(optimizer.param_groups) != len(group_multipliers):
-        raise ValueError("checkpoint optimizer groups do not match this model")
-    group_rates = [learning_rate * multiplier for multiplier in group_multipliers]
+    group_rates = [learning_rate] * len(optimizer.param_groups)
     for group, rate in zip(optimizer.param_groups, group_rates):
         group["lr"] = rate
         group["initial_lr"] = rate
@@ -319,10 +316,21 @@ def _training_objective(
     )
     focal = focal_cross_entropy(logits, target, class_weights)
     dice_losses = soft_dice_loss(logits, target, class_count)
+    valid_target = target[target != IGNORE_INDEX]
+    present_classes = (
+        torch.bincount(valid_target, minlength=class_count) > 0
+        if valid_target.numel() > 0
+        else torch.zeros(class_count, dtype=torch.bool, device=target.device)
+    )
+    present_dice_loss = (
+        dice_losses[present_classes].mean()
+        if present_classes.any()
+        else logits.sum() * 0.0
+    )
     loss = (
         loss_profile.cross_entropy * ce
         + loss_profile.focal * focal
-        + loss_profile.dice * dice_losses.mean()
+        + loss_profile.dice * present_dice_loss
         + _activity_regularizer(outputs)
     )
     if "auxiliary_logits" in outputs:
@@ -712,19 +720,16 @@ def train_architecture(
     parameter_groups = [
         {"params": weight_parameters, "lr": learning_rate, "weight_decay": 1e-4}
     ]
-    learning_rate_multipliers = [1.0]
     if base_neuron_parameters:
         parameter_groups.append(
-            {"params": base_neuron_parameters, "lr": learning_rate * 2.0, "weight_decay": 0.0}
+            {"params": base_neuron_parameters, "lr": learning_rate, "weight_decay": 0.0}
         )
-        learning_rate_multipliers.append(2.0)
     if mechanism_parameters:
         # fInst/fLong/TThresh-like parameters alter recurrent dynamics directly;
         # use the base LR so they do not outrun feature learning early on.
         parameter_groups.append(
             {"params": mechanism_parameters, "lr": learning_rate, "weight_decay": 0.0}
         )
-        learning_rate_multipliers.append(1.0)
     optimizer = torch.optim.AdamW(parameter_groups)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
     class_weights = estimate_class_weights(train_pool).to(resolved_device)
@@ -874,7 +879,6 @@ def train_architecture(
             optimizer,
             scheduler,
             learning_rate=learning_rate,
-            group_multipliers=learning_rate_multipliers,
         )
         if scaler_state is not None and amp_enabled:
             scaler.load_state_dict(scaler_state)

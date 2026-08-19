@@ -10,9 +10,11 @@ import eventspikeseg.data as data_module
 from eventspikeseg.data import temporal_collate
 from eventspikeseg.evaluate import _records_for_checkpoint
 from eventspikeseg.train import (
+    LossProfile,
     TrainResult,
     _epoch_train_dataset,
     _prepare_datasets,
+    _training_objective,
     apply_resume_learning_rate,
     architecture_presets,
     estimate_class_weights,
@@ -275,6 +277,33 @@ def test_soft_dice_loss_reports_each_class() -> None:
     assert torch.all((losses >= 0.0) & (losses <= 1.0))
 
 
+def test_training_dice_reduction_excludes_target_absent_classes() -> None:
+    logits = torch.tensor(
+        [[[[2.0, 2.0], [2.0, 2.0]], [[4.0, 4.0], [4.0, 4.0]]]]
+    )
+    target = torch.zeros((1, 2, 2), dtype=torch.long)
+    outputs = {
+        "segmentation_logits": logits,
+        "segmentation_rate": torch.tensor(0.05),
+        "enc1_rate": torch.tensor(0.05),
+        "enc2_rate": torch.tensor(0.05),
+        "enc3_rate": torch.tensor(0.05),
+        "enc4_rate": torch.tensor(0.05),
+        "decoder_rate": torch.tensor(0.05),
+    }
+    loss, dice_losses, _ = _training_objective(
+        outputs,
+        target,
+        class_weights=torch.ones(2),
+        class_count=2,
+        loss_profile=LossProfile(cross_entropy=0.0, focal=0.0, dice=1.0),
+        is_final_run=True,
+        training_phase="joint",
+    )
+    assert dice_losses[1] > dice_losses[0]
+    assert torch.allclose(loss, dice_losses[0])
+
+
 def test_final_refinement_schedule_phases() -> None:
     schedule = (0.70, 0.90)
     assert refinement_phase_for_epoch(1, 10, schedule) == ("joint", True)
@@ -300,7 +329,6 @@ def test_resume_cli_learning_rate_overrides_checkpoint_parameter_groups() -> Non
         resumed_optimizer,
         resumed_scheduler,
         learning_rate=0.001,
-        group_multipliers=[1.0],
     )
 
     assert applied == [0.001]
