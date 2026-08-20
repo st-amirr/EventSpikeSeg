@@ -55,6 +55,25 @@ overflow formats in the integer export contract. The baseline must preserve the 
 per-channel beta with a quantized coefficient. Shift-only/power-of-two leak is an
 optional optimization only after bit-exact and semantic-accuracy revalidation.
 
+## Logical state accounting rule
+
+Do not infer neuron-state memory from the ~140k parameter count. For the six-class
+canonical graph, the 37 executed PLIF populations require
+`N_mem = 678*H*W + 480*H2*W2 + 1280*H4*W4`, where `H2/W2=ceil(H/W over 2)` and
+`H4/W4=ceil(H2/W2 over 2)`. At `212x282`, this is **52,524,272 independent membrane
+states**. The general class-count form is `(672+Nclass)*H*W + 480*H2*W2 +
+1280*H4*W4`.
+
+fLong-enabled layers contain `352*H2*W2 + 1216*H4*W4` logical neurons: **9,836,800**
+at 212x282. Each carries separate adaptation age and adaptation amplitude. `beta` and
+base threshold are per-channel shared parameters; convolution weights are spatially
+shared; membrane and fLong state are per `(layer,c,y,x)`.
+
+Hardware may reuse a small number of physical PLIF PEs, but **must never alias logical
+membrane addresses from different channels, positions, or layers**. Current accumulators
+are temporary per layer/timestep; persistent membrane/adaptation state survives timesteps
+and consecutive records until the documented reset boundary.
+
 ## Digital neuromorphic FPGA deployment rule
 
 The primary runtime is fully digital but must preserve neuromorphic/SNN execution:
@@ -75,6 +94,19 @@ membrane/adaptation state stored in banked BRAM/URAM/LUTRAM. Reuse the tile acro
 spatial partitions, channels, and stages while preserving shared convolution kernels.
 Start with exact full/tiled state execution; sparse touched-address/lazy-decay
 optimizations come only after bit-exact equivalence is demonstrated.
+
+### Exact sparse execution order
+
+For each layer/timestep: accept sparse `(c,y,x)` spikes -> generate valid destination
+addresses from kernel/stride/padding/dilation/groups -> accumulate fixed/shared weights
+into temporary destination currents -> wait for the layer/timestep accumulation barrier ->
+read each destination's own persistent state -> apply fixed-point PLIF/fInst/fLong/reset ->
+write state back -> emit only firing addresses. Do **not** threshold/reset once per incoming
+spike. The baseline must preserve the trained once-per-timestep neuron update.
+
+The initial RTL may sweep every logical PLIF state at the neuron-update phase so beta leak
+is exact even when no current arrived. Sparse touched-neuron/lazy-decay updates are later
+optimizations after bit-exact equivalence, not the initial semantics.
 
 ### Natural mappings
 

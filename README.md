@@ -105,6 +105,33 @@ classes, but the scalar Dice objective averages only semantic classes present in
 current target mask. This prevents an absent rare class from being trained toward
 zero on every record where it has no labelled pixels.
 
+## FPGA logical-state footprint
+
+The model's ~140k trainable parameters are mostly shared synaptic/channel parameters and
+are **not** the runtime neuron count. Every PLIF feature-map element has an independent
+membrane state. For six-class `EventSpikeSeg140k`, the 37 executed inference populations
+require
+
+```text
+N_mem = 678*H*W + 480*H2*W2 + 1280*H4*W4
+H2=ceil(H/2), W2=ceil(W/2), H4=ceil(H2/2), W4=ceil(W2/2)
+```
+
+At 212x282 this is **52,524,272 membrane values**. fLong is enabled on **9,836,800** of
+those logical neurons and stores separate adaptation age/amplitude state. We therefore
+distinguish:
+
+- **static/shared:** convolution weights, per-channel beta, per-channel base threshold;
+- **persistent per-neuron:** membrane and enabled fLong state for each `(layer,c,y,x)`;
+- **temporary:** per-layer/per-timestep synaptic-current accumulators and sparse spike FIFOs.
+
+The FPGA may use far fewer physical PLIF arithmetic units by time-multiplexing them, but
+it must preserve one logical state record per `(layer,c,y,x)`. The exact sparse execution
+flow is `spike address -> destination-address generation -> weight addition into temporary
+current -> timestep barrier -> PLIF update once -> state writeback -> emit fired addresses`.
+This avoids dense sliding-window convolution while preserving the trained discrete-time
+semantics. See `docs/ARCHITECTURE.md` and `project_spec.yaml` for the full contract.
+
 ## Main commands
 
 ```powershell

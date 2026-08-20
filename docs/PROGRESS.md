@@ -121,3 +121,13 @@ Restore missing training event `.npy` files if the inspection mismatch remains, 
 - first hardware milestone is bit-exact integer/RTL equivalence; sparse touched-address/lazy-decay/clock-enable optimizations follow only after exactness;
 - remaining RTL-sensitive mechanisms are peer-membrane fInst, triangular fLong/TThresh, and the selector's global any-spike channel enable;
 - evaluation flow is RTL simulation -> synthesis/place-route -> post-implementation timing -> representative SAIF/VCD Vivado power -> optional ZCU104 measurement.
+
+### 2026-08-20 logical-state accounting
+
+- the 37 executed PLIF populations are now explicitly separated from the ~140k shared parameter count;
+- general membrane formula: `(672+Nclass)*H*W + 480*H2*W2 + 1280*H4*W4`;
+- six-class 212x282 DDD17 requires **52,524,272 independent membrane values**;
+- fLong scopes cover **9,836,800 logical neurons** at that resolution, each with adaptation age and amplitude;
+- implementation contract: static/shared weights and channel parameters, persistent per-`(layer,c,y,x)` neuron state, temporary current accumulators, sparse event FIFOs;
+- exact sparse layer execution accumulates all weight contributions for a timestep before one PLIF threshold/reset update, then writes persistent state back and emits only fired addresses;
+- a small physical PE array may be time-multiplexed, but logical state addresses may not be aliased; lazy decay follows only after bit-exact validation.

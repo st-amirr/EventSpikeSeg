@@ -355,3 +355,25 @@ Verification proceeds from SpikingJelly float to a bit-exact integer reference, 
 simulation, Vivado synthesis/place-and-route, post-implementation timing simulation, and
 representative-event SAIF/VCD power analysis. These Vivado results are estimates. Only
 instrumented ZCU104 results may be called measured hardware power/latency.
+
+## 2026-08-20 — Separate shared parameters from per-neuron runtime state for FPGA mapping
+
+Do not use the ~140k parameter count as a proxy for logical PLIF state. Convolution weights
+are spatially shared and beta/base threshold are shared per output channel, but every
+executed PLIF output element `(layer,c,y,x)` retains its own membrane value. Summing the
+37 inference PLIF populations gives `N_mem = (672+Nclass)HW + 480H2W2 + 1280H4W4`.
+For six-class DDD17 at 212x282, this is **52,524,272 independent membrane states**.
+
+The fLong-enabled scopes contain `352H2W2 + 1216H4W4` logical neurons, or **9,836,800**
+at 212x282; each carries adaptation age and adaptation amplitude. These persistent states
+are distinct from temporary synaptic-current accumulation and from sparse spike-event FIFOs.
+
+FPGA execution should therefore keep weights/kernel connectivity static/shared while
+virtualizing logical neuron state in addressable memory. A small physical PLIF PE array may
+be reused across layers and spatial positions, but different logical neuron addresses must
+never share one stored membrane value. For exact equivalence, all synaptic contributions for
+a layer/timestep are accumulated first, then each PLIF is updated/thresholded once. Hidden
+spikes may be processed input-centrically as `(c,y,x)` addresses, so dense sliding-window
+convolution is not required. Lazy decay/touched-neuron-only updates remain later
+optimizations because they change when decay is evaluated and must be proven equivalent
+with reset, peer-membrane fInst, and triangular fLong/TThresh.

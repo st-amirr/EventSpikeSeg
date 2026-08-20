@@ -89,6 +89,83 @@ implementation should preserve the learned per-channel beta with a fixed-point
 coefficient. A shift-only/power-of-two leak is an optional optimization only after its
 accuracy and bit-level behavior are explicitly revalidated.
 
+## Logical neuron-state count: parameters are not neuron states
+
+The ~140k parameter count is **not** the number of PLIF neurons. Convolution kernels are
+shared spatially, while every executed PLIF output element owns an independent persistent
+membrane value. A logical neuron is addressed by `(layer, channel, y, x)`; `beta` and the
+base threshold are shared per output channel, but `V[channel,y,x]` is not shared.
+
+For an input of `H x W`, define
+
+```text
+H2 = ceil(H / 2), W2 = ceil(W / 2)
+H4 = ceil(H2 / 2), W4 = ceil(W2 / 2)
+```
+
+Summing the output channels of all **37 executed inference PLIF populations** gives
+
+```text
+full-resolution PLIF state coefficient    = 672 + Nclass
+half-resolution PLIF state coefficient    = 480
+quarter-resolution PLIF state coefficient = 1280
+```
+
+so the general membrane-state count is
+
+```text
+N_mem = (672 + Nclass) * H * W
+      + 480 * H2 * W2
+      + 1280 * H4 * W4
+```
+
+For six-class DDD17 this becomes
+
+```text
+N_mem = 678 * H * W + 480 * H2 * W2 + 1280 * H4 * W4.
+```
+
+At the canonical `212 x 282` training/deployment resolution:
+
+```text
+H2 x W2 = 106 x 141
+H4 x W4 = 53 x 71
+N_mem   = 52,524,272 independent membrane values
+```
+
+Raw membrane storage alone would therefore be approximately 50.09 MiB at 8 bits,
+75.14 MiB at 12 bits, 100.18 MiB at 16 bits, or 125.23 MiB at 20 bits. This is a
+**logical-state** requirement, not a requirement for 52.5 million physical PLIF circuits.
+A small array of physical PLIF processing elements may be time-multiplexed as long as
+every logical neuron address retains its own state between visits.
+
+Triangular fLong is enabled only on `down2`, `enc2`, `enc2_extra`, `down3`, `enc3`,
+`enc3_extra`, `context1`, and `context2`. The enabled logical-neuron count is
+
+```text
+N_fLong = 352 * H2 * W2 + 1216 * H4 * W4
+```
+
+which is **9,836,800 neurons** at 212 x 282. Each of those neurons retains its own
+adaptation age and adaptation amplitude, i.e. 19,673,600 additional logical state
+values before quantization. The dynamic threshold can be derived when the neuron is
+updated; it does not need to be stored as a third full map. Stem peer-membrane fInst
+uses the membrane values themselves and does not introduce a separate full-resolution
+membrane copy.
+
+### State ownership
+
+| Quantity | Sharing/lifetime |
+| --- | --- |
+| convolution weights | shared by the convolution across all `(y,x)` locations; static after export |
+| `beta[c]` | shared by every neuron in output channel `c` |
+| base threshold `theta[c]` | shared by every neuron in output channel `c` |
+| membrane `V[c,y,x]` | **independent persistent state for every logical neuron** |
+| fLong age/amplitude | independent persistent state for every fLong-enabled logical neuron |
+| synaptic current accumulator | temporary for one layer/timestep; may be cleared/reused after PLIF update |
+| spikes | transient sparse `(t,c,y,x)` event addresses between stages |
+
+
 ## Input protocols
 
 ### DDD17
@@ -198,6 +275,38 @@ The canonical deployment objective is:
 8. run RTL simulation, Vivado synthesis/place-and-route, post-implementation timing
    simulation, and representative-event SAIF/VCD power analysis;
 9. optionally validate final latency/power on a physical ZCU104 when available.
+
+## Exact event-addressed layer procedure
+
+The sparse FPGA implementation changes **how** convolution is evaluated, not the trained
+network equation. SpikingJelly currently evaluates dense tensor `Conv2d`; the FPGA may
+evaluate the same sum input-centrically from nonzero spikes. For each SNN timestep and
+learned layer:
+
+1. Receive presynaptic spike addresses `(c,y,x)` from the previous stage.
+2. From the layer's fixed kernel connectivity, generate only valid postsynaptic addresses.
+   Stride, padding, dilation, and depthwise/groups are address-generation rules; no dense
+   sliding-window scan is required.
+3. For every valid destination, add the corresponding shared or compile-time-fixed weight
+   into that destination's **temporary synaptic-current accumulator**. Because the input is
+   binary, hidden spike-times-weight multiplication is unnecessary.
+4. Keep a **timestep barrier**. All presynaptic contributions for that layer/timestep must
+   be accumulated before threshold/reset. Updating and thresholding a PLIF after every
+   individual incoming spike would not be equivalent to the trained SpikingJelly model.
+5. At the PLIF phase, address each logical postsynaptic neuron independently, load its
+   persistent `V[layer,c,y,x]`, apply `beta[c] * V + I`, fInst/fLong/dynamic threshold and
+   reset in the trained order, then write the updated membrane/adaptation state back to
+   the same address.
+6. Emit only firing neuron addresses to the next stage. The dense spike tensor need not be
+   materialized between layers.
+7. Clear/reuse the temporary current storage, but **do not clear membrane/fLong state** at
+   the timestep boundary. Persistent state resets only at the same sequence/gap boundaries
+   as the software reference.
+
+The safest first implementation still updates every logical PLIF state once per trained
+timestep so leak is exact even when no input arrived. A later lazy-decay design may update
+only touched neurons by storing a last-update timestamp and applying the accumulated decay,
+but that optimization must be proven bit-exact with reset, fInst, and fLong before use.
 
 ## Scalable FPGA execution
 

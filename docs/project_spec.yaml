@@ -713,6 +713,45 @@ fpga_execution:
       - pipeline_control
       - small_address_state
     rule: Final placement must be frozen only after synthesis and port/timing analysis.
+  exact_stateful_layer_execution:
+    purpose: reproduce_trained_SpikingJelly_timestep_semantics_without_dense_sliding_window_convolution
+    logical_event_address: [timestep, channel, y, x]
+    state_address_example: linear_index = ((channel * H_layer) + y) * W_layer + x
+    procedure:
+      - Receive only emitted presynaptic spike/event addresses for the current SNN timestep.
+      - Use the fixed layer connectivity, including kernel offset, groups/depthwise mapping, stride, padding, and dilation, to generate only valid postsynaptic destination addresses.
+      - For each valid destination, add the corresponding shared/hardwired synaptic weight to that destination's temporary current accumulator; binary spikes require no spike-times-weight multiplier.
+      - Preserve a timestep barrier: accumulate all presynaptic contributions for the layer/timestep before applying PLIF threshold/reset. Do not threshold/reset after each individual presynaptic spike because that would change the trained model semantics.
+      - For each logical postsynaptic neuron address, read its own persistent membrane V, apply V_next = beta[channel] * V + I_accum, apply dynamic threshold/fInst/fLong/reset in the trained order, then write the updated V back to the same logical address.
+      - Emit only addresses of neurons that fired into the next layer's event FIFO.
+      - Clear/reuse the temporary current accumulator for the completed layer/timestep, but retain membrane and enabled fLong state into the next timestep and consecutive stream record.
+      - Reset persistent state only at the same sequence/frame-gap boundaries used by the software reference.
+    baseline_exactness: >-
+      The first RTL version may sweep all logical postsynaptic addresses at the PLIF-update
+      phase even when no current arrived, because beta decay still applies once per trained
+      timestep. Lazy decay or touched-neuron-only updates are later optimizations and require
+      a mathematically and bit-exactly validated treatment of elapsed timesteps, reset, fInst,
+      and fLong.
+    physical_vs_logical_neurons: >-
+      There is no requirement to instantiate 52,524,272 physical PLIF circuits for the
+      212x282 DDD17 case. A small PE array may be reused, provided state memory preserves
+      every logical (layer, channel, y, x) membrane/adaptation value independently.
+  state_memory_design:
+    persistent_state:
+      membrane: one_value_per_executed_PLIF_output_element
+      fLong: age_and_amplitude_per_enabled_PLIF_output_element
+    static_shared_parameters:
+      weights: shared_by_convolution_and_may_be_ROM_or_compile_time_constants
+      beta_threshold: shared_per_output_channel
+    temporary_state:
+      current_accumulator: per_destination_for_current_layer_and_timestep_only
+      spike_events: sparse_FIFO_addresses_between_stages
+    implementation_options:
+      - banked_BRAM
+      - distributed_LUTRAM_for_small_banks
+      - external_memory_only_if_on_chip_state_capacity_or_bandwidth_requires_it
+    banking_goal: allow_parallel_PE_reads_and_writes_without_colliding_on_the_same_memory_port
+    important_distinction: weights_are_small_and_shared_but_logical_membrane_state_scales_with_feature_map_area
   active_state_strategies:
     baseline: full_or_tiled_state_sweep_for_exactness
     optimization_candidates:
@@ -1260,6 +1299,60 @@ fpga_deployment_2026_08_19:
       deployment_rule: omit_not_in_forward_graph
     training_only_auxiliary_head_parameters: 396
     executed_inference_spiking_stage_populations: 37
+    logical_runtime_state_accounting:
+      rule: >-
+        Parameter count and logical neuron-state count are different quantities. Convolution
+        weights are shared across spatial positions, but every executed PLIF output element
+        at (channel, y, x) owns an independent persistent membrane value. The hardware may
+        time-multiplex a small number of physical PLIF processing elements, but it must preserve
+        the distinct logical state of every neuron address between visits and timesteps.
+      dimensions:
+        H2: ceil(H / 2)
+        W2: ceil(W / 2)
+        H4: ceil(H2 / 2)
+        W4: ceil(W2 / 2)
+      membrane_state_formula_general: N_mem = (672 + Nclass) * H * W + 480 * H2 * W2 + 1280 * H4 * W4
+      membrane_state_formula_ddd17_6class: N_mem = 678 * H * W + 480 * H2 * W2 + 1280 * H4 * W4
+      scale_channel_sums:
+        full_resolution: 672_plus_Nclass
+        half_resolution: 480
+        quarter_resolution: 1280
+      ddd17_212x282_example:
+        H: 212
+        W: 282
+        H2: 106
+        W2: 141
+        H4: 53
+        W4: 71
+        total_logical_membrane_states: 52524272
+        membrane_only_raw_storage:
+          int8_MiB: 50.0910
+          int12_MiB: 75.1366
+          int16_MiB: 100.1821
+          int20_MiB: 125.2276
+      fLong_enabled_state:
+        enabled_scopes: [down2, enc2, enc2_extra, down3, enc3, enc3_extra, context1, context2]
+        logical_neuron_formula: N_flong = 352 * H2 * W2 + 1216 * H4 * W4
+        ddd17_212x282_logical_neurons: 9836800
+        persistent_values_per_enabled_neuron: [adaptation_age, adaptation_amplitude]
+        ddd17_212x282_auxiliary_state_values: 19673600
+        note: dynamic_threshold_is_derived_from_base_threshold_and_adaptation_state_and_need_not_be_stored_as_a_third_full_map
+      state_ownership:
+        per_logical_neuron_address:
+          - membrane_V
+          - fLong_adaptation_age_when_enabled
+          - fLong_adaptation_amplitude_when_enabled
+        shared_per_output_channel:
+          - beta
+          - base_threshold
+        shared_per_synaptic_projection:
+          - convolution_kernel_weights
+          - folded_ChannelAffine_scale_when_used
+        transient_per_timestep_or_layer:
+          - synaptic_current_accumulator
+          - emitted_spike_event_FIFO
+          - selector_seen_spike_flags
+          - semantic_spike_counters_as_required_by_readout
   model_semantics:
     SpikingStage: synaptic_Conv2d_bias_false_then_optional_affine_current_gain_then_PLIF
     convolution_interpretation: learned_shared_synaptic_weight_and_connectivity_projection
