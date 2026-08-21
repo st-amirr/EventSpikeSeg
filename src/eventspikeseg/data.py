@@ -111,6 +111,7 @@ class TemporalProtocol:
     training_record_ids: tuple[tuple[str, int], ...]
     validation_record_ids: tuple[tuple[str, int], ...]
     validation_record_digest: str
+    timing_mode: str = "fixed-step"
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -628,7 +629,8 @@ DSEC_CLASS_NAMES = (
 )
 DSEC_CLASS_COUNT = len(DSEC_CLASS_NAMES)
 DSEC_INPUT_MODE = "raw-events"
-DSEC_PROTOCOL_VERSION = "dsec-raw-events-v1"
+DSEC_PROTOCOL_VERSION = "dsec-fixed-time-counts-async-fpga-v4"
+DSEC_EVENT_VALUE_ENCODING = "linear-event-multiplicity"
 DSEC_SENSOR_HEIGHT = 480
 DSEC_SENSOR_WIDTH = 640
 DSEC_LABEL_HEIGHT = 440
@@ -852,8 +854,12 @@ def _canonical_dsec_mask(path: Path, output_size: tuple[int, int] | None) -> Ten
     return mask
 
 
-class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor]]):
-    """One rectified 50 ms DSEC event slice and its timestamp-aligned mask."""
+class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
+    """One fixed-time 50 ms event stream and its aligned mask.
+
+    Every source event contributes one unit of input mass to exactly one physical-time
+    division. Event count never changes the number or duration of model updates.
+    """
 
     input_channels = 2
     input_mode = DSEC_INPUT_MODE
@@ -949,17 +955,19 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor]]):
         valid = (timestamps >= start_relative) & (timestamps < end_relative)
         return x[valid], y[valid], timestamps[valid], polarity[valid]
 
-    def _schedule_events(self, record: DSECRecord) -> Tensor:
+    def _schedule_events(self, record: DSECRecord) -> tuple[Tensor, Tensor]:
         x, y, timestamps, polarity = self._read_interval(record)
         output_height, output_width = self.output_size or (
             DSEC_LABEL_HEIGHT,
             DSEC_LABEL_WIDTH,
         )
+        step_us = EVSEG_INTEGRATION_WINDOW_US // self.internal_updates
         scheduled = np.zeros(
-            (self.internal_updates, 2, output_height, output_width), dtype=np.uint8
+            (self.internal_updates, 2, output_height, output_width), dtype=np.float32
         )
+        deltas = torch.full((self.internal_updates,), float(step_us))
         if timestamps.size == 0:
-            return torch.from_numpy(scheduled).float()
+            return torch.from_numpy(scheduled), deltas
 
         rectify = self._rectify_map(record.rectify_path)
         xy_rect = rectify[y.astype(np.int64), x.astype(np.int64)]
@@ -975,7 +983,7 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor]]):
             & ((polarity == 0) | (polarity == 1))
         )
         if not np.any(valid):
-            return torch.from_numpy(scheduled).float()
+            return torch.from_numpy(scheduled), deltas
 
         x_out = np.floor(x_rect[valid] * output_width / DSEC_LABEL_WIDTH).astype(np.int64)
         y_out = np.floor(y_rect[valid] * output_height / DSEC_LABEL_HEIGHT).astype(np.int64)
@@ -984,20 +992,17 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor]]):
             self._event_handle(record.event_path)["t_offset"][()]
         )
         relative_t = absolute_t - (record.timestamp_us - EVSEG_INTEGRATION_WINDOW_US)
-        clock = np.floor_divide(
-            relative_t * self.internal_updates, EVSEG_INTEGRATION_WINDOW_US
-        ).clip(0, self.internal_updates - 1)
+        clock = np.floor_divide(relative_t, step_us).clip(0, self.internal_updates - 1)
+        np.add.at(scheduled, (clock, p_out, y_out, x_out), 1.0)
+        return torch.from_numpy(scheduled), deltas
 
-        flat_index = (
-            ((clock * 2 + p_out) * output_height + y_out) * output_width + x_out
-        )
-        scheduled.reshape(-1)[np.unique(flat_index)] = 1
-        return torch.from_numpy(scheduled).float()
-
-    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+    def __getitem__(self, index: int) -> tuple[Tensor, Tensor, Tensor]:
         record = self.records[index]
-        return self._schedule_events(record), _canonical_dsec_mask(
-            record.label_path, self.output_size
+        events, deltas_us = self._schedule_events(record)
+        return (
+            events,
+            _canonical_dsec_mask(record.label_path, self.output_size),
+            deltas_us,
         )
 
     def target_mask(self, index: int) -> Tensor:
@@ -1033,16 +1038,18 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor]]):
             self.close()
 
 
-def dsec_temporal_collate(batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor]:
+def dsec_temporal_collate(
+    batch: list[tuple[Tensor, Tensor, Tensor]],
+) -> tuple[Tensor, Tensor, Tensor]:
     if not batch:
         raise ValueError("cannot collate an empty DSEC batch")
-    shapes = {tuple(events.shape) for events, _ in batch}
-    if len(shapes) != 1 or batch[0][0].ndim != 4:
-        raise ValueError(f"DSEC samples must share [T,2,H,W], got {sorted(shapes)}")
-    # T,C,H,W items become T,N,C,H,W; N remains one for stateful training.
-    sequence = torch.stack([events for events, _ in batch], dim=1)
-    masks = torch.stack([mask for _, mask in batch])
-    return sequence, masks
+    if len(batch) != 1:
+        raise ValueError("stateful DSEC streams require batch size 1")
+    events, mask, deltas_us = batch[0]
+    if events.ndim != 4 or deltas_us.shape != (events.shape[0],):
+        raise ValueError("DSEC samples must contain [T,2,H,W] and one delta per packet")
+    # T,C,H,W becomes T,N,C,H,W; N remains one for stateful training.
+    return events.unsqueeze(1), mask.unsqueeze(0), deltas_us
 
 
 def _record_digest(records: Sequence[DSECRecord], root: Path) -> str:
@@ -1079,6 +1086,7 @@ def make_dsec_protocol(
         training_record_ids=tuple((r.sequence_id, r.frame_index) for r in training_records),
         validation_record_ids=tuple((r.sequence_id, r.frame_index) for r in validation_records),
         validation_record_digest=_record_digest(validation_records, root),
+        timing_mode="fixed-physical-time-counts-training-plus-direct-event-fpga",
     )
 
 

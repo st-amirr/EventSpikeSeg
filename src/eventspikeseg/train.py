@@ -6,6 +6,7 @@ import argparse
 import json
 import random
 import shutil
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from .data import (
     DEFAULT_DDD17_ROOT,
     DEFAULT_DSEC_ROOT,
     DEFAULT_INTERNAL_UPDATES,
+    DSEC_EVENT_VALUE_ENCODING,
     DSEC_INPUT_MODE,
     IGNORE_INDEX,
     INPUT_MODES,
@@ -229,7 +231,7 @@ FINAL_LOSS_PROFILE = LossProfile(
     auxiliary_focal=0.0,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-weighted-ce-dice-aux-v3"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-fixed-time-counts-async-fpga-v6"
 FINAL_HOMEOSTASIS_START_FRACTION = 0.10
 FINAL_HOMEOSTASIS_FULL_FRACTION = 0.20
 FINAL_HOMEOSTASIS_MAX_SCALE = 0.0625
@@ -406,22 +408,61 @@ def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
     )
 
 
-def split_temporal_chunks(sequence: Tensor, chunk_count: int) -> tuple[Tensor, ...]:
-    """Split raw-event TNC inputs into equal chronological TBPTT chunks."""
-    if chunk_count < 1:
-        raise ValueError("sequential_chunks must be >= 1")
-    if chunk_count == 1:
-        return (sequence,)
-    if sequence.ndim != 5:
-        raise ValueError(
-            "sequential_chunks > 1 requires a raw-event [T,N,C,H,W] input"
+def unpack_temporal_batch(
+    batch: Sequence[Tensor],
+) -> tuple[Tensor, Tensor, Tensor | None]:
+    """Normalize DDD17 and timestamped DSEC loader batches."""
+    if len(batch) == 2:
+        sequence, target = batch
+        return sequence, target, None
+    if len(batch) == 3:
+        sequence, target, deltas_us = batch
+        return sequence, target, deltas_us
+    raise ValueError(f"expected a 2- or 3-tensor temporal batch, got {len(batch)}")
+
+
+def _temporal_parts(
+    sequence: Tensor,
+    deltas_us: Tensor | None,
+    count: int,
+) -> tuple[tuple[Tensor, Tensor | None, float], ...]:
+    """Split one record once; each part carries events, elapsed time, and weight."""
+    if count < 1 or count > sequence.shape[0]:
+        raise ValueError("sequential_chunks must be between 1 and the packet count")
+    if count > 1 and sequence.ndim != 5:
+        raise ValueError("chunk replay requires raw-event [T,N,C,H,W] input")
+    if deltas_us is not None and deltas_us.shape != (sequence.shape[0],):
+        raise ValueError("one timestamp delta is required per event packet")
+
+    event_parts = (sequence,) if count == 1 else sequence.tensor_split(count)
+    delta_parts = (
+        ((deltas_us,) if count == 1 else deltas_us.tensor_split(count))
+        if deltas_us is not None
+        else (None,) * count
+    )
+    return tuple(
+        (
+            events,
+            deltas,
+            float(deltas.sum()) / 5_000.0 if deltas is not None else float(len(events)),
         )
-    if sequence.shape[0] % chunk_count != 0:
-        raise ValueError(
-            f"time dimension {sequence.shape[0]} must divide evenly into "
-            f"{chunk_count} sequential chunks"
+        for events, deltas in zip(event_parts, delta_parts)
+    )
+
+
+def _merge_temporal_outputs(
+    outputs: Sequence[dict[str, Tensor]], weights: Sequence[float]
+) -> dict[str, Tensor]:
+    """Turn chronological partial outputs back into one record output."""
+    total = sum(weights)
+    return {
+        key: (
+            torch.cat([part[key] for part in outputs])
+            if key.endswith("_spikes")
+            else sum(part[key] * weight / total for part, weight in zip(outputs, weights))
         )
-    return tuple(sequence.chunk(chunk_count, dim=0))
+        for key in outputs[0]
+    }
 
 
 def _training_objective(
@@ -434,7 +475,7 @@ def _training_objective(
     is_final_run: bool,
     training_phase: str,
 ) -> tuple[Tensor, Tensor, Tensor]:
-    """Build one chunk's objective and detached reporting spike rate."""
+    """Build one complete temporal record's objective and reporting spike rate."""
     logits = outputs["segmentation_logits"]
     ce = F.cross_entropy(
         logits,
@@ -504,6 +545,76 @@ def _training_objective(
     if output_spike_rate is None:
         output_spike_rate = outputs["segmentation_spikes"].mean()
     return loss, dice_losses, output_spike_rate.detach()
+
+
+def _forward_temporal_parts(
+    model: nn.Module,
+    parts: Sequence[tuple[Tensor, Tensor | None, float]],
+    *,
+    amp_enabled: bool,
+) -> dict[str, Tensor]:
+    """Run every event part in order and return one complete-record output."""
+    outputs = []
+    for events, deltas_us, _ in parts:
+        model.set_step_deltas_us(deltas_us)  # type: ignore[attr-defined]
+        with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
+            outputs.append(model(events))
+        model.detach_state()  # type: ignore[attr-defined]
+    return _merge_temporal_outputs(outputs, [part[2] for part in parts])
+
+
+def _backward_temporal_record(
+    model: nn.Module,
+    sequence: Tensor,
+    deltas_us: Tensor | None,
+    *,
+    chunks: int,
+    amp_enabled: bool,
+    scaler: torch.cuda.amp.GradScaler,
+    loss_scale: float,
+    objective: Callable[[dict[str, Tensor]], tuple[Tensor, Tensor, Tensor]],
+) -> tuple[float, Tensor, float]:
+    """Backpropagate one loss after all events, replaying only when memory-bounded."""
+    parts = _temporal_parts(sequence, deltas_us, chunks)
+    if chunks == 1:
+        outputs = _forward_temporal_parts(model, parts, amp_enabled=amp_enabled)
+        with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
+            loss, dice, spike_rate = objective(outputs)
+        scaler.scale(loss * loss_scale).backward()
+    else:
+        # The state copy can be hundreds of MB at native resolution; keep the
+        # replay checkpoint in host RAM instead of doubling persistent GPU state.
+        initial_state = model.capture_runtime_state("cpu")  # type: ignore[attr-defined]
+        with torch.no_grad():
+            outputs = _forward_temporal_parts(model, parts, amp_enabled=amp_enabled)
+        model.restore_runtime_state(initial_state)  # type: ignore[attr-defined]
+
+        proxy = {key: value.detach().requires_grad_(True) for key, value in outputs.items()}
+        with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
+            loss, dice, spike_rate = objective(proxy)
+        proxy_gradients = torch.autograd.grad(
+            scaler.scale(loss * loss_scale), tuple(proxy.values()), allow_unused=True
+        )
+        gradients = dict(zip(proxy, proxy_gradients))
+        total_weight = sum(part[2] for part in parts)
+        for events, part_deltas, weight in parts:
+            model.set_step_deltas_us(part_deltas)  # type: ignore[attr-defined]
+            with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
+                replay = model(events)
+            used = [
+                (value, gradients[key])
+                for key, value in replay.items()
+                if gradients[key] is not None
+            ]
+            torch.autograd.backward(
+                [value for value, _ in used],
+                [gradient * weight / total_weight for _, gradient in used],
+            )
+            model.detach_state()  # type: ignore[attr-defined]
+
+    if not torch.isfinite(loss):
+        raise RuntimeError("non-finite full-record training loss")
+    return float(loss.detach()), dice.detach().cpu().double(), float(spike_rate)
 
 
 def _dataset_subset_from_spec(
@@ -671,15 +782,18 @@ def evaluate_model(
     scalar_rate_sums: dict[str, float] = {}
     scalar_rate_batches: dict[str, int] = {}
     with torch.no_grad():
-        for batch_index, (sequence, target) in enumerate(loader):
+        for batch_index, batch in enumerate(loader):
+            sequence, target, deltas_us = unpack_temporal_batch(batch)
             sequence = sequence.to(device)
             target = target.to(device)
+            deltas_us = deltas_us.to(device) if deltas_us is not None else None
             dataset = loader.dataset
             is_stream_start = getattr(dataset, "is_stream_start", None)
             if not stateful_stream or batch_index == 0 or (
                 callable(is_stream_start) and is_stream_start(batch_index)
             ):
                 model.reset()
+            model.set_step_deltas_us(deltas_us)  # type: ignore[attr-defined]
             outputs = model(sequence)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
@@ -767,7 +881,7 @@ def train_architecture(
         raise ValueError(
             "sequential_chunks > 1 is supported only for DSEC raw-event inputs"
         )
-    if internal_updates % sequential_chunks != 0:
+    if dataset_name != "dsec" and internal_updates % sequential_chunks != 0:
         raise ValueError(
             "internal_updates must divide evenly by sequential_chunks"
         )
@@ -810,6 +924,9 @@ def train_architecture(
         suite=resolved_suite,
         internal_updates=internal_updates,
     ).to(resolved_device)
+    set_async_mode = getattr(model, "set_asynchronous_event_mode", None)
+    if callable(set_async_mode):
+        set_async_mode(dataset_name == "dsec")
     amp_enabled = bool(amp and resolved_device.type == "cuda")
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -927,6 +1044,9 @@ def train_architecture(
                 "held_out_split": "sequence_train_holdout",
                 "input_channels": train_pool.input_channels,
                 "input_representation": input_mode,
+                "event_value_encoding": (
+                    DSEC_EVENT_VALUE_ENCODING if dataset_name == "dsec" else None
+                ),
                 "temporal_protocol_version": protocol_version,
                 "temporal_protocol": temporal_protocol,
                 "protocol_fingerprint": protocol_fingerprint,
@@ -934,7 +1054,7 @@ def train_architecture(
                 "training_phase": training_phase_name,
                 "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
                 "training_objective": (
-                    "weighted-ce-plus-0.2-dice-plus-0.1-aux-ce"
+                    "full-window-weighted-ce-plus-0.2-dice-plus-0.1-aux-ce"
                     if is_final_run
                     else "historical-compound"
                 ),
@@ -1124,8 +1244,7 @@ def train_architecture(
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
         f"mode={input_mode} internal_updates={internal_updates} "
-        f"sequential_chunks={sequential_chunks} "
-        f"chunk_updates={internal_updates // sequential_chunks} "
+        f"replay_chunks={sequential_chunks} "
         f"{'continuous_state' if continuous_state else 'stateless_records'} size={size_label} | "
         f"train_pool={len(train_pool)} epoch_train={len(example_epoch_train)} "
         f"val={len(validation_dataset)} | "
@@ -1143,6 +1262,12 @@ def train_architecture(
             f"DSEC fixed validation | sequences={validation_sequences} | "
             f"records={len(validation_dataset)} "
             f"({actual_validation_fraction:.1%} of complete training data)",
+            flush=True,
+        )
+        print(
+            f"DSEC event values={DSEC_EVENT_VALUE_ENCODING} | "
+            f"fixed_updates={internal_updates} | physical-time decay | "
+            "one objective per complete 50 ms record",
             flush=True,
         )
     print(
@@ -1239,57 +1364,45 @@ def train_architecture(
             leave=True,
         )
         optimizer.zero_grad(set_to_none=True)
-        for batch_index, (sequence, target) in enumerate(progress, start=1):
+        for batch_index, batch in enumerate(progress, start=1):
+            sequence, target, deltas_us = unpack_temporal_batch(batch)
             sequence = sequence.to(resolved_device)
             target = target.to(resolved_device)
+            deltas_us = (
+                deltas_us.to(resolved_device) if deltas_us is not None else None
+            )
             if not continuous_state or epoch_train_dataset.is_stream_start(batch_index - 1):
                 model.reset()
-            chunks = split_temporal_chunks(sequence, sequential_chunks)
-            batch_loss = 0.0
-            detached_dice_losses = torch.zeros(class_count, dtype=torch.float64)
-            output_spike_rate = 0.0
-            for chunk in chunks:
-                with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
-                    outputs = model(chunk)
-                    chunk_loss, chunk_dice_losses, chunk_spike_rate = _training_objective(
-                        outputs,
-                        target,
-                        class_weights=class_weights,
-                        class_count=class_count,
-                        loss_profile=loss_profile,
-                        is_final_run=is_final_run,
-                        training_phase=training_phase,
-                    )
-                if not torch.isfinite(chunk_loss):
-                    raise RuntimeError(
-                        f"non-finite loss for {architecture} at epoch {epoch}"
-                    )
-                # Average over temporal chunks and accumulated records. Backward
-                # immediately so this chunk's large activation graph can be freed
-                # before the next chronological chunk is evaluated.
-                scaled_loss = chunk_loss / float(
-                    accumulate_steps * sequential_chunks
+            batch_loss, detached_dice_losses, output_spike_rate = (
+                _backward_temporal_record(
+                    model,
+                    sequence,
+                    deltas_us,
+                    chunks=sequential_chunks,
+                    amp_enabled=amp_enabled,
+                    scaler=scaler,
+                    loss_scale=1.0 / accumulate_steps,
+                    objective=(
+                        lambda outputs, target=target, phase=training_phase: (
+                            _training_objective(
+                                outputs,
+                                target,
+                                class_weights=class_weights,
+                                class_count=class_count,
+                                loss_profile=loss_profile,
+                                is_final_run=is_final_run,
+                                training_phase=phase,
+                            )
+                        )
+                    ),
                 )
-                scaler.scale(scaled_loss).backward()
-                batch_loss += float(chunk_loss.detach()) / sequential_chunks
-                detached_dice_losses += (
-                    chunk_dice_losses.detach().cpu().double() / sequential_chunks
-                )
-                output_spike_rate += float(chunk_spike_rate) / sequential_chunks
-
-                # Preserve numeric membrane/homeostasis values but truncate their
-                # autograd history at every chunk boundary (sequential TBPTT).
-                detach_state = getattr(model, "detach_state", None)
-                if callable(detach_state):
-                    detach_state()
-                del outputs, chunk_loss, chunk_dice_losses, chunk_spike_rate, scaled_loss
+            )
             should_step = (
                 batch_index % accumulate_steps == 0 or batch_index == total_batches
             )
-            gradient_norm = None
             if should_step:
                 scaler.unscale_(optimizer)
-                gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
@@ -1306,9 +1419,7 @@ def train_architecture(
                 phase=training_phase,
                 refresh=False,
             )
-
-
-            del chunks, gradient_norm, sequence, target
+            del sequence, target, deltas_us
         scheduler.step()
         mean_epoch_loss = running_loss / max(1, len(train_loader))
         mean_epoch_dice_losses = running_dice_losses / max(1, len(train_loader))
@@ -1461,6 +1572,9 @@ def train_architecture(
                 "held_out_split": "sequence_train_holdout",
                 "input_channels": train_pool.input_channels,
                 "input_representation": input_mode,
+                "event_value_encoding": (
+                    DSEC_EVENT_VALUE_ENCODING if dataset_name == "dsec" else None
+                ),
                 "temporal_protocol_version": protocol_version,
                 "temporal_protocol": temporal_protocol,
                 "protocol_fingerprint": protocol_fingerprint,
@@ -1604,8 +1718,8 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=DEFAULT_INTERNAL_UPDATES,
         help=(
-            "PLIF clock updates inside each 50 ms record (default: 10); "
-            "must divide 50,000 microseconds exactly"
+            "fixed physical-time PLIF updates inside each 50 ms record "
+            "(default: 10); must divide 50,000 exactly"
         ),
     )
     parser.add_argument(
@@ -1676,8 +1790,8 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=1,
         help=(
-            "number of equal chronological DSEC chunks used for truncated BPTT; "
-            "1 preserves the original full-record forward/backward"
+            "number of chronological DSEC replay chunks; values above 1 use a "
+            "two-pass, one-full-record-objective backward to bound activation memory"
         ),
     )
 

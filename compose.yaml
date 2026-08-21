@@ -115,13 +115,29 @@ services:
        "--device", "auto", "--amp",
        "--height", "241", "--width", "351",
       #  "--height", "185", "--width", "320",
-       "--seed", "17", "--epochs", "80", "--batch-size", "1",
-       "--accumulate-steps", "2", "--internal-updates", "10",
-       "--sequential-chunks", "5", ## divide the internal-updates by this to get batch
+       "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2",
+       "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load", "artifacts/checkpoints/dsec/EventSpikeSeg140k_seed17_epoch023.pt",
-       "--checkpoint-dir", "artifacts/checkpoints/dsec_stable"]
+       "--checkpoint-dir", "artifacts/checkpointsV3/dsec"]
+
+  # Expanded DSEC comparison using count-preserving clocks and full-window loss.
+  train-dsec-xl:
+    <<: *dsec
+    gpus: all
+    command:
+      ["python", "-m", "eventspikeseg.train", "single",
+       "--dataset", "dsec", "--root", "/datasets/DSEC",
+       "--architecture", "EventSpikeSegXL", "--suite", "final",
+       "--input-mode", "raw-events",
+       "--device", "auto", "--amp",
+      #  "--height", "275", "--width", "400", ## Original size is 640 × 440
+       "--height", "241", "--width", "351", ## Original size is 640 × 440
+       "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2",
+       "--internal-updates", "10", "--sequential-chunks", "10",
+       "--train-samples", "0.5", "--validation-fraction", "0.10",
+       "--learning-rate", "0.0005", "--checkpoint-every", "1",
+       "--checkpoint-dir", "artifacts/checkpointsV3/dsec"]
 
   # Optional expanded EventSpikeSegXL comparison model.
   train-ddd17-xl:

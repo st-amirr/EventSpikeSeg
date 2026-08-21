@@ -118,6 +118,40 @@ def test_rate_homeostasis_v2_parameters_still_receive_gradients() -> None:
     assert neuron.target_rate_logit.grad is not None
 
 
+@pytest.mark.parametrize("neuron_type", [HardwareLIF, ParametricLIF])
+def test_elapsed_time_controls_physical_membrane_decay(neuron_type) -> None:
+    neuron = neuron_type(
+        1,
+        LIFConfig(threshold=10.0, f_long_enabled=False),
+    )
+    current = torch.tensor([[[[0.4]]]])
+    neuron(current, elapsed_steps=0.0)
+    neuron(torch.zeros_like(current), elapsed_steps=2.0)
+    retention = (
+        float(neuron.beta.detach())
+        if isinstance(neuron, ParametricLIF)
+        else neuron.config.beta
+    )
+    expected = 0.4 * retention**2
+    assert neuron.membrane.item() == pytest.approx(expected, rel=1e-5)
+
+
+def test_asynchronous_neuron_lazily_decays_only_when_touched() -> None:
+    neuron = HardwareLIF(1, LIFConfig(threshold=10.0, f_long_enabled=False))
+    neuron.set_asynchronous_updates(True)
+    first = torch.tensor([[[[0.4, 0.0]]]])
+    left = torch.tensor([[[[True, False]]]])
+    right = torch.tensor([[[[False, True]]]])
+    neuron(first, elapsed_steps=0.0, update_mask=left)
+    neuron(torch.zeros_like(first), elapsed_steps=2.0, update_mask=right)
+    assert neuron.membrane[0, 0, 0, 0].item() == pytest.approx(0.4)
+    neuron(torch.zeros_like(first), elapsed_steps=1.0, update_mask=left)
+    assert neuron.membrane[0, 0, 0, 0].item() == pytest.approx(
+        0.4 * neuron.config.beta**3,
+        rel=1e-5,
+    )
+
+
 def test_triangular_threshold_adaptation_is_local_and_learnable() -> None:
     neuron = ParametricLIF(
         2,
@@ -316,6 +350,18 @@ def test_xl_model_richer_spiking_paths_and_residual_bridges() -> None:
     assert model.parameter_count() == 236_445
 
 
+def test_xl_dsec_parameter_accounting_matches_fpga_spec() -> None:
+    model = build_model(
+        architecture="EventSpikeSegXL", class_count=11, input_channels=2
+    )
+    assert model.parameter_count() == 237_115
+    omitted = ("refine2.", "aux_head.", "deep_aux_head.")
+    inference_parameters = sum(
+        parameter.numel()
+        for name, parameter in model.named_parameters()
+        if not name.startswith(omitted)
+    )
+    assert inference_parameters == 226_767
 
 
 def test_final_eval_keeps_only_output_spike_raster() -> None:

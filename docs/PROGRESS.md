@@ -3,7 +3,7 @@
 ## Working now
 
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
-- canonical `model.py` exposes `EventSpikeSeg140k` (~140k); the 236,445-parameter expansion is `EventSpikeSegXL`
+- `model.py` exposes active DSEC/FPGA target `EventSpikeSegXL` and compact reference `EventSpikeSeg140k`
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -62,7 +62,7 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - serial dilation-2 context ×2 plus residual concatenated d1/d2/d4 context;
 - one bottlenecked low-resolution spike-mask attention residual;
 - concatenative mid-decoder fusion and late semantic/shallow/detail concatenation;
-- 96→96 PLIF 1×1 cross-channel spike selector (no count-domain MLP);
+- local 96→96 PLIF 1×1 retinotopic spike selector (no count-domain MLP or frame barrier);
 - two training-only auxiliary heads;
 - independent spiking class neurons and temporal argmax;
 - SpikingJelly `Conv2d`/PLIF/surrogate infrastructure where compatible, with project-specific per-channel beta, fInst, fLong and operation order preserved;
@@ -87,13 +87,14 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - rare-class IoU remains the dominant accuracy limitation;
 - the completed top-three hypotheses are measured only under the removed repeated-static protocol; the scaled canonical candidate has not yet been measured under the current temporal protocol;
 - the installed training data is incomplete: 2,887 event tensors versus 10,001 masks, leaving only one event recording usable;
-- with two-channel input, the lighter/expanded models have 140,089/236,445 parameters; prior evidence does not support blaming parameter count alone;
+- with an 11-class DSEC head, XL registers 237,115 parameters and executes 226,767 at inference;
 - learned continuous neuron dynamics and learned attention thresholds remain unquantized;
-- canonical `EventSpikeSeg140k` is the FPGA deployment baseline; `EventSpikeSegXL` is comparison-only.
+- `EventSpikeSegXL` is now the detailed 241x351 DSEC/FPGA implementation target; 140k remains the compact baseline.
 
 ## Next action
 
-Restore missing training event `.npy` files if the inspection mismatch remains, then compare canonical `EventSpikeSeg140k` and `EventSpikeSegXL` under the same timestamp-stream v3 protocol. A one-sequence manifest remains leakage-safe through a contiguous holdout and mandatory reset at the resulting gap.
+Run the 11-class XL DSEC configuration from scratch, then validate its float checkpoint,
+fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 
 ## 2026-08-15 timestamp-stream v3
 
@@ -105,13 +106,13 @@ Restore missing training event `.npy` files if the inspection mismatch remains, 
 - SpikingJelly's internal PLIF `v`/`w` references are also detached, removing a retained-graph RAM peak;
 - `--internal-updates` defaults to 10 and is frozen into each checkpoint protocol;
 - HDF5/raw readers, event-bin/sequential window datasets, T/stride flags, and raw compatibility commands are removed;
-- active parameter counts remain 140,089 and 236,445, so the input fix does not inflate the architecture.
+- model parameter count depends on class-head width: XL is 236,445 for six classes and 237,115 for eleven.
 
 
 ## 2026-08-19 FPGA implementation direction
 
-- canonical public model names are `EventSpikeSeg140k` and optional `EventSpikeSegXL`;
-- canonical DDD17 accounting: 140,089 registered / 135,033 training-forward / 134,637 inference-forward parameters;
+- public model names remain `EventSpikeSegXL` and `EventSpikeSeg140k`; XL is the active implementation target;
+- XL DSEC accounting: 237,115 registered / 232,059 training-forward / 226,767 inference-forward parameters;
 - FPGA deployment omits inherited dead `refine2` and the training-only auxiliary head;
 - primary hardware target is custom VHDL-2008 on Xilinx ZCU104;
 - PLIF membrane/current/beta/threshold/adaptation are digital fixed-point SNN states, not physical voltages/currents;
@@ -119,15 +120,27 @@ Restore missing training event `.npy` files if the inspection mismatch remains, 
 - no softmax exists in the canonical deployed path;
 - coarse-grained synaptic-accumulator + PLIF processing elements are time-multiplexed across spatial tiles/channels/stages while persistent state stays in banked memory;
 - first hardware milestone is bit-exact integer/RTL equivalence; sparse touched-address/lazy-decay/clock-enable optimizations follow only after exactness;
-- remaining RTL-sensitive mechanisms are peer-membrane fInst, triangular fLong/TThresh, and the selector's global any-spike channel enable;
+- DSEC training uses fixed physical-time count divisions; direct FPGA events use lazy physical-time decay and no global neural timestep;
+- memory-bounded replay forms one complete-record objective before propagating its gradients through chronological chunks;
+- remaining RTL-sensitive mechanisms are timestamp-based lazy decay, peer-membrane fInst, triangular fLong/TThresh, and the local PLIF selector;
+- XL adds projected bridge joins, parallel-context joins, local Q/K/V rendezvous, and an external-DDR state-store requirement;
 - evaluation flow is RTL simulation -> synthesis/place-route -> post-implementation timing -> representative SAIF/VCD Vivado power -> optional ZCU104 measurement.
 
 ### 2026-08-20 logical-state accounting
 
-- the 37 executed PLIF populations are now explicitly separated from the ~140k shared parameter count;
+- compact-reference accounting separates 37 executed PLIF populations from the ~140k shared parameter count;
 - general membrane formula: `(672+Nclass)*H*W + 480*H2*W2 + 1280*H4*W4`;
 - six-class 212x282 DDD17 requires **52,524,272 independent membrane values**;
 - fLong scopes cover **9,836,800 logical neurons** at that resolution, each with adaptation age and amplitude;
 - implementation contract: static/shared weights and channel parameters, persistent per-`(layer,c,y,x)` neuron state, temporary current accumulators, sparse event FIFOs;
 - exact sparse layer execution accumulates all weight contributions for a timestep before one PLIF threshold/reset update, then writes persistent state back and emits only fired addresses;
-- a small physical PE array may be time-multiplexed, but logical state addresses may not be aliased; lazy decay follows only after bit-exact validation.
+- a small physical PE array may be time-multiplexed, but logical state addresses may not be aliased; timestamp-based lazy decay is part of the bit-exact DSEC baseline.
+
+### 2026-08-21 XL DSEC implementation accounting
+
+- native dimensions: 241x351 -> 121x176 -> 61x88;
+- 50 inference PLIF populations and 226,767 executed inference parameters;
+- 85,639,973 membrane states plus 40,049,152 fLong age/amplitude values;
+- one last-update timestamp per membrane state for direct asynchronous execution;
+- illustrative exact persistent store: 566.42 MiB at membrane/fLong 16-bit and timestamp 32-bit;
+- implementation memory: external DDR backing store with banked on-chip active-tile cache.

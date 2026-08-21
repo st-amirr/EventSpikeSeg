@@ -33,18 +33,19 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The historical structural contenders span approximately 21k to 107k trainable parameters. The canonical `EventSpikeSeg140k` model is the ~140k topology: 140,089 registered trainable parameters for DDD17, of which 134,637 participate in the deployed inference forward graph. The larger 236,445-parameter expansion is retained as `EventSpikeSegXL`. Parameter count is only a proxy for FPGA implementation cost. The dominant hardware constraints include pointwise width, persistent membrane/adaptation state, event-address generation, shared-weight bandwidth, BRAM/URAM banking, line/tile buffering, FIFO pressure, and the arithmetic cost of learned beta/fInst/fLong dynamics.
+The active 11-class DSEC target is `EventSpikeSegXL`: 237,115 registered parameters and
+226,767 executed inference parameters. `EventSpikeSeg140k` remains the compact reference.
+Parameter count is only a proxy for FPGA cost; XL's dominant constraint is persistent
+membrane/adaptation/timestamp traffic, followed by pointwise mixing, branch joins,
+attention rendezvous, event routing, FIFO pressure, and fInst/fLong arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
-For six-class DDD17, the executed graph owns `678*H*W + 480*H2*W2 + 1280*H4*W4`
-independent membrane values. At 212x282 this is **52,524,272** membrane states, despite
-only 134,637 active inference parameters. fLong adds age/amplitude state on **9,836,800**
-logical neurons at that resolution. This is not a requirement for one physical neuron per
-state: time-multiplexed PLIF PEs are allowed, but the memory system must preserve every
-logical `(layer,c,y,x)` state separately. Incorrect state aliasing, clearing membrane at a
-timestep boundary, or thresholding once per incoming spike instead of once after the full
-timestep accumulation would change model semantics.
+At 241x351, XL owns **85,639,973** membrane states. fLong adds age/amplitude on
+**20,024,576** neurons, and asynchronous execution needs one last-update timestamp per
+membrane. The illustrative uncompressed persistent store is 566.42 MiB using 16-bit
+membrane/fLong values and 32-bit timestamps. Time-multiplexed PLIF PEs are allowed, but
+the external-DDR/tile-cache system must preserve every logical `(layer,c,y,x)` state.
 
 ## Open: continuous learned neuron parameters
 

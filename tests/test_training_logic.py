@@ -13,7 +13,9 @@ from eventspikeseg.train import (
     LossProfile,
     TrainResult,
     _epoch_train_dataset,
+    _merge_temporal_outputs,
     _prepare_datasets,
+    _temporal_parts,
     _training_objective,
     architecture_presets,
     checkpoint_homeostasis_scale,
@@ -28,7 +30,6 @@ from eventspikeseg.train import (
     select_winner,
     set_neuron_dynamics_trainable,
     soft_dice_loss,
-    split_temporal_chunks,
 )
 
 
@@ -208,20 +209,46 @@ def test_temporal_collate_preserves_one_record_per_batch_item() -> None:
 
 def test_sequential_chunks_preserve_chronological_raw_event_order() -> None:
     sequence = torch.arange(10).view(10, 1, 1, 1, 1)
-    chunks = split_temporal_chunks(sequence, 2)
-    assert [chunk.flatten().tolist() for chunk in chunks] == [
+    parts = _temporal_parts(sequence, None, 2)
+    assert [events.flatten().tolist() for events, _, _ in parts] == [
         [0, 1, 2, 3, 4],
         [5, 6, 7, 8, 9],
     ]
-    assert split_temporal_chunks(sequence, 1)[0] is sequence
+    assert _temporal_parts(sequence, None, 1)[0][0] is sequence
 
 
 def test_sequential_chunks_reject_invalid_temporal_partitions() -> None:
     sequence = torch.zeros((10, 1, 2, 4, 5))
-    with pytest.raises(ValueError, match="divide evenly"):
-        split_temporal_chunks(sequence, 3)
+    parts = _temporal_parts(sequence, None, 3)
+    assert [events.shape[0] for events, _, _ in parts] == [4, 3, 3]
     with pytest.raises(ValueError, match="raw-event"):
-        split_temporal_chunks(torch.zeros((1, 6, 4, 5)), 2)
+        _temporal_parts(torch.zeros((2, 6, 4, 5)), None, 2)
+
+
+def test_temporal_chunk_outputs_form_one_weighted_full_window_prediction() -> None:
+    early_logits = torch.tensor([1.0], requires_grad=True)
+    late_logits = torch.tensor([3.0], requires_grad=True)
+    outputs = _merge_temporal_outputs(
+        [
+            {
+                "segmentation_logits": early_logits,
+                "segmentation_rate": torch.tensor(0.25),
+                "segmentation_spikes": torch.ones((2, 1, 1, 1, 1)),
+            },
+            {
+                "segmentation_logits": late_logits,
+                "segmentation_rate": torch.tensor(0.75),
+                "segmentation_spikes": torch.zeros((3, 1, 1, 1, 1)),
+            },
+        ],
+        [2, 3],
+    )
+    assert torch.allclose(outputs["segmentation_logits"], torch.tensor([2.2]))
+    assert torch.allclose(outputs["segmentation_rate"], torch.tensor(0.55))
+    assert outputs["segmentation_spikes"].shape[0] == 5
+    outputs["segmentation_logits"].sum().backward()
+    assert torch.allclose(early_logits.grad, torch.tensor([0.4]))
+    assert torch.allclose(late_logits.grad, torch.tensor([0.6]))
 
 
 def test_class_weight_estimation_reads_masks_without_temporal_events(

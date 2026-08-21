@@ -48,6 +48,17 @@ HomeostasisKind = Literal["legacy", "rate", "triangular_threshold"]
 InhibitionKind = Literal["gate", "peer_membrane", "winner_peer"]
 CompetitionScope = Literal["none", "stem", "encoder", "all"]
 HomeostasisScope = Literal["none", "encoder", "encoder_context", "all"]
+REFERENCE_NEURON_STEP_US = 5_000.0
+RUNTIME_STATE_NAMES = (
+    "membrane",
+    "adaptation",
+    "threshold_timer",
+    "threshold_adaptation_age",
+    "threshold_adaptation_amplitude",
+    "threshold_adaptation_penalty",
+    "last_update_us",
+    "current_time_us",
+)
 
 
 @dataclass(frozen=True)
@@ -171,6 +182,9 @@ class HardwareLIF(nn.Module):
             "threshold_timer", torch.zeros(channels, dtype=torch.long), persistent=False
         )
         self.register_buffer("homeostasis_scale", torch.tensor(1.0), persistent=False)
+        self.register_buffer("step_deltas_us", torch.empty(0), persistent=False)
+        self.register_buffer("last_update_us", torch.empty(0), persistent=False)
+        self.register_buffer("current_time_us", torch.tensor(0.0), persistent=False)
         # Threshold-adaptation state follows every retinotopic neuron. Each spiking
         # neuron owns one triangular ULong process; all active processes at the
         # same (x,y) are summed to form the shared UAT threshold penalty.
@@ -178,6 +192,7 @@ class HardwareLIF(nn.Module):
         self.register_buffer("threshold_adaptation_amplitude", torch.empty(0), persistent=False)
         self.register_buffer("threshold_adaptation_penalty", torch.empty(0), persistent=False)
         self.competition_enabled = True
+        self.asynchronous_updates = False
 
         if config.f_long_enabled and config.homeostasis_kind == "rate":
             self.adaptation_tau_logit = nn.Parameter(
@@ -318,6 +333,8 @@ class HardwareLIF(nn.Module):
         self.threshold_timer.zero_()
         self.threshold_adaptation_age = torch.empty(0, device=self.adaptation.device)
         self.threshold_adaptation_amplitude = torch.empty(0, device=self.adaptation.device)
+        self.last_update_us = torch.empty(0, device=self.adaptation.device)
+        self.current_time_us.zero_()
 
     def detach_state(self) -> None:
         """Keep streaming neuron values while truncating the autograd history."""
@@ -326,6 +343,8 @@ class HardwareLIF(nn.Module):
         self.threshold_adaptation_age = self.threshold_adaptation_age.detach()
         self.threshold_adaptation_amplitude = self.threshold_adaptation_amplitude.detach()
         self.threshold_adaptation_penalty = self.threshold_adaptation_penalty.detach()
+        self.last_update_us = self.last_update_us.detach()
+        self.current_time_us = self.current_time_us.detach()
 
     def set_homeostasis_scale(self, value: float) -> None:
         self.homeostasis_scale.fill_(float(value))
@@ -333,9 +352,36 @@ class HardwareLIF(nn.Module):
     def set_competition_enabled(self, enabled: bool) -> None:
         self.competition_enabled = bool(enabled)
 
+    def set_asynchronous_updates(self, enabled: bool) -> None:
+        self.asynchronous_updates = bool(enabled)
+
+    def set_step_deltas_us(self, deltas_us: Tensor | None) -> None:
+        """Set physical elapsed time for each update in the next sequence.
+
+        A missing schedule preserves the historical 5 ms discrete-time update.
+        DSEC fixed-time training supplies the physical step duration, so learned
+        leakage has the same time unit in PyTorch and the asynchronous FPGA.
+        """
+        if deltas_us is None:
+            self.step_deltas_us = torch.empty(0, device=self.homeostasis_scale.device)
+            return
+        if deltas_us.ndim != 1 or torch.any(deltas_us < 0):
+            raise ValueError("step deltas must be a non-negative one-dimensional tensor")
+        self.step_deltas_us = deltas_us.detach()
+
+    def elapsed_step_scales(self, steps: int, reference: Tensor) -> Tensor:
+        if self.step_deltas_us.numel() == 0:
+            return torch.ones(steps, device=reference.device, dtype=reference.dtype)
+        if self.step_deltas_us.numel() != steps:
+            raise ValueError(
+                f"received {self.step_deltas_us.numel()} time deltas for {steps} updates"
+            )
+        return self.step_deltas_us.to(reference) / REFERENCE_NEURON_STEP_US
+
     def _ensure_state(self, current: Tensor) -> None:
         if self.membrane.shape != current.shape:
             self.membrane = torch.zeros_like(current)
+            self.last_update_us = torch.zeros_like(current)
         if self.adaptation.device != current.device or self.adaptation.dtype != current.dtype:
             self.adaptation = self.adaptation.to(current)
         if self.threshold_timer.device != current.device:
@@ -361,8 +407,11 @@ class HardwareLIF(nn.Module):
                 )
                 self.threshold_adaptation_penalty = self.threshold_adaptation_penalty.to(current)
 
-    def _leaked_membrane(self) -> Tensor:
-        return self.membrane - self.membrane / float(1 << self.config.beta_shift)
+    def _leaked_membrane(self, elapsed_steps: Tensor) -> Tensor:
+        retention = torch.as_tensor(
+            self.config.beta, device=self.membrane.device, dtype=self.membrane.dtype
+        ).pow(elapsed_steps)
+        return self.membrane * retention
 
     def _base_threshold(self, current: Tensor) -> Tensor:
         return torch.full(
@@ -377,9 +426,9 @@ class HardwareLIF(nn.Module):
             # apply Debat et al. UInst membrane decrement to their peers.
             return above
         if self.config.inhibition_kind == "winner_peer":
-            # Published retinotopic competition: the first/strongest neuron at
-            # one location wins the current instant and peers are prevented from
-            # spiking.  We use maximum membrane because bins have no event order.
+            # One source/hidden event can make several retinotopic peers cross at
+            # the same timestamp. Maximum membrane gives that simultaneous group
+            # a deterministic winner without a frame-level ordering assumption.
             masked = candidate.masked_fill(~above, -torch.inf)
             winner = masked.argmax(dim=1, keepdim=True)
             gate = torch.zeros_like(above).scatter_(1, winner, True)
@@ -459,9 +508,12 @@ class HardwareLIF(nn.Module):
         )
         self.membrane = self.membrane - decrement * peers
 
-    def _update_homeostasis(self, spikes: Tensor, candidate: Tensor) -> None:
+    def _update_homeostasis(
+        self, spikes: Tensor, candidate: Tensor, elapsed_steps: Tensor
+    ) -> None:
         if not self.config.f_long_enabled:
             return
+        elapsed_scalar = elapsed_steps.mean()
         if self.config.homeostasis_kind == "legacy":
             activity = spikes.detach().amax(dim=(0, 2, 3))
             active = activity > 0
@@ -479,7 +531,9 @@ class HardwareLIF(nn.Module):
                 )
             else:
                 decayed = torch.clamp(
-                    self.adaptation - self.config.adaptation_decay, min=0.0
+                    self.adaptation
+                    - self.config.adaptation_decay * elapsed_scalar,
+                    min=0.0,
                 )
             self.adaptation = decayed + self.config.adaptation_increment * activity
             return
@@ -490,9 +544,12 @@ class HardwareLIF(nn.Module):
             target = self.target_rate
             assert tau is not None and strength is not None and target is not None
             activity = spikes.mean(dim=(0, 2, 3))
-            retention = torch.exp(-1.0 / tau)
+            retention = torch.exp(-elapsed_scalar / tau)
             error = activity - target
-            updated = retention * self.adaptation + self.homeostasis_scale * strength * error
+            updated = (
+                retention * self.adaptation
+                + self.homeostasis_scale * strength * error * elapsed_scalar
+            )
             self.adaptation = torch.clamp(
                 updated, -self.config.adaptation_clip, self.config.adaptation_clip
             )
@@ -527,7 +584,7 @@ class HardwareLIF(nn.Module):
         # the autograd graph because learned fLong/TThresh are trained through it.
         self.threshold_adaptation_penalty = self._triangular_threshold_penalty()
 
-    def _advance_threshold_adaptation(self) -> None:
+    def _advance_threshold_adaptation(self, elapsed_steps: Tensor) -> None:
         if (
             self.config.homeostasis_kind == "triangular_threshold"
             and self.config.f_long_enabled
@@ -535,7 +592,7 @@ class HardwareLIF(nn.Module):
         ):
             self.threshold_adaptation_age = torch.where(
                 self.threshold_adaptation_age >= 0.0,
-                self.threshold_adaptation_age + 1.0,
+                self.threshold_adaptation_age + elapsed_steps,
                 self.threshold_adaptation_age,
             )
 
@@ -552,31 +609,60 @@ class HardwareLIF(nn.Module):
             )
         return effective
 
-    def _candidate_membrane(self, current: Tensor) -> Tensor:
+    def _candidate_membrane(
+        self, current: Tensor, elapsed_steps: Tensor
+    ) -> Tensor:
         """Charge the membrane for one step.
 
         Fixed LIF keeps the original hardware equation. ParametricLIF overrides
         this hook with SpikingJelly's PLIF charge equation when available.
         """
-        return self._leaked_membrane() + current
+        return self._leaked_membrane(elapsed_steps) + current
 
-    def forward(self, current: Tensor) -> Tensor:
+    def forward(
+        self,
+        current: Tensor,
+        elapsed_steps: Tensor | float = 1.0,
+        update_mask: Tensor | None = None,
+    ) -> Tensor:
         if current.ndim != 4 or current.shape[1] != self.channels:
             raise ValueError(f"expected [N,{self.channels},H,W] current")
         self._ensure_state(current)
-        self._advance_threshold_adaptation()
-        candidate = self._candidate_membrane(current)
+        elapsed = torch.as_tensor(
+            elapsed_steps, device=current.device, dtype=current.dtype
+        )
+        self.current_time_us = self.current_time_us.to(current) + (
+            elapsed.detach() * REFERENCE_NEURON_STEP_US
+        )
+        if update_mask is None:
+            update_mask = torch.ones_like(current, dtype=torch.bool)
+        else:
+            update_mask = update_mask.to(device=current.device, dtype=torch.bool)
+        if self.config.f_inst_enabled and self.config.inhibition_kind in {
+            "peer_membrane",
+            "winner_peer",
+        }:
+            update_mask = update_mask.any(dim=1, keepdim=True).expand_as(current)
+        elapsed_map = (self.current_time_us - self.last_update_us) / REFERENCE_NEURON_STEP_US
+        self._advance_threshold_adaptation(elapsed_map)
+        updated_candidate = self._candidate_membrane(current, elapsed_map)
+        candidate = torch.where(update_mask, updated_candidate, self.membrane)
         threshold = self._threshold_tensor(current)
         raw = self.spike_function(candidate - threshold)
-        above = candidate >= threshold
+        above = (candidate >= threshold) & update_mask
         gate = self._competition_gate(candidate, above)
         hard_spikes = raw * gate.to(raw.dtype)
         spikes = raw + (hard_spikes - raw).detach()
         reset = gate.to(candidate.dtype) * threshold
         loser = (above & ~gate).to(candidate.dtype) * self.config.competitor_decrement
         self.membrane = candidate - reset - loser
+        self.last_update_us = torch.where(
+            update_mask,
+            self.current_time_us.expand_as(self.last_update_us),
+            self.last_update_us,
+        )
         self._apply_peer_membrane_inhibition(candidate, spikes)
-        self._update_homeostasis(spikes, candidate)
+        self._update_homeostasis(spikes, candidate, elapsed_map)
         return spikes
 
 
@@ -655,12 +741,18 @@ class ParametricLIF(HardwareLIF):
         """SpikingJelly PLIF reciprocal tau = 1 - beta, per channel."""
         return 1.0 - self.beta
 
-    def _leaked_membrane(self) -> Tensor:
-        return self.membrane * self.beta.view(1, -1, 1, 1)
+    def _leaked_membrane(self, elapsed_steps: Tensor) -> Tensor:
+        retention = self.beta.view(1, -1, 1, 1).pow(elapsed_steps)
+        return self.membrane * retention
 
-    def _candidate_membrane(self, current: Tensor) -> Tensor:
-        if self.plif_core is None:
-            return self._leaked_membrane() + current
+    def _candidate_membrane(
+        self, current: Tensor, elapsed_steps: Tensor
+    ) -> Tensor:
+        unit_step = bool(
+            torch.isclose(elapsed_steps, torch.ones_like(elapsed_steps)).all()
+        )
+        if self.plif_core is None or not unit_step:
+            return self._leaked_membrane(elapsed_steps) + current
 
         # Reuse SpikingJelly's PLIF neuronal_charge implementation while
         # preserving our per-channel tau and external hardware-visible state.
@@ -857,12 +949,42 @@ class SpikingStage(nn.Module):
             currents = currents.reshape(
                 clock_updates, batch_size, *currents.shape[1:]
             )
-            return torch.stack([self.neuron(current) for current in currents])
+            elapsed = self.neuron.elapsed_step_scales(clock_updates, currents)
+            touched = None
+            if self.neuron.asynchronous_updates:
+                touched = F.conv2d(
+                    (flat != 0).to(flat.dtype),
+                    torch.ones_like(self.conv.weight),
+                    stride=self.conv.stride,
+                    padding=self.conv.padding,
+                    dilation=self.conv.dilation,
+                    groups=self.conv.groups,
+                ).reshape(clock_updates, batch_size, *currents.shape[2:]) > 0
+            return torch.stack(
+                [
+                    self.neuron(
+                        current,
+                        elapsed_steps=delta,
+                        update_mask=mask,
+                    )
+                    for current, mask, delta in zip(
+                        currents,
+                        touched if touched is not None else (None,) * clock_updates,
+                        elapsed,
+                    )
+                ]
+            )
 
         # Historical BatchNorm ablations retain per-timestep batch-statistics
         # semantics for reproducibility.
+        elapsed = self.neuron.elapsed_step_scales(sequence.shape[0], sequence)
         return torch.stack(
-            [self.neuron(self.transform(self.conv(step.float()))) for step in sequence]
+            [
+                self.neuron(
+                    self.transform(self.conv(step.float())), elapsed_steps=delta
+                )
+                for step, delta in zip(sequence, elapsed)
+            ]
         )
 
 
@@ -1036,6 +1158,7 @@ class EventSpikeSegBase(nn.Module):
     ) -> None:
         super().__init__()
         self.architecture = architecture
+        self._step_deltas_us: Tensor | None = None
         base_lif = lif or LIFConfig(
             f_inst_enabled=architecture.f_inst_enabled,
             f_inst_top_k=architecture.f_inst_top_k,
@@ -1223,6 +1346,33 @@ class EventSpikeSegBase(nn.Module):
             if isinstance(module, HardwareLIF):
                 module.detach_state()
 
+    def capture_runtime_state(
+        self, device: torch.device | str | None = None
+    ) -> list[tuple[HardwareLIF, tuple[Tensor, ...]]]:
+        """Snapshot neuron state, optionally offloading the replay copy from GPU."""
+        return [
+            (
+                module,
+                tuple(
+                    getattr(module, name).detach().to(device=device, copy=True)
+                    for name in RUNTIME_STATE_NAMES
+                ),
+            )
+            for module in self.modules()
+            if isinstance(module, HardwareLIF)
+        ]
+
+    @staticmethod
+    def restore_runtime_state(
+        snapshot: list[tuple[HardwareLIF, tuple[Tensor, ...]]],
+    ) -> None:
+        """Restore a state captured by :meth:`capture_runtime_state`."""
+        for module, values in snapshot:
+            for name, value in zip(RUNTIME_STATE_NAMES, values):
+                setattr(module, name, value.to(module.homeostasis_scale.device))
+            if isinstance(module, ParametricLIF) and module.plif_core is not None:
+                module.plif_core.v = module.membrane
+
     def set_homeostasis_scale(self, value: float) -> None:
         for module in self.modules():
             if isinstance(module, HardwareLIF):
@@ -1247,6 +1397,31 @@ class EventSpikeSegBase(nn.Module):
                 and module.config.inhibition_kind in {"peer_membrane", "winner_peer"}
             ):
                 module.set_competition_enabled(enabled)
+
+    def set_step_deltas_us(self, deltas_us: Tensor | None) -> None:
+        """Apply one physical-time schedule to every neuron population."""
+        self._step_deltas_us = deltas_us
+        for module in self.modules():
+            if isinstance(module, HardwareLIF):
+                module.set_step_deltas_us(deltas_us)
+
+    def set_asynchronous_event_mode(self, enabled: bool) -> None:
+        """Select touched-neuron lazy updates for direct raw-event execution."""
+        for module in self.modules():
+            if isinstance(module, HardwareLIF):
+                module.set_asynchronous_updates(enabled)
+
+    def temporal_normalization_steps(self, sequence: Tensor) -> Tensor:
+        """Elapsed time expressed in historical 5 ms neuron updates."""
+        if self._step_deltas_us is None:
+            return torch.as_tensor(
+                sequence.shape[0], device=sequence.device, dtype=sequence.dtype
+            )
+        return self._step_deltas_us.to(sequence).sum() / REFERENCE_NEURON_STEP_US
+
+    def temporal_rate(self, spikes: Tensor) -> Tensor:
+        population = float(spikes[0].numel())
+        return spikes.sum() / (population * self.temporal_normalization_steps(spikes))
 
     def neuron_diagnostics(self) -> dict[str, float]:
         betas: list[Tensor] = []
@@ -1321,8 +1496,9 @@ class EventSpikeSegBase(nn.Module):
         d1 = torch.clamp(d1 + x1, 0.0, 1.0)
         d1 = self.refine1(d1)
         class_spikes = self.head(d1)
+        normalization = self.temporal_normalization_steps(sequence)
         logits = class_spikes.sum(dim=0) * (
-            self.architecture.output_rate_scale / float(sequence.shape[0])
+            self.architecture.output_rate_scale / normalization
         )
         result = {
             "segmentation_spikes": class_spikes,
@@ -1337,7 +1513,7 @@ class EventSpikeSegBase(nn.Module):
         if aux_spikes is not None:
             result["auxiliary_spikes"] = aux_spikes
             result["auxiliary_logits"] = aux_spikes.sum(dim=0) * (
-                self.architecture.output_rate_scale / float(sequence.shape[0])
+                self.architecture.output_rate_scale / normalization
             )
         return result
 

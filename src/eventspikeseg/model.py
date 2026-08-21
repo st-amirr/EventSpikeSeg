@@ -87,14 +87,15 @@ class PLIFChannelSelector(nn.Module):
     with a small dense count-domain network.  This replacement preserves the
     cross-channel learned decision while keeping the inference path spiking:
 
-        fused spikes -> 1x1 synaptic mixing -> PLIF selector spikes
-                     -> per-channel binary enable -> gate fused spikes
+        fused spikes -> 1x1 synaptic mixing -> local PLIF selector spikes
+                     -> per-neuron binary enable -> gate fused spikes
 
     The 1x1 operation is a normal spike-driven synaptic fan-out: an active input
     channel contributes its stored weight to selector-neuron membrane current.
-    No dense multi-bit count-domain MLP, sigmoid attention, or softmax is needed
-    at inference.  A channel is enabled for a sample/timestep when at least one
-    selector neuron for that channel spikes anywhere in the feature map.
+    No dense multi-bit count-domain MLP, sigmoid attention, softmax, or global
+    spatial reduction is needed at inference. Each selector spike gates only the
+    corresponding retinotopic feature, so an FPGA can propagate it immediately
+    without waiting for a complete frame.
     """
 
     def __init__(
@@ -119,11 +120,7 @@ class PLIFChannelSelector(nn.Module):
 
     def forward(self, sequence: Tensor) -> Tensor:
         selector_spikes = self.selector(sequence)
-        # TNCHW -> TNC11.  The forward gate is binary. Because selector_spikes
-        # are surrogate-gradient spikes, spatial max still provides a gradient
-        # path through the winning selector activity during training.
-        gate = selector_spikes.amax(dim=(3, 4), keepdim=True)
-        return sequence * gate
+        return sequence * selector_spikes
 
 
 class ParallelDilatedResidualContext(nn.Module):
@@ -502,8 +499,9 @@ class EventSpikeSegXL(EventSpikeSegBase):
         d1 = self.decoder1_extra(d1)
 
         class_spikes = self.head(d1)
+        normalization = self.temporal_normalization_steps(sequence)
         logits = class_spikes.sum(dim=0) * (
-            self.architecture.output_rate_scale / float(sequence.shape[0])
+            self.architecture.output_rate_scale / normalization
         )
         # Return exact scalar activity means instead of pinning full TNCHW
         # hidden sequences in the output dictionary until backward completes.
@@ -511,11 +509,11 @@ class EventSpikeSegXL(EventSpikeSegBase):
         # gradients are unchanged.
         result = {
             "segmentation_logits": logits,
-            "segmentation_rate": class_spikes.mean(),
-            "enc1_rate": x1.mean(),
-            "enc2_rate": x2.mean(),
-            "enc3_rate": x3.mean(),
-            "decoder_rate": d1.mean(),
+            "segmentation_rate": self.temporal_rate(class_spikes),
+            "enc1_rate": self.temporal_rate(x1),
+            "enc2_rate": self.temporal_rate(x2),
+            "enc3_rate": self.temporal_rate(x3),
+            "decoder_rate": self.temporal_rate(d1),
         }
         if not self.training:
             # Evaluation visualizations may still need the output spike raster;
@@ -523,11 +521,11 @@ class EventSpikeSegXL(EventSpikeSegBase):
             result["segmentation_spikes"] = class_spikes
         if auxiliary_spikes is not None:
             result["auxiliary_logits"] = auxiliary_spikes.sum(dim=0) * (
-                self.architecture.output_rate_scale / float(sequence.shape[0])
+                self.architecture.output_rate_scale / normalization
             )
         if deep_auxiliary_spikes is not None:
             result["deep_auxiliary_logits"] = deep_auxiliary_spikes.sum(dim=0) * (
-                self.architecture.output_rate_scale / float(sequence.shape[0])
+                self.architecture.output_rate_scale / normalization
             )
         return result
 
@@ -676,22 +674,23 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         d1 = self.decoder1_extra(d1)
 
         class_spikes = self.head(d1)
+        normalization = self.temporal_normalization_steps(sequence)
         logits = class_spikes.sum(dim=0) * (
-            self.architecture.output_rate_scale / float(sequence.shape[0])
+            self.architecture.output_rate_scale / normalization
         )
         result = {
             "segmentation_logits": logits,
-            "segmentation_rate": class_spikes.mean(),
-            "enc1_rate": x1.mean(),
-            "enc2_rate": x2.mean(),
-            "enc3_rate": x3.mean(),
-            "decoder_rate": d1.mean(),
+            "segmentation_rate": self.temporal_rate(class_spikes),
+            "enc1_rate": self.temporal_rate(x1),
+            "enc2_rate": self.temporal_rate(x2),
+            "enc3_rate": self.temporal_rate(x3),
+            "decoder_rate": self.temporal_rate(d1),
         }
         if not self.training:
             result["segmentation_spikes"] = class_spikes
         if auxiliary_spikes is not None:
             result["auxiliary_logits"] = auxiliary_spikes.sum(dim=0) * (
-                self.architecture.output_rate_scale / float(sequence.shape[0])
+                self.architecture.output_rate_scale / normalization
             )
         return result
 

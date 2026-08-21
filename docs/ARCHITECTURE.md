@@ -1,10 +1,11 @@
 # EventSpikeSeg Architecture
 
-## Canonical model
+## Active implementation model
 
-`EventSpikeSeg140k` is the project's primary ~140k architecture. `EventSpikeSegXL` is an
-optional expanded ~236k comparison and is not the deployment baseline. New runs,
-checkpoints, documentation, and deployment work use only these canonical names.
+`EventSpikeSegXL` is the active detailed 11-class DSEC/FPGA implementation target at
+`241x351`. `EventSpikeSeg140k` remains the compact reference baseline. The XL choice is an
+implementation decision, not a claim of measured accuracy superiority; both public Python
+model names remain stable.
 
 For the six-class DDD17 configuration, canonical `EventSpikeSeg140k` has **140,089
 registered trainable parameters**. The Python module tree also contains an inherited
@@ -153,6 +154,63 @@ updated; it does not need to be stored as a third full map. Stem peer-membrane f
 uses the membrane values themselves and does not introduce a separate full-resolution
 membrane copy.
 
+### XL state accounting at DSEC 241x351
+
+The executed XL inference graph has 18 full-resolution, 12 half-resolution, and 20
+quarter-resolution PLIF populations. Summing their output channels gives:
+
+```text
+full-resolution coefficient    = 672 + Nclass
+half-resolution coefficient    = 768
+quarter-resolution coefficient = 2144
+
+N_mem_XL = (672 + Nclass) * H * W
+         + 768 * H2 * W2
+         + 2144 * H4 * W4
+```
+
+For 11-class DSEC:
+
+```text
+H x W   = 241 x 351 = 84,591 locations
+H2 x W2 = 121 x 176 = 21,296 locations
+H4 x W4 =  61 x  88 =  5,368 locations
+
+N_mem_XL = 683*84,591 + 768*21,296 + 2144*5,368
+         = 85,639,973 membrane values
+```
+
+The 26 fLong-enabled populations sum to 416 half-resolution and 2080
+quarter-resolution channels:
+
+```text
+N_fLong_XL = 416*H2*W2 + 2080*H4*W4
+           = 20,024,576 neurons
+```
+
+Each fLong neuron stores age and amplitude, adding 40,049,152 persistent values. Direct
+asynchronous DSEC additionally needs one last-update timestamp for each of the 85,639,973
+membrane states. Raw storage examples are:
+
+| Persistent state | Count | Illustrative format | Storage |
+| --- | ---: | ---: | ---: |
+| membrane | 85,639,973 | 16 bit | 163.35 MiB |
+| last-update timestamp | 85,639,973 | 32 bit | 326.69 MiB |
+| fLong age + amplitude | 40,049,152 | 16 bit each value | 76.39 MiB |
+| total above | 211,329,098 values | mixed | 566.42 MiB |
+| class counters | 930,501 | illustrative 16 bit | 1.77 MiB |
+
+This exact uncompressed footprint cannot be assumed to fit in on-chip PL memory. The XL
+baseline therefore stores persistent state in external DDR and uses BRAM/URAM/LUTRAM as
+a banked active-tile cache. Any timestamp compression, reduced state width, sparse state
+allocation, or all-on-chip claim must be quantified and checked against the bit-exact
+integer reference.
+
+Training executes three additional auxiliary populations: 11 channels at half resolution
+and 32+11 channels at quarter resolution, adding 465,080 transient training-only membrane
+states. The inherited dead `refine2` would add 128 half-resolution channels (2,725,888
+states) but is not called and must not be exported.
+
 ### State ownership
 
 | Quantity | Sharing/lifetime |
@@ -181,9 +239,10 @@ synaptic accumulator/PLIF stage.
 ### DSEC-Semantic
 
 DSEC is the preferred direct event-stream FPGA deployment path. Exact raw `(t,x,y,p)`
-events are sliced before each semantic timestamp, rectified, and delivered as two
-chronological polarity event channels. The DDD17 moment scheduler is bypassed. This
-maps naturally to AER/event routing into the first synaptic/PLIF stage.
+events are sliced before each semantic timestamp and rectified. GPU training accumulates
+them into fixed physical-time divisions while retaining linear event multiplicity. Event
+density never changes the number of training updates. The FPGA does not create these
+divisions: AER events enter the first synaptic/PLIF stage directly.
 
 ## Canonical EventSpikeSeg140k forward graph
 
@@ -202,7 +261,7 @@ maps naturally to AER/event routing into the first synaptic/PLIF stage.
   -> project3 128->64 PLIF -> nearest event upsample -> add/clamp x2 -> residual refine
   -> project2 64->32 PLIF -> nearest event upsample -> semantic32
   -> concatenate semantic32 + shallow32 + detail32 -> 96 channels
-  -> PLIF selector: 1x1 96->96 synapses -> PLIF -> spatial binary channel enable
+  -> PLIF selector: local 1x1 96->96 synapses -> PLIF -> retinotopic binary gate
   -> final fuse: DW3x3 96->96 PLIF -> PW1x1 96->32 PLIF
   -> final residual 32-ch DW/PW-PLIF refinement
   -> semantic head: 1x1 32->Nclass synapses -> independent PLIF class populations
@@ -233,10 +292,10 @@ fixed-point state. Their time course must match the exported integer reference e
 
 ## Non-PLIF operations and FPGA treatment
 
-The goal is a **digital neuromorphic FPGA accelerator**. The substrate is clocked digital
-logic, but the runtime preserves the SNN structure: binary spike communication,
-persistent PLIF membrane/adaptation state, event-address-triggered synaptic additions,
-convolutional weight sharing, and inactivity-aware scheduling. It is not a dense ANN
+The goal is a **digital neuromorphic FPGA accelerator**. The substrate uses synchronous
+digital circuits internally, but model execution is asynchronous: camera/hidden events
+trigger only affected fan-out, touched neurons decay from their stored last-update
+timestamp, and there is no global model timestep barrier. It is not a dense ANN
 accelerator with PLIF inserted only as an activation.
 
 | Software operation | Exact role | FPGA interpretation |
@@ -245,30 +304,33 @@ accelerator with PLIF inserted only as an activation.
 | residual `add + clamp(0,1)` | merge binary spike routes | event merge / binary OR-dedup equivalent |
 | nearest upsample | duplicate spatial spike locations | event-address fan-out/remapping |
 | `torch.cat` | concatenate channel groups | channel-ID/address remapping; no arithmetic |
-| 96-ch selector `amax(H,W)` | binary global channel enable | one per-channel `seen_spike` flag / OR reduction over emitted events |
+| XL projected bridges | preserve spikes around strided paths | timestamp-tagged local residual merge queues |
+| XL parallel d1/d2/d4 context | retain three receptive-field identities | three address generators, channel remap, 384->128 fusion, local residual join |
+| XL Q/K/V spike-mask attention | four local 8-channel coincidence gates | per-location/timestamp rendezvous counters and short V holding buffer; no spatial NxN matrix |
+| local 96-ch PLIF selector | retinotopic binary gate | immediate local event gate; no frame reduction |
 | temporal spike sum | class evidence | integer per-pixel class counters |
 | argmax | final semantic label | comparator tree / sequential maximum |
 | DDD17 timestamp scheduler | reconstruct approximate timed deliveries | digital scheduler feeding event/current arrivals |
 
 The selector's 1x1 synaptic projection and PLIF population remain ordinary spike-native
-SNN computation. Because its `amax(H,W)` is applied to binary spikes, the FPGA does not
-need a dense floating-point global reduction: it can set a channel flag whenever any
-selector spike is emitted during that clock.
+SNN computation. A selector event gates only its own retinotopic feature event, avoiding
+the former spatial `amax(H,W)` synchronization barrier.
 
 ## Primary implementation goal: digital neuromorphic FPGA
 
 The canonical deployment objective is:
 
 1. keep PyTorch/SpikingJelly as the training and floating-point golden reference;
-2. export only the **executed inference graph** and its learned weights, beta, thresholds,
+2. export only the **executed XL inference graph** and its learned weights, beta, thresholds,
    fInst, and fLong parameters;
 3. define deterministic fixed-point formats, rounding, saturation, and overflow rules;
 4. build a bit-exact integer reference and verify layer currents, membranes, spikes, and
    semantic output against the float model;
 5. implement reusable VHDL synaptic-accumulator + PLIF processing elements, preserving
    shared convolution kernels and binary spike routing;
-6. store persistent membrane/adaptation state in banked BRAM/URAM/LUTRAM and
-   time-multiplex processing elements across spatial tiles/channels/stages;
+6. store persistent membrane/adaptation/timestamp state in external DDR behind banked
+   BRAM/URAM/LUTRAM tile caches and time-multiplex processing elements across tiles,
+   channels, and stages;
 7. first establish exact full/tiled execution, then add sparse optimizations such as
    touched-address queues, active-neuron lists, lazy decay, and clock-enable during idle
    periods only after equivalence is proven;
@@ -278,35 +340,24 @@ The canonical deployment objective is:
 
 ## Exact event-addressed layer procedure
 
-The sparse FPGA implementation changes **how** convolution is evaluated, not the trained
-network equation. SpikingJelly currently evaluates dense tensor `Conv2d`; the FPGA may
-evaluate the same sum input-centrically from nonzero spikes. For each SNN timestep and
-learned layer:
+The training backend evaluates dense tensor `Conv2d` on fixed physical-time divisions.
+The asynchronous FPGA evaluates the shared network parameters input-centrically:
 
-1. Receive presynaptic spike addresses `(c,y,x)` from the previous stage.
-2. From the layer's fixed kernel connectivity, generate only valid postsynaptic addresses.
-   Stride, padding, dilation, and depthwise/groups are address-generation rules; no dense
-   sliding-window scan is required.
-3. For every valid destination, add the corresponding shared or compile-time-fixed weight
-   into that destination's **temporary synaptic-current accumulator**. Because the input is
-   binary, hidden spike-times-weight multiplication is unnecessary.
-4. Keep a **timestep barrier**. All presynaptic contributions for that layer/timestep must
-   be accumulated before threshold/reset. Updating and thresholding a PLIF after every
-   individual incoming spike would not be equivalent to the trained SpikingJelly model.
-5. At the PLIF phase, address each logical postsynaptic neuron independently, load its
-   persistent `V[layer,c,y,x]`, apply `beta[c] * V + I`, fInst/fLong/dynamic threshold and
-   reset in the trained order, then write the updated membrane/adaptation state back to
-   the same address.
-6. Emit only firing neuron addresses to the next stage. The dense spike tensor need not be
-   materialized between layers.
-7. Clear/reuse the temporary current storage, but **do not clear membrane/fLong state** at
-   the timestep boundary. Persistent state resets only at the same sequence/gap boundaries
-   as the software reference.
+1. Receive one timestamped presynaptic event `(t,c,y,x)`.
+2. Generate only valid postsynaptic destinations from kernel, stride, padding, dilation,
+   and group/depthwise address rules.
+3. For each touched destination, load `V`, adaptation, and its `last_update_timestamp`.
+4. Apply `retention = beta ** ((t-last_update)/5000us)`, then add the corresponding
+   shared weight and execute threshold, reset, fInst, and fLong in the exported order.
+5. Write the state and timestamp back. Enqueue each generated binary spike at timestamp
+   `t`; if no spike is generated, propagation along that path stops.
+6. Merge residual events, remap concatenated channels, and fan out nearest-upsample events
+   by address. The local selector never waits for a complete spatial frame.
+7. Read semantic class-spike counters at label timestamps. Persistent neuron state resets
+   only at sequence/frame gaps, not at semantic-label boundaries.
 
-The safest first implementation still updates every logical PLIF state once per trained
-timestep so leak is exact even when no input arrived. A later lazy-decay design may update
-only touched neurons by storing a last-update timestamp and applying the accumulated decay,
-but that optimization must be proven bit-exact with reset, fInst, and fLong before use.
+There is no global neural timestep barrier in DSEC inference. Fixed-time training
+divisions are a PyTorch approximation sharing the same weights and physical-time decay.
 
 ## Scalable FPGA execution
 
@@ -344,17 +395,82 @@ measured hardware latency.
 
 ## EventSpikeSegXL
 
-`EventSpikeSegXL` is the 236,445-parameter expanded comparison model. It retains the same
-32/64/128 PLIF basis but adds projected residual bridges, parallel d1/d2/d4 context,
-a bottlenecked spike-mask attention residual, stronger mid-decoder concatenation,
-asymmetric detail refinement, and a second training-only auxiliary head. It remains
-available for accuracy/capacity comparison but is not the FPGA deployment baseline
-because its extra non-local/routing structures increase memory, control, and latency cost.
+### Exact parameter accounting
+
+| Configuration/graph | Parameters |
+| --- | ---: |
+| DDD17, 6 classes, registered module | 236,445 |
+| DSEC, 11 classes, registered module | 237,115 |
+| DSEC executed training forward | 232,059 |
+| DSEC executed inference/export graph | 226,767 |
+| inherited dead `refine2`, omitted | 5,056 |
+| mid auxiliary head, training only | 726 |
+| deep auxiliary head, training only | 4,566 |
+
+The DSEC inference parameters split into 215,936 shared convolution weights, 3,584
+foldable affine gains, 3,595 PLIF beta values, 3,595 PLIF base thresholds, four attention
+comparison thresholds, one fInst strength, and 26 pairs of fLong strength/duration
+parameters. The deployed graph contains 50 PLIF populations; training adds three auxiliary
+populations, while the registered dead block contains two more populations.
+
+### Native DSEC layer graph and dimensions
+
+`T=10` below is the default PyTorch training schedule. FPGA input is a direct asynchronous
+event stream and does not store ten input bins. Spatial dimensions and channel identities
+are nevertheless the same.
+
+| Stage | Synaptic/spiking operation | Output `T,N,C,H,W` | PLIF populations |
+| --- | --- | --- | ---: |
+| input | rectified ON/OFF counts for training | `10,1,2,241,351` | 0 |
+| stem | 3x3, 2->32, affine, PLIF | `10,1,32,241,351` | 1 |
+| encoder-1 | two residual DW3x3/PW1x1 32-ch blocks | `10,1,32,241,351` | 4 |
+| detail-1 | residual DW3x3/PW1x1 32-ch | `10,1,32,241,351` | 2 |
+| detail-2 | DW3x1 -> DW1x3 -> PW1x1, residual | `10,1,32,241,351` | 3 |
+| detail-3 | residual DW3x3/PW1x1 32-ch | `10,1,32,241,351` | 2 |
+| down2 main | stride-2 DW32 -> PW64 | `10,1,64,121,176` | 2 |
+| bridge12 | stride-2 1x1, 32->64; merge with down2 | `10,1,64,121,176` | 1 |
+| encoder-2 | two residual DW/PW 64-ch blocks | `10,1,64,121,176` | 4 |
+| down3 main | stride-2 DW64 -> PW128 | `10,1,128,61,88` | 2 |
+| bridge23 | stride-2 1x1, 64->128; merge with down3 | `10,1,128,61,88` | 1 |
+| encoder-3 | two residual DW/PW 128-ch blocks | `10,1,128,61,88` | 4 |
+| serial context | two residual dilation-2 DW/PW 128-ch blocks | `10,1,128,61,88` | 4 |
+| parallel context | DW3x3 d1/d2/d4, concat 384, 1x1->128, residual | `10,1,128,61,88` | 4 |
+| local spike attention | Q/K/V 128->32, four heads x eight channels, 32->128 residual | `10,1,128,61,88` | 4 |
+| project3 | 1x1 128->64, then nearest upsample | `10,1,64,121,176` | 1 |
+| decoder-2 fusion | concat project3+x2=128; DW128 -> PW64 | `10,1,64,121,176` | 2 |
+| decoder-2 refine | residual DW/PW 64-ch | `10,1,64,121,176` | 2 |
+| project2 | 1x1 64->32, then nearest upsample | `10,1,32,241,351` | 1 |
+| late merge | concatenate semantic32 + shallow32 + detail32 | `10,1,96,241,351` | 0 |
+| local selector | 1x1 96->96 PLIF, retinotopic gate | `10,1,96,241,351` | 1 |
+| final fusion | DW96 -> PW32 | `10,1,32,241,351` | 2 |
+| decoder-1 refine | residual DW/PW 32-ch | `10,1,32,241,351` | 2 |
+| class head | 1x1 32->11 independent class PLIFs | `10,1,11,241,351` | 1 |
+| readout | sum class spikes over 50 ms, per-pixel argmax | `1,11,241,351` logits | 0 |
+
+Training-only heads are `64->11` at 121x176 and `128->32->11` at 61x88. They are skipped
+by `model.eval()` and omitted from VHDL export.
+
+### FPGA routing/control requirements
+
+- `bridge12`/`bridge23` require timestamp-tagged merge queues for main and projected paths.
+- Parallel d1/d2/d4 context concatenates channel address ranges and joins the residual by
+  logical timestamp/location; it does not average branches.
+- Attention is local rather than dense spatial attention. For each `(timestamp,y,x)`, Q
+  and K form four eight-channel coincidence counts, each compared with its learned head
+  threshold; the resulting four gates mask corresponding V groups before the 32->128
+  projection. Path latency requires a local rendezvous/V holding buffer, not a global
+  61x88 frame barrier.
+- Decoder concatenations are channel-ID remaps. Nearest upsample is address fan-out.
+- The 96->96 selector gates only the matching `(channel,y,x,timestamp)` event.
+- Persistent state lives in DDR-backed tiles; shared weights and hot queues/tile banks may
+  reside on chip. Weight storage is small compared with logical neuron state.
+- Export and RTL verification must compare branch joins, attention coincidences/gates,
+  membrane/timestamp trajectories, fInst/fLong state, emitted events, and final counters.
 
 ## Canonical naming
 
-- `EventSpikeSeg140k`: canonical ~140k topology; use for all new runs and deployment work.
-- `EventSpikeSegXL`: optional expanded ~236k comparison.
+- `EventSpikeSegXL`: active detailed 11-class DSEC/FPGA implementation target.
+- `EventSpikeSeg140k`: compact reference/baseline.
 
 Historical top-ten/top-five/top-three architecture-search results retain their original
 names and measured values.

@@ -2,10 +2,10 @@
 
 ## Mission
 
-Build and validate the canonical `EventSpikeSeg140k` (~140k registered parameters for the
-six-class DDD17 configuration), then map its spike-native PLIF inference graph to a
-**custom digital neuromorphic FPGA accelerator**. Training remains PyTorch + SpikingJelly;
-the deployment target is VHDL-2008 on ZCU104 with fixed-point PLIF state, sparse
+Build and validate `EventSpikeSegXL` for 11-class DSEC at `241x351`, then map its
+spike-native PLIF inference graph to a **custom digital neuromorphic FPGA accelerator**.
+`EventSpikeSeg140k` remains the compact reference baseline. Training remains PyTorch +
+SpikingJelly; deployment targets VHDL-2008 on ZCU104 with fixed-point PLIF state, sparse
 event/spike routing, shared-kernel synaptic additions, and activity-aware execution.
 
 ## Source-of-truth order
@@ -20,10 +20,10 @@ Python constructors/forward methods remain authoritative if older diagrams disag
 
 ## Canonical naming
 
-- `EventSpikeSeg140k`: canonical ~140k topology; all new work uses this name.
-- `EventSpikeSegXL`: 236,445-parameter expanded comparison only.
-
-Do not re-promote XL without an explicit new decision.
+- `EventSpikeSegXL`: active detailed DSEC/FPGA implementation target; 237,115 registered
+  parameters for the 11-class configuration.
+- `EventSpikeSeg140k`: compact reference/baseline; 140,089 registered parameters for
+  six-class DDD17.
 
 ## Exact inference semantics
 
@@ -32,14 +32,14 @@ ParametricLIF -> binary spikes`. Convolution kernels are synaptic weights; the o
 feature-map elements are PLIF neurons. DW/PW blocks contain two distinct PLIF
 populations and must not be collapsed.
 
-Canonical six-class accounting:
+XL 11-class DSEC accounting:
 
-- registered parameters: 140,089
-- executed training-forward parameters: 135,033
-- executed inference-forward parameters: 134,637
+- registered parameters: 237,115
+- executed training-forward parameters: 232,059
+- executed inference-forward parameters: 226,767
 - registered-but-dead `refine2`: 5,056 parameters / 2 SpikingStage populations
-- training-only auxiliary head: 396 parameters
-- executed inference SpikingStage populations: 37
+- training-only heads: 726-parameter mid auxiliary + 4,566-parameter deep auxiliary
+- executed inference SpikingStage populations: 50
 
 Hardware deployment implements the executed inference graph only.
 
@@ -57,17 +57,18 @@ optional optimization only after bit-exact and semantic-accuracy revalidation.
 
 ## Logical state accounting rule
 
-Do not infer neuron-state memory from the ~140k parameter count. For the six-class
-canonical graph, the 37 executed PLIF populations require
-`N_mem = 678*H*W + 480*H2*W2 + 1280*H4*W4`, where `H2/W2=ceil(H/W over 2)` and
-`H4/W4=ceil(H2/W2 over 2)`. At `212x282`, this is **52,524,272 independent membrane
-states**. The general class-count form is `(672+Nclass)*H*W + 480*H2*W2 +
-1280*H4*W4`.
+Do not infer neuron-state memory from parameter count. XL's 50 inference PLIF populations
+require `N_mem = (672+Nclass)*H*W + 768*H2*W2 + 2144*H4*W4`. At 11-class DSEC
+`241x351`, `H2xW2=121x176` and `H4xW4=61x88`, giving **85,639,973 independent
+membrane states**.
 
-fLong-enabled layers contain `352*H2*W2 + 1216*H4*W4` logical neurons: **9,836,800**
-at 212x282. Each carries separate adaptation age and adaptation amplitude. `beta` and
-base threshold are per-channel shared parameters; convolution weights are spatially
-shared; membrane and fLong state are per `(layer,c,y,x)`.
+XL fLong-enabled populations contain `416*H2*W2 + 2080*H4*W4` logical neurons:
+**20,024,576** at 241x351. Each carries adaptation age and amplitude. Direct DSEC
+execution also keeps one last-update timestamp per membrane state. With illustrative
+16-bit membrane/age/amplitude and 32-bit timestamps, persistent state is about
+**566.42 MiB** before output counters and buffering. The exact XL baseline therefore
+requires external DDR plus an on-chip banked tile/cache unless later measured
+quantization/compression proves an all-on-chip mapping.
 
 Hardware may reuse a small number of physical PLIF PEs, but **must never alias logical
 membrane addresses from different channels, positions, or layers**. Current accumulators
@@ -90,23 +91,21 @@ The primary runtime is fully digital but must preserve neuromorphic/SNN executio
 
 Do not instantiate one hardware PLIF datapath per logical `[C,H,W]` state. Prefer a
 reusable coarse-grained digital synaptic-accumulator + PLIF tile, with logical
-membrane/adaptation state stored in banked BRAM/URAM/LUTRAM. Reuse the tile across
-spatial partitions, channels, and stages while preserving shared convolution kernels.
-Start with exact full/tiled state execution; sparse touched-address/lazy-decay
-optimizations come only after bit-exact equivalence is demonstrated.
+membrane/adaptation/timestamp state stored in external DDR behind banked on-chip tile
+caches. Use BRAM/URAM/LUTRAM for active tiles, queues, and small tables. Reuse the tile
+across spatial partitions, channels, and stages while preserving shared convolution
+kernels and deterministic timestamp-tagged branch joins.
 
 ### Exact sparse execution order
 
-For each layer/timestep: accept sparse `(c,y,x)` spikes -> generate valid destination
-addresses from kernel/stride/padding/dilation/groups -> accumulate fixed/shared weights
-into temporary destination currents -> wait for the layer/timestep accumulation barrier ->
-read each destination's own persistent state -> apply fixed-point PLIF/fInst/fLong/reset ->
-write state back -> emit only firing addresses. Do **not** threshold/reset once per incoming
-spike. The baseline must preserve the trained once-per-timestep neuron update.
+DSEC inference is asynchronous. For each timestamped `(polarity,y,x)` event, generate its
+valid destinations, lazily decay each touched state from its own last-update timestamp,
+add the shared synaptic weight, apply PLIF/fInst/fLong/reset, write the state and timestamp,
+then immediately route emitted spikes to the next layer. There is no input bin, dense idle
+state sweep, or global layer/timestep barrier.
 
-The initial RTL may sweep every logical PLIF state at the neuron-update phase so beta leak
-is exact even when no current arrived. Sparse touched-neuron/lazy-decay updates are later
-optimizations after bit-exact equivalence, not the initial semantics.
+DDD17 retains its historical fixed-step approximation because source event tuples are not
+available. Its per-timestep accumulation barrier is not the DSEC/FPGA execution contract.
 
 ### Natural mappings
 
@@ -125,7 +124,14 @@ optimizations after bit-exact equivalence, not the initial semantics.
 
 - stem `peer_membrane` fInst uses retinotopic cross-channel membrane energy;
 - encoder/context triangular fLong uses adaptation age/amplitude and dynamic threshold;
-- final selector uses a global spatial binary enable after a 96->96 PLIF projection.
+- projected residual bridges join the strided 32->64 and 64->128 encoder paths;
+- parallel d1/d2/d4 context requires deterministic timestamp-tagged branch joins;
+- four-head Q/K/V attention uses 32 channels (8 per head) and requires a local
+  timestamp/location rendezvous without a global frame barrier;
+- final selector is a local retinotopic binary gate after a 96->96 PLIF projection;
+- DSEC PLIF decay is a function of physical timestamp delta, with 5 ms as the
+  learned-beta reference interval;
+- touched state uses physical-time lazy decay in the asynchronous FPGA path.
 
 Do not silently replace these. If hardware cannot reproduce them, define an explicit
 hardware-compatible approximation and revalidate/fine-tune accuracy.
@@ -133,8 +139,9 @@ hardware-compatible approximation and revalidate/fine-tune accuracy.
 ## Input contracts
 
 DDD17 uses the 50 ms statistic scheduler and is an approximation because raw tuples are
-unavailable. DSEC uses exact raw rectified events and bypasses the moment scheduler;
-DSEC is therefore the cleaner direct event-stream FPGA deployment path.
+unavailable. DSEC uses exact raw rectified events and bypasses the moment scheduler. GPU
+training accumulates events into fixed physical-time divisions; the FPGA accepts the
+camera stream directly and does not store those training divisions as input bins.
 
 ## Verification
 
@@ -151,4 +158,3 @@ Compare layer currents, membrane trajectories, spikes, output spike counts, sema
 accuracy, cycle counts, and overflow/saturation behavior. Post-route timing and Vivado
 power are estimates and must be labeled as such; only instrumented board results may be
 called measured FPGA power/latency.
-

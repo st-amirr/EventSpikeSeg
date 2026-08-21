@@ -377,3 +377,78 @@ spikes may be processed input-centrically as `(c,y,x)` addresses, so dense slidi
 convolution is not required. Lazy decay/touched-neuron-only updates remain later
 optimizations because they change when decay is evaluated and must be proven equivalent
 with reset, peer-membrane fInst, and triangular fLong/TThresh.
+
+## 2026-08-21 — Preserve DSEC event density and supervise complete records
+
+The original DSEC scheduler collapsed every repeated `(clock, polarity, y, x)` event to
+one, discarding local event density. It also applied the complete semantic mask to each
+temporal chunk independently, so the five-chunk profile imposed the same final target on
+five partial 10 ms histories. Replace the external event value with
+`min(log2(count + 1), 4)`, retaining unit value for a single event while compressing and
+bounding bursts. Hidden inter-layer communication remains binary.
+
+Retain all ten chronological 5 ms clocks but combine their time-normalized logits before
+computing weighted CE, present-class Dice, and auxiliary CE. Each 50 ms record now yields
+one semantic objective. Numeric membrane/adaptation state continues across consecutive
+records and is reset only at epoch, validation, sequence, or frame-gap boundaries.
+Chunking remains available for state-carry execution, but its outputs contribute to the
+same full-window objective; the compose profiles use one chunk because exact nonlinear
+full-window loss must retain the output graphs until backward.
+
+This changes the DSEC temporal protocol to `dsec-log-count-events-full-window-v2`, so old
+binary/partial-loss checkpoints are intentionally incompatible. EventSpikeSeg140k remains
+the canonical deployment model; EventSpikeSegXL is an explicitly named comparison run.
+
+## 2026-08-21 — Make DSEC deployment asynchronous and training timestamp-aware
+
+The bounded-log/full-window decision above still described a clocked input model and is
+superseded for DSEC. The final FPGA must accept sequential camera events directly; it must
+not store 5 ms input bins or run a global neural timestep. Each touched neuron stores a
+last-update timestamp, applies `beta ** (delta_us / 5000)`, receives the shared synaptic
+weight, thresholds/resets, and immediately enqueues generated binary spikes. State carries
+across semantic labels and resets only at sequence/frame gaps.
+
+PyTorch/SpikingJelly remains the fast training backend. It accumulates chronological
+source events into `internal_updates` fixed physical-time divisions, preserves linear
+event multiplicity without log/cap, and supplies the fixed elapsed duration to the same
+physical-time neuron equation. Event density never changes the number of training updates.
+These divisions are a training approximation, not an FPGA input representation.
+
+All packets in the 50 ms label interval contribute to one final semantic objective. For
+memory-bounded XL training, first form the complete-record prediction without retaining
+activation graphs, then restore initial neuron state and replay chronological chunks using
+the one objective's output gradients. Keep the replay snapshot in host RAM to avoid a
+second full persistent-state copy on the GPU. This is truncated state-gradient history,
+but it is not multiple partial-history target losses. Logits/rates are normalized by
+elapsed physical time so packet count does not change their scale.
+
+The global spatial selector gate is incompatible with immediate event propagation. Replace
+its `amax(H,W)` channel enable with a local retinotopic 1x1-PLIF binary gate. The new DSEC
+protocol is `dsec-fixed-time-counts-async-fpga-v4`; older checkpoints are rejected.
+
+## 2026-08-21 — Use EventSpikeSegXL as the detailed DSEC/FPGA implementation target
+
+Promote `EventSpikeSegXL` from an undocumented capacity comparison to the active detailed
+implementation target for the 11-class DSEC configuration at `241x351`. Retain
+`EventSpikeSeg140k` as the compact reference/baseline; this decision does not rename either
+Python model or claim that XL has already achieved better measured accuracy.
+
+The instantiated XL/DSEC module has 237,115 registered parameters. Its custom forward omits
+the inherited 5,056-parameter `refine2`; training additionally executes 726 parameters in
+the mid auxiliary head and 4,566 in the deep auxiliary head. The deployed inference graph
+therefore contains 226,767 parameters and 50 PLIF populations. FPGA export must omit the
+dead block and both training-only heads.
+
+For `H=241`, `W=351`, `H2=121`, `W2=176`, `H4=61`, and `W4=88`, XL inference owns
+`683HW + 768H2W2 + 2144H4W4 = 85,639,973` membrane states. Its 26 fLong-enabled
+populations contain `416H2W2 + 2080H4W4 = 20,024,576` neurons, each with adaptation age
+and amplitude. Direct asynchronous DSEC execution also requires one last-update timestamp
+per membrane state. An illustrative exact store using 16-bit membrane, 16-bit age and
+amplitude, and 32-bit timestamps is about 566.42 MiB before FIFOs, caches, accumulators,
+and output counters. Therefore the XL baseline uses an external-DDR state store with an
+on-chip banked tile/cache; an all-on-chip state claim requires a later quantified
+compression/quantization result.
+
+The parallel context and local Q/K/V spike-mask attention are part of the executed graph.
+They require timestamp-tagged local join/rendezvous buffers so residual branches and Q/K/V
+paths are combined deterministically without introducing a global spatial-frame barrier.
