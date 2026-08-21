@@ -136,7 +136,7 @@ def test_dsec_validation_scales_complete_sequence_count_with_train_fraction() ->
     assert {record.sequence_id for record in broad_training}.isdisjoint(broad_sequences)
 
 
-def test_dsec_fractional_epoch_samples_every_training_sequence(tmp_path: Path) -> None:
+def test_dsec_fractional_epochs_advance_one_circular_stream_cursor(tmp_path: Path) -> None:
     for sequence_id in (
         "zurich_city_00_a",
         "zurich_city_01_a",
@@ -149,13 +149,22 @@ def test_dsec_fractional_epoch_samples_every_training_sequence(tmp_path: Path) -
         split="train",
         internal_updates=10,
     )
-    epoch_dataset = _epoch_train_dataset(
+    epoch1 = _epoch_train_dataset(
         dataset, train_samples=0.5, seed=17, epoch=1
     )
-    assert len(epoch_dataset) == 4
-    assert {record.sequence_id for record in epoch_dataset.records} == {
-        "zurich_city_00_a",
-        "zurich_city_01_a",
-        "zurich_city_02_a",
-        "zurich_city_04_a",
-    }
+    epoch2 = _epoch_train_dataset(
+        dataset, train_samples=0.5, seed=17, epoch=2
+    )
+    epoch3 = _epoch_train_dataset(
+        dataset, train_samples=0.5, seed=999, epoch=3
+    )
+    assert len(epoch1) == len(epoch2) == 4
+    def ids(selected):
+        return [
+            (record.sequence_id, record.frame_index) for record in selected.records
+        ]
+    complete_ids = [
+        (record.sequence_id, record.frame_index) for record in dataset.records
+    ]
+    assert ids(epoch1) + ids(epoch2) == complete_ids
+    assert ids(epoch3) == ids(epoch1)

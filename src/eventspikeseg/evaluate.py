@@ -23,7 +23,7 @@ from .data import (
     temporal_collate,
 )
 from .metrics import ConfusionMatrix
-from .train import build_experiment_model
+from .train import build_experiment_model, restore_checkpoint_runtime_state
 
 _PALETTE = np.array(
     [
@@ -172,6 +172,7 @@ def evaluate(
         internal_updates=internal_updates,
     ).to(resolved_device)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+    restore_checkpoint_runtime_state(model, checkpoint)
     model.eval()
     confusion = ConfusionMatrix(DDD17_CLASS_COUNT)
     spike_sum = 0.0

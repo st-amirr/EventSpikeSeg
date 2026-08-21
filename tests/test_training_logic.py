@@ -16,13 +16,17 @@ from eventspikeseg.train import (
     _prepare_datasets,
     _training_objective,
     architecture_presets,
+    checkpoint_homeostasis_scale,
     estimate_class_weights,
+    final_homeostasis_scale,
     format_class_validation_report,
     infer_model_suite,
     loss_profile_for_suite,
     refinement_phase_for_epoch,
     restored_resume_learning_rates,
+    scale_learning_rates,
     select_winner,
+    set_neuron_dynamics_trainable,
     soft_dice_loss,
     split_temporal_chunks,
 )
@@ -192,7 +196,6 @@ def test_epoch_train_subset_changes_across_epochs(tmp_path: Path) -> None:
         if previous.sequence_id == current.sequence_id
     )
 
-
 def test_temporal_collate_preserves_one_record_per_batch_item() -> None:
     events_a = torch.zeros((6, 4, 5))
     events_b = events_a + 10.0
@@ -254,6 +257,40 @@ def test_class_weight_estimation_uses_capped_median_frequency_weights() -> None:
     assert weights[0] < weights[1] < weights[2] < weights[3] < weights[4]
     assert weights[5] == 8.0
 
+    softened = estimate_class_weights(
+        ToyDataset(), power=0.5, maximum_weight=3.0
+    )
+    assert torch.all(softened <= 3.0)
+    assert torch.allclose(softened[:5].square(), weights[:5], atol=1e-5)
+
+
+def test_stable_final_homeostasis_reaches_and_holds_best_checkpoint_scale() -> None:
+    assert final_homeostasis_scale(8, 80) == 0.0
+    assert final_homeostasis_scale(12, 80) == pytest.approx(0.03125)
+    assert final_homeostasis_scale(16, 80) == pytest.approx(0.0625)
+    assert final_homeostasis_scale(80, 80) == pytest.approx(0.0625)
+    assert checkpoint_homeostasis_scale({"epoch": 18, "epochs": 80}) == pytest.approx(
+        0.0625
+    )
+    assert checkpoint_homeostasis_scale(
+        {"epoch": 24, "epochs": 80, "homeostasis_scale": 0.25}
+    ) == pytest.approx(0.25)
+
+
+def test_neuron_dynamics_can_freeze_without_freezing_convolution_weights() -> None:
+    class ToyModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(()))
+            self.beta_logit = torch.nn.Parameter(torch.ones(2))
+            self.threshold_adaptation_strength_logit = torch.nn.Parameter(torch.ones(3))
+
+    model = ToyModel()
+    assert set_neuron_dynamics_trainable(model, False) == 5
+    assert model.weight.requires_grad
+    assert not model.beta_logit.requires_grad
+    assert not model.threshold_adaptation_strength_logit.requires_grad
+
 
 def test_architecture_suites_are_isolated() -> None:
     assert len(architecture_presets("top-ten")) == 10
@@ -267,7 +304,13 @@ def test_architecture_suites_are_isolated() -> None:
 def test_loss_profiles_remain_explicit() -> None:
     for suite in ("top-ten", "top-five", "top-three"):
         assert loss_profile_for_suite(suite).cross_entropy == 0.5
-    assert loss_profile_for_suite("final").cross_entropy == 1.0
+    assert loss_profile_for_suite("final") == LossProfile(
+        cross_entropy=1.0,
+        focal=0.0,
+        dice=0.20,
+        auxiliary_ce=0.10,
+        auxiliary_focal=0.0,
+    )
 
 
 def test_soft_dice_loss_reports_each_class() -> None:
@@ -278,7 +321,56 @@ def test_soft_dice_loss_reports_each_class() -> None:
     assert torch.all((losses >= 0.0) & (losses <= 1.0))
 
 
-def test_training_dice_reduction_excludes_target_absent_classes() -> None:
+def test_final_objective_keeps_ce_dice_activity_and_auxiliary_supervision() -> None:
+    logits = torch.tensor(
+        [[[[2.0, 2.0], [2.0, 2.0]], [[4.0, 4.0], [4.0, 4.0]]]]
+    )
+    target = torch.tensor([[[0, 1], [0, 1]]])
+    outputs = {
+        "segmentation_logits": logits,
+        "segmentation_rate": torch.tensor(0.0),
+        "enc1_rate": torch.tensor(0.0),
+        "enc2_rate": torch.tensor(0.0),
+        "enc3_rate": torch.tensor(0.0),
+        "enc4_rate": torch.tensor(0.0),
+        "decoder_rate": torch.tensor(0.0),
+        "auxiliary_logits": torch.full_like(logits, 100.0),
+        "deep_auxiliary_logits": torch.full_like(logits, -100.0),
+    }
+    class_weights = torch.tensor([0.5, 3.0])
+    loss, dice_losses, _ = _training_objective(
+        outputs,
+        target,
+        class_weights=class_weights,
+        class_count=2,
+        loss_profile=LossProfile(
+            cross_entropy=1.0,
+            focal=100.0,
+            dice=0.20,
+            auxiliary_ce=0.10,
+            auxiliary_focal=100.0,
+        ),
+        is_final_run=True,
+        training_phase="decoder_detail_refinement",
+    )
+    auxiliary_ce = torch.nn.functional.cross_entropy(
+        outputs["auxiliary_logits"], target, weight=class_weights
+    )
+    deep_auxiliary_ce = torch.nn.functional.cross_entropy(
+        outputs["deep_auxiliary_logits"], target, weight=class_weights
+    )
+    activity_regularizer = torch.tensor(0.0055)
+    expected = (
+        torch.nn.functional.cross_entropy(logits, target, weight=class_weights)
+        + 0.20 * dice_losses.mean()
+        + 0.10 * auxiliary_ce
+        + 0.05 * deep_auxiliary_ce
+        + activity_regularizer
+    )
+    assert torch.allclose(loss, expected)
+
+
+def test_present_class_dice_excludes_target_absent_classes() -> None:
     logits = torch.tensor(
         [[[[2.0, 2.0], [2.0, 2.0]], [[4.0, 4.0], [4.0, 4.0]]]]
     )
@@ -302,13 +394,17 @@ def test_training_dice_reduction_excludes_target_absent_classes() -> None:
         training_phase="joint",
     )
     assert dice_losses[1] > dice_losses[0]
-    assert torch.allclose(loss, dice_losses[0])
+    expected_ce = torch.nn.functional.cross_entropy(logits, target)
+    assert torch.allclose(loss, expected_ce + dice_losses[0])
 
 
 def test_final_refinement_schedule_phases() -> None:
-    schedule = (0.70, 0.90)
+    schedule = (0.30, 0.85)
     assert refinement_phase_for_epoch(1, 10, schedule) == ("joint", True)
-    assert refinement_phase_for_epoch(8, 10, schedule) == ("decoder_detail_refinement", False)
+    assert refinement_phase_for_epoch(4, 10, schedule) == (
+        "decoder_detail_refinement",
+        False,
+    )
     assert refinement_phase_for_epoch(10, 10, schedule) == ("final_joint_low_lr", True)
 
 
@@ -335,9 +431,12 @@ def test_resume_preserves_checkpoint_learning_rate_and_scheduler_position() -> N
     assert restored == [checkpoint_rate]
     assert resumed_optimizer.param_groups[0]["lr"] == checkpoint_rate
     assert resumed_scheduler.last_epoch == 12
+    scaled = scale_learning_rates(resumed_optimizer, resumed_scheduler, 0.25)
+    assert scaled == [checkpoint_rate * 0.25]
+    assert resumed_scheduler.get_last_lr() == scaled
     resumed_optimizer.step()
     resumed_scheduler.step()
-    assert resumed_optimizer.param_groups[0]["lr"] < checkpoint_rate
+    assert resumed_optimizer.param_groups[0]["lr"] < checkpoint_rate * 0.25
 
 
 def test_class_validation_report_tracks_iou_and_prediction_share() -> None:

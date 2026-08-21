@@ -109,6 +109,22 @@ def restored_resume_learning_rates(
     return group_rates
 
 
+def scale_learning_rates(
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    factor: float,
+) -> list[float]:
+    """Scale all parameter-group LRs without restarting cosine-scheduler time."""
+    if not (0.0 < factor <= 1.0):
+        raise ValueError("LR factor must satisfy 0 < value <= 1")
+    scaled_rates = []
+    for group in optimizer.param_groups:
+        group["lr"] = float(group["lr"]) * factor
+        scaled_rates.append(float(group["lr"]))
+    scheduler._last_lr = list(scaled_rates)
+    return scaled_rates
+
+
 def format_class_validation_report(
     class_names: tuple[str, ...], metrics: dict[str, object]
 ) -> str:
@@ -202,7 +218,86 @@ class LossProfile:
 
 
 HISTORICAL_LOSS_PROFILE = LossProfile(cross_entropy=0.5)
-FINAL_LOSS_PROFILE = LossProfile(cross_entropy=1.0)
+# The final objective keeps stable pixelwise, overlap, and deep-supervision
+# signals. Unweighted CE dropped rare DSEC classes; focal is omitted because it
+# would amplify hard pixels again on top of class weighting and Dice.
+FINAL_LOSS_PROFILE = LossProfile(
+    cross_entropy=1.0,
+    focal=0.0,
+    dice=0.20,
+    auxiliary_ce=0.10,
+    auxiliary_focal=0.0,
+)
+
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-weighted-ce-dice-aux-v3"
+FINAL_HOMEOSTASIS_START_FRACTION = 0.10
+FINAL_HOMEOSTASIS_FULL_FRACTION = 0.20
+FINAL_HOMEOSTASIS_MAX_SCALE = 0.0625
+FINAL_NEURON_FREEZE_FRACTION = 0.20
+FINAL_REFINEMENT_LR_MULTIPLIER = 0.50
+FINAL_JOINT_LR_MULTIPLIER = 0.20
+BASE_NEURON_PARAMETER_TOKENS = ("beta_logit", "threshold_logit")
+MECHANISM_PARAMETER_TOKENS = (
+    "adaptation_tau_logit",
+    "adaptation_strength_logit",
+    "target_rate_logit",
+    "inhibition_strength_logit",
+    "threshold_adaptation_strength_logit",
+    "adaptation_duration_logit",
+)
+
+
+def final_homeostasis_scale(epoch: int, epochs: int) -> float:
+    """Bound final-model recurrent adaptation to the best-checkpoint regime."""
+    fraction = epoch / float(max(1, epochs))
+    if fraction <= FINAL_HOMEOSTASIS_START_FRACTION:
+        return 0.0
+    progress = (
+        (fraction - FINAL_HOMEOSTASIS_START_FRACTION)
+        / (FINAL_HOMEOSTASIS_FULL_FRACTION - FINAL_HOMEOSTASIS_START_FRACTION)
+    )
+    return FINAL_HOMEOSTASIS_MAX_SCALE * min(1.0, max(0.0, progress))
+
+
+def set_neuron_dynamics_trainable(model: nn.Module, trainable: bool) -> int:
+    """Freeze or unfreeze PLIF and recurrent-mechanism parameters together."""
+    tokens = BASE_NEURON_PARAMETER_TOKENS + MECHANISM_PARAMETER_TOKENS
+    changed = 0
+    for name, parameter in model.named_parameters():
+        if any(token in name for token in tokens):
+            parameter.requires_grad_(trainable)
+            changed += parameter.numel()
+    return changed
+
+
+def checkpoint_homeostasis_scale(checkpoint: dict[str, object]) -> float:
+    """Resolve saved runtime scale, including the legacy 20%-to-60% ramp."""
+    saved_scale = checkpoint.get("homeostasis_scale")
+    if saved_scale is not None:
+        return float(saved_scale)
+    epoch = int(checkpoint.get("epoch", 0))
+    epochs = max(1, int(checkpoint.get("epochs", 1)))
+    fraction = epoch / float(epochs)
+    if fraction <= 0.20:
+        return 0.0
+    return min(1.0, (fraction - 0.20) / 0.40)
+
+
+def restore_checkpoint_runtime_state(
+    model: nn.Module, checkpoint: dict[str, object]
+) -> float:
+    """Restore nonpersistent recurrent controls needed to reproduce validation."""
+    scale = checkpoint_homeostasis_scale(checkpoint)
+    set_homeostasis = getattr(model, "set_homeostasis_scale", None)
+    if callable(set_homeostasis):
+        set_homeostasis(scale)
+    set_competition = getattr(model, "set_competition_enabled", None)
+    if callable(set_competition):
+        set_competition(bool(checkpoint.get("competition_enabled", True)))
+    set_hidden_inhibition = getattr(model, "set_hidden_inhibition_enabled", None)
+    if callable(set_hidden_inhibition):
+        set_hidden_inhibition(bool(checkpoint.get("hidden_inhibition_enabled", True)))
+    return scale
 
 
 def loss_profile_for_suite(suite: str) -> LossProfile:
@@ -236,8 +331,18 @@ def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
     return 1.0 - numerator / denominator
 
 
-def estimate_class_weights(dataset: TemporalDataset, maximum: int | None = None) -> Tensor:
-    """Use capped median-frequency balancing over the selected training subset."""
+def estimate_class_weights(
+    dataset: TemporalDataset,
+    maximum: int | None = None,
+    *,
+    power: float = 1.0,
+    maximum_weight: float = 8.0,
+) -> Tensor:
+    """Use softened, capped median-frequency balancing over the training subset."""
+    if not (0.0 < power <= 1.0):
+        raise ValueError("class-weight power must satisfy 0 < value <= 1")
+    if maximum_weight <= 0.0:
+        raise ValueError("maximum class weight must be positive")
     class_count = int(getattr(dataset, "class_count", DDD17_CLASS_COUNT))
     counts = torch.zeros(class_count, dtype=torch.float64)
     limit = len(dataset) if maximum is None else min(len(dataset), maximum)
@@ -247,8 +352,8 @@ def estimate_class_weights(dataset: TemporalDataset, maximum: int | None = None)
         counts += torch.bincount(mask[valid], minlength=class_count)
     frequencies = counts / counts.sum().clamp_min(1.0)
     median_frequency = frequencies[counts > 0].median().clamp_min(1e-6)
-    weights = median_frequency / frequencies.clamp_min(1e-6)
-    return weights.float().clamp(max=8.0)
+    weights = (median_frequency / frequencies.clamp_min(1e-6)).pow(power)
+    return weights.float().clamp(max=maximum_weight)
 
 
 def focal_cross_entropy(
@@ -337,7 +442,6 @@ def _training_objective(
         weight=class_weights,
         ignore_index=IGNORE_INDEX,
     )
-    focal = focal_cross_entropy(logits, target, class_weights)
     dice_losses = soft_dice_loss(logits, target, class_count)
     valid_target = target[target != IGNORE_INDEX]
     present_classes = (
@@ -350,12 +454,20 @@ def _training_objective(
         if present_classes.any()
         else logits.sum() * 0.0
     )
-    loss = (
-        loss_profile.cross_entropy * ce
-        + loss_profile.focal * focal
-        + loss_profile.dice * present_dice_loss
-        + _activity_regularizer(outputs)
-    )
+    if is_final_run:
+        loss = (
+            ce
+            + loss_profile.dice * present_dice_loss
+            + _activity_regularizer(outputs)
+        )
+    else:
+        focal = focal_cross_entropy(logits, target, class_weights)
+        loss = (
+            loss_profile.cross_entropy * ce
+            + loss_profile.focal * focal
+            + loss_profile.dice * present_dice_loss
+            + _activity_regularizer(outputs)
+        )
     if "auxiliary_logits" in outputs:
         auxiliary = F.interpolate(
             outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
@@ -363,22 +475,12 @@ def _training_objective(
         auxiliary_ce = F.cross_entropy(
             auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
         )
-        auxiliary_focal = focal_cross_entropy(auxiliary, target, class_weights)
-        auxiliary_weight = (
-            0.30
-            if is_final_run and training_phase == "decoder_detail_refinement"
-            else None
-        )
-        loss = loss + (
-            (loss_profile.auxiliary_ce if auxiliary_weight is None else auxiliary_weight)
-            * auxiliary_ce
-            + (
-                loss_profile.auxiliary_focal
-                if auxiliary_weight is None
-                else auxiliary_weight
+        loss = loss + loss_profile.auxiliary_ce * auxiliary_ce
+        if not is_final_run:
+            auxiliary_focal = focal_cross_entropy(
+                auxiliary, target, class_weights
             )
-            * auxiliary_focal
-        )
+            loss = loss + loss_profile.auxiliary_focal * auxiliary_focal
     if "deep_auxiliary_logits" in outputs:
         deep_auxiliary = F.interpolate(
             outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
@@ -386,15 +488,18 @@ def _training_objective(
         deep_auxiliary_ce = F.cross_entropy(
             deep_auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
         )
-        deep_auxiliary_focal = focal_cross_entropy(
-            deep_auxiliary, target, class_weights
-        )
-        deep_auxiliary_scale = (
-            0.20 if training_phase == "decoder_detail_refinement" else 0.10
-        )
-        loss = loss + deep_auxiliary_scale * (
-            deep_auxiliary_ce + deep_auxiliary_focal
-        )
+        if is_final_run:
+            loss = loss + 0.5 * loss_profile.auxiliary_ce * deep_auxiliary_ce
+        else:
+            deep_auxiliary_focal = focal_cross_entropy(
+                deep_auxiliary, target, class_weights
+            )
+            deep_auxiliary_scale = (
+                0.20 if training_phase == "decoder_detail_refinement" else 0.10
+            )
+            loss = loss + deep_auxiliary_scale * (
+                deep_auxiliary_ce + deep_auxiliary_focal
+            )
     output_spike_rate = outputs.get("segmentation_rate")
     if output_spike_rate is None:
         output_spike_rate = outputs["segmentation_spikes"].mean()
@@ -517,27 +622,10 @@ def _epoch_train_dataset(
     seed: int,
     epoch: int,
 ) -> TemporalDataset:
-    """Select one deterministic contiguous stream segment for an epoch."""
+    """Select the epoch's deterministic contiguous stream segment."""
     total = len(train_pool)
     if train_samples <= 0:
         return train_pool
-    if isinstance(train_pool, DSECRawEventDataset) and train_samples < 1:
-        grouped_indices: dict[str, list[int]] = {}
-        for index, record in enumerate(train_pool.records):
-            grouped_indices.setdefault(record.sequence_id, []).append(index)
-        generator = torch.Generator().manual_seed(seed + epoch)
-        selected_indices: list[int] = []
-        for sequence_id in sorted(grouped_indices):
-            indices = grouped_indices[sequence_id]
-            count = max(1, int(round(len(indices) * train_samples)))
-            maximum_start = len(indices) - count
-            start = (
-                int(torch.randint(0, maximum_start + 1, (1,), generator=generator).item())
-                if maximum_start > 0
-                else 0
-            )
-            selected_indices.extend(indices[start : start + count])
-        return train_pool.subset(selected_indices)
     if train_samples <= 1:
         count = max(1, int(round(total * train_samples)))
     else:
@@ -548,6 +636,13 @@ def _epoch_train_dataset(
         count = min(total, int(train_samples))
     if count >= total:
         return train_pool
+    if isinstance(train_pool, DSECRawEventDataset):
+        # Traverse the complete chronological record list with a circular cursor.
+        # The next epoch begins at the record immediately following the current
+        # segment; resuming from checkpoint reproduces the cursor from ``epoch``.
+        start = ((epoch - 1) * count) % total
+        indices = [(start + offset) % total for offset in range(count)]
+        return train_pool.subset(indices)
     generator = torch.Generator().manual_seed(seed + epoch)
     start = int(torch.randint(0, total - count + 1, (1,), generator=generator).item())
     indices = list(range(start, start + count))
@@ -721,22 +816,13 @@ def train_architecture(
     is_final_run = resolved_suite == "final"
     if checkpoint_every < 1:
         raise ValueError("checkpoint_every must be >= 1")
-    base_neuron_tokens = ("beta_logit", "threshold_logit")
-    mechanism_tokens = (
-        "adaptation_tau_logit",
-        "adaptation_strength_logit",
-        "target_rate_logit",
-        "inhibition_strength_logit",
-        "threshold_adaptation_strength_logit",
-        "adaptation_duration_logit",
-    )
     base_neuron_parameters = []
     mechanism_parameters = []
     weight_parameters = []
     for name, parameter in model.named_parameters():
-        if any(token in name for token in mechanism_tokens):
+        if any(token in name for token in MECHANISM_PARAMETER_TOKENS):
             mechanism_parameters.append(parameter)
-        elif any(token in name for token in base_neuron_tokens):
+        elif any(token in name for token in BASE_NEURON_PARAMETER_TOKENS):
             base_neuron_parameters.append(parameter)
         else:
             weight_parameters.append(parameter)
@@ -745,17 +831,29 @@ def train_architecture(
     ]
     if base_neuron_parameters:
         parameter_groups.append(
-            {"params": base_neuron_parameters, "lr": learning_rate, "weight_decay": 0.0}
+            {
+                "params": base_neuron_parameters,
+                "lr": learning_rate * 0.25,
+                "weight_decay": 0.0,
+            }
         )
     if mechanism_parameters:
-        # fInst/fLong/TThresh-like parameters alter recurrent dynamics directly;
-        # use the base LR so they do not outrun feature learning early on.
+        # These parameters directly alter recurrent dynamics.  Checkpoint
+        # forensics showed them outrunning semantic learning at the base LR.
         parameter_groups.append(
-            {"params": mechanism_parameters, "lr": learning_rate, "weight_decay": 0.0}
+            {
+                "params": mechanism_parameters,
+                "lr": learning_rate * 0.10,
+                "weight_decay": 0.0,
+            }
         )
     optimizer = torch.optim.AdamW(parameter_groups)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
-    class_weights = estimate_class_weights(train_pool).to(resolved_device)
+    class_weights = estimate_class_weights(
+        train_pool,
+        power=0.5 if is_final_run else 1.0,
+        maximum_weight=3.0 if is_final_run else 8.0,
+    ).to(resolved_device)
 
     raw_refinement_schedule = getattr(model, "refinement_schedule", None)
     refinement_schedule = (
@@ -789,6 +887,10 @@ def train_architecture(
     best_checkpoint_path = output_dir / f"{architecture}_seed{seed}_best.pt"
     last_checkpoint_path = output_dir / f"{architecture}_seed{seed}_last.pt"
     canonical_checkpoint_path = output_dir / f"{architecture}_seed{seed}.pt"
+    current_homeostasis_scale = 1.0
+    current_competition_enabled = True
+    current_hidden_inhibition_enabled = True
+    current_neuron_dynamics_trainable = True
 
     def save_training_checkpoint(
         path: Path,
@@ -830,8 +932,32 @@ def train_architecture(
                 "protocol_fingerprint": protocol_fingerprint,
                 "output_size": list(output_size) if output_size is not None else None,
                 "training_phase": training_phase_name,
+                "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
+                "training_objective": (
+                    "weighted-ce-plus-0.2-dice-plus-0.1-aux-ce"
+                    if is_final_run
+                    else "historical-compound"
+                ),
+                "class_weights": class_weights.detach().cpu().tolist(),
+                "homeostasis_scale": current_homeostasis_scale,
+                "competition_enabled": current_competition_enabled,
+                "hidden_inhibition_enabled": current_hidden_inhibition_enabled,
+                "neuron_dynamics_trainable": current_neuron_dynamics_trainable,
                 "amp": amp_enabled,
                 "sequential_chunks": sequential_chunks,
+                "training_sampling_strategy": (
+                    "sequential-circular-v1"
+                    if isinstance(train_pool, DSECRawEventDataset) and train_samples > 0
+                    else "full-stream"
+                    if train_samples <= 0
+                    else "deterministic-window-v1"
+                ),
+                "next_training_index": (
+                    (epoch_number * len(example_epoch_train)) % len(train_pool)
+                    if isinstance(train_pool, DSECRawEventDataset)
+                    and 0 < train_samples < len(train_pool)
+                    else 0
+                ),
                 "validation_metrics": validation_metrics,
                 "validation_mean_spike_rate": validation_spike_rate,
                 "validation_layer_spike_rates": validation_layer_rates or {},
@@ -947,6 +1073,33 @@ def train_architecture(
             )
             or {}
         )
+        if not best_checkpoint_path.is_file():
+            # Recovery runs may intentionally write to a fresh directory. Seed
+            # it with the matching incumbent from the source checkpoint folder.
+            source_best_path = load_path.with_name(
+                f"{architecture}_seed{seed}_best.pt"
+            )
+            if loaded_epoch == best_epoch:
+                shutil.copy2(load_path, best_checkpoint_path)
+            elif source_best_path.is_file():
+                shutil.copy2(source_best_path, best_checkpoint_path)
+            else:
+                # A periodic checkpoint cannot contain historical best weights.
+                # Fall back to its own weights/metrics so metadata and parameters
+                # remain consistent instead of failing at the end of recovery.
+                best_mean_iou = checkpoint_miou
+                best_epoch = loaded_epoch
+                best_metrics = checkpoint_metrics
+                best_mean_spike_rate = float(
+                    checkpoint.get("validation_mean_spike_rate", 0.0) or 0.0
+                )
+                best_layer_spike_rates = dict(
+                    checkpoint.get("validation_layer_spike_rates", {}) or {}
+                )
+                best_neuron_diagnostics = dict(
+                    checkpoint.get("neuron_diagnostics", {}) or {}
+                )
+                shutil.copy2(load_path, best_checkpoint_path)
         previous_training_phase = checkpoint.get("training_phase")
         print(
             f"Resuming {architecture} from {load_path} | "
@@ -961,7 +1114,10 @@ def train_architecture(
         f"{output_size[0]}x{output_size[1]}" if output_size is not None else "native"
     )
     example_epoch_train = _epoch_train_dataset(
-        train_pool, train_samples=train_samples, seed=seed, epoch=1
+        train_pool,
+        train_samples=train_samples,
+        seed=seed,
+        epoch=1,
     )
     print(
         f"Training {architecture} | dataset={dataset_name} | {resolved_device} | {precision} | "
@@ -990,13 +1146,23 @@ def train_architecture(
             flush=True,
         )
     print(
-        "Median-frequency class weights | "
+        "Soft median-frequency class weights | "
         + ", ".join(
             f"{class_name}={weight:.3f}"
             for class_name, weight in zip(class_names, class_weights.tolist())
         ),
         flush=True,
     )
+    if is_final_run:
+        print(
+            f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
+            "objective=weighted-CE+0.2-Dice+0.1-aux-CE | "
+            "focal=off activity=on | "
+            f"homeostasis_max={FINAL_HOMEOSTASIS_MAX_SCALE:.4f} | "
+            f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "
+            f"backbone_refinement={refinement_schedule}",
+            flush=True,
+        )
     print(
         "Batch Dice-loss order | " + ", ".join(class_names),
         flush=True,
@@ -1006,7 +1172,10 @@ def train_architecture(
     for epoch in range(start_epoch, epochs + 1):
         model.train()
         epoch_train_dataset = _epoch_train_dataset(
-            train_pool, train_samples=train_samples, seed=seed, epoch=epoch
+            train_pool,
+            train_samples=train_samples,
+            seed=seed,
+            epoch=epoch,
         )
         train_loader = DataLoader(
             epoch_train_dataset,
@@ -1020,49 +1189,31 @@ def train_architecture(
         )
         if callable(set_backbone_trainable):
             set_backbone_trainable(semantic_backbone_trainable)
-        # The final unfreeze is deliberately lower-LR than the decoder/detail
-        # refinement phase. CosineAnnealing has already lowered LR late in the
-        # run; this one-time multiplier makes the phase boundary explicit.
-        if (
-            training_phase == "final_joint_low_lr"
-            and previous_training_phase != "final_joint_low_lr"
-        ):
-            for group in optimizer.param_groups:
-                group["lr"] *= 0.25
+        if training_phase != previous_training_phase:
+            if training_phase == "decoder_detail_refinement":
+                scale_learning_rates(
+                    optimizer, scheduler, FINAL_REFINEMENT_LR_MULTIPLIER
+                )
+            elif training_phase == "final_joint_low_lr":
+                scale_learning_rates(
+                    optimizer, scheduler, FINAL_JOINT_LR_MULTIPLIER
+                )
         previous_training_phase = training_phase
 
-        if mechanism_round:
-            # Keep the initial PLIF representation unconstrained for the first
-            # 12.5% of a run, then ramp homeostasis to full strength by 50%.
-            # Fractions preserve the same schedule when --epochs changes.
-            homeostasis_start_fraction = 0.2
-            homeostasis_full_fraction = 0.6
-            epoch_fraction = epoch / float(epochs)
-
-            if epoch_fraction <= homeostasis_start_fraction:
-                homeostasis_scale = 0.0
-            else:
-                homeostasis_scale = min(
-                    1.0,
-                    (epoch_fraction - homeostasis_start_fraction)
-                    / (homeostasis_full_fraction - homeostasis_start_fraction),
-                )
-            # Keep mutually-exclusive semantic class WTA active from the start.
-            # ``peer_membrane`` is safe to enable immediately because its membrane
-            # decrement is multiplied by homeostasis_scale.  ``winner_peer``
-            # has a discrete winner gate, so delay only that hidden mechanism
-            # until the PLIF/threshold representation has stabilized.
-            competition_enabled = True
-            winner_peer_inhibition = bool(
-                architecture_config is not None
-                and getattr(architecture_config, "inhibition_kind", "gate")
-                == "winner_peer"
+        if is_final_run and mechanism_round:
+            homeostasis_scale = final_homeostasis_scale(epoch, epochs)
+            neuron_dynamics_trainable = (
+                epoch / float(max(1, epochs)) < FINAL_NEURON_FREEZE_FRACTION
             )
-            hidden_inhibition_enabled = (not winner_peer_inhibition) or epoch > warmup_epochs
+            set_neuron_dynamics_trainable(model, neuron_dynamics_trainable)
+            # Keep mutually-exclusive semantic class WTA active from the start.
+            competition_enabled = True
+            hidden_inhibition_enabled = True
         else:
             homeostasis_scale = min(1.0, epoch / float(warmup_epochs))
             competition_enabled = epoch > warmup_epochs
             hidden_inhibition_enabled = competition_enabled
+            neuron_dynamics_trainable = True
         set_homeostasis = getattr(model, "set_homeostasis_scale", None)
         if callable(set_homeostasis):
             set_homeostasis(homeostasis_scale)
@@ -1072,6 +1223,10 @@ def train_architecture(
         set_hidden_inhibition = getattr(model, "set_hidden_inhibition_enabled", None)
         if callable(set_hidden_inhibition):
             set_hidden_inhibition(hidden_inhibition_enabled)
+        current_homeostasis_scale = homeostasis_scale
+        current_competition_enabled = competition_enabled
+        current_hidden_inhibition_enabled = hidden_inhibition_enabled
+        current_neuron_dynamics_trainable = neuron_dynamics_trainable
         running_loss = 0.0
         running_dice_losses = torch.zeros(class_count, dtype=torch.float64)
         total_batches = len(train_loader)
@@ -1485,7 +1640,7 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         "--learning-rate",
         type=float,
         default=1e-3,
-        help="base LR; overrides checkpoint parameter-group LRs when resuming",
+        help="base LR for a new run; checkpoints preserve their saved LR",
     )
     parser.add_argument(
         "--height", type=int, default=None,

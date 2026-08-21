@@ -1,7 +1,8 @@
 """Canonical EventSpikeSeg models.
 
-``EventSpikeSeg140k`` is the ~140k spike-native dual-path model and is the project's primary architecture for accuracy evaluation and mixed-signal neuromorphic
-deployment. ``EventSpikeSegXL`` is the larger ~236k expansion retained as an
+``EventSpikeSeg140k`` is the ~140k spike-native dual-path model and is the project's
+primary architecture for accuracy evaluation and mixed-signal neuromorphic deployment.
+``EventSpikeSegXL`` is the larger ~236k expansion retained as an
 optional high-capacity comparison. The XL variant adds features beyond the canonical
 model:
 
