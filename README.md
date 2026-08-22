@@ -120,14 +120,14 @@ N_mem = 683*H*W + 768*H2*W2 + 2144*H4*W4
       = 85,639,973 membrane values
 ```
 
-fLong is enabled on **20,024,576** neurons and stores age plus amplitude. Direct
+Triangular threshold adaptation is enabled on **20,024,576** neurons and stores age plus amplitude. Direct
 asynchronous execution also stores one last-update timestamp per membrane. An
 illustrative 16-bit membrane/age/amplitude plus 32-bit timestamp layout is about
 **566.42 MiB**, before queues and counters. Therefore XL uses external DDR as the exact
 persistent-state backing store and banked on-chip memory as an active-tile cache.
 
 - **static/shared:** convolution weights, per-channel beta, per-channel base threshold;
-- **persistent per-neuron:** membrane, last-update timestamp, and enabled fLong state;
+- **persistent per-neuron:** membrane, last-update timestamp, and enabled threshold-adaptation state;
 - **temporary:** touched-event synaptic current and sparse spike FIFOs.
 
 The FPGA may use far fewer physical PLIF arithmetic units by time-multiplexing them, but
@@ -204,7 +204,7 @@ timestamp/raw-event input → two-polarity synaptic activity → 32-ch PLIF stem
 → temporal spike-count argmax
 ```
 
-Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, stem-only `peer_membrane` fInst, and encoder/context triangular fLong/TThresh. PyTorch provides tensors/autograd/optimization; SpikingJelly supplies compatible spiking convolution/PLIF/surrogate infrastructure while project-specific dynamics stay explicit.
+Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, stem-only peer-membrane inhibition, and encoder/context triangular threshold adaptation. PyTorch provides tensors/autograd/optimization; SpikingJelly supplies compatible spiking convolution/PLIF/surrogate infrastructure while project-specific dynamics stay explicit.
 
 ### What “fully spiking” means here
 
@@ -273,7 +273,7 @@ This trades processing-element count for latency and memory bandwidth without
 changing the trained SNN semantics.
 
 The implementation-sensitive mechanisms are timestamp-aware lazy PLIF decay, stem
-peer-membrane fInst, encoder/context triangular fLong/TThresh adaptation, and the local
+peer-membrane inhibition, encoder/context triangular threshold adaptation, and the local
 96-channel PLIF selector. The first RTL version should reproduce them under the fixed-point golden
 contract; any simplification requires explicit accuracy revalidation. DSEC raw events are
 the preferred direct event-stream input, while DDD17 uses its existing digital moment

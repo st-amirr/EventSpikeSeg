@@ -18,9 +18,9 @@ Round one completed with `v10_fpga_hybrid` highest at mIoU 0.3130. The complete 
 
 ## 2026-08-06 — Run a spike-native top-five round
 
-The second round tests combinations derived from v10, v03, v02, and v08 using PLIF, feature-map `f_long`, explicit `T_thresh`, and selected hidden-layer `f_inst`. Ordinary BN and GAP gating are not included because this round targets mechanisms that remain meaningful during neuromorphic inference.
+The second round tests combinations derived from v10, v03, v02, and v08 using PLIF, feature-map threshold adaptation with an explicit duration, and selected hidden-layer inhibition. Ordinary BN and GAP gating are not included because this round targets mechanisms that remain meaningful during neuromorphic inference.
 
-## 2026-08-06 — Do not enable f_inst in every contender
+## 2026-08-06 — Do not enable hidden inhibition in every contender
 
 Cross-channel winner-take-all may improve sparsity but can remove simultaneous semantic features. It is therefore isolated to two of five contenders rather than treated as automatically beneficial.
 
@@ -32,15 +32,15 @@ PLIF learns continuous per-channel retention. The eventual FPGA model must quant
 
 Object and human class performance cannot be solved by architecture ranking alone. Before final selection, record class pixel counts, image-presence counts, prediction counts, and confusion matrices at the benchmark resolution.
 
-## 2026-08-07 — Reject the first PLIF/homeostasis top five as final models
+## 2026-08-07 — Reject the first PLIF/adaptation top five as final models
 
 The first round-two winner reached only mIoU 0.2464 versus the incumbent 0.3130, and the lightweight `f04` emitted zero output spikes. Preserve the definitions/checkpoints for diagnosis but do not promote them.
 
-## 2026-08-07 — Replace fixed T_thresh with learnable continuous adaptation persistence
+## 2026-08-07 — Replace fixed adaptation hold with learnable continuous persistence
 
-A discrete integer hold timer cannot receive useful gradients through standard backpropagation. Revised rate homeostasis learns a bounded continuous `tau`, with retention `exp(-1/tau)`, plus per-channel adaptation strength and target firing rate. Quantize these only after architecture selection.
+A discrete integer hold timer cannot receive useful gradients through standard backpropagation. Revised rate adaptation learns a bounded continuous `tau`, with retention `exp(-1/tau)`, plus per-channel adaptation strength and target firing rate. Quantize these only after architecture selection.
 
-## 2026-08-07 — Make homeostasis bidirectional and rate-based
+## 2026-08-07 — Make adaptation bidirectional and rate-based
 
 Use spatial mean spike rate instead of feature-map `amax`. Threshold adaptation may become negative for silent channels and positive for overactive channels, bounded around the learnable base threshold.
 
@@ -48,7 +48,7 @@ Use spatial mean spike rate instead of feature-map `amax`. Threshold adaptation 
 
 Independent output class neurons accumulate spikes and compete only through final temporal argmax. This preserves a fully spiking learned output while allowing gradients to reach rare classes.
 
-## 2026-08-07 — Restrict f_inst rather than apply it globally
+## 2026-08-07 — Restrict hidden inhibition rather than apply it globally
 
 Only grouped top-2 competition is allowed, and only in the encoder or stem of selected contenders. Global one-winner competition caused severe information loss and dead-layer behavior.
 
@@ -135,7 +135,7 @@ For the canonical circuit-oriented path, replace the top-three count-domain MLP 
 
 ## 2026-08-09 — Use SpikingJelly as the PLIF/convolution infrastructure layer
 
-Keep PyTorch as the tensor/autograd/optimizer substrate, but require SpikingJelly public `activation_based` components for learned synaptic stages. `SpikingStage` uses the SpikingJelly `Conv2d` synapse layer, and `ParametricLIF` delegates its charge equation to SpikingJelly `ParametricLIFNode`. Preserve the already-benchmarked per-channel beta by feeding a per-channel reciprocal-tau tensor into the SpikingJelly PLIF charge equation. Custom dynamic threshold, `peer_membrane` fInst, triangular fLong/TThresh, reset ordering, and hardware-visible state remain explicit project code. There is no conventional PyTorch Conv2d model fallback.
+Keep PyTorch as the tensor/autograd/optimizer substrate, but require SpikingJelly public `activation_based` components for learned synaptic stages. `SpikingStage` uses the SpikingJelly `Conv2d` synapse layer, and `ParametricLIF` delegates its charge equation to SpikingJelly `ParametricLIFNode`. Preserve the already-benchmarked per-channel beta by feeding a per-channel reciprocal-tau tensor into the SpikingJelly PLIF charge equation. Custom dynamic threshold, peer-membrane inhibition, triangular threshold adaptation, reset ordering, and hardware-visible state remain explicit project code. There is no conventional PyTorch Conv2d model fallback.
 
 ## 2026-08-09 — Add late decoder/detail refinement training
 
@@ -162,7 +162,7 @@ Added:
 Retained unchanged:
 - 32/64/128 three-scale semantic backbone;
 - persistent 32-channel high-resolution detail path;
-- PLIF, learnable threshold, stem-only peer-membrane fInst, encoder/context triangular fLong;
+- PLIF, learnable threshold, stem-only peer-membrane inhibition, and encoder/context triangular threshold adaptation;
 - late semantic+shallow+detail concatenation;
 - 96->96 PLIF cross-channel selector;
 - independent class spiking neurons with temporal count decision;
@@ -187,9 +187,9 @@ Keep the same FP32 math, T, BPTT, resolution, and model dynamics while removing 
 Keep `src/eventspikeseg/` limited to active runtime/training code plus frozen architecture registries. Delete the obsolete standalone `benchmark_top_three.py`, MEVDT/EventSCNN-only diagnostic scripts, generated `.ruff_cache`, and the PowerShell RTL wrapper that targeted a nonexistent Compose service. Retain the functional local-GHDL `scripts/run_rtl_tests.py`. Move `ddd17-semantic-ablation.md` from `docs/exec-plans/active/` to `completed/` after recording the measured top-three outcome and the feature lineage into the 237,597-parameter canonical model.
 
 
-## 2026-08-09 — Restrict canonical fLong to semantic encoder/context
+## 2026-08-09 — Restrict canonical threshold adaptation to semantic encoder/context
 
-Decision: introduce a canonical-only `encoder_context` fLong scope. Historical `encoder` scope semantics remain unchanged. The final model no longer applies triangular fLong to the full-resolution stem/x1, custom detail branch, or auxiliary head; fLong begins at x2 after the first spatial downsampling and remains active through x2/x3/context. This matches the intended architecture and removes unnecessary per-pixel temporal state without reducing channels, T, precision, or gradient horizon. Final parameter count becomes 237,597. Stateless convolution plus affine current transforms are vectorized across the T×N batch dimension while PLIF/LIF updates remain sequential, preserving identical temporal dynamics and gradients. The training output contract also uses scalar activity rates instead of retaining complete hidden spike sequences.
+Decision: introduce a canonical-only `encoder_context` threshold-adaptation scope. Historical `encoder` scope semantics remain unchanged. The final model no longer applies triangular threshold adaptation to the full-resolution stem/x1, custom detail branch, or auxiliary head; adaptation begins at x2 after the first spatial downsampling and remains active through x2/x3/context. This matches the intended architecture and removes unnecessary per-pixel temporal state without reducing channels, T, precision, or gradient horizon. Final parameter count becomes 237,597. Stateless convolution plus affine current transforms are vectorized across the T×N batch dimension while PLIF/LIF updates remain sequential, preserving identical temporal dynamics and gradients. The training output contract also uses scalar activity rates instead of retaining complete hidden spike sequences.
 
 
 ## 2026-08-14 — Supersede repeated-static direct encoding with temporal-v2
@@ -267,7 +267,7 @@ Dense PyTorch training at ten raw-event clocks retains substantially more tempor
 activation memory than model-weight memory. Add `--sequential-chunks`, defaulting to
 one so existing training is unchanged. For values above one, divide `[T,N,2,H,W]`
 into equal chronological chunks, compute and backpropagate an equally weighted loss
-for each chunk immediately, preserve PLIF membrane/homeostasis values, and detach
+for each chunk immediately, preserve PLIF membrane/adaptation values, and detach
 their gradient history before continuing. Optimizer and gradient-accumulation steps
 remain record-based rather than chunk-based. This preserves all input clocks and the
 forward state trajectory but deliberately truncates gradients at chunk boundaries.
@@ -345,7 +345,7 @@ spatial tiles/channels/stages while membrane/adaptation state remains in BRAM/UR
 LUTRAM. Start with exact full/tiled execution, then consider touched-address lists,
 active-neuron lists, lazy decay, and clock-enable optimizations.
 
-Nontrivial RTL items are the stem peer-membrane fInst rule, triangular fLong/TThresh
+Nontrivial RTL items are the stem peer-membrane inhibition rule, triangular threshold
 adaptation, and the selector's global binary channel enable. The selector `amax(H,W)` can
 be implemented efficiently as a per-channel any-spike flag because selector outputs are
 binary. Do not silently remove any of these mechanisms; approximations require
@@ -364,7 +364,7 @@ executed PLIF output element `(layer,c,y,x)` retains its own membrane value. Sum
 37 inference PLIF populations gives `N_mem = (672+Nclass)HW + 480H2W2 + 1280H4W4`.
 For six-class DDD17 at 212x282, this is **52,524,272 independent membrane states**.
 
-The fLong-enabled scopes contain `352H2W2 + 1216H4W4` logical neurons, or **9,836,800**
+The threshold-adaptation-enabled scopes contain `352H2W2 + 1216H4W4` logical neurons, or **9,836,800**
 at 212x282; each carries adaptation age and adaptation amplitude. These persistent states
 are distinct from temporary synaptic-current accumulation and from sparse spike-event FIFOs.
 
@@ -376,7 +376,7 @@ a layer/timestep are accumulated first, then each PLIF is updated/thresholded on
 spikes may be processed input-centrically as `(c,y,x)` addresses, so dense sliding-window
 convolution is not required. Lazy decay/touched-neuron-only updates remain later
 optimizations because they change when decay is evaluated and must be proven equivalent
-with reset, peer-membrane fInst, and triangular fLong/TThresh.
+with reset, peer-membrane inhibition, and triangular threshold adaptation.
 
 ## 2026-08-21 — Preserve DSEC event density and supervise complete records
 
@@ -440,7 +440,7 @@ therefore contains 226,767 parameters and 50 PLIF populations. FPGA export must 
 dead block and both training-only heads.
 
 For `H=241`, `W=351`, `H2=121`, `W2=176`, `H4=61`, and `W4=88`, XL inference owns
-`683HW + 768H2W2 + 2144H4W4 = 85,639,973` membrane states. Its 26 fLong-enabled
+`683HW + 768H2W2 + 2144H4W4 = 85,639,973` membrane states. Its 26 threshold-adaptation-enabled
 populations contain `416H2W2 + 2080H4W4 = 20,024,576` neurons, each with adaptation age
 and amplitude. Direct asynchronous DSEC execution also requires one last-update timestamp
 per membrane state. An illustrative exact store using 16-bit membrane, 16-bit age and

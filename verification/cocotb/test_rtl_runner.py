@@ -10,11 +10,15 @@ ROOT = Path(__file__).resolve().parents[2]
     ("top", "source", "test_module"),
     [
         ("lif_pe", "rtl/neuron/lif_pe.vhd", "test_lif_pe"),
-        ("f_inst_top1", "rtl/inhibition/f_inst_top1.vhd", "test_f_inst"),
         (
-            "channel_homeostasis",
-            "rtl/homeostasis/channel_homeostasis.vhd",
-            "test_homeostasis",
+            "winner_peer_selector",
+            "rtl/inhibition/winner_peer_selector.vhd",
+            "test_winner_peer_selector",
+        ),
+        (
+            "channel_rate_adaptation",
+            "rtl/adaptation/channel_rate_adaptation.vhd",
+            "test_rate_adaptation",
         ),
         (
             "event_conv_address",
@@ -27,7 +31,13 @@ ROOT = Path(__file__).resolve().parents[2]
             "test_event_accumulator",
         ),
     ],
-    ids=["lif", "f_inst", "homeostasis", "event_conv_address", "event_accumulator"],
+    ids=[
+        "lif",
+        "winner_peer",
+        "rate_adaptation",
+        "event_conv_address",
+        "event_accumulator",
+    ],
 )
 def test_rtl_unit(top: str, source: str, test_module: str, tmp_path: Path) -> None:
     runner = get_runner("ghdl")

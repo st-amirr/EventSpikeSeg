@@ -23,7 +23,7 @@ vehicle              28,408
 
 The mechanism-screen winner predicted no nature or vehicle pixels and only one human pixel. This cannot be fixed by architecture ranking alone. Continue recording ground-truth and predicted pixel counts, and do not promote a model solely on overall pixel accuracy.
 
-## Resolved: whole-feature-map binary homeostasis
+## Resolved: whole-feature-map binary adaptation
 
 The old `amax` activity rule treated one spike like dense activity and could raise an entire feature-map threshold. The active mechanism uses local triangular threshold adaptation driven by retinotopic membrane energy instead.
 
@@ -37,14 +37,14 @@ The active 11-class DSEC target is `EventSpikeSegXL`: 237,115 registered paramet
 226,767 executed inference parameters. `EventSpikeSeg140k` remains the compact reference.
 Parameter count is only a proxy for FPGA cost; XL's dominant constraint is persistent
 membrane/adaptation/timestamp traffic, followed by pointwise mixing, branch joins,
-attention rendezvous, event routing, FIFO pressure, and fInst/fLong arithmetic.
+attention rendezvous, event routing, FIFO pressure, and inhibition/adaptation arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
-At 241x351, XL owns **85,639,973** membrane states. fLong adds age/amplitude on
+At 241x351, XL owns **85,639,973** membrane states. Threshold adaptation adds age/amplitude on
 **20,024,576** neurons, and asynchronous execution needs one last-update timestamp per
 membrane. The illustrative uncompressed persistent store is 566.42 MiB using 16-bit
-membrane/fLong values and 32-bit timestamps. Time-multiplexed PLIF PEs are allowed, but
+membrane/adaptation values and 32-bit timestamps. Time-multiplexed PLIF PEs are allowed, but
 the external-DDR/tile-cache system must preserve every logical `(layer,c,y,x)` state.
 
 ## Open: continuous learned neuron parameters
@@ -64,7 +64,7 @@ previous record graph from overlapping the next forward pass.
 
 ## 2026-08-09 — Native-resolution training memory root cause
 
-Native-resolution batch-1 training exposed an avoidable full-resolution temporal-state cost on top of intrinsic T=15 BPTT. The final model now keeps triangular fLong off on the stem/x1/detail path and enables it from x2 onward, where spatial state is 4× smaller. Stateless convolution plus affine current transforms are vectorized over the combined T×N batch dimension while PLIF/LIF updates remain sequential, preserving identical temporal dynamics and gradients. Training returns scalar activity-rate diagnostics instead of retaining complete hidden TNCHW spike sequences solely for regularization.
+Native-resolution batch-1 training exposed an avoidable full-resolution temporal-state cost on top of intrinsic T=15 BPTT. The final model now keeps triangular threshold adaptation off on the stem/x1/detail path and enables it from x2 onward, where spatial state is 4× smaller. Stateless convolution plus affine current transforms are vectorized over the combined T×N batch dimension while PLIF/LIF updates remain sequential, preserving identical temporal dynamics and gradients. Training returns scalar activity-rate diagnostics instead of retaining complete hidden TNCHW spike sequences solely for regularization.
 
 
 ## Resolved: fake temporal axis from repeated static input

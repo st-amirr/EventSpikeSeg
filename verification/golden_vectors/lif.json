@@ -9,7 +9,7 @@
     "competition",
     "subtractive_reset",
     "emit",
-    "homeostasis"
+    "threshold_adaptation"
   ],
   "steps": [
     {"current": 32, "threshold": 256, "membrane": 32, "spike": 0},

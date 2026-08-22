@@ -65,7 +65,7 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - local 96→96 PLIF 1×1 retinotopic spike selector (no count-domain MLP or frame barrier);
 - two training-only auxiliary heads;
 - independent spiking class neurons and temporal argmax;
-- SpikingJelly `Conv2d`/PLIF/surrogate infrastructure where compatible, with project-specific per-channel beta, fInst, fLong and operation order preserved;
+- SpikingJelly `Conv2d`/PLIF/surrogate infrastructure where compatible, with project-specific per-channel beta, peer inhibition, threshold adaptation, and operation order preserved;
 - canonical-only 70/20/10 joint → backbone-frozen refinement → low-LR joint-unfreeze schedule.
 
 ## Validation/cleanup state
@@ -122,7 +122,7 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 - first hardware milestone is bit-exact integer/RTL equivalence; sparse touched-address/lazy-decay/clock-enable optimizations follow only after exactness;
 - DSEC training uses fixed physical-time count divisions; direct FPGA events use lazy physical-time decay and no global neural timestep;
 - memory-bounded replay forms one complete-record objective before propagating its gradients through chronological chunks;
-- remaining RTL-sensitive mechanisms are timestamp-based lazy decay, peer-membrane fInst, triangular fLong/TThresh, and the local PLIF selector;
+- remaining RTL-sensitive mechanisms are timestamp-based lazy decay, peer-membrane inhibition, triangular threshold adaptation, and the local PLIF selector;
 - XL adds projected bridge joins, parallel-context joins, local Q/K/V rendezvous, and an external-DDR state-store requirement;
 - evaluation flow is RTL simulation -> synthesis/place-route -> post-implementation timing -> representative SAIF/VCD Vivado power -> optional ZCU104 measurement.
 
@@ -131,7 +131,7 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 - compact-reference accounting separates 37 executed PLIF populations from the ~140k shared parameter count;
 - general membrane formula: `(672+Nclass)*H*W + 480*H2*W2 + 1280*H4*W4`;
 - six-class 212x282 DDD17 requires **52,524,272 independent membrane values**;
-- fLong scopes cover **9,836,800 logical neurons** at that resolution, each with adaptation age and amplitude;
+- threshold-adaptation scopes cover **9,836,800 logical neurons** at that resolution, each with adaptation age and amplitude;
 - implementation contract: static/shared weights and channel parameters, persistent per-`(layer,c,y,x)` neuron state, temporary current accumulators, sparse event FIFOs;
 - exact sparse layer execution accumulates all weight contributions for a timestep before one PLIF threshold/reset update, then writes persistent state back and emits only fired addresses;
 - a small physical PE array may be time-multiplexed, but logical state addresses may not be aliased; timestamp-based lazy decay is part of the bit-exact DSEC baseline.
@@ -140,7 +140,7 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 
 - native dimensions: 241x351 -> 121x176 -> 61x88;
 - 50 inference PLIF populations and 226,767 executed inference parameters;
-- 85,639,973 membrane states plus 40,049,152 fLong age/amplitude values;
+- 85,639,973 membrane states plus 40,049,152 threshold-adaptation age/amplitude values;
 - one last-update timestamp per membrane state for direct asynchronous execution;
-- illustrative exact persistent store: 566.42 MiB at membrane/fLong 16-bit and timestamp 32-bit;
+- illustrative exact persistent store: 566.42 MiB at membrane/adaptation 16-bit and timestamp 32-bit;
 - implementation memory: external DDR backing store with banked on-chip active-tile cache.

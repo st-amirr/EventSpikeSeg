@@ -52,13 +52,13 @@ def test_active_top_five_share_winning_dynamics_and_are_buildable() -> None:
     for name, architecture in TOP_FIVE_PRESETS.items():
         assert architecture.neuron_kind == "plif"
         assert architecture.learnable_threshold
-        assert architecture.f_inst_enabled
-        assert architecture.f_inst_scope == "stem"
+        assert architecture.inhibition_enabled
+        assert architecture.inhibition_scope == "stem"
         assert architecture.inhibition_kind == "peer_membrane"
-        assert architecture.f_long_enabled
-        assert architecture.f_long_scope == "encoder"
-        assert architecture.homeostasis_kind == "triangular_threshold"
-        assert architecture.output_f_inst_enabled
+        assert architecture.threshold_adaptation_enabled
+        assert architecture.threshold_adaptation_scope == "encoder"
+        assert architecture.adaptation_kind == "triangular_threshold"
+        assert architecture.output_competition_enabled
         model = build_top_five_model(name)
         model.eval()
         model.reset()
@@ -93,14 +93,14 @@ def test_top_five_structural_variations_cover_width_kernel_and_depth() -> None:
     assert "enc4_spikes" in deep_outputs
     assert deep_outputs["enc4_spikes"].shape[-2:] == (2, 2)
 
-def test_rate_homeostasis_v2_parameters_still_receive_gradients() -> None:
+def test_rate_adaptation_v2_parameters_still_receive_gradients() -> None:
     neuron = ParametricLIF(
         2,
         LIFConfig(
             threshold=0.5,
             learnable_threshold=True,
-            f_long_enabled=True,
-            homeostasis_kind="rate",
+            threshold_adaptation_enabled=True,
+            adaptation_kind="rate",
             adaptation_tau_init=4.0,
         ),
     )
@@ -122,7 +122,7 @@ def test_rate_homeostasis_v2_parameters_still_receive_gradients() -> None:
 def test_elapsed_time_controls_physical_membrane_decay(neuron_type) -> None:
     neuron = neuron_type(
         1,
-        LIFConfig(threshold=10.0, f_long_enabled=False),
+        LIFConfig(threshold=10.0, threshold_adaptation_enabled=False),
     )
     current = torch.tensor([[[[0.4]]]])
     neuron(current, elapsed_steps=0.0)
@@ -137,7 +137,7 @@ def test_elapsed_time_controls_physical_membrane_decay(neuron_type) -> None:
 
 
 def test_asynchronous_neuron_lazily_decays_only_when_touched() -> None:
-    neuron = HardwareLIF(1, LIFConfig(threshold=10.0, f_long_enabled=False))
+    neuron = HardwareLIF(1, LIFConfig(threshold=10.0, threshold_adaptation_enabled=False))
     neuron.set_asynchronous_updates(True)
     first = torch.tensor([[[[0.4, 0.0]]]])
     left = torch.tensor([[[[True, False]]]])
@@ -158,8 +158,8 @@ def test_triangular_threshold_adaptation_is_local_and_learnable() -> None:
         LIFConfig(
             threshold=0.5,
             learnable_threshold=True,
-            f_long_enabled=True,
-            homeostasis_kind="triangular_threshold",
+            threshold_adaptation_enabled=True,
+            adaptation_kind="triangular_threshold",
             threshold_adaptation_strength_init=0.3,
             adaptation_duration_init=4.0,
         ),
@@ -189,8 +189,8 @@ def test_membrane_energy_has_finite_half_precision_gradient_at_zero() -> None:
     neuron = HardwareLIF(
         2,
         LIFConfig(
-            f_long_enabled=True,
-            homeostasis_kind="triangular_threshold",
+            threshold_adaptation_enabled=True,
+            adaptation_kind="triangular_threshold",
         ),
     )
     candidate = torch.zeros((1, 2, 1, 1), dtype=torch.float16, requires_grad=True)
@@ -201,17 +201,17 @@ def test_membrane_energy_has_finite_half_precision_gradient_at_zero() -> None:
     assert torch.isfinite(candidate.grad).all()
 
 
-def test_zero_homeostasis_scale_bypasses_membrane_energy() -> None:
+def test_zero_mechanism_scale_bypasses_membrane_energy() -> None:
     neuron = HardwareLIF(
         2,
         LIFConfig(
-            f_inst_enabled=True,
+            inhibition_enabled=True,
             inhibition_kind="peer_membrane",
-            f_long_enabled=True,
-            homeostasis_kind="triangular_threshold",
+            threshold_adaptation_enabled=True,
+            adaptation_kind="triangular_threshold",
         ),
     )
-    neuron.set_homeostasis_scale(0.0)
+    neuron.set_mechanism_scale(0.0)
     neuron._retinotopic_membrane_energy = pytest.fail  # type: ignore[method-assign]
 
     current = torch.zeros((1, 2, 1, 1), requires_grad=True)
@@ -224,10 +224,10 @@ def test_peer_membrane_inhibition_reduces_peers_without_hard_gating() -> None:
         3,
         LIFConfig(
             threshold=0.5,
-            f_inst_enabled=True,
+            inhibition_enabled=True,
             inhibition_kind="peer_membrane",
             inhibition_strength_init=0.5,
-            f_long_enabled=False,
+            threshold_adaptation_enabled=False,
         ),
     )
     current = torch.tensor([[[[0.8]], [[0.7]], [[0.2]]]], requires_grad=True)
@@ -247,10 +247,10 @@ def test_winner_peer_inhibition_keeps_one_winner_and_inhibits_peers() -> None:
         3,
         LIFConfig(
             threshold=0.5,
-            f_inst_enabled=True,
+            inhibition_enabled=True,
             inhibition_kind="winner_peer",
             inhibition_strength_init=0.5,
-            f_long_enabled=False,
+            threshold_adaptation_enabled=False,
         ),
     )
     current = torch.tensor([[[[0.8]], [[0.7]], [[0.2]]]], requires_grad=True)
@@ -268,10 +268,10 @@ def test_legacy_grouped_top_two_competition_is_preserved() -> None:
         8,
         LIFConfig(
             threshold=0.5,
-            f_inst_enabled=True,
-            f_inst_top_k=2,
-            f_inst_group_size=4,
-            f_long_enabled=False,
+            inhibition_enabled=True,
+            inhibition_top_k=2,
+            inhibition_group_size=4,
+            threshold_adaptation_enabled=False,
         ),
     )
     current = torch.tensor(
@@ -281,16 +281,16 @@ def test_legacy_grouped_top_two_competition_is_preserved() -> None:
     assert int(spikes.sum()) == 4
 
 
-def test_legacy_t_thresh_behavior_is_preserved() -> None:
+def test_legacy_adaptation_hold_behavior_is_preserved() -> None:
     neuron = HardwareLIF(
         1,
         LIFConfig(
             threshold=0.5,
-            f_long_enabled=True,
-            homeostasis_kind="legacy",
+            threshold_adaptation_enabled=True,
+            adaptation_kind="legacy",
             adaptation_increment=0.1,
             adaptation_decay=0.05,
-            t_thresh_steps=2,
+            adaptation_hold_steps=2,
         ),
     )
     neuron(torch.tensor([[[[0.6]]]]))
@@ -311,18 +311,18 @@ def test_canonical_model_is_140k_and_xl_is_selectable() -> None:
     assert model.architecture.channel_schedule == (32, 64, 128)
     assert model.architecture.neuron_kind == "plif"
     assert model.architecture.inhibition_kind == "peer_membrane"
-    assert model.architecture.homeostasis_kind == "triangular_threshold"
-    assert model.architecture.f_long_scope == "encoder_context"
-    assert not model.stem.neuron.config.f_long_enabled
+    assert model.architecture.adaptation_kind == "triangular_threshold"
+    assert model.architecture.threshold_adaptation_scope == "encoder_context"
+    assert not model.stem.neuron.config.threshold_adaptation_enabled
     assert model.enc1.depthwise is not None
-    assert not model.enc1.depthwise.neuron.config.f_long_enabled
+    assert not model.enc1.depthwise.neuron.config.threshold_adaptation_enabled
     assert model.enc2.depthwise is not None
-    assert model.enc2.depthwise.neuron.config.f_long_enabled
+    assert model.enc2.depthwise.neuron.config.threshold_adaptation_enabled
     assert model.detail1.depthwise is not None
-    assert not model.detail1.depthwise.neuron.config.f_long_enabled
+    assert not model.detail1.depthwise.neuron.config.threshold_adaptation_enabled
     # Independent spiking class neurons accumulate evidence over time instead
     # of using hard per-timestep class WTA.
-    assert not model.architecture.output_f_inst_enabled
+    assert not model.architecture.output_competition_enabled
     assert model.parameter_count() == 140_089
     assert xl.parameter_count() == 236_445
 

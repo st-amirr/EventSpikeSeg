@@ -140,17 +140,17 @@ Raw membrane storage alone would therefore be approximately 50.09 MiB at 8 bits,
 A small array of physical PLIF processing elements may be time-multiplexed as long as
 every logical neuron address retains its own state between visits.
 
-Triangular fLong is enabled only on `down2`, `enc2`, `enc2_extra`, `down3`, `enc3`,
+Triangular threshold adaptation is enabled only on `down2`, `enc2`, `enc2_extra`, `down3`, `enc3`,
 `enc3_extra`, `context1`, and `context2`. The enabled logical-neuron count is
 
 ```text
-N_fLong = 352 * H2 * W2 + 1216 * H4 * W4
+N_adapt = 352 * H2 * W2 + 1216 * H4 * W4
 ```
 
 which is **9,836,800 neurons** at 212 x 282. Each of those neurons retains its own
 adaptation age and adaptation amplitude, i.e. 19,673,600 additional logical state
 values before quantization. The dynamic threshold can be derived when the neuron is
-updated; it does not need to be stored as a third full map. Stem peer-membrane fInst
+updated; it does not need to be stored as a third full map. Stem peer-membrane inhibition
 uses the membrane values themselves and does not introduce a separate full-resolution
 membrane copy.
 
@@ -180,15 +180,15 @@ N_mem_XL = 683*84,591 + 768*21,296 + 2144*5,368
          = 85,639,973 membrane values
 ```
 
-The 26 fLong-enabled populations sum to 416 half-resolution and 2080
+The 26 threshold-adaptation-enabled populations sum to 416 half-resolution and 2080
 quarter-resolution channels:
 
 ```text
-N_fLong_XL = 416*H2*W2 + 2080*H4*W4
+N_adapt_XL = 416*H2*W2 + 2080*H4*W4
            = 20,024,576 neurons
 ```
 
-Each fLong neuron stores age and amplitude, adding 40,049,152 persistent values. Direct
+Each adaptation-enabled neuron stores age and amplitude, adding 40,049,152 persistent values. Direct
 asynchronous DSEC additionally needs one last-update timestamp for each of the 85,639,973
 membrane states. Raw storage examples are:
 
@@ -196,7 +196,7 @@ membrane states. Raw storage examples are:
 | --- | ---: | ---: | ---: |
 | membrane | 85,639,973 | 16 bit | 163.35 MiB |
 | last-update timestamp | 85,639,973 | 32 bit | 326.69 MiB |
-| fLong age + amplitude | 40,049,152 | 16 bit each value | 76.39 MiB |
+| threshold-adaptation age + amplitude | 40,049,152 | 16 bit each value | 76.39 MiB |
 | total above | 211,329,098 values | mixed | 566.42 MiB |
 | class counters | 930,501 | illustrative 16 bit | 1.77 MiB |
 
@@ -219,7 +219,7 @@ states) but is not called and must not be exported.
 | `beta[c]` | shared by every neuron in output channel `c` |
 | base threshold `theta[c]` | shared by every neuron in output channel `c` |
 | membrane `V[c,y,x]` | **independent persistent state for every logical neuron** |
-| fLong age/amplitude | independent persistent state for every fLong-enabled logical neuron |
+| threshold-adaptation age/amplitude | independent persistent state for every adaptation-enabled logical neuron |
 | synaptic current accumulator | temporary for one layer/timestep; may be cleared/reused after PLIF update |
 | spikes | transient sparse `(t,c,y,x)` event addresses between stages |
 
@@ -271,9 +271,9 @@ divisions: AER events enter the first synaptic/PLIF stage directly.
 There is **no softmax inference head**, no ReLU/GELU feature activation, no BatchNorm
 dependency, and no dense count-domain MLP in the deployed canonical model.
 
-## Homeostatic/competitive dynamics
+## Inhibition and threshold-adaptation dynamics
 
-### fInst
+### Peer-membrane inhibition
 
 Stem-only `peer_membrane` inhibition is enabled. Its exact software rule uses a
 retinotopic RMS-like membrane-energy term across feature channels and subtracts a
@@ -282,7 +282,7 @@ retinotopic cross-channel state access and extra arithmetic. The first RTL versi
 match the fixed-point reference exactly; a cheaper approximation is allowed only with
 explicit accuracy revalidation.
 
-### fLong / TThresh
+### Triangular threshold adaptation
 
 Triangular threshold adaptation is enabled on `down2`, `enc2`, `enc2_extra`, `down3`,
 `enc3`, `enc3_extra`, `context1`, and `context2`. It is disabled on the full-resolution
@@ -322,7 +322,7 @@ The canonical deployment objective is:
 
 1. keep PyTorch/SpikingJelly as the training and floating-point golden reference;
 2. export only the **executed XL inference graph** and its learned weights, beta, thresholds,
-   fInst, and fLong parameters;
+   inhibition, adaptation strength, and adaptation-duration parameters;
 3. define deterministic fixed-point formats, rounding, saturation, and overflow rules;
 4. build a bit-exact integer reference and verify layer currents, membranes, spikes, and
    semantic output against the float model;
@@ -348,7 +348,7 @@ The asynchronous FPGA evaluates the shared network parameters input-centrically:
    and group/depthwise address rules.
 3. For each touched destination, load `V`, adaptation, and its `last_update_timestamp`.
 4. Apply `retention = beta ** ((t-last_update)/5000us)`, then add the corresponding
-   shared weight and execute threshold, reset, fInst, and fLong in the exported order.
+   shared weight and execute threshold, reset, peer inhibition, and threshold adaptation in the exported order.
 5. Write the state and timestamp back. Enqueue each generated binary spike at timestamp
    `t`; if no spike is generated, propagation along that path stops.
 6. Merge residual events, remap concatenated channels, and fan out nearest-upsample events
@@ -409,7 +409,7 @@ measured hardware latency.
 
 The DSEC inference parameters split into 215,936 shared convolution weights, 3,584
 foldable affine gains, 3,595 PLIF beta values, 3,595 PLIF base thresholds, four attention
-comparison thresholds, one fInst strength, and 26 pairs of fLong strength/duration
+comparison thresholds, one inhibition strength, and 26 pairs of threshold-adaptation strength/duration
 parameters. The deployed graph contains 50 PLIF populations; training adds three auxiliary
 populations, while the registered dead block contains two more populations.
 
@@ -465,7 +465,7 @@ by `model.eval()` and omitted from VHDL export.
 - Persistent state lives in DDR-backed tiles; shared weights and hot queues/tile banks may
   reside on chip. Weight storage is small compared with logical neuron state.
 - Export and RTL verification must compare branch joins, attention coincidences/gates,
-  membrane/timestamp trajectories, fInst/fLong state, emitted events, and final counters.
+  membrane/timestamp trajectories, inhibition/adaptation state, emitted events, and final counters.
 
 ## Canonical naming
 
@@ -474,3 +474,8 @@ by `model.eval()` and omitted from VHDL export.
 
 Historical top-ten/top-five/top-three architecture-search results retain their original
 names and measured values.
+
+Published source terminology is retained only when citing the source or preserving a
+historical experiment identifier. Active software, exported model specifications, and RTL
+use `peer_membrane_inhibition`, `triangular_threshold_adaptation`, and
+`adaptation_duration`.

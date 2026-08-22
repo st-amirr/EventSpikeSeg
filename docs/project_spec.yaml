@@ -1,8 +1,8 @@
 document:
   title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
-  version: 1.3.0
-  status: xl_dsec_241x351_detailed_fpga_mapping_defined
+  version: 1.4.0
+  status: xl_dsec_241x351_fpga_mapping_with_canonical_mechanism_names
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -27,8 +27,8 @@ document:
   preservation_policy:
     retained_from_previous_specification:
       - Hardware-compatible LIF equations and power-of-two leakage
-      - f_inst cross-channel competition
-      - f_long/T_thresh feature-map homeostasis
+      - Peer-membrane cross-channel inhibition
+      - Triangular threshold adaptation
       - Sparse shared-kernel event-address accumulation
       - Fixed-point formats, saturation, and bit-accurate equivalence requirements
       - Custom VHDL-2008 backend and ZCU104 as the primary deployment target
@@ -84,7 +84,7 @@ framework:
     snn_framework: SpikingJelly_activation_based
     use_in_current_code:
       - SpikingJelly ATan surrogate gradient when installed
-      - Custom HardwareLIF for exact leak, threshold, reset, f_inst, and f_long behavior
+      - Custom HardwareLIF for exact leak, threshold, reset, peer inhibition, and threshold-adaptation behavior
       - SpikingJelly activation_based Conv2d as the active spike-driven synaptic kernel
       - PyTorch nearest-neighbor interpolation for non-learned decoder routing
     requirement: SpikingJelly is mandatory for model construction; there is no conventional Conv2d fallback.
@@ -289,7 +289,7 @@ input_and_time:
       - Generate only connected postsynaptic destination addresses
       - Lazily decay each touched state from its last_update_timestamp
       - Add the shared synaptic weight
-      - Apply threshold_fInst_fLong_and_reset
+      - Apply threshold_inhibition_adaptation_and_reset
       - Enqueue generated binary spikes at the same timestamp
     forbidden: [global_neural_timestep_barrier, FPGA_input_bins, dense_idle_state_sweep]
 
@@ -315,41 +315,43 @@ neuron:
     - add_current
     - form_effective_threshold
     - compute_candidate_spikes
-    - apply_f_inst_if_enabled
+    - apply_peer_inhibition_if_enabled
     - subtract_threshold_for_emitted_spikes
     - optionally_decrement_competing_membranes
-    - update_f_long_adaptation
+    - update_threshold_adaptation
 
 custom_spiking_dynamics:
-  f_inst:
-    concept: instantaneous cross-channel competition at the same spatial coordinate
+  terminology:
+    rule: descriptive_names_are_used_in_all_active_software_RTL_and_export_interfaces
+    literature_aliases:
+      instantaneous_inhibition_factor: peer_membrane_inhibition_or_historical_winner_peer_competition
+      long_threshold_factor: triangular_threshold_adaptation
+      threshold_time_constant: adaptation_duration
+    compatibility: literature_aliases_may_appear_only_in_citations_historical_experiment_IDs_and_legacy_checkpoint_readers
+  peer_membrane_inhibition:
+    concept: instantaneous cross-channel membrane inhibition at the same spatial coordinate
     lineage: Event-Based Trajectory Prediction Using Spiking Neural Networks, 2021
     rule:
-      - Determine channels above their effective threshold.
-      - Select the channel with the highest candidate membrane.
-      - Allow only that channel to emit a spike.
-      - Optionally decrement other above-threshold membranes.
-    current_default_enabled: false_for_most_architecture_presets
-    reason_for_ablation: It may improve feature diversity and sparsity but can harm dense semantic recall.
-    sweep:
-      enabled: [false, true]
-      competitor_decrement_relative_to_threshold: [0.0, 0.125, 0.25, 0.5]
-  f_long_T_thresh:
-    concept: slow channel-level homeostatic threshold adaptation
+      - Determine whether any neuron spikes at a retinotopic location.
+      - Compute the local RMS membrane energy across peer feature channels.
+      - Subtract a learned fraction of that energy from non-spiking peer membranes.
+      - Keep simultaneous spikes; winner-only suppression is a historical ablation, not the canonical rule.
+    current_scope: stem_only
+    current_kind: peer_membrane
+  triangular_threshold_adaptation:
+    concept: local inverted-V threshold adaptation after a neuron spike
     lineage: Event-Based Trajectory Prediction Using Spiking Neural Networks, 2021
-    scope: per_output_feature_map
-    state: adaptation[channel]
-    effective_threshold: theta[channel] = theta_base + adaptation[channel]
+    scope: per_enabled_logical_neuron_with_retinotopic_cross_channel_sum
+    persistent_state: [adaptation_age, adaptation_amplitude]
+    learned_parameters: [threshold_adaptation_strength_per_channel, adaptation_duration_per_channel]
+    effective_threshold: theta[channel,y,x] = theta_base[channel] + summed_triangular_penalty[y,x]
     current_defaults:
-      enabled_in_adaptive_presets: true
-      adaptation_increment: 0.015625
-      adaptation_decay: 0.0078125
+      enabled_in_canonical_model: true
+      enabled_scope: encoder_context
     expected_effects:
-      - Reduce permanently dominant channels
-      - Improve channel utilization
-      - Control firing rate under changing input density
-      - Add negligible state compared with spatial membrane maps
-    limitation: It does not replace activation normalization during training.
+      - Temporarily raise the local threshold after spiking.
+      - Reduce repeated dominance while retaining spatially local evidence.
+    limitation: The age and amplitude maps are material FPGA state and are not negligible.
 
 architecture_family:
   implementation_model: EventSpikeSegXL
@@ -724,7 +726,7 @@ fpga_execution:
     external_DDR:
       - full_XL_membrane_maps
       - full_XL_last_update_timestamp_maps
-      - full_XL_fLong_age_and_amplitude_maps
+      - full_XL_threshold_adaptation_age_and_amplitude_maps
     distributed_LUTRAM_candidates:
       - small_weight_tables
       - short_event_FIFOs
@@ -746,15 +748,15 @@ fpga_execution:
       - Use the fixed layer connectivity, including kernel offset, groups/depthwise mapping, stride, padding, and dilation, to generate only valid postsynaptic destination addresses.
       - For each valid destination, load V/adaptation/last_update_timestamp and apply beta[channel] ** (delta_us / 5000) lazy decay.
       - Add the corresponding shared/hardwired synaptic weight; binary spikes require no spike-times-weight multiplier.
-      - Apply dynamic threshold/fInst/fLong/reset immediately for the touched destination and store its new timestamped state.
+      - Apply dynamic threshold, peer inhibition, triangular adaptation, and reset immediately for the touched destination and store its new timestamped state.
       - Emit only addresses of neurons that fired into the next layer's event FIFO at the same timestamp.
-      - Retain membrane and enabled fLong state across events and consecutive stream records.
+      - Retain membrane and enabled threshold-adaptation state across events and consecutive stream records.
       - Reset persistent state only at the same sequence/frame-gap boundaries used by the software reference.
     baseline_exactness: >-
       Lazy timestamp-based decay and touched-neuron updates are baseline DSEC semantics,
       not later optimizations. Dense fixed-time training is an acceleration approximation;
       the fixed-point model, RTL, and FPGA must agree on event order, elapsed-time decay,
-      threshold/reset, fInst, and fLong.
+      threshold, reset, peer inhibition, and triangular threshold adaptation.
     physical_vs_logical_neurons: >-
       There is no requirement to instantiate 85,639,973 physical PLIF circuits for XL at
       241x351 DSEC. A small PE array may be reused, provided DDR-backed state preserves
@@ -762,7 +764,7 @@ fpga_execution:
   state_memory_design:
     persistent_state:
       membrane: one_value_per_executed_PLIF_output_element
-      fLong: age_and_amplitude_per_enabled_PLIF_output_element
+      threshold_adaptation: age_and_amplitude_per_enabled_PLIF_output_element
     static_shared_parameters:
       weights: shared_by_convolution_and_may_be_ROM_or_compile_time_constants
       beta_threshold: shared_per_output_channel
@@ -831,8 +833,8 @@ export_contract:
     - convolution_parameters
     - normalization_folding
     - LIF_parameters
-    - f_inst_parameters
-    - f_long_parameters
+    - peer_inhibition_parameters
+    - threshold_adaptation_parameters
     - quantization_formats
     - saturation_and_rounding
     - timestep_count
@@ -850,8 +852,8 @@ validation_and_testing:
     - temporal_direct_encoding
     - LIF_leak_threshold_reset_order
     - state_reset
-    - f_inst_winner_and_ties
-    - f_long_rise_and_decay
+    - peer_inhibition_trigger_and_decrement
+    - threshold_adaptation_rise_and_decay
     - standard_and_depthwise_convolution_shapes
     - pointwise_channel_mixing
     - dilation_and_multiscale_shapes
@@ -956,8 +958,8 @@ literature_review:
       contribution: Local event activity, LIF convolution, and spatial proposal clustering.
       status: historical_tracking_context_only
     - id: debat2021_trajectory
-      contribution: Three-layer convolutional SNN, f_inst, f_long/T_thresh, STDP, and motion-selective features.
-      status: f_inst_and_f_long_lineage_retained
+      contribution: Three-layer convolutional SNN, instantaneous inhibition, long-term threshold adaptation, STDP, and motion-selective features.
+      status: inhibition_and_threshold_adaptation_lineage_retained
     - id: fang2023_spikingjelly
       contribution: Trainable SNN infrastructure and surrogate-gradient execution.
     - id: carpegna2024_spiker_plus
@@ -1048,8 +1050,8 @@ experiment_code_layout:
       - additive_decoder
       - HardwareLIF
       - ParametricLIF
-      - f_inst
-      - f_long_and_T_thresh
+      - peer_membrane_inhibition
+      - triangular_threshold_adaptation_and_duration
   round_one_file:
     path: src/eventscnn/top_ten_models.py
     purpose: Preserve the exact completed ten-model definitions and checkpoint compatibility.
@@ -1337,9 +1339,9 @@ fpga_deployment_2026_08_19:
         PLIF_beta: 3595
         PLIF_base_threshold: 3595
         attention_head_thresholds: 4
-        stem_fInst_strength: 1
-        fLong_strength: 26
-        fLong_duration: 26
+        stem_inhibition_strength: 1
+        threshold_adaptation_strength: 26
+        adaptation_duration: 26
     PLIF_population_accounting:
       executed_inference_total: 50
       executed_training_total: 53
@@ -1348,7 +1350,7 @@ fpga_deployment_2026_08_19:
         full: {populations: 18, output_channel_sum: 683}
         half: {populations: 12, output_channel_sum: 768}
         quarter: {populations: 20, output_channel_sum: 2144}
-      fLong_by_scale:
+      threshold_adaptation_by_scale:
         half: {populations: 7, output_channel_sum: 416}
         quarter: {populations: 19, output_channel_sum: 2080}
     executed_layer_graph:
@@ -1383,9 +1385,9 @@ fpga_deployment_2026_08_19:
       membrane_formula: N_mem = (672 + Nclass)*H*W + 768*H2*W2 + 2144*H4*W4
       dsec_membrane_formula: N_mem = 683*H*W + 768*H2*W2 + 2144*H4*W4
       total_membrane_states: 85639973
-      fLong_formula: N_fLong = 416*H2*W2 + 2080*H4*W4
-      fLong_neurons: 20024576
-      fLong_age_amplitude_values: 40049152
+      threshold_adaptation_formula: N_adapt = 416*H2*W2 + 2080*H4*W4
+      threshold_adaptation_neurons: 20024576
+      threshold_adaptation_age_amplitude_values: 40049152
       last_update_timestamp_values: 85639973
       class_counter_values: 930501
       training_only_aux_membrane_values: 465080
@@ -1393,7 +1395,7 @@ fpga_deployment_2026_08_19:
       illustrative_storage:
         membrane_16bit_MiB: 163.35
         timestamp_32bit_MiB: 326.69
-        fLong_age_amplitude_16bit_MiB: 76.39
+        threshold_adaptation_age_amplitude_16bit_MiB: 76.39
         exact_persistent_total_MiB_before_counters_and_buffers: 566.42
         class_counters_16bit_MiB: 1.77
     memory_architecture:
@@ -1401,7 +1403,7 @@ fpga_deployment_2026_08_19:
       on_chip: banked_BRAM_URAM_LUTRAM_active_tile_cache_queues_and_small_tables
       prohibited_assumption: all_XL_state_fits_on_chip_without_quantified_compression
       cache_key: [layer_id, channel, y, x]
-      cached_fields: [membrane, last_update_timestamp, fLong_age_if_enabled, fLong_amplitude_if_enabled]
+      cached_fields: [membrane, last_update_timestamp, threshold_adaptation_age_if_enabled, threshold_adaptation_amplitude_if_enabled]
       dirty_writeback: required_before_tile_eviction
     timestamp_join_requirements:
       projected_bridges: local_main_bridge_rendezvous_by_timestamp_and_destination
@@ -1454,9 +1456,9 @@ fpga_deployment_2026_08_19:
           int12_MiB: 75.1366
           int16_MiB: 100.1821
           int20_MiB: 125.2276
-      fLong_enabled_state:
+      threshold_adaptation_enabled_state:
         enabled_scopes: [down2, enc2, enc2_extra, down3, enc3, enc3_extra, context1, context2]
-        logical_neuron_formula: N_flong = 352 * H2 * W2 + 1216 * H4 * W4
+        logical_neuron_formula: N_adapt = 352 * H2 * W2 + 1216 * H4 * W4
         ddd17_212x282_logical_neurons: 9836800
         persistent_values_per_enabled_neuron: [adaptation_age, adaptation_amplitude]
         ddd17_212x282_auxiliary_state_values: 19673600
@@ -1465,8 +1467,8 @@ fpga_deployment_2026_08_19:
         per_logical_neuron_address:
           - membrane_V
           - last_update_timestamp_for_asynchronous_DSEC
-          - fLong_adaptation_age_when_enabled
-          - fLong_adaptation_amplitude_when_enabled
+          - threshold_adaptation_age_when_enabled
+          - threshold_adaptation_amplitude_when_enabled
         shared_per_output_channel:
           - beta
           - base_threshold
@@ -1533,11 +1535,11 @@ fpga_deployment_2026_08_19:
       - clock_enable_or_local_clock_suppression_when_idle
     principal_tradeoff: processing_element_parallelism_vs_latency_memory_bandwidth_and_logic_area
   fidelity_risks:
-    peer_membrane_fInst:
+    peer_membrane_inhibition:
       scope: stem_only
       issue: uses_retinotopic_cross_channel_membrane_energy_and_peer_decrement
       rule: implement_fixed_point_exactly_first; any cheaper approximation_requires_revalidation
-    triangular_fLong_TThresh:
+    triangular_threshold_adaptation:
       scope: [down2, bridge12, enc2, enc2_extra, down3, bridge23, enc3, enc3_extra, context1, context2, parallel_context, deep_attention]
       issue: dynamic_threshold_uses_adaptation_age_amplitude_and_retinotopic_sum
       rule: store_integer_adaptation_state_and_reproduce_time_course_bit_exactly

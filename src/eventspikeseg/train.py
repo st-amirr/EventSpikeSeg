@@ -232,9 +232,9 @@ FINAL_LOSS_PROFILE = LossProfile(
 )
 
 STABLE_TRAINING_STRATEGY_VERSION = "dsec-fixed-time-counts-async-fpga-v6"
-FINAL_HOMEOSTASIS_START_FRACTION = 0.10
-FINAL_HOMEOSTASIS_FULL_FRACTION = 0.20
-FINAL_HOMEOSTASIS_MAX_SCALE = 0.0625
+FINAL_MECHANISM_START_FRACTION = 0.10
+FINAL_MECHANISM_FULL_FRACTION = 0.20
+FINAL_MECHANISM_MAX_SCALE = 0.0625
 FINAL_NEURON_FREEZE_FRACTION = 0.20
 FINAL_REFINEMENT_LR_MULTIPLIER = 0.50
 FINAL_JOINT_LR_MULTIPLIER = 0.20
@@ -249,16 +249,16 @@ MECHANISM_PARAMETER_TOKENS = (
 )
 
 
-def final_homeostasis_scale(epoch: int, epochs: int) -> float:
-    """Bound final-model recurrent adaptation to the best-checkpoint regime."""
+def final_mechanism_scale(epoch: int, epochs: int) -> float:
+    """Bound inhibition/adaptation strength to the best-checkpoint regime."""
     fraction = epoch / float(max(1, epochs))
-    if fraction <= FINAL_HOMEOSTASIS_START_FRACTION:
+    if fraction <= FINAL_MECHANISM_START_FRACTION:
         return 0.0
     progress = (
-        (fraction - FINAL_HOMEOSTASIS_START_FRACTION)
-        / (FINAL_HOMEOSTASIS_FULL_FRACTION - FINAL_HOMEOSTASIS_START_FRACTION)
+        (fraction - FINAL_MECHANISM_START_FRACTION)
+        / (FINAL_MECHANISM_FULL_FRACTION - FINAL_MECHANISM_START_FRACTION)
     )
-    return FINAL_HOMEOSTASIS_MAX_SCALE * min(1.0, max(0.0, progress))
+    return FINAL_MECHANISM_MAX_SCALE * min(1.0, max(0.0, progress))
 
 
 def set_neuron_dynamics_trainable(model: nn.Module, trainable: bool) -> int:
@@ -272,9 +272,12 @@ def set_neuron_dynamics_trainable(model: nn.Module, trainable: bool) -> int:
     return changed
 
 
-def checkpoint_homeostasis_scale(checkpoint: dict[str, object]) -> float:
-    """Resolve saved runtime scale, including the legacy 20%-to-60% ramp."""
-    saved_scale = checkpoint.get("homeostasis_scale")
+def checkpoint_mechanism_scale(checkpoint: dict[str, object]) -> float:
+    """Resolve the runtime mechanism scale, including legacy checkpoints."""
+    saved_scale = checkpoint.get("mechanism_scale")
+    if saved_scale is None:
+        # Read-only compatibility with checkpoints written before the naming migration.
+        saved_scale = checkpoint.get("homeostasis_scale")
     if saved_scale is not None:
         return float(saved_scale)
     epoch = int(checkpoint.get("epoch", 0))
@@ -289,10 +292,10 @@ def restore_checkpoint_runtime_state(
     model: nn.Module, checkpoint: dict[str, object]
 ) -> float:
     """Restore nonpersistent recurrent controls needed to reproduce validation."""
-    scale = checkpoint_homeostasis_scale(checkpoint)
-    set_homeostasis = getattr(model, "set_homeostasis_scale", None)
-    if callable(set_homeostasis):
-        set_homeostasis(scale)
+    scale = checkpoint_mechanism_scale(checkpoint)
+    set_mechanism = getattr(model, "set_mechanism_scale", None)
+    if callable(set_mechanism):
+        set_mechanism(scale)
     set_competition = getattr(model, "set_competition_enabled", None)
     if callable(set_competition):
         set_competition(bool(checkpoint.get("competition_enabled", True)))
@@ -990,7 +993,7 @@ def train_architecture(
     mechanism_round = bool(
         architecture_config is not None
         and (
-            getattr(architecture_config, "homeostasis_kind", "legacy") == "triangular_threshold"
+            getattr(architecture_config, "adaptation_kind", "legacy") == "triangular_threshold"
             or getattr(architecture_config, "inhibition_kind", "gate") == "peer_membrane"
             or str(getattr(architecture_config, "name", "")).startswith("f01p_")
         )
@@ -1009,7 +1012,7 @@ def train_architecture(
     best_checkpoint_path = output_dir / f"{architecture}_seed{seed}_best.pt"
     last_checkpoint_path = output_dir / f"{architecture}_seed{seed}_last.pt"
     canonical_checkpoint_path = output_dir / f"{architecture}_seed{seed}.pt"
-    current_homeostasis_scale = 1.0
+    current_mechanism_scale = 1.0
     current_competition_enabled = True
     current_hidden_inhibition_enabled = True
     current_neuron_dynamics_trainable = True
@@ -1064,7 +1067,7 @@ def train_architecture(
                     else "historical-compound"
                 ),
                 "class_weights": class_weights.detach().cpu().tolist(),
-                "homeostasis_scale": current_homeostasis_scale,
+                "mechanism_scale": current_mechanism_scale,
                 "competition_enabled": current_competition_enabled,
                 "hidden_inhibition_enabled": current_hidden_inhibition_enabled,
                 "neuron_dynamics_trainable": current_neuron_dynamics_trainable,
@@ -1288,7 +1291,7 @@ def train_architecture(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
             "objective=weighted-CE+0.2-Dice+0.1-aux-CE | "
             "focal=off activity=on | "
-            f"homeostasis_max={FINAL_HOMEOSTASIS_MAX_SCALE:.4f} | "
+            f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "
             f"backbone_refinement={refinement_schedule}",
             flush=True,
@@ -1331,7 +1334,7 @@ def train_architecture(
         previous_training_phase = training_phase
 
         if is_final_run and mechanism_round:
-            homeostasis_scale = final_homeostasis_scale(epoch, epochs)
+            mechanism_scale = final_mechanism_scale(epoch, epochs)
             neuron_dynamics_trainable = (
                 epoch / float(max(1, epochs)) < FINAL_NEURON_FREEZE_FRACTION
             )
@@ -1340,20 +1343,20 @@ def train_architecture(
             competition_enabled = True
             hidden_inhibition_enabled = True
         else:
-            homeostasis_scale = min(1.0, epoch / float(warmup_epochs))
+            mechanism_scale = min(1.0, epoch / float(warmup_epochs))
             competition_enabled = epoch > warmup_epochs
             hidden_inhibition_enabled = competition_enabled
             neuron_dynamics_trainable = True
-        set_homeostasis = getattr(model, "set_homeostasis_scale", None)
-        if callable(set_homeostasis):
-            set_homeostasis(homeostasis_scale)
+        set_mechanism = getattr(model, "set_mechanism_scale", None)
+        if callable(set_mechanism):
+            set_mechanism(mechanism_scale)
         set_competition = getattr(model, "set_competition_enabled", None)
         if callable(set_competition):
             set_competition(competition_enabled)
         set_hidden_inhibition = getattr(model, "set_hidden_inhibition_enabled", None)
         if callable(set_hidden_inhibition):
             set_hidden_inhibition(hidden_inhibition_enabled)
-        current_homeostasis_scale = homeostasis_scale
+        current_mechanism_scale = mechanism_scale
         current_competition_enabled = competition_enabled
         current_hidden_inhibition_enabled = hidden_inhibition_enabled
         current_neuron_dynamics_trainable = neuron_dynamics_trainable
@@ -1461,7 +1464,7 @@ def train_architecture(
         print(
             f"Epoch {epoch:02d}/{epochs:02d} complete | "
             f"loss={mean_epoch_loss:.4f} | phase={training_phase} | "
-            f"homeostasis={homeostasis_scale:.2f} | "
+            f"mechanism_scale={mechanism_scale:.2f} | "
             f"optimizer_steps={successful_optimizer_steps} | "
             f"amp_skips={skipped_optimizer_steps} | "
             "dice_loss="
@@ -1539,9 +1542,9 @@ def train_architecture(
     if callable(set_backbone_trainable):
         set_backbone_trainable(True)
 
-    set_homeostasis = getattr(model, "set_homeostasis_scale", None)
-    if callable(set_homeostasis):
-        set_homeostasis(1.0)
+    set_mechanism = getattr(model, "set_mechanism_scale", None)
+    if callable(set_mechanism):
+        set_mechanism(1.0)
     set_competition = getattr(model, "set_competition_enabled", None)
     if callable(set_competition):
         set_competition(True)

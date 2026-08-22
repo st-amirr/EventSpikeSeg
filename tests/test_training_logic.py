@@ -18,9 +18,9 @@ from eventspikeseg.train import (
     _temporal_parts,
     _training_objective,
     architecture_presets,
-    checkpoint_homeostasis_scale,
+    checkpoint_mechanism_scale,
     estimate_class_weights,
-    final_homeostasis_scale,
+    final_mechanism_scale,
     format_class_validation_report,
     infer_model_suite,
     loss_profile_for_suite,
@@ -291,17 +291,20 @@ def test_class_weight_estimation_uses_capped_median_frequency_weights() -> None:
     assert torch.allclose(softened[:5].square(), weights[:5], atol=1e-5)
 
 
-def test_stable_final_homeostasis_reaches_and_holds_best_checkpoint_scale() -> None:
-    assert final_homeostasis_scale(8, 80) == 0.0
-    assert final_homeostasis_scale(12, 80) == pytest.approx(0.03125)
-    assert final_homeostasis_scale(16, 80) == pytest.approx(0.0625)
-    assert final_homeostasis_scale(80, 80) == pytest.approx(0.0625)
-    assert checkpoint_homeostasis_scale({"epoch": 18, "epochs": 80}) == pytest.approx(
+def test_stable_final_mechanism_reaches_and_holds_best_checkpoint_scale() -> None:
+    assert final_mechanism_scale(8, 80) == 0.0
+    assert final_mechanism_scale(12, 80) == pytest.approx(0.03125)
+    assert final_mechanism_scale(16, 80) == pytest.approx(0.0625)
+    assert final_mechanism_scale(80, 80) == pytest.approx(0.0625)
+    assert checkpoint_mechanism_scale({"epoch": 18, "epochs": 80}) == pytest.approx(
         0.0625
     )
-    assert checkpoint_homeostasis_scale(
-        {"epoch": 24, "epochs": 80, "homeostasis_scale": 0.25}
+    assert checkpoint_mechanism_scale(
+        {"epoch": 24, "epochs": 80, "mechanism_scale": 0.25}
     ) == pytest.approx(0.25)
+    assert checkpoint_mechanism_scale(
+        {"epoch": 24, "epochs": 80, "homeostasis_scale": 0.125}
+    ) == pytest.approx(0.125)
 
 
 def test_neuron_dynamics_can_freeze_without_freezing_convolution_weights() -> None:

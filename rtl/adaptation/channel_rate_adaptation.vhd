@@ -2,7 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-entity channel_homeostasis is
+entity channel_rate_adaptation is
   generic (
     WIDTH       : positive := 16;
     COUNT_WIDTH : positive := 16
@@ -18,7 +18,7 @@ entity channel_homeostasis is
   );
 end entity;
 
-architecture rtl of channel_homeostasis is
+architecture rtl of channel_rate_adaptation is
   signal adaptation_reg : unsigned(WIDTH - 1 downto 0) := (others => '0');
   constant MAXIMUM : unsigned(WIDTH - 1 downto 0) := (others => '1');
 begin

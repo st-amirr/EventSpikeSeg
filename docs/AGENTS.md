@@ -62,7 +62,7 @@ require `N_mem = (672+Nclass)*H*W + 768*H2*W2 + 2144*H4*W4`. At 11-class DSEC
 `241x351`, `H2xW2=121x176` and `H4xW4=61x88`, giving **85,639,973 independent
 membrane states**.
 
-XL fLong-enabled populations contain `416*H2*W2 + 2080*H4*W4` logical neurons:
+XL threshold-adaptation-enabled populations contain `416*H2*W2 + 2080*H4*W4` logical neurons:
 **20,024,576** at 241x351. Each carries adaptation age and amplitude. Direct DSEC
 execution also keeps one last-update timestamp per membrane state. With illustrative
 16-bit membrane/age/amplitude and 32-bit timestamps, persistent state is about
@@ -100,7 +100,7 @@ kernels and deterministic timestamp-tagged branch joins.
 
 DSEC inference is asynchronous. For each timestamped `(polarity,y,x)` event, generate its
 valid destinations, lazily decay each touched state from its own last-update timestamp,
-add the shared synaptic weight, apply PLIF/fInst/fLong/reset, write the state and timestamp,
+add the shared synaptic weight, apply PLIF/inhibition/adaptation/reset, write the state and timestamp,
 then immediately route emitted spikes to the next layer. There is no input bin, dense idle
 state sweep, or global layer/timestep barrier.
 
@@ -122,8 +122,8 @@ available. Its per-timestep accumulation barrier is not the DSEC/FPGA execution 
 
 ### Mapping risks requiring explicit validation
 
-- stem `peer_membrane` fInst uses retinotopic cross-channel membrane energy;
-- encoder/context triangular fLong uses adaptation age/amplitude and dynamic threshold;
+- stem peer-membrane inhibition uses retinotopic cross-channel membrane energy;
+- encoder/context triangular threshold adaptation uses age/amplitude and a dynamic threshold;
 - projected residual bridges join the strided 32->64 and 64->128 encoder paths;
 - parallel d1/d2/d4 context requires deterministic timestamp-tagged branch joins;
 - four-head Q/K/V attention uses 32 channels (8 per head) and requires a local

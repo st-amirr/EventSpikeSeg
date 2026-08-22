@@ -2,7 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-entity f_inst_top1 is
+entity winner_peer_selector is
   generic (
     CHANNELS : positive := 4;
     WIDTH    : positive := 16
@@ -14,7 +14,7 @@ entity f_inst_top1 is
   );
 end entity;
 
-architecture rtl of f_inst_top1 is
+architecture rtl of winner_peer_selector is
 begin
   select_winner : process (all)
     variable result       : std_logic_vector(CHANNELS - 1 downto 0);

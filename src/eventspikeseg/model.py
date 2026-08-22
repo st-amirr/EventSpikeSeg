@@ -17,8 +17,8 @@ model:
 * asymmetric high-resolution detail refinement;
 * deep and mid-level auxiliary semantic supervision;
 * independent spiking class neurons with final temporal spike-count argmax;
-* PLIF + learnable thresholds + stem-only peer-membrane fInst + encoder/context
-  triangular fLong homeostasis.
+* PLIF + learnable thresholds + stem-only peer-membrane inhibition +
+  encoder/context triangular threshold adaptation.
 
 The training engine may call ``set_semantic_backbone_trainable`` during the late
 refinement phase.  The detail path, decoder, selector, auxiliary head, and final head
@@ -55,16 +55,16 @@ FINAL_ARCHITECTURE = SegmentationArchitecture(
     adaptive_threshold=False,
     neuron_kind="plif",
     learnable_threshold=True,
-    f_inst_enabled=True,
-    f_inst_scope="stem",
+    inhibition_enabled=True,
+    inhibition_scope="stem",
     inhibition_kind="peer_membrane",
     inhibition_strength_init=0.20,
-    f_long_enabled=True,
-    f_long_scope="encoder_context",
-    homeostasis_kind="triangular_threshold",
+    threshold_adaptation_enabled=True,
+    threshold_adaptation_scope="encoder_context",
+    adaptation_kind="triangular_threshold",
     threshold_adaptation_strength_init=0.20,
     adaptation_duration_init=5.0,
-    output_f_inst_enabled=False,
+    output_competition_enabled=False,
 )
 
 # Final-model-only late refinement schedule.  The generic trainer discovers this
@@ -323,11 +323,12 @@ class EventSpikeSegXL(EventSpikeSegBase):
         encoder_lif = _block_lif(self.enc1)
         context_lif = _block_lif(self.enc3)
         decoder_lif = self.project3.neuron.config
-        highres_lif = replace(encoder_lif, f_long_enabled=False)
+        highres_lif = replace(encoder_lif, threshold_adaptation_enabled=False)
 
-        # Keep triangular fLong from the first downsampled semantic scale onward.
+        # Keep triangular threshold adaptation from the first downsampled
+        # semantic scale onward.
         # The full-resolution x1/detail stream preserves fine spatial evidence and
-        # does not allocate per-pixel long-term homeostasis state.
+        # does not allocate per-pixel threshold-adaptation state.
         self.enc1 = SpikingConvBlock(
             32, 32, kernel_size=architecture.first_block_kernel_size,
             depthwise=architecture.depthwise, norm=architecture.norm,
@@ -386,7 +387,7 @@ class EventSpikeSegXL(EventSpikeSegBase):
             lif=context_lif,
             norm=architecture.norm,
         )
-        # Auxiliary supervision should not allocate triangular fLong state of
+        # Auxiliary supervision should not allocate triangular adaptation state of
         # its own. It remains PLIF/learnable-threshold via decoder_lif.
         self.deep_aux_head = DeepAuxiliaryHead(
             128, class_count, lif=decoder_lif, norm=architecture.norm
@@ -394,10 +395,10 @@ class EventSpikeSegXL(EventSpikeSegBase):
 
         # Persistent high-resolution path: the strongest new feature from T2.
         # High-resolution detail refinement is PLIF-only. Reusing encoder_lif
-        # here unintentionally enabled per-pixel triangular fLong state on every
-        # detail stage, which is outside the intended fLong scope and is very
+        # here unintentionally enabled per-pixel triangular adaptation state on every
+        # detail stage, which is outside the intended scope and is very
         # expensive at native DDD17 resolution. decoder_lif preserves PLIF and
-        # learned thresholds without fInst/fLong.
+        # learned thresholds without inhibition or threshold adaptation.
         self.detail1 = SpikingConvBlock(
             32, 32, depthwise=True, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
@@ -572,7 +573,7 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         encoder_lif = _block_lif(self.enc1)
         context_lif = _block_lif(self.enc3)
         decoder_lif = self.project3.neuron.config
-        highres_lif = replace(encoder_lif, f_long_enabled=False)
+        highres_lif = replace(encoder_lif, threshold_adaptation_enabled=False)
 
         self.enc1 = SpikingConvBlock(
             32, 32, kernel_size=architecture.first_block_kernel_size,

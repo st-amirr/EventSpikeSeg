@@ -39,7 +39,7 @@ The benchmark establishes `v10_fpga_hybrid` as the round-one structural incumben
 - GAP and static affine gain did not justify their cost as standalone additions in this run.
 
 
-## 2026-08-07 — First PLIF/homeostasis top-five completed and rejected
+## 2026-08-07 — First PLIF/adaptation top-five completed and rejected
 
 Protocol matched round one: seed 17, 10 epochs, 2,048 training samples, 512 held-out samples, 64×64, 20 internal steps, batch size 4.
 
@@ -51,7 +51,7 @@ Protocol matched round one: seed 17, 10 epochs, 2,048 training samples, 512 held
 | 4 | `f02_v10_plif_inst_long` | 0.1754 | 0.6933 | 45,204 | 0.1290 |
 | 5 | `f04_v02_light_plif_inst_long` | 0.0167 | 0.1004 | 31,542 | 0.0000 |
 
-The best v1 contender was 0.0667 mIoU below the incumbent. Hard hidden competition was harmful, fixed `T_thresh=4` did not adapt to the data, and global `amax` homeostasis could suppress a whole channel after one spike. These are measured failures, not evidence that PLIF itself is unsuitable.
+The best v1 contender was 0.0667 mIoU below the incumbent. Hard hidden competition was harmful, a fixed four-step adaptation duration did not adapt to the data, and global `amax` adaptation could suppress a whole channel after one spike. These are measured failures, not evidence that PLIF itself is unsuitable. Table identifiers retain their original experiment names.
 
 
 ## 2026-08-07 — Completed retinotopic/neuron-mechanism screening run

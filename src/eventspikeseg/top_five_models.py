@@ -19,16 +19,16 @@ _COMMON_DYNAMICS: dict[str, object] = {
     "adaptive_threshold": False,
     "neuron_kind": "plif",
     "learnable_threshold": True,
-    "f_inst_enabled": True,
-    "f_inst_scope": "stem",
+    "inhibition_enabled": True,
+    "inhibition_scope": "stem",
     "inhibition_kind": "peer_membrane",
     "inhibition_strength_init": 0.20,
-    "f_long_enabled": True,
-    "f_long_scope": "encoder",
-    "homeostasis_kind": "triangular_threshold",
+    "threshold_adaptation_enabled": True,
+    "threshold_adaptation_scope": "encoder",
+    "adaptation_kind": "triangular_threshold",
     "threshold_adaptation_strength_init": 0.20,
     "adaptation_duration_init": 5.0,
-    "output_f_inst_enabled": True,
+    "output_competition_enabled": True,
 }
 
 
