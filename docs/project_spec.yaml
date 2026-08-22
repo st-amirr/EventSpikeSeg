@@ -1,8 +1,8 @@
 document:
   title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
-  version: 1.4.0
-  status: xl_dsec_241x351_fpga_mapping_with_canonical_mechanism_names
+  version: 1.5.0
+  status: eventspikeseg140k_artix7_sparse_state_fpga_plan
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -31,7 +31,7 @@ document:
       - Triangular threshold adaptation
       - Sparse shared-kernel event-address accumulation
       - Fixed-point formats, saturation, and bit-accurate equivalence requirements
-      - Custom VHDL-2008 backend and ZCU104 as the primary deployment target
+      - Portable VHDL-2008 backend with Artix-7 as the first reference family
       - SpikingJelly surrogate-gradient training strategy
       - Synthetic fixtures, golden vectors, and staged hardware verification
       - Synthesis-guided BRAM/LUTRAM/register memory mapping
@@ -66,7 +66,7 @@ project_goal:
     - Do adaptive thresholds improve firing balance and multi-seed stability?
     - Is one encoder skip sufficient, or are two additive skips required for boundaries and small classes?
     - What accuracy is lost after weight, membrane, threshold, and accumulator quantization?
-    - Which operations dominate BRAM/URAM state, LUT/DSP usage, event routing, memory bandwidth, and energy on FPGA?
+    - Which operations dominate BRAM/LUTRAM state, LUT/DSP usage, event routing, memory bandwidth, and energy on FPGA?
     - Which non-local operations require dedicated reduction/control logic or a hardware-aware replacement?
   working_hypotheses:
     - Depthwise-pointwise blocks greatly reduce parameters and weight memory but require pointwise channel mixing.
@@ -93,7 +93,7 @@ framework:
     reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, and data loading.
   hardware_backend:
     primary_type: custom_VHDL_2008_digital_neuromorphic_FPGA
-    primary_target: Xilinx_ZCU104
+    primary_target: AMD_Xilinx_Artix_7_family
     primary_goal: >-
       Execute the trained spike-native graph as a digital event-driven accelerator:
       shared convolutional weights generate sparse synaptic additions, PLIF membrane/
@@ -101,7 +101,7 @@ framework:
       routed between learned stages. Avoid dense ANN-style feature processing where
       event sparsity can be exploited.
     software_reference: SpikingJelly_float_plus_bit_exact_integer_reference
-    implementation_flow: [integer_reference, VHDL_RTL, RTL_simulation, synthesis, place_and_route, post_implementation_timing, activity_based_power, optional_ZCU104_measurement]
+    implementation_flow: [integer_reference, VHDL_RTL, RTL_simulation, synthesis, place_and_route, post_implementation_timing, activity_based_power, optional_board_measurement]
   spiker_plus:
     implementation_status: literature_and_design_inspiration_only
     retained_takeaways:
@@ -354,23 +354,21 @@ custom_spiking_dynamics:
     limitation: The age and amplitude maps are material FPGA state and are not negligible.
 
 architecture_family:
-  implementation_model: EventSpikeSegXL
-  compact_reference_model: EventSpikeSeg140k
+  implementation_model: EventSpikeSeg140k
+  non_target_comparison_model: EventSpikeSegXL
   design_principles:
     - Fully spiking learned feature and class-map path
     - Three-scale 32_64_128 semantic encoder plus persistent 32-channel detail path
-    - Projected residual bridges around both strided encoder transitions
-    - Concatenative decoder and late semantic_shallow_detail fusion with explicit channel remapping
-    - Parallel d1_d2_d4 context plus local four-head spike-mask attention at quarter resolution
+    - Serial dilation-2 semantic context without QKV attention or parallel context
+    - Additive encoder skips and late semantic_shallow_detail concatenation
     - Nearest-neighbor upsampling rather than transposed convolution where possible
-    - Depthwise spatial filtering plus pointwise channel mixing for lightweight variants
-    - Per-channel affine scaling as the preferred foldable normalization
-    - GAP/sigmoid attention only as an ablation because it introduces global reduction and multiplication
-    - Auxiliary heads used for training may be removed from inference
+    - Depthwise spatial filtering plus pointwise event fan-out/channel mixing
+    - Per-channel affine scaling folded into exported fixed-point parameters
+    - Training-only auxiliary head omitted from inference
     - No bounding-box, attention-centroid, classification-only, or tracking head in the active model
   implementation_channel_schedule: [32, 64, 128]
   detail_channels: 32
-  attention: {channels: 32, heads: 4, channels_per_head: 8}
+  attention: none
   output:
     temporal_spikes_shape_dsec: [T, N, 11, 241, 351]
     accumulated_activity: sum_or_rate_over_T
@@ -660,7 +658,6 @@ metrics:
     - LUT
     - FF
     - BRAM
-    - URAM
     - distributed_LUTRAM
     - DSP
     - maximum_clock_frequency
@@ -703,117 +700,86 @@ quantization:
       - bit_exact_integer_export
       - layerwise_equivalence_replay
 
-fpga_execution:
-  algorithmic_model: asynchronous_timestamp_driven_spiking_semantic_segmentation_network
-  physical_model: direct_sparse_event_or_spike_address_processing
-  training_reference: ten_fixed_5ms_count_divisions_dense_PyTorch_SpikingJelly
-  exact_software_reference: timestamp_driven_sparse_integer_reference_required_before_RTL
-  sparse_execution:
-    synaptic_rule: For each active presynaptic event/spike, add the corresponding shared-kernel weight to every affected output accumulator.
-    hidden_spike_multiplication: not_required_for_binary_spikes
-    first_layer_statistics_mode: six_channel_values_require_quantized_current_multiplication_or_preencoded_events
-    raw_event_mode: repeated_event_addresses_cause_repeated_weight_additions
-  semantic_output_options:
-    - accumulate_class_spikes_in_memory_then_argmax
-    - stream_class_spikes_and_maintain_per_pixel_counts
-    - expose_low_resolution_class_map_and_upsample_on_processing_system
-  exactness_requirement: Dense software, sparse software, integer reference, RTL simulation, and FPGA output must match under the exported fixed-point contract.
-  memory_mapping_policy:
-    BRAM_or_URAM:
-      - active_state_tiles_and_dirty_writeback_buffers
-      - local_branch_attention_rendezvous_buffers
-      - semantic_class_counter_banks_when_capacity_allows
-    external_DDR:
-      - full_XL_membrane_maps
-      - full_XL_last_update_timestamp_maps
-      - full_XL_threshold_adaptation_age_and_amplitude_maps
-    distributed_LUTRAM_candidates:
-      - small_weight_tables
-      - short_event_FIFOs
-      - touched_address_queues
-      - small_line_buffers
-      - shallow_high_access_feature_maps
-    registers:
-      - per_channel_adaptation
-      - thresholds_and_scales
-      - pipeline_control
-      - small_address_state
-    rule: Final placement must be frozen only after synthesis and port/timing analysis.
-  exact_stateful_layer_execution:
-    purpose: reproduce_timestamp_driven_sparse_integer_reference_without_dense_sliding_window_convolution
-    logical_event_address: [timestamp_us, channel, y, x]
-    state_address_example: linear_index = ((channel * H_layer) + y) * W_layer + x
+fpga_implementation:
+  status: architecture_discussion_before_RTL_generation
+  model:
+    public_name: EventSpikeSeg140k
+    dataset: DSEC_Semantic_11_class
+    registered_parameters: 140589
+    executed_training_parameters: 135533
+    executed_inference_parameters: 134807
+    inference_PLIF_populations: 37
+    omitted_from_RTL: [refine2_dead_block, auxiliary_head, surrogate_gradient]
+  target:
+    family: AMD_Xilinx_Artix_7
+    initial_candidates: [XC7A100T, XC7A200T]
+    fixed_device: false_until_sparse_state_occupancy_and_synthesis_are_measured
+    RTL_language: VHDL_2008
+    initial_clock_target_mhz: 100
+    portability: vendor_neutral_ready_valid_interfaces_with_replaceable_RAM_and_FIFO_wrappers
+    URAM_assumed: false
+  execution:
+    model_level: asynchronous_timestamp_ordered_event_processing
+    RTL_level: synchronous_clocked_elastic_pipeline
+    global_neural_timestep_barrier: false
+    FPGA_input_bins: false
+    event_address: [timestamp_us, polarity_or_channel, y, x]
     procedure:
-      - Receive one emitted presynaptic spike/event address and its timestamp.
-      - Use the fixed layer connectivity, including kernel offset, groups/depthwise mapping, stride, padding, and dilation, to generate only valid postsynaptic destination addresses.
-      - For each valid destination, load V/adaptation/last_update_timestamp and apply beta[channel] ** (delta_us / 5000) lazy decay.
-      - Add the corresponding shared/hardwired synaptic weight; binary spikes require no spike-times-weight multiplier.
-      - Apply dynamic threshold, peer inhibition, triangular adaptation, and reset immediately for the touched destination and store its new timestamped state.
-      - Emit only addresses of neurons that fired into the next layer's event FIFO at the same timestamp.
-      - Retain membrane and enabled threshold-adaptation state across events and consecutive stream records.
-      - Reset persistent state only at the same sequence/frame-gap boundaries used by the software reference.
-    baseline_exactness: >-
-      Lazy timestamp-based decay and touched-neuron updates are baseline DSEC semantics,
-      not later optimizations. Dense fixed-time training is an acceleration approximation;
-      the fixed-point model, RTL, and FPGA must agree on event order, elapsed-time decay,
-      threshold, reset, peer inhibition, and triangular threshold adaptation.
-    physical_vs_logical_neurons: >-
-      There is no requirement to instantiate 85,639,973 physical PLIF circuits for XL at
-      241x351 DSEC. A small PE array may be reused, provided DDR-backed state preserves
-      every logical (layer, channel, y, x) membrane/adaptation/timestamp independently.
-  state_memory_design:
-    persistent_state:
-      membrane: one_value_per_executed_PLIF_output_element
-      threshold_adaptation: age_and_amplitude_per_enabled_PLIF_output_element
-    static_shared_parameters:
-      weights: shared_by_convolution_and_may_be_ROM_or_compile_time_constants
-      beta_threshold: shared_per_output_channel
-    temporary_state:
-      current_accumulator: per_destination_for_current_layer_and_timestep_only
-      spike_events: sparse_FIFO_addresses_between_stages
-    implementation_options:
-      - external_DDR_persistent_state_backing_store
-      - banked_BRAM_URAM_active_tile_cache
-      - distributed_LUTRAM_for_small_banks_and_queues
-    banking_goal: allow_parallel_PE_reads_and_writes_without_colliding_on_the_same_memory_port
-    important_distinction: weights_are_small_and_shared_but_logical_membrane_state_scales_with_feature_map_area
-  active_state_strategies:
-    baseline: touched_address_lazy_decay_with_DDR_backed_state_tiles
-    optimization_candidates:
-      - active_neuron_list
-      - touched_address_list
-      - lazy_decay_with_last_update_timestamp
-    warning: Lazy decay is required by the asynchronous DSEC contract and must be defined in the bit-exact integer reference before RTL.
-  parallelism_sweep:
-    processing_elements: [1, 4, 8, 16]
-    strategies:
-      - parallel_output_channels
-      - parallel_kernel_offsets
-      - banked_state_memory
-      - ping_pong_event_and_spike_FIFOs
-  deadline_rule: processing_cycles_per_input_interval_must_not_exceed_available_cycles_without_bounded_FIFO_backlog
-
-fpga_target:
-  board: Xilinx_ZCU104
-  RTL_language: VHDL_2008
-  initial_clock_target_mhz: 100
-  reasons:
-    - Existing user experience with ZCU104
-    - Suitable BRAM, URAM, and programmable-logic capacity
-    - ARM processing system supports replay, logging, and staged software post-processing
-  interfaces:
-    offline_first: DDR_or_host_stream
-    live_later: event_camera_AER_or_USB_bridge_to_AXI_Stream
-    control: AXI_Lite
-    output: AXI_Stream_or_memory_mapped_semantic_map
-  priorities:
-    - state_memory_capacity_and_banking
-    - memory_port_conflicts
-    - event_address_generation
-    - LUT_adders_comparators_and_control
-    - bounded_FIFO_capacity
-    - low_DSP_usage_for_binary_spiking_layers
-    - clock_enable_during_inactivity
+      - Route one ordered camera or hidden spike to valid convolution destinations.
+      - Lazily decay only each touched neuron from its stored last-update timestamp.
+      - Add its shared-kernel weight; binary spikes require no activation multiply.
+      - Apply threshold, reset, peer inhibition, and triangular threshold adaptation.
+      - Store updated state and immediately enqueue emitted spikes.
+    residual_merge: timestamp_and_address_matched_binary_OR_dedup
+    concat: channel_address_remap_without_arithmetic
+    nearest_upsample: event_address_fanout
+    frequency_encoding: repeated_events_cause_repeated_weight_additions
+  memory:
+    weights:
+      initial_format: signed_int8
+      registered_parameter_upper_bound_MiB: 0.1341
+      external_ROM_required: false
+      large_and_pointwise_tables: banked_BRAM_initialized_as_ROM
+      small_depthwise_tables_and_scalars: LUTROM_or_registers
+      replication: only_when_required_by_parallel_read_bandwidth
+    logical_state_at_DSEC_241x351:
+      dimensions: {full: [241, 351], half: [121, 176], quarter: [61, 88]}
+      membrane_formula: N_mem = 683*H*W + 480*H2*W2 + 1280*H4*W4
+      membrane_values: 74868773
+      adaptation_formula: N_adapt = 352*H2*W2 + 1216*H4*W4
+      adaptation_enabled_neurons: 14023680
+      class_counter_values_if_dense: 930501
+      illustrative_dense_storage_MiB:
+        membrane_int8: 71.40
+        adaptation_age_plus_amplitude_int8: 26.75
+        timestamp_uint8: 71.40
+        minimum_total_before_counters_and_queues: 169.55
+      conclusion: dense_persistent_state_does_not_fit_in_Artix7_on_chip_memory
+    no_external_memory_target:
+      state_store: banked_set_associative_BRAM_table_of_live_nonzero_neurons
+      zero_default: absent_address_means_zero_membrane_and_inactive_adaptation
+      entry_fields: [layer, channel, y, x, membrane, last_update_time, adaptation_age_if_enabled, adaptation_amplitude_if_enabled]
+      exact_reclamation: remove_only_after_quantized_membrane_is_zero_and_adaptation_is_inactive
+      class_counts: sparse_zero_default_counters_with_width_selected_from_trace_maxima
+      forbidden: [silent_state_drop, overflow_eviction, dense_idle_state_sweep]
+      feasibility_gate: >-
+        The integer event simulator must measure maximum live entries, per-layer occupancy,
+        tag/value widths, FIFO depths, class-counter occupancy, and lookup conflicts on full
+        DSEC sequences before a device or no-external-memory claim is frozen.
+      fallback_if_capacity_fails: model_or_precision_change_requires_QAT_and_accuracy_revalidation
+  arithmetic:
+    common_synapse: signed_weight_lookup_and_saturating_add
+    matrix_multiplier_array: none
+    pointwise_layer: event_fanout_plus_weight_additions
+    PLIF_decay: quantized_beta_or_retention_LUT_plus_multiplier_for_exact_baseline
+    shift_only_decay: optional_after_QAT_and_bit_accuracy_validation
+    peer_membrane_inhibition: exact_cross_channel_energy_first_then_validate_cheaper_L1_or_LUT_approximation
+    triangular_threshold_adaptation: counters_comparators_and_quantized_scale
+  parallelism:
+    processing_element_sweep: [1, 4, 8, 16]
+    mechanisms: [banked_state_RAM, banked_weight_ROM, event_FIFOs, ready_valid_backpressure]
+    deadline: sustained_event_rate_and_99th_percentile_FIFO_occupancy_must_be_bounded
+  exactness: float_reference_to_integer_reference_to_RTL_must_match_under_the_exported_fixed_point_contract
 
 export_contract:
   artifacts:
@@ -882,7 +848,7 @@ validation_and_testing:
     - Report missing tools as blockers rather than claiming validation.
 
 repository_contract:
-  active_python_package: src/eventscnn
+  active_python_package: src/eventspikeseg
   active_source_files:
     - model.py
     - data.py
@@ -924,7 +890,7 @@ workflow:
     - Add sparse event/spike scatter reference.
     - Implement VHDL LIF and convolution primitives.
     - Integrate multilayer segmentation RTL.
-    - Synthesize on ZCU104 and record measured resources, timing, power, and latency.
+    - Synthesize on selected Artix-7 references and record resources, timing, power estimates, and latency.
     - Validate raw-event input on DDD17 or DSEC-Semantic.
   architecture_cleanup_rule: >-
     The ten-preset implementation is temporary experiment infrastructure. Do not remove it
@@ -1038,12 +1004,12 @@ decision_history:
 
 experiment_code_layout:
   canonical_model_file:
-    path: src/eventscnn/model.py
-    rule: Contains one production architecture only; no experimental preset registry.
-    current_architecture: v10_fpga_hybrid
-    status: round_one_incumbent_pending_round_two_confirmation
+    path: src/eventspikeseg/model.py
+    rule: Contains public final models; the FPGA exporter selects only EventSpikeSeg140k.
+    current_architecture: EventSpikeSeg140k
+    status: active_training_and_FPGA_implementation_target
   shared_components_file:
-    path: src/eventscnn/model_components.py
+    path: src/eventspikeseg/model_components.py
     contents:
       - standard_and_depthwise_pointwise_spiking_convolution
       - multiscale_and_dilated_context
@@ -1053,13 +1019,13 @@ experiment_code_layout:
       - peer_membrane_inhibition
       - triangular_threshold_adaptation_and_duration
   round_one_file:
-    path: src/eventscnn/top_ten_models.py
+    path: src/eventspikeseg/top_ten_models.py
     purpose: Preserve the exact completed ten-model definitions and checkpoint compatibility.
   round_two_file:
-    path: src/eventscnn/top_five_models.py
+    path: src/eventspikeseg/top_five_models.py
     purpose: Preserve the completed five-model structural search separately from the canonical model.
   round_three_file:
-    path: src/eventscnn/top_three_models.py
+    path: src/eventspikeseg/top_three_models.py
     purpose: Isolate the active accuracy-oriented three-model search from the canonical and completed ablation models.
 
 round_one_measured_results:
@@ -1138,7 +1104,7 @@ mechanism_screen_measured_results:
 
 completed_top_five_structural_search:
   status: completed_2026_08_08
-  definitions: src/eventscnn/top_five_models.py::TOP_FIVE_PRESETS
+  definitions: src/eventspikeseg/top_five_models.py::TOP_FIVE_PRESETS
   output_directory: artifacts/ablation/top_five
   goal: Hold selected neuron dynamics fixed and vary width, early kernel size, encoder depth, and context.
   shared_dynamics: mechanism_screen_measured_results.selected_dynamics
@@ -1205,7 +1171,6 @@ completed_top_five_structural_search:
     hardware_cost_comparison_required: true
     canonical_model_file_unchanged_until_pass: true
 
-
 round_two_measured_results:
   date: '2026-08-08'
   purpose: Test width, depth, early kernel size, and context while holding selected spike dynamics fixed.
@@ -1239,7 +1204,7 @@ round_two_measured_results:
 
 active_top_three_accuracy_search:
   status: implemented_pending_real_ddd17_measurement
-  definitions: src/eventscnn/top_three_models.py::TOP_THREE_PRESETS
+  definitions: src/eventspikeseg/top_three_models.py::TOP_THREE_PRESETS
   output_directory: artifacts/ablation/top_three
   protocol:
     seed: 17
@@ -1304,282 +1269,3 @@ active_top_three_accuracy_search:
     larger_budget_rerun_required: true
     required_seeds: [17, 101, 2026]
     canonical_model_file_unchanged_until_pass: true
-
-
-fpga_deployment_2026_08_19:
-  priority: primary_hardware_goal
-  target: Xilinx_ZCU104
-  rtl_language: VHDL_2008
-  implementation_character: digital_neuromorphic_event_driven
-  implementation_model:
-    public_name: EventSpikeSegXL
-    dataset: DSEC_Semantic_11_class
-    role: active_detailed_FPGA_implementation_target
-    input:
-      training_tensor_TNCHW: [10, 1, 2, 241, 351]
-      training_time_division_us: 5000
-      fpga_stream: direct_timestamped_AER_polarity_y_x
-      fpga_input_bins: false
-    spatial_dimensions:
-      full: {H: 241, W: 351, locations: 84591}
-      half: {H: 121, W: 176, locations: 21296}
-      quarter: {H: 61, W: 88, locations: 5368}
-      rounding: stride2_3x3_padding1_equals_ceil_divide_by_2
-    parameter_accounting:
-      registered_ddd17_6class: 236445
-      registered_dsec_11class: 237115
-      executed_training_dsec: 232059
-      executed_inference_dsec: 226767
-      dead_refine2: 5056
-      training_only_mid_aux: 726
-      training_only_deep_aux: 4566
-      inference_categories:
-        convolution_weights: 215936
-        foldable_affine_gains: 3584
-        PLIF_beta: 3595
-        PLIF_base_threshold: 3595
-        attention_head_thresholds: 4
-        stem_inhibition_strength: 1
-        threshold_adaptation_strength: 26
-        adaptation_duration: 26
-    PLIF_population_accounting:
-      executed_inference_total: 50
-      executed_training_total: 53
-      registered_dead_populations: 2
-      inference_by_scale:
-        full: {populations: 18, output_channel_sum: 683}
-        half: {populations: 12, output_channel_sum: 768}
-        quarter: {populations: 20, output_channel_sum: 2144}
-      threshold_adaptation_by_scale:
-        half: {populations: 7, output_channel_sum: 416}
-        quarter: {populations: 19, output_channel_sum: 2080}
-    executed_layer_graph:
-      - {name: stem, operation: conv3x3_2_to_32_affine_PLIF, output: [32, 241, 351], populations: 1}
-      - {name: encoder1, operation: two_residual_DW3x3_PW1x1_blocks, output: [32, 241, 351], populations: 4}
-      - {name: detail1, operation: residual_DW3x3_PW1x1, output: [32, 241, 351], populations: 2}
-      - {name: detail2, operation: residual_DW3x1_DW1x3_PW1x1, output: [32, 241, 351], populations: 3}
-      - {name: detail3, operation: residual_DW3x3_PW1x1, output: [32, 241, 351], populations: 2}
-      - {name: down2_main, operation: stride2_DW32_then_PW64, output: [64, 121, 176], populations: 2}
-      - {name: bridge12, operation: stride2_1x1_32_to_64_then_residual_merge, output: [64, 121, 176], populations: 1}
-      - {name: encoder2, operation: two_residual_DW_PW_64_blocks, output: [64, 121, 176], populations: 4}
-      - {name: down3_main, operation: stride2_DW64_then_PW128, output: [128, 61, 88], populations: 2}
-      - {name: bridge23, operation: stride2_1x1_64_to_128_then_residual_merge, output: [128, 61, 88], populations: 1}
-      - {name: encoder3, operation: two_residual_DW_PW_128_blocks, output: [128, 61, 88], populations: 4}
-      - {name: serial_context, operation: two_residual_dilation2_DW_PW_128_blocks, output: [128, 61, 88], populations: 4}
-      - {name: parallel_context, operation: DW_d1_d2_d4_concat384_fuse1x1_to128_residual, output: [128, 61, 88], populations: 4}
-      - {name: local_spike_attention, operation: QKV_128_to32_four_heads_of8_then_32_to128_residual, output: [128, 61, 88], populations: 4}
-      - {name: project3, operation: conv1x1_128_to64_then_nearest_upsample, output: [64, 121, 176], populations: 1}
-      - {name: decoder2_fusion, operation: concat64_plus64_DW128_PW64, output: [64, 121, 176], populations: 2}
-      - {name: decoder2_refine, operation: residual_DW_PW_64, output: [64, 121, 176], populations: 2}
-      - {name: project2, operation: conv1x1_64_to32_then_nearest_upsample, output: [32, 241, 351], populations: 1}
-      - {name: late_merge, operation: concat_semantic32_shallow32_detail32, output: [96, 241, 351], populations: 0}
-      - {name: local_selector, operation: conv1x1_96_to96_PLIF_retinotopic_gate, output: [96, 241, 351], populations: 1}
-      - {name: final_fusion, operation: DW96_then_PW32, output: [32, 241, 351], populations: 2}
-      - {name: decoder1_refine, operation: residual_DW_PW_32, output: [32, 241, 351], populations: 2}
-      - {name: class_head, operation: conv1x1_32_to11_independent_PLIF, output: [11, 241, 351], populations: 1}
-      - {name: semantic_readout, operation: temporal_class_spike_sum_then_pixel_argmax, output: [11, 241, 351], populations: 0}
-    training_only_graph:
-      - {name: mid_aux, operation: conv1x1_64_to11, output: [11, 121, 176], populations: 1}
-      - {name: deep_aux, operation: conv1x1_128_to32_then_32_to11, output: [11, 61, 88], populations: 2}
-    logical_runtime_state:
-      membrane_formula: N_mem = (672 + Nclass)*H*W + 768*H2*W2 + 2144*H4*W4
-      dsec_membrane_formula: N_mem = 683*H*W + 768*H2*W2 + 2144*H4*W4
-      total_membrane_states: 85639973
-      threshold_adaptation_formula: N_adapt = 416*H2*W2 + 2080*H4*W4
-      threshold_adaptation_neurons: 20024576
-      threshold_adaptation_age_amplitude_values: 40049152
-      last_update_timestamp_values: 85639973
-      class_counter_values: 930501
-      training_only_aux_membrane_values: 465080
-      dead_refine2_membrane_values_not_exported: 2725888
-      illustrative_storage:
-        membrane_16bit_MiB: 163.35
-        timestamp_32bit_MiB: 326.69
-        threshold_adaptation_age_amplitude_16bit_MiB: 76.39
-        exact_persistent_total_MiB_before_counters_and_buffers: 566.42
-        class_counters_16bit_MiB: 1.77
-    memory_architecture:
-      persistent_backing_store: external_DDR_required_for_exact_uncompressed_XL
-      on_chip: banked_BRAM_URAM_LUTRAM_active_tile_cache_queues_and_small_tables
-      prohibited_assumption: all_XL_state_fits_on_chip_without_quantified_compression
-      cache_key: [layer_id, channel, y, x]
-      cached_fields: [membrane, last_update_timestamp, threshold_adaptation_age_if_enabled, threshold_adaptation_amplitude_if_enabled]
-      dirty_writeback: required_before_tile_eviction
-    timestamp_join_requirements:
-      projected_bridges: local_main_bridge_rendezvous_by_timestamp_and_destination
-      parallel_context: three_branch_plus_residual_join_by_timestamp_and_location
-      attention: local_Q_K_V_rendezvous_four_8channel_coincidence_counters_and_V_hold
-      decoder_concat: channel_ID_remap_with_timestamp_preservation
-      forbidden: global_spatial_frame_barrier
-    export_omissions: [refine2, aux_head, deep_aux_head, training_surrogate]
-  compact_reference_model:
-    public_name: EventSpikeSeg140k
-    role: compact_reference_baseline
-    ddd17_registered_parameters: 140089
-    ddd17_executed_training_forward_parameters: 135033
-    ddd17_executed_inference_forward_parameters: 134637
-    dead_registered_module:
-      name: refine2
-      parameters: 5056
-      spiking_stage_populations: 2
-      deployment_rule: omit_not_in_forward_graph
-    training_only_auxiliary_head_parameters: 396
-    executed_inference_spiking_stage_populations: 37
-    logical_runtime_state_accounting:
-      rule: >-
-        Parameter count and logical neuron-state count are different quantities. Convolution
-        weights are shared across spatial positions, but every executed PLIF output element
-        at (channel, y, x) owns an independent persistent membrane value. The hardware may
-        time-multiplex a small number of physical PLIF processing elements, but it must preserve
-        the distinct logical state of every neuron address between visits and timesteps.
-      dimensions:
-        H2: ceil(H / 2)
-        W2: ceil(W / 2)
-        H4: ceil(H2 / 2)
-        W4: ceil(W2 / 2)
-      membrane_state_formula_general: N_mem = (672 + Nclass) * H * W + 480 * H2 * W2 + 1280 * H4 * W4
-      membrane_state_formula_ddd17_6class: N_mem = 678 * H * W + 480 * H2 * W2 + 1280 * H4 * W4
-      scale_channel_sums:
-        full_resolution: 672_plus_Nclass
-        half_resolution: 480
-        quarter_resolution: 1280
-      ddd17_212x282_example:
-        H: 212
-        W: 282
-        H2: 106
-        W2: 141
-        H4: 53
-        W4: 71
-        total_logical_membrane_states: 52524272
-        membrane_only_raw_storage:
-          int8_MiB: 50.0910
-          int12_MiB: 75.1366
-          int16_MiB: 100.1821
-          int20_MiB: 125.2276
-      threshold_adaptation_enabled_state:
-        enabled_scopes: [down2, enc2, enc2_extra, down3, enc3, enc3_extra, context1, context2]
-        logical_neuron_formula: N_adapt = 352 * H2 * W2 + 1216 * H4 * W4
-        ddd17_212x282_logical_neurons: 9836800
-        persistent_values_per_enabled_neuron: [adaptation_age, adaptation_amplitude]
-        ddd17_212x282_auxiliary_state_values: 19673600
-        note: dynamic_threshold_is_derived_from_base_threshold_and_adaptation_state_and_need_not_be_stored_as_a_third_full_map
-      state_ownership:
-        per_logical_neuron_address:
-          - membrane_V
-          - last_update_timestamp_for_asynchronous_DSEC
-          - threshold_adaptation_age_when_enabled
-          - threshold_adaptation_amplitude_when_enabled
-        shared_per_output_channel:
-          - beta
-          - base_threshold
-        shared_per_synaptic_projection:
-          - convolution_kernel_weights
-          - folded_ChannelAffine_scale_when_used
-        transient_per_event_or_layer:
-          - synaptic_current_accumulator
-          - emitted_spike_event_FIFO
-          - semantic_spike_counters_as_required_by_readout
-  model_semantics:
-    SpikingStage: synaptic_Conv2d_bias_false_then_optional_affine_current_gain_then_PLIF
-    convolution_interpretation: learned_shared_synaptic_weight_and_connectivity_projection
-    feature_map_interpretation: logical_spatial_PLIF_neuron_population
-    depthwise_pointwise_rule: two_distinct_synaptic_projection_plus_PLIF_populations
-    deployed_softmax: false
-    deployed_batchnorm: false
-    deployed_relu_gelu: false
-    output: independent_spiking_class_populations_then_temporal_spike_count_argmax
-  plif_digital_mapping:
-    initial_beta: 0.9375
-    beta: learnable_per_output_channel
-    reciprocal_tau_in_spikingjelly: one_minus_beta
-    initial_threshold: 0.5
-    threshold: learnable_per_output_channel
-    threshold_bounds: [0.15, 1.25]
-    hard_binary_forward_spikes: true
-    interpretation_rule: >-
-      Training membrane, synaptic-current, beta, and threshold values are numerical SNN
-      state, not literal volts or amperes. FPGA inference preserves the same discrete
-      PLIF equation using deterministic fixed-point arithmetic. The baseline export keeps
-      a quantized per-channel beta coefficient; shift-only or power-of-two leak
-      approximations are optional optimizations and require bit/accuracy revalidation.
-    baseline_equation: V_next = beta_q * V + I_q
-    baseline_formats_ref: quantization.initial_formats
-    spatial_state: one_logical_membrane_state_per_channel_y_x
-    state_storage: external_DDR_with_banked_on_chip_tile_cache_for_XL_241x351
-    channel_shared_parameters: [beta, base_threshold]
-  natural_fpga_mapping:
-    convolution_weights: signed_shared_fixed_point_weight_tables
-    hidden_binary_spikes: event_addresses_trigger_weight_additions_no_spike_multiply
-    ChannelAffine: fold_into_quantized_synaptic_weight_or_scale
-    PLIF_membrane: signed_fixed_point_state_memory
-    PLIF_leak: per_channel_quantized_beta_multiply_or_verified_shift_approximation
-    PLIF_threshold: quantized_per_channel_threshold_compare
-    concat: channel_address_remap
-    nearest_upsample: event_address_fanout
-    residual_add_clamp: event_merge_or_binary_OR_dedup_equivalent
-    projected_bridges: timestamp_tagged_main_and_bridge_path_rendezvous
-    parallel_context: three_dilation_address_paths_concat_fuse_and_local_residual_join
-    local_QKV_attention: four_8channel_coincidence_counters_plus_timestamp_tagged_V_hold
-    temporal_spike_sum_argmax: integer_class_counters_and_comparator
-  scalable_execution_strategy:
-    preferred: coarse_grained_time_multiplexed_digital_tiles
-    processing_tile: synaptic_accumulator_plus_PLIF_update_processing_elements
-    convolution_weight_sharing: preserve_shared_kernels_and_reuse_across_spatial_locations
-    reuse: schedule_same_processing_elements_across_spatial_tiles_channels_and_network_stages
-    persistent_state: logical_PLIF_membrane_adaptation_and_timestamp_remain_in_DDR_backed_cached_state_between_visits
-    baseline_state_policy: touched_address_plus_last_update_timestamp
-    required_sparse_mechanisms:
-      - touched_address_queue
-      - active_neuron_list
-      - lazy_decay_with_last_update_timestamp
-      - clock_enable_or_local_clock_suppression_when_idle
-    principal_tradeoff: processing_element_parallelism_vs_latency_memory_bandwidth_and_logic_area
-  fidelity_risks:
-    peer_membrane_inhibition:
-      scope: stem_only
-      issue: uses_retinotopic_cross_channel_membrane_energy_and_peer_decrement
-      rule: implement_fixed_point_exactly_first; any cheaper approximation_requires_revalidation
-    triangular_threshold_adaptation:
-      scope: [down2, bridge12, enc2, enc2_extra, down3, bridge23, enc3, enc3_extra, context1, context2, parallel_context, deep_attention]
-      issue: dynamic_threshold_uses_adaptation_age_amplitude_and_retinotopic_sum
-      rule: store_integer_adaptation_state_and_reproduce_time_course_bit_exactly
-    parallel_context_join:
-      issue: three_dilation_paths_and_residual_must_join_by_logical_timestamp_and_location
-      rule: use_local_timestamp_tagged_rendezvous_without_global_frame_barrier
-    local_spike_attention:
-      issue: Q_K_V_paths_have_different_pipeline_latency_but_gate_is_defined_per_timestamp_location_and_head
-      rule: implement_four_8channel_coincidence_counters_and_timestamp_tagged_V_holding_buffer
-    final_selector_local_gate:
-      synaptic_part: 1x1_96_to_96_plus_PLIF
-      gate: retinotopic_binary_selector_spike
-      FPGA_rule: gate_only_the_corresponding_channel_y_x_event_without_frame_barrier
-  input_priority:
-    DSEC: preferred_direct_raw_event_stream_path
-    DDD17: supported_with_50ms_moment_based_timed_delivery_scheduler
-  target_definition: >-
-    Digital neuromorphic FPGA means the substrate is fully digital, but the runtime
-    preserves SNN semantics: persistent PLIF state, binary spike communication, sparse
-    event-address-triggered synaptic accumulation, shared convolution kernels, and
-    inactivity-aware scheduling. Membrane and current are fixed-point numerical states,
-    not physical analog voltages or currents.
-  verification_chain:
-    - SpikingJelly_float_golden
-    - bit_exact_fixed_point_integer_reference
-    - VHDL_unit_and_full_RTL_simulation
-    - Vivado_synthesis_and_place_route
-    - post_implementation_timing_simulation
-    - representative_event_activity_SAIF_or_VCD_power_analysis
-    - optional_ZCU104_board_measurement
-  publishable_metrics:
-    - semantic_accuracy_after_quantization
-    - LUT_FF_BRAM_URAM_DSP_utilization
-    - achieved_clock_frequency
-    - cycle_count_and_post_route_latency
-    - sustained_event_throughput
-    - estimated_dynamic_static_total_power_with_activity_source_disclosed
-    - estimated_energy_per_semantic_output
-    - measured_power_latency_energy_if_board_available
-    - spike_activity_and_event_traffic
-  reporting_rule: >-
-    Vivado post-implementation timing and power results are estimates and must be labeled
-    as such. Only board-instrumented values may be called measured FPGA power/latency.
