@@ -153,6 +153,9 @@ docker compose run --rm train-dsec-xl
 `inspect-ddd17` validates the DDD17 manifest. `inspect-dsec` verifies sequence event,
 rectification, timestamp, and label alignment. `train-dsec-xl` is the active 241x351,
 11-class XL run; `train-dsec` retains the compact reference run.
+Both DSEC replay services deliberately train in FP32. Do not add `--amp`: FP16
+autocast is incompatible with the memory-bounded asynchronous surrogate-gradient
+replay and can reject every optimizer update while leaving the scalar loss finite.
 
 ## Measured architecture-search evidence
 

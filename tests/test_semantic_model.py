@@ -185,6 +185,40 @@ def test_triangular_threshold_adaptation_is_local_and_learnable() -> None:
     assert neuron.adaptation_duration_logit.grad is not None
 
 
+def test_membrane_energy_has_finite_half_precision_gradient_at_zero() -> None:
+    neuron = HardwareLIF(
+        2,
+        LIFConfig(
+            f_long_enabled=True,
+            homeostasis_kind="triangular_threshold",
+        ),
+    )
+    candidate = torch.zeros((1, 2, 1, 1), dtype=torch.float16, requires_grad=True)
+    energy = neuron._retinotopic_membrane_energy(candidate)
+    energy.sum().backward()
+
+    assert candidate.grad is not None
+    assert torch.isfinite(candidate.grad).all()
+
+
+def test_zero_homeostasis_scale_bypasses_membrane_energy() -> None:
+    neuron = HardwareLIF(
+        2,
+        LIFConfig(
+            f_inst_enabled=True,
+            inhibition_kind="peer_membrane",
+            f_long_enabled=True,
+            homeostasis_kind="triangular_threshold",
+        ),
+    )
+    neuron.set_homeostasis_scale(0.0)
+    neuron._retinotopic_membrane_energy = pytest.fail  # type: ignore[method-assign]
+
+    current = torch.zeros((1, 2, 1, 1), requires_grad=True)
+    neuron(current).sum().backward()
+    assert current.grad is not None
+
+
 def test_peer_membrane_inhibition_reduces_peers_without_hard_gating() -> None:
     neuron = HardwareLIF(
         3,

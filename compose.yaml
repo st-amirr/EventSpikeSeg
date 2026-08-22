@@ -112,7 +112,9 @@ services:
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
        "--input-mode", "raw-events",
-       "--device", "auto", "--amp",
+       # FP16 backward is unsafe with asynchronous temporal replay: gradients
+       # become non-finite before AdamW can perform its first update.
+       "--device", "auto",
        "--height", "241", "--width", "351",
       #  "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2",
@@ -130,7 +132,8 @@ services:
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSegXL", "--suite", "final",
        "--input-mode", "raw-events",
-       "--device", "auto", "--amp",
+       # Keep the replayed surrogate-gradient graph in FP32 (see train-dsec).
+       "--device", "auto",
       #  "--height", "275", "--width", "400", ## Original size is 640 × 440
        "--height", "241", "--width", "351", ## Original size is 640 × 440
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2",

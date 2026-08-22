@@ -182,6 +182,7 @@ class HardwareLIF(nn.Module):
             "threshold_timer", torch.zeros(channels, dtype=torch.long), persistent=False
         )
         self.register_buffer("homeostasis_scale", torch.tensor(1.0), persistent=False)
+        self._homeostasis_scale_value = 1.0
         self.register_buffer("step_deltas_us", torch.empty(0), persistent=False)
         self.register_buffer("last_update_us", torch.empty(0), persistent=False)
         self.register_buffer("current_time_us", torch.tensor(0.0), persistent=False)
@@ -347,7 +348,8 @@ class HardwareLIF(nn.Module):
         self.current_time_us = self.current_time_us.detach()
 
     def set_homeostasis_scale(self, value: float) -> None:
-        self.homeostasis_scale.fill_(float(value))
+        self._homeostasis_scale_value = float(value)
+        self.homeostasis_scale.fill_(self._homeostasis_scale_value)
 
     def set_competition_enabled(self, enabled: bool) -> None:
         self.competition_enabled = bool(enabled)
@@ -459,8 +461,13 @@ class HardwareLIF(nn.Module):
             adjusted = candidate
         else:
             adjusted = candidate - self.threshold_adaptation_penalty
-        rms = torch.sqrt(adjusted.square().mean(dim=1, keepdim=True) + 1e-8)
-        return rms.clamp(max=self.config.membrane_energy_clip)
+        # Keep the reduction and square root in FP32 under autocast. In FP16,
+        # 1e-8 rounds to zero and d(sqrt(x))/dx at an exactly silent membrane
+        # becomes infinite, poisoning otherwise finite AMP gradients.
+        rms = torch.sqrt(
+            adjusted.float().square().mean(dim=1, keepdim=True) + 1e-8
+        )
+        return rms.clamp(max=self.config.membrane_energy_clip).to(adjusted.dtype)
 
     def _triangular_threshold_penalty(self) -> Tensor:
         """Sum triangular ULong processes at each retinotopic location.
@@ -491,6 +498,7 @@ class HardwareLIF(nn.Module):
             not self.config.f_inst_enabled
             or self.config.inhibition_kind not in {"peer_membrane", "winner_peer"}
             or not self.competition_enabled
+            or self._homeostasis_scale_value == 0.0
         ):
             return
         strength = self.inhibition_strength
@@ -512,6 +520,11 @@ class HardwareLIF(nn.Module):
         self, spikes: Tensor, candidate: Tensor, elapsed_steps: Tensor
     ) -> None:
         if not self.config.f_long_enabled:
+            return
+        if (
+            self.config.homeostasis_kind == "triangular_threshold"
+            and self._homeostasis_scale_value == 0.0
+        ):
             return
         elapsed_scalar = elapsed_steps.mean()
         if self.config.homeostasis_kind == "legacy":

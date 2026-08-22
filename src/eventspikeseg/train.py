@@ -914,6 +914,11 @@ def train_architecture(
         )
     else:
         resolved_device = torch.device(device)
+    if amp and dataset_name == "dsec" and sequential_chunks > 1:
+        raise ValueError(
+            "AMP FP16 is not supported for memory-bounded DSEC temporal replay: "
+            "its surrogate-gradient backward produces NaN/Inf gradients; use FP32"
+        )
     class_count = int(train_pool.class_count)
     class_names = tuple(str(name) for name in train_pool.class_names)
     protocol_version = str(train_pool.protocol_version)
@@ -1363,6 +1368,8 @@ def train_architecture(
             dynamic_ncols=True,
             leave=True,
         )
+        successful_optimizer_steps = 0
+        skipped_optimizer_steps = 0
         optimizer.zero_grad(set_to_none=True)
         for batch_index, batch in enumerate(progress, start=1):
             sequence, target, deltas_us = unpack_temporal_batch(batch)
@@ -1402,9 +1409,31 @@ def train_architecture(
             )
             if should_step:
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                gradients_finite = bool(torch.isfinite(gradient_norm).item())
+                scale_before_step = scaler.get_scale()
                 scaler.step(optimizer)
                 scaler.update()
+                step_succeeded = not scaler.is_enabled() or gradients_finite
+                if step_succeeded:
+                    successful_optimizer_steps += 1
+                else:
+                    skipped_optimizer_steps += 1
+                    if skipped_optimizer_steps == 1:
+                        nonfinite_parameters = [
+                            name
+                            for name, parameter in model.named_parameters()
+                            if parameter.grad is not None
+                            and not torch.isfinite(parameter.grad).all().item()
+                        ]
+                        examples = ", ".join(nonfinite_parameters[:8]) or "unknown"
+                        progress.write(
+                            "WARNING: AMP rejected an optimizer update because "
+                            "its gradients contained NaN/Inf values | "
+                            f"grad_norm={float(gradient_norm):.4g} | "
+                            f"scale={scale_before_step:g}->{scaler.get_scale():g} | "
+                            f"affected={examples}"
+                        )
                 optimizer.zero_grad(set_to_none=True)
             running_loss += batch_loss
             running_dice_losses += detached_dice_losses.double()
@@ -1420,6 +1449,12 @@ def train_architecture(
                 refresh=False,
             )
             del sequence, target, deltas_us
+        if successful_optimizer_steps == 0:
+            raise RuntimeError(
+                f"epoch {epoch} produced zero successful optimizer updates "
+                f"({skipped_optimizer_steps} rejected); refusing to advance the "
+                "learning-rate scheduler or save an unchanged checkpoint"
+            )
         scheduler.step()
         mean_epoch_loss = running_loss / max(1, len(train_loader))
         mean_epoch_dice_losses = running_dice_losses / max(1, len(train_loader))
@@ -1427,6 +1462,8 @@ def train_architecture(
             f"Epoch {epoch:02d}/{epochs:02d} complete | "
             f"loss={mean_epoch_loss:.4f} | phase={training_phase} | "
             f"homeostasis={homeostasis_scale:.2f} | "
+            f"optimizer_steps={successful_optimizer_steps} | "
+            f"amp_skips={skipped_optimizer_steps} | "
             "dice_loss="
             + ", ".join(
                 f"{class_name}={value:.3f}"
