@@ -66,7 +66,7 @@ class FixedFormat:
 
 
 # Baseline formats.  Weight storage is compact; state is wider because repeated
-# signed synaptic additions and lazy decay must not wrap.
+# signed synaptic additions and fixed-step learned-beta decay must not wrap.
 FPGA_FORMATS: dict[str, FixedFormat] = {
     "weight": FixedFormat("weight_q1_6", bits=8, fractional_bits=6),
     "membrane": FixedFormat("membrane_q5_10", bits=16, fractional_bits=10),

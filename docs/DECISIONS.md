@@ -557,3 +557,24 @@ The new 11-class graph has 142,277 registered parameters, 141,535 executed infer
 parameters, 135,624 executed synaptic weights, 27 PLIF populations, 43,366,400 logical
 membranes, and 10,982,400 adaptation-enabled states. Dense 16-bit state is 124.61 MiB
 before queues/alignment, so the no-DDR sparse-state feasibility gate remains in force.
+
+## 2026-08-23 — Adopt v7 native-resolution state-first graph and migrate RTL to fixed-step Artix-7 baseline
+
+Codex's v7 canonical `EventSpikeSeg140k` is now the sole hardware graph: native 440x640 DSEC input, 27 deployed PLIF populations, 135,624 executed synaptic weights, 43,366,400 membrane states, and a stateless 16->11 temporal class-current readout. The wide 32-channel semantic trunk begins at half resolution after a learned 5x5 stride-2 PLIF stem; the native detail path is only 8 channels. The old 96-channel selector, native decoder refinement, and output class PLIF population are removed.
+
+This revision is accepted as the new state-first architecture because it increases static synaptic weights by about 6.4% relative to v6 while reducing PLIF populations by 27.0%, logical membrane state by about 40.5%, and dense persistent state from about 192.44 MiB to 124.61 MiB even though v7 runs at native 440x640. Hardware architecture search must continue to treat writable neuron state as more expensive than static weight ROM.
+
+The FPGA family is explicitly **AMD/Xilinx Artix-7**, with `XC7A200T-1SBG484C` on Digilent Nexys Video as the reference implementation board. The board DDR3 remains forbidden by the active no-external-memory experiment.
+
+The baseline runtime is fixed-time and identical to training: one 50 ms record contains ten ordered 5 ms steps, executed layer-major. Remove the superseded per-neuron `last_timestamp_us` state and `beta**(delta/5ms)` runtime coefficient path. `plif_update` consumes learned beta directly once per 5 ms step, `sparse_state_bank` stores no timestamp, and `fixed_record_controller` sequences 27 PLIF layers x 10 steps. The final readout accumulates signed current and performs first-index-tie argmax; do not recreate output PLIF/class-spike counting.
+
+
+## 2026-08-23 — Stream live DSEC in 5 ms bins and preserve touched-neuron lazy state
+
+This supersedes the same-day 50 ms layer-major FPGA scheduling decision while leaving training unchanged. Live camera events are accumulated into consecutive 5 ms ON/OFF bins. One sealed bin must traverse the full deployed graph (27 PLIF actors plus the stateless class-current update) before the bin is retired. Input uses ping-pong buffers so bin `k+1` is captured while bin `k` computes.
+
+The current DSEC training path enables touched-neuron lazy updates. Runtime must therefore preserve that behavior: each live sparse neuron state stores a compact 24-bit `last_bin_tag`; when touched at bin `k`, compute `delta_bins = k - last_bin_tag (mod 2^24)` and apply the learned beta once per elapsed bin before adding current. The first RTL implementation uses an iterative beta multiply so long-idle neurons consume additional cycles; a beta-power LUT/accelerator is allowed later only with bit-exact validation. No 32-bit microsecond timestamp is used.
+
+The signed 16->11 class-current readout accumulates over a configurable prediction window. Start with ten bins, therefore one prediction every 50 ms / 20 Hz, because that matches training. PLIF/adaptation state continues across prediction boundaries and resets only at sequence/frame gaps.
+
+Define real-time utilization `U = C_bin / (f_clk * 5 ms)` and throughput headroom `H = 1/U`. Sustained operation requires `U <= 1` (`H >= 1`). The starting engineering target is `U <= 0.8` (`H >= 1.25`), leaving 20% timing margin. At 100/150/200 MHz the hard budgets are 500k/750k/1M cycles per bin and the 80% target budgets are 400k/600k/800k cycles. These values must come from measured controller cycle counts after synthesis/RTL integration, not from parameter count.

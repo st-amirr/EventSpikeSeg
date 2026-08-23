@@ -194,12 +194,12 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 
 ### 2026-08-21 XL DSEC implementation accounting
 
-- native dimensions: 241x351 -> 121x176 -> 61x88;
+- then-active resized DSEC dimensions: 241x351 -> 121x176 -> 61x88 (historical XL accounting; current v7 uses native 440x640);
 - 50 inference PLIF populations and 226,767 executed inference parameters;
 - 85,639,973 membrane states plus 40,049,152 threshold-adaptation age/amplitude values;
 - the fixed-step baseline does not require a per-membrane last-update timestamp; layer/tile state can remain resident across t0..t9;
-- illustrative exact persistent store: 566.42 MiB at membrane/adaptation 16-bit and timestamp 32-bit;
-- implementation memory: external DDR backing store with banked on-chip active-tile cache.
+- historical timestamped-prototype persistent store estimate: 566.42 MiB (not the current fixed-step state format);
+- historical XL implementation assumption: external DDR backing store with banked on-chip active-tile cache; XL is not the current FPGA target.
 
 
 ### 2026-08-22 fixed 50 ms FPGA runtime decision
@@ -211,3 +211,33 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - one segmentation output is produced per 50 ms record after temporal class-spike counting;
 - baseline fixed-step state no longer requires one 32-bit timestamp per membrane; lazy step-tagging is future optional optimization;
 - sustained real-time target is 20 records/s, with optional double buffering of acquisition and compute.
+
+## 2026-08-23 — v7 fixed-step Artix-7 implementation iteration 2
+
+- rebased hardware docs on the native 440x640 v7 `EventSpikeSeg140k` graph;
+- canonical deployment is 27 PLIF stages + stateless 16->11 temporal current readout;
+- documented 43,366,400 membrane states and 10,982,400 adaptation-enabled neurons;
+- recorded the state-first trade: +6.4% synaptic weights versus v6, but -40.5% logical membranes and -35.2% dense persistent state;
+- made Artix-7 XC7A200T the explicit FPGA target, using Nexys Video only as the reference carrier board;
+- removed `last_timestamp_us` from the integer reference and sparse RTL state record;
+- changed exact PLIF RTL/reference to consume learned beta once per fixed 5 ms step;
+- replaced the old shift-only local LIF baseline with a learned-beta local PLIF lane;
+- added `fixed_record_controller.vhd` for 27-layer x 10-step layer-major scheduling;
+- added signed class-current argmax RTL for the new non-spiking readout;
+- updated exporter manifest timing/state contracts and sparse-state entry accounting;
+- v7 full-sequence sparse occupancy/BRAM fit remains the next hard feasibility measurement.
+
+
+## 2026-08-23 — FPGA iteration 3: streaming 5 ms bins and lazy state tags
+
+- replaced the active 50 ms layer-major scheduling contract with bin-major end-to-end execution;
+- added a streaming runtime reference with configurable prediction windows (default 10 bins / 50 ms);
+- added explicit real-time metrics `U=C_bin/(f_clk*5ms)` and `H=1/U`, with hard `U<=1` and target `U<=0.8`;
+- added 24-bit `last_bin_tag` to sparse neuron state and restored exact touched-neuron lazy leak semantics without microsecond timestamps;
+- changed the integer PLIF reference to repeated learned-beta decay for `delta_bins`;
+- changed `plif_update.vhd` to a multi-cycle iterative lazy-leak lane;
+- changed the sparse state bank to store/read the compact bin tag;
+- added `streaming_bin_controller.vhd` for actor 0..26 bin-major scheduling, cycles/bin instrumentation, deadline/target flags, global bin tags and prediction-due;
+- the old `fixed_record_controller` schedule is superseded;
+- exact dense touched-state reference is now 248.68 MiB including a dense 24-bit tag, while conservative sparse aligned entries remain budgeted at 12 bytes non-adaptive / 16 bytes adaptive;
+- full actor integration, ping-pong ingress storage, sparse class-current storage, and GHDL/Vivado verification remain open.

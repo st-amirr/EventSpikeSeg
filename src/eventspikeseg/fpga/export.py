@@ -14,7 +14,14 @@ from ..data import DSEC_CLASS_NAMES
 from ..model import EventSpikeSeg140k
 from ..model_components import ChannelAffine, ParametricLIF, SpikingStage
 from .fixed_point import FPGA_FORMATS
-from .target import NEXYS_VIDEO_XC7A200T, memory_budget
+from .runtime import (
+    BIN_TAG_WIDTH,
+    BIN_US,
+    DEFAULT_PREDICTION_BINS,
+    DEFAULT_TARGET_UTILIZATION,
+    HARD_MAX_UTILIZATION,
+)
+from .target import ARTIX7_XC7A200T, memory_budget
 
 EVENTSPIKESEG140K_INFERENCE_STAGES = (
     "detail_stem",
@@ -358,7 +365,21 @@ def export_model(
         "input_channels": 2,
         "input_event": ["timestamp_us", "polarity", "y", "x"],
         "input_size": [height, width],
-        "timing_model": "fixed_time_ten_ordered_5ms_updates",
+        "timing_model": "streaming_5ms_bins_with_lazy_touched_neuron_state",
+        "timing_contract": {
+            "bin_us": BIN_US,
+            "prediction_bins_default": DEFAULT_PREDICTION_BINS,
+            "prediction_period_us_default": BIN_US * DEFAULT_PREDICTION_BINS,
+            "schedule": "bin_major_end_to_end",
+            "double_buffered_input": True,
+            "per_neuron_timestamp_required": False,
+            "per_neuron_last_bin_tag_required": True,
+            "last_bin_tag_width_bits": BIN_TAG_WIDTH,
+            "hard_max_utilization": HARD_MAX_UTILIZATION,
+            "target_utilization": DEFAULT_TARGET_UTILIZATION,
+            "utilization_formula": "cycles_used/(clock_hz*bin_us/1e6)",
+            "throughput_headroom_formula": "1/utilization",
+        },
         "spatial_shapes": shapes,
         "registered_parameters": registered_parameters,
         "executed_inference_parameters": executed_parameters,
@@ -374,13 +395,15 @@ def export_model(
             "layer_actors": "27_dedicated_PLIF_actors_plus_final_current_readout",
             "cross_layer_compute_sharing": False,
             "partial_reconfiguration": False,
-            "event_flow": "timestamp_ordered_ready_valid",
+            "event_flow": "streaming_5ms_bin_ready_valid",
+            "state_record_timestamp_field": False,
+            "state_record_last_bin_tag_bits": BIN_TAG_WIDTH,
             "state_memory": "on_chip_sparse_BRAM_LUTRAM_pending_measured_fit",
             "weight_memory": "actor_local_BRAM_LUTROM",
             "external_or_onboard_DDR_allowed": False,
         },
-        "target": NEXYS_VIDEO_XC7A200T.to_dict(),
-        "dense_state_memory_budget": memory_budget(NEXYS_VIDEO_XC7A200T.bram_kibits),
+        "target": ARTIX7_XC7A200T.to_dict(),
+        "dense_state_memory_budget": memory_budget(ARTIX7_XC7A200T.bram_kibits),
         "quantization": {name: fmt.to_dict() for name, fmt in FPGA_FORMATS.items()},
         "layer_order": [
             *EVENTSPIKESEG140K_INFERENCE_STAGES,

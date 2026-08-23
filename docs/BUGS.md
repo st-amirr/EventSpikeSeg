@@ -37,14 +37,13 @@ The active 11-class DSEC/FPGA target is `EventSpikeSeg140k`: 142,277 registered
 parameters, 141,535 executed inference parameters, 27 permanent PLIF actors, and one
 temporal class-current readout.
 Parameter count is only a proxy for FPGA cost; the dominant constraint is persistent
-membrane/adaptation/timestamp traffic, followed by pointwise mixing, event routing, FIFO
+membrane/adaptation traffic, followed by pointwise mixing, event routing, FIFO
 pressure, and inhibition/adaptation arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
 At native 440x640, v7 owns **43,366,400** membrane states. Threshold adaptation adds
-age/amplitude on **10,982,400** neurons. The previously proposed asynchronous execution also required one 32-bit last-update timestamp per membrane, but that is no longer baseline. Under fixed 5 ms runtime, 16-bit membrane plus two 16-bit adaptation fields require about **124.61 MiB** before counters/queues/alignment. XC7A200T BRAM is short by about
-**123.01 MiB** (about **77.7x** the available BRAM). External/onboard DDR is forbidden, so the open
+age/amplitude on **10,982,400** neurons. Because the current DSEC training path uses touched-neuron lazy updates, exact runtime needs a compact 24-bit `last_bin_tag` for every live sparse state. A hypothetical dense exact representation is about **248.68 MiB** before queues/alignment; XC7A200T BRAM is short by about **247.08 MiB** (about **155.0x** the available BRAM). External/onboard DDR is forbidden, so the open
 feasibility issue is whether a lossless sparse table can bound all live states on chip.
 
 ## Open: continuous learned neuron parameters
@@ -83,3 +82,13 @@ The installed `events/train` folder has 2,887 NumPy tensors while `labels/train`
 ## Resolved: DSEC FPGA timing contract is no longer direct asynchronous AER
 
 The baseline hardware now follows the trained fixed-time representation: one 50 ms DSEC record contains ten ordered 5 ms SNN updates. The full record is processed layer-by-layer, with each layer/tile retaining state while stepping through `t0..t9`. This removes the semantic mismatch between fixed-time training and direct raw-event PLIF updates and removes the mandatory per-membrane 32-bit timestamp from the baseline state format. A future lazy-update/tagged implementation remains an optimization, not the reference behavior.
+
+
+## Resolved: fixed-step baseline no longer stores per-neuron timestamps
+
+The older integer/RTL sparse-state prototype still stored `last_timestamp_us` and generated `beta**(delta/5ms)`, which contradicted the fixed 50 ms / ten 5 ms runtime decision. Iteration 2 removes that field from `NeuronState` and `sparse_state_bank.vhd`; `plif_update` now consumes the learned per-channel beta directly once per 5 ms step. Raw DSEC timestamps are used only to assign input events to one of the ten slices.
+
+
+## Streaming-bin integration still incomplete
+
+The active contract is now 5 ms bin-major end-to-end execution with ping-pong ingress, 24-bit last-bin tags, lazy `beta^delta_bins`, and default ten-bin prediction windows. The reference scheduler, state record, PLIF lazy-leak lane, and streaming controller exist, but full 27-actor wiring, ping-pong event-buffer RTL, sparse final class-current storage, peer-inhibition/adaptation integration, and GHDL/Vivado verification are still open. Do not report the implementation as real-time until measured cycles/bin satisfy `U<=1`; the design target is `U<=0.8`.

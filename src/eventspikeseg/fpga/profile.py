@@ -9,9 +9,11 @@ from torch import Tensor
 
 from ..model_components import ParametricLIF
 from .fixed_point import FPGA_FORMATS
-from .target import NEXYS_VIDEO_XC7A200T
+from .target import ARTIX7_XC7A200T
 
-EXECUTED_WEIGHT_BYTES = 127_456
+EXECUTED_WEIGHT_BYTES = 135_624
+# Conservative aligned sparse-entry budgets. Raw payload now includes the 24-bit
+# last-bin tag; it still fits within these 12/16-byte alignment envelopes.
 NON_ADAPTIVE_ENTRY_BYTES = 12
 ADAPTIVE_ENTRY_BYTES = 16
 
@@ -80,7 +82,7 @@ class LiveStateProfile:
     def summary(self, *, bram_reserve_fraction: float = 0.25) -> dict[str, object]:
         if not 0.0 <= bram_reserve_fraction < 1.0:
             raise ValueError("BRAM reserve fraction must be in [0, 1)")
-        bram_bytes = int(NEXYS_VIDEO_XC7A200T.bram_mib * 2**20)
+        bram_bytes = int(ARTIX7_XC7A200T.bram_mib * 2**20)
         reserved_bytes = int(bram_bytes * bram_reserve_fraction)
         state_budget_bytes = bram_bytes - reserved_bytes - EXECUTED_WEIGHT_BYTES
         entry_bytes = {

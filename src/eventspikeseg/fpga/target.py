@@ -1,4 +1,4 @@
-"""Frozen conventional-FPGA target and exact memory-budget calculations."""
+"""Frozen Artix-7 target and exact memory-budget calculations."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 @dataclass(frozen=True)
 class FPGATarget:
     board: str
+    family: str
     device: str
     logic_cells: int
     lookup_tables: int
@@ -27,8 +28,12 @@ class FPGATarget:
         return result
 
 
-NEXYS_VIDEO_XC7A200T = FPGATarget(
+# Reference implementation target: Artix-7 XC7A200T on the widely available
+# Digilent Nexys Video board.  The board DDR3 exists physically, but the active
+# no-external-memory experiment forbids using it as persistent neuron backing store.
+ARTIX7_XC7A200T = FPGATarget(
     board="Digilent Nexys Video",
+    family="AMD/Xilinx Artix-7",
     device="XC7A200T-1SBG484C",
     logic_cells=215_360,
     lookup_tables=134_600,
@@ -36,8 +41,11 @@ NEXYS_VIDEO_XC7A200T = FPGATarget(
     dsp_slices=740,
     bram_kibits=13_140,
     onboard_memory_mib=512,
-    onboard_memory_kind="DDR3-800 16-bit",
+    onboard_memory_kind="DDR3-800 16-bit (present, forbidden by active experiment)",
 )
+
+# Compatibility alias for older scripts/checkpoints/docs.
+NEXYS_VIDEO_XC7A200T = ARTIX7_XC7A200T
 
 ARTIX7_BRAM_KIBITS = {
     "XC7A35T": 1_800,
@@ -49,9 +57,12 @@ ARTIX7_BRAM_KIBITS = {
 # at half resolution; only an 8-channel detail path and 40->16 fusion remain native.
 DSEC_MEMBRANE_STATES = 43_366_400
 DSEC_ADAPTATION_STATES = 10_982_400
+BIN_TAG_WIDTH = 24
+BIN_TAG_BYTES = 3
 DENSE_STATE_BYTES = (
-    DSEC_MEMBRANE_STATES * 2  # int16 membrane; fixed 5 ms steps need no timestamp
+    DSEC_MEMBRANE_STATES * 2  # int16 membrane
     + DSEC_ADAPTATION_STATES * (2 + 2)  # int16 age + int16 amplitude
+    + DSEC_MEMBRANE_STATES * BIN_TAG_BYTES  # compact 5 ms last-bin tag for lazy touched state
 )
 
 

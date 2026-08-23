@@ -5,7 +5,7 @@
 Build and validate only `EventSpikeSeg140k` for 11-class DSEC at native `440x640`, then map its
 spike-native PLIF inference graph to a custom static digital-neuromorphic accelerator.
 Training remains PyTorch + SpikingJelly; deployment targets VHDL-2008 on the conventional
-Digilent Nexys Video XC7A200T
+AMD/Xilinx Artix-7 XC7A200T (Digilent Nexys Video reference board)
 with fixed-point PLIF state, sparse event routing, and activity-aware execution.
 
 ## Source-of-truth order
@@ -55,7 +55,7 @@ optional optimization only after bit-exact and semantic-accuracy revalidation.
 
 Do not infer neuron-state memory from parameter count. The 27-population 140k graph has
 43,366,400 logical membrane states and 10,982,400 adaptation-enabled states at DSEC
-`440x640`. With the baseline 16-bit membrane and two 16-bit adaptation fields where enabled, dense persistent state is about 124.61 MiB before queues/counters. The fixed 5 ms baseline does not require one 32-bit timestamp per membrane. XC7A200T BRAM is 1.604 MiB, about 77.7 times too small for the dense state.
+`440x640`. With int16 membrane, two int16 adaptation fields where enabled, and the compact 24-bit last-bin tag required by the trained touched-neuron runtime, a hypothetical dense exact state is about 248.68 MiB before queues/counters. No microsecond timestamp is used. XC7A200T BRAM is 1.604 MiB, so the implementation must remain losslessly sparse and prove measured occupancy.
 External memory, including the board's DDR3, is forbidden. A lossless sparse live-state
 table is the only remaining possible mapping and must pass a measured worst-case bound;
 overflow eviction or state loss is forbidden.
@@ -83,13 +83,13 @@ The primary runtime is fully digital but must preserve neuromorphic/SNN executio
 Instantiate one permanent actor for each of the 27 executed PLIF populations. Each actor owns
 its convolution address generator, accumulator lanes, PLIF/mechanism unit, output FIFO,
 and initialized local weight ROM. Cross-layer compute sharing, layer reconfiguration,
-and partial reconfiguration are forbidden. Common clock/reset, timestamp dispatch,
+and partial reconfiguration are forbidden. Common clock/reset, fixed-slice input dispatch,
 on-chip state banks, and final readout may be shared infrastructure. Logical spatial states are
 still stored, not implemented as one physical register/neuron each.
 
 ### Exact sparse execution order
 
-DSEC FPGA inference is fixed-time and must match training. One 50 ms semantic record is represented by ten chronological 5 ms slices. Do not implement direct raw-event end-to-end asynchronous propagation as the baseline. Within each 5 ms slice, sparse spike addresses may drive only the connected synaptic additions, but PLIF state advances under an explicit 5 ms step boundary. The preferred hardware schedule is layer-major over the full T=10 record: process t0..t9 for one layer/tile while its state is resident, then pass the ten output spike slices to the next layer.
+DSEC FPGA inference must match the trained fixed 5 ms time grid while streaming live input. Raw camera events are accumulated into consecutive 5 ms bins. The active hardware schedule is **bin-major end-to-end**: one sealed bin traverses actor 0 through actor 26 plus the class-current update before that bin is retired. Acquisition of the next bin overlaps computation through ping-pong input buffers. This is not raw-event asynchronous propagation and is not the superseded 50 ms layer-major schedule.
 
 ### Natural mappings
 
@@ -111,7 +111,7 @@ DSEC FPGA inference is fixed-time and must match training. One 50 ms semantic re
 - final readout is a 16->11 signed current accumulator over all ten updates;
 - DSEC PLIF decay advances in fixed 5 ms steps, with 5 ms as the
   learned-beta reference interval;
-- per-membrane timestamps are not required in the baseline; lazy tagged updates are optional only after equivalence proof.
+- no microsecond timestamp is stored; every live sparse state carries a compact 24-bit `last_bin_tag`, and lazy `beta^delta_bins` is baseline behavior because training already uses touched-neuron updates.
 
 Do not silently replace these. If hardware cannot reproduce them, define an explicit
 hardware-compatible approximation and revalidate/fine-tune accuracy.
@@ -134,12 +134,22 @@ For the FPGA target, preserve this staged golden comparison:
 5. representative-event SAIF/VCD power analysis
 6. optional instrumented Nexys Video measurement
 
-Compare layer currents, membrane trajectories, spikes, output spike counts, semantic
+Compare layer currents, membrane trajectories, adaptation, hidden spikes, signed class-current accumulators, semantic
 accuracy, cycle counts, and overflow/saturation behavior. Post-route timing and Vivado
 power are estimates and must be labeled as such; only instrumented board results may be
 called measured FPGA power/latency.
 
 
-## 50 ms DSEC runtime rule
+## Streaming 5 ms DSEC runtime rule
 
-Treat each 50 ms DSEC record as one hardware scheduling transaction containing exactly ten 5 ms SNN steps. Preserve chronological step order and persistent PLIF/adaptation state. It is legal and preferred to process all ten steps of one layer (or one spatial state tile) before moving to the next feed-forward layer, because this matches multi-step SpikingJelly semantics. Never collapse ten steps into one, never threshold/reset once per raw camera event, and never claim the baseline is asynchronous.
+Live DSEC input is sealed every 5 ms. The FPGA must propagate the current bin through the complete 27-PLIF deployed graph before retiring it; meanwhile the alternate ingress buffer captures the next 5 ms of camera events. PLIF/adaptation state persists across bins and predictions. Each touched state stores a 24-bit last-bin tag; `delta_bins` controls the exact repeated learned-beta leak before current integration. All contributions to one destination for a layer/bin must be accumulated before one threshold/reset commit.
+
+Prediction cadence is configurable, with **10 bins = 50 ms = 20 Hz** as the starting point to match training. Measure cycles/bin after implementation. Define `U = C_bin/(f_clk*0.005)` and `H = 1/U`. Hard sustained real time requires `U<=1` / `H>=1`; the starting design target is `U<=0.8` / `H>=1.25`. At 100 MHz this means 500,000 hard cycles/bin and 400,000 target cycles/bin.
+
+## Active streaming RTL interfaces
+
+The sparse-state entry contains logical address/tag, int16 membrane, compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. `plif_update` receives `elapsed_bins` and iterates learned beta once per elapsed 5 ms bin before charging. `streaming_bin_controller` schedules actor 0..26 for one bin, counts cycles/bin, reports deadline/target misses, advances the global bin tag, and asserts prediction-due after the configurable window. `fixed_record_controller` is superseded. The final 16->11 readout remains non-spiking and accumulates signed class current until prediction-due.
+
+## Active fixed-step RTL interfaces
+
+The baseline sparse-state entry contains address/tag, membrane, and adaptation age/amplitude only where enabled. It must not contain `last_timestamp_us`. `plif_update` consumes the exported learned per-channel beta directly once per 5 ms step. `fixed_record_controller` is the global 27-layer x 10-step scheduler. The final 16->11 readout is stateless between records and uses signed current accumulation plus first-index-tie argmax; do not recreate output PLIF neurons or class-spike counting.

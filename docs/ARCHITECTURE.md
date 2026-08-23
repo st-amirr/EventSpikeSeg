@@ -51,8 +51,6 @@ With 16-bit membrane and two 16-bit adaptation fields, dense persistent state is
 It still cannot fit dense state in XC7A200T BRAM, so the lossless sparse-state feasibility
 gate remains mandatory.
 
-Where later sections retain 241x351, 37-population, selector, or class-spike-count
-figures, they describe the superseded v6 graph and must not be used for new exports.
 
 ## Exact computational primitive
 
@@ -128,234 +126,206 @@ accuracy and bit-level behavior are explicitly revalidated.
 
 ## Logical neuron-state count: parameters are not neuron states
 
-The ~140k parameter count is **not** the number of PLIF neurons. Convolution kernels are
-shared spatially, while every executed PLIF output element owns an independent persistent
-membrane value. A logical neuron is addressed by `(layer, channel, y, x)`; `beta` and the
-base threshold are shared per output channel, but `V[channel,y,x]` is not shared.
+The v7 ~142k parameter count is not the number of physical or logical PLIF neurons.
+Weights, learned beta, and base thresholds are shared; membrane and adaptation state are
+owned separately by every executed `(layer, channel, y, x)` logical neuron.
 
-For an input of `H x W`, define
-
-```text
-H2 = ceil(H / 2), W2 = ceil(W / 2)
-H4 = ceil(H2 / 2), W4 = ceil(W2 / 2)
-```
-
-Summing the output channels of all **37 executed inference PLIF populations** gives
+For the canonical native DSEC geometry define:
 
 ```text
-full-resolution PLIF state coefficient    = 640 + Nclass
-half-resolution PLIF state coefficient    = 512
-quarter-resolution PLIF state coefficient = 1280
+H0 x W0 = 440 x 640  (native)
+H1 x W1 = 220 x 320  (half)
+H2 x W2 = 110 x 160  (quarter)
+H3 x W3 =  55 x  80  (eighth)
 ```
 
-so the general membrane-state count is
+The **27 deployed PLIF populations** sum to the following channel-equivalent state maps:
 
 ```text
-N_mem = (640 + Nclass) * H * W
-      + 512 * H2 * W2
-      + 1280 * H4 * W4
+native  :   72 * H0 * W0
+half    :  128 * H1 * W1
+quarter :  480 * H2 * W2
+eighth  : 1280 * H3 * W3
 ```
 
-For six-class DDD17 this becomes
+Therefore:
 
 ```text
-N_mem = 646 * H * W + 512 * H2 * W2 + 1280 * H4 * W4.
+N_mem = 72*440*640 + 128*220*320 + 480*110*160 + 1280*55*80
+      = 43,366,400 independent membrane values
 ```
 
-At the canonical `212 x 282` training/deployment resolution:
+Triangular threshold adaptation is disabled on the native and half-resolution paths.
+It is active only on the semantic encoder/context populations beginning with `down2`:
 
 ```text
-H2 x W2 = 106 x 141
-H4 x W4 = 53 x 71
-N_mem   = 51,089,456 independent membrane values
+N_adapt = 320*110*160 + 1216*55*80
+        = 10,982,400 adaptation-enabled neurons
 ```
 
-Raw membrane storage alone would therefore be approximately 48.72 MiB at 8 bits,
-73.08 MiB at 12 bits, 97.45 MiB at 16 bits, or 121.81 MiB at 20 bits. This is a
-**logical-state** requirement, not a requirement for 52.5 million physical PLIF circuits.
-Each of the 37 permanent layer actors has its own PLIF update lanes. An actor may sequence
-those local lanes across its own logical addresses, but lanes are not shared between
-layers and every logical neuron retains its own state between visits.
+Each adaptation-enabled neuron owns `adaptation_age` and `adaptation_amplitude`.
+Because DSEC training keeps touched-neuron lazy updates enabled, the exact streaming
+runtime also associates each live neuron with a compact **24-bit last-bin tag**. It is a
+5 ms bin index, not a microsecond timestamp. On the next touch the elapsed-bin distance
+`Δk` determines the required lazy leak `beta[c]^Δk`.
 
-Triangular threshold adaptation is enabled only on `down2`, `enc2`, `enc2_extra`, `down3`, `enc3`,
-`enc3_extra`, `context1`, and `context2`. The enabled logical-neuron count is
+For a hypothetical dense exact-state implementation the persistent payload is therefore:
 
-```text
-N_adapt = 352 * H2 * W2 + 1216 * H4 * W4
-```
+| State | Values | Storage |
+| --- | ---: | ---: |
+| membrane, int16 | 43,366,400 | 82.71 MiB |
+| adaptation age + amplitude, two int16 fields | 21,964,800 | 41.90 MiB |
+| last-bin tag, 24 bit | 43,366,400 | 124.07 MiB |
+| exact dense touched-state total | — | **248.68 MiB** |
 
-which is **9,836,800 neurons** at 212 x 282. Each of those neurons retains its own
-adaptation age and adaptation amplitude, i.e. 19,673,600 additional logical state
-values before quantization. The dynamic threshold can be derived when the neuron is
-updated; it does not need to be stored as a third full map. Stem peer-membrane inhibition
-uses the membrane values themselves and does not introduce a separate full-resolution
-membrane copy.
+The active implementation is sparse, so last-bin tags exist only for live table entries.
+With a 28-bit logical address, int16 membrane and 24-bit bin tag, the raw non-adaptive
+payload is about 9 bytes/entry; adding two int16 adaptation fields gives about 13 bytes.
+The conservative profiler keeps **12-byte non-adaptive** and **16-byte adaptive** aligned
+entry budgets. This is the exact reason sparse-state occupancy is a hard feasibility gate on Artix-7.
+The XC7A200T has about 1.604 MiB BRAM; the board DDR3 exists but is forbidden by the
+active no-external-memory experiment.
 
-### XL state accounting at DSEC 241x351
+### Why v7 is structurally cheaper than v6
 
-The executed XL inference graph has 18 full-resolution, 12 half-resolution, and 20
-quarter-resolution PLIF populations. Summing their output channels gives:
+The revision intentionally spends slightly more static weight memory to remove expensive
+high-resolution stateful transformations:
 
-```text
-full-resolution coefficient    = 672 + Nclass
-half-resolution coefficient    = 768
-quarter-resolution coefficient = 2144
-
-N_mem_XL = (672 + Nclass) * H * W
-         + 768 * H2 * W2
-         + 2144 * H4 * W4
-```
-
-For 11-class DSEC:
-
-```text
-H x W   = 241 x 351 = 84,591 locations
-H2 x W2 = 121 x 176 = 21,296 locations
-H4 x W4 =  61 x  88 =  5,368 locations
-
-N_mem_XL = 683*84,591 + 768*21,296 + 2144*5,368
-         = 85,639,973 membrane values
-```
-
-The 26 threshold-adaptation-enabled populations sum to 416 half-resolution and 2080
-quarter-resolution channels:
-
-```text
-N_adapt_XL = 416*H2*W2 + 2080*H4*W4
-           = 20,024,576 neurons
-```
-
-Each adaptation-enabled neuron stores age and amplitude, adding 40,049,152 persistent values. Direct
-A direct asynchronous variant would additionally need one last-update timestamp for every membrane state, but that is no longer the baseline runtime contract. Raw storage examples are:
-
-| Persistent state | Count | Illustrative format | Storage |
+| Metric | superseded v6 | active v7 | change |
 | --- | ---: | ---: | ---: |
-| membrane | 85,639,973 | 16 bit | 163.35 MiB |
-| last-update timestamp | 85,639,973 | 32 bit | 326.69 MiB |
-| threshold-adaptation age + amplitude | 40,049,152 | 16 bit each value | 76.39 MiB |
-| total above | 211,329,098 values | mixed | 566.42 MiB |
-| class counters | 930,501 | illustrative 16 bit | 1.77 MiB |
+| executed PLIF populations | 37 | 27 | -27.0% |
+| executed synaptic weights | 127,456 | 135,624 | +6.4% |
+| logical membranes | 72.84M | 43.37M | **-40.5%** |
+| membrane+adaptation payload (excluding lazy bin tag) | 192.44 MiB | 124.61 MiB | **-35.2%** |
+| full/native-resolution state coefficient | 651 | 72 | **-88.9%** |
 
-This exact uncompressed footprint cannot be assumed to fit in on-chip PL memory. The XL
-baseline therefore stores persistent state in external DDR and uses BRAM/URAM/LUTRAM as
-a banked active-tile cache. Any timestamp compression, reduced state width, sparse state
-allocation, or all-on-chip claim must be quantified and checked against the bit-exact
-integer reference.
+The comparison is especially notable because v7 processes the **native 440x640** semantic
+plane rather than 241x351. It has about 3.33x as many input pixels but still owns fewer
+logical membranes. The state-per-synaptic-weight ratio falls from roughly 572 to 320.
+This is the intended state-first hardware design direction: static int8 weights are cheap;
+large read/write PLIF maps are expensive.
 
-Training executes three additional auxiliary populations: 11 channels at half resolution
-and 32+11 channels at quarter resolution, adding 465,080 transient training-only membrane
-states. The inherited dead `refine2` would add 128 half-resolution channels (2,725,888
-states) but is not called and must not be exported.
+The reduction comes from four code-level changes:
+
+1. the 32-channel semantic trunk starts with a learned 5x5 stride-2 standard convolution,
+   so it becomes half-resolution immediately after learned filtering;
+2. the native detail route is only 8 channels and has one residual standard block;
+3. several early DW->PLIF->PW->PLIF pairs were replaced by one standard Conv->PLIF stage,
+   spending weights to eliminate an entire persistent membrane population;
+4. the native 96-channel selector, 32-channel decoder refinement, and output class-PLIF
+   population were removed. The final classifier is now a stateless temporal-current readout.
+
+These figures are structural cost proxies, not measured event-driven operation counts.
+Actual synaptic additions still depend on spike activity and must be reported from traces.
+
+### Exact v7 deployed PLIF populations at DSEC 440x640
+
+`A` marks populations that additionally own triangular adaptation age/amplitude.
+
+| Population | Output | Membranes | A |
+| --- | ---: | ---: | :---: |
+| detail_stem | 8x440x640 | 2,252,800 | |
+| detail1.standard | 8x440x640 | 2,252,800 | |
+| stem | 32x220x320 | 2,252,800 | |
+| enc1.standard | 32x220x320 | 2,252,800 | |
+| enc1_extra.depthwise | 32x220x320 | 2,252,800 | |
+| enc1_extra.pointwise | 32x220x320 | 2,252,800 | |
+| down2.standard | 64x110x160 | 1,126,400 | A |
+| enc2.depthwise | 64x110x160 | 1,126,400 | A |
+| enc2.pointwise | 64x110x160 | 1,126,400 | A |
+| enc2_extra.depthwise | 64x110x160 | 1,126,400 | A |
+| enc2_extra.pointwise | 64x110x160 | 1,126,400 | A |
+| down3.depthwise | 64x55x80 | 281,600 | A |
+| down3.pointwise | 128x55x80 | 563,200 | A |
+| enc3.depthwise | 128x55x80 | 563,200 | A |
+| enc3.pointwise | 128x55x80 | 563,200 | A |
+| enc3_extra.depthwise | 128x55x80 | 563,200 | A |
+| enc3_extra.pointwise | 128x55x80 | 563,200 | A |
+| context1.depthwise | 128x55x80 | 563,200 | A |
+| context1.pointwise | 128x55x80 | 563,200 | A |
+| context2.depthwise | 128x55x80 | 563,200 | A |
+| context2.pointwise | 128x55x80 | 563,200 | A |
+| project3 | 64x55x80 | 281,600 | |
+| decoder2_extra.depthwise | 64x110x160 | 1,126,400 | |
+| decoder2_extra.pointwise | 64x110x160 | 1,126,400 | |
+| project2 | 32x110x160 | 563,200 | |
+| final_fuse.depthwise | 40x440x640 | 11,264,000 | |
+| final_fuse.pointwise | 16x440x640 | 4,505,600 | |
+
+The `16->11` class readout has **zero PLIF membrane state**. For each native pixel it sums
+signed 1x1 synaptic current caused by the final hidden spikes over `t0..t9`. The common
+positive `output_rate_scale / 10` factor does not change class argmax, so an FPGA may
+perform argmax directly on the unscaled signed accumulators while retaining a scaled
+path only when bit-exact logits are required for verification.
 
 ### State ownership
 
 | Quantity | Sharing/lifetime |
 | --- | --- |
-| convolution weights | shared by the convolution across all `(y,x)` locations; static after export |
-| `beta[c]` | shared by every neuron in output channel `c` |
-| base threshold `theta[c]` | shared by every neuron in output channel `c` |
-| membrane `V[c,y,x]` | **independent persistent state for every logical neuron** |
-| threshold-adaptation age/amplitude | independent persistent state for every adaptation-enabled logical neuron |
-| synaptic current accumulator | temporary for one layer/timestep; may be cleared/reused after PLIF update |
-| spikes | transient sparse `(t,c,y,x)` event addresses between stages |
-
+| convolution/readout weights | static, spatially shared |
+| `beta[c]` | static/shared by output channel |
+| base threshold `theta[c]` | static/shared by output channel |
+| membrane `V[layer,c,y,x]` | **independent persistent state** |
+| adaptation age/amplitude | independent persistent state where enabled |
+| per-neuron microsecond timestamp | absent |
+| compact `last_bin_tag` | **24-bit persistent field for each live sparse state** |
+| synaptic current accumulator | temporary for one layer/slice destination |
+| hidden spikes | transient sparse `(slice,c,y,x)` events |
+| final class-current accumulator | transient across configurable prediction window; default 10 bins / 50 ms, then reset |
 
 ## Input protocols
 
 ### DDD17
 
-One record is a 50 ms six-channel event-statistic tensor. `TimestampEventInput`
-schedules histogram activity into two polarity synaptic-input channels. With the
-default 10 internal updates, the software reference uses 5 ms updates and three
-weighted arrivals at `mean`, `mean-std`, and `mean+std` with weights `0.50/0.25/0.25`.
-Because exact event tuples are absent, this is an input approximation. On FPGA, a
-digital timestamp scheduler emits the same weighted polarity deliveries into the first
-synaptic accumulator/PLIF stage.
+One record is a 50 ms six-channel event-statistic tensor. `TimestampEventInput` schedules
+histogram activity into two polarity synaptic-input channels. With ten internal updates,
+the software reference advances in 5 ms steps. Because exact event tuples are absent,
+DDD17 remains an approximation input path and is not the active FPGA target.
 
 ### DSEC-Semantic
 
-DSEC starts from exact raw `(t,x,y,p)` events sliced before each semantic timestamp and rectified. Both training and the baseline FPGA runtime use the same fixed-time contract: each 50 ms semantic interval is accumulated into ten chronological 5 ms polarity slices with linear event multiplicity. Event density never changes the number of SNN updates. The baseline FPGA therefore does **not** propagate raw camera events asynchronously through the whole network; raw events are first assigned to one of the ten 5 ms runtime slices.
+DSEC starts from exact raw `(t,x,y,p)` events sliced before each semantic timestamp and
+rectified to the canonical 640x440 semantic plane. **There is no 241x351 resize in v7.**
+Each 50 ms interval is assigned to ten ordered 5 ms ON/OFF slices with linear event
+multiplicity. The hardware may keep those slices as sparse address/count lists rather
+than dense tensors, but the ten temporal boundaries are explicit.
 
-## Canonical EventSpikeSeg140k forward graph
+## Canonical EventSpikeSeg140k v7 forward graph
 
 ```text
-2-channel scheduled/raw event input
-  -> stem: 3x3 synaptic Conv -> affine -> PLIF, 32 ch
-  -> Encoder 1: two residual DW3x3-PLIF / PW1x1-PLIF blocks, 32 ch
-       |-> persistent detail path: three residual DW/PW-PLIF blocks, 32 ch
-       |-> shallow32 late-fusion route
-       `-> Encoder 2
-  -> Encoder 2: stride-2 DW/PW-PLIF + two residual refinements, 64 ch
-       |-> 64-ch decoder skip
-       `-> Encoder 3
-  -> Encoder 3: stride-2 DW/PW-PLIF + two residual refinements, 128 ch
-  -> semantic context: two serial residual dilation-2 DW/PW-PLIF blocks
-  -> project3 128->64 PLIF -> nearest event upsample -> add/clamp x2 -> residual refine
-  -> project2 64->32 PLIF -> nearest event upsample -> semantic32
-  -> concatenate semantic32 + shallow32 + detail32 -> 96 channels
-  -> PLIF selector: local 1x1 96->96 synapses -> PLIF -> retinotopic binary gate
-  -> final fuse: DW3x3 96->96 PLIF -> PW1x1 96->32 PLIF
-  -> final residual 32-ch DW/PW-PLIF refinement
-  -> semantic head: 1x1 32->Nclass synapses -> independent PLIF class populations
-  -> temporal spike count -> per-pixel class argmax
+raw DSEC events -> rectify -> ten 5 ms two-polarity sparse slices @ 440x640
+
+native detail branch:
+  3x3 2->8 PLIF
+  -> residual standard 3x3 8->8 PLIF
+
+semantic branch:
+  5x5 stride2 2->32 PLIF                         @ 220x320
+  -> residual standard 3x3 32->32 PLIF
+  -> residual DW32 PLIF -> PW32 PLIF
+  -> standard 3x3 stride2 32->64 PLIF            @ 110x160
+  -> residual DW64/PW64
+  -> residual DW64/PW64
+  -> DW64 stride2 -> PW128                       @ 55x80
+  -> residual DW128/PW128
+  -> residual DW128/PW128
+  -> two residual dilation-2 DW128/PW128 blocks
+
+ decoder:
+  project3 128->64 PLIF -> nearest fanout to 110x160 -> binary OR with x2
+  -> residual DW64/PW64
+  -> project2 64->32 PLIF -> nearest fanout to 220x320 -> binary OR with x1
+  -> nearest fanout to 440x640
+
+late native fusion:
+  concat semantic32 + detail8 = 40 channels
+  -> DW40 PLIF -> PW16 PLIF
+  -> 1x1 16->11 signed temporal-current readout (no PLIF)
+  -> accumulate over t0..t9 -> per-pixel argmax
 ```
 
-There is **no softmax inference head**, no ReLU/GELU feature activation, no BatchNorm
-dependency, and no dense count-domain MLP in the deployed canonical model.
-
-### Exact DSEC membrane-state count by executed population
-
-`B` is a population already present in the shared encoder/decoder skeleton. `C` is a
-population added by the canonical 140k detail/context/selector/refinement architecture.
-Every row is an ordinary PLIF membrane array; custom neuron dynamics do not create a
-second membrane array. `A` marks populations that additionally carry triangular
-adaptation age/amplitude.
-
-| Population | Origin | Output | Membranes | A |
-| --- | :---: | ---: | ---: | :---: |
-| stem | B | 32x241x351 | 2,706,912 | |
-| enc1.depthwise | B | 32x241x351 | 2,706,912 | |
-| enc1.pointwise | B | 32x241x351 | 2,706,912 | |
-| enc1_extra.depthwise | C | 32x241x351 | 2,706,912 | |
-| enc1_extra.pointwise | C | 32x241x351 | 2,706,912 | |
-| detail1.depthwise | C | 32x241x351 | 2,706,912 | |
-| detail1.pointwise | C | 32x241x351 | 2,706,912 | |
-| detail2.depthwise | C | 32x241x351 | 2,706,912 | |
-| detail2.pointwise | C | 32x241x351 | 2,706,912 | |
-| detail3.depthwise | C | 32x241x351 | 2,706,912 | |
-| detail3.pointwise | C | 32x241x351 | 2,706,912 | |
-| down2.depthwise | B | 32x121x176 | 681,472 | A |
-| down2.pointwise | B | 64x121x176 | 1,362,944 | A |
-| enc2.depthwise | B | 64x121x176 | 1,362,944 | A |
-| enc2.pointwise | B | 64x121x176 | 1,362,944 | A |
-| enc2_extra.depthwise | C | 64x121x176 | 1,362,944 | A |
-| enc2_extra.pointwise | C | 64x121x176 | 1,362,944 | A |
-| down3.depthwise | B | 64x61x88 | 343,552 | A |
-| down3.pointwise | B | 128x61x88 | 687,104 | A |
-| enc3.depthwise | B | 128x61x88 | 687,104 | A |
-| enc3.pointwise | B | 128x61x88 | 687,104 | A |
-| enc3_extra.depthwise | C | 128x61x88 | 687,104 | A |
-| enc3_extra.pointwise | C | 128x61x88 | 687,104 | A |
-| context1.depthwise | C | 128x61x88 | 687,104 | A |
-| context1.pointwise | C | 128x61x88 | 687,104 | A |
-| context2.depthwise | C | 128x61x88 | 687,104 | A |
-| context2.pointwise | C | 128x61x88 | 687,104 | A |
-| project3 | B | 64x61x88 | 343,552 | |
-| decoder2_extra.depthwise | C | 64x121x176 | 1,362,944 | |
-| decoder2_extra.pointwise | C | 64x121x176 | 1,362,944 | |
-| project2 | B | 32x121x176 | 681,472 | |
-| final_selector.selector | C | 96x241x351 | 8,120,736 | |
-| final_fuse.depthwise | C | 96x241x351 | 8,120,736 | |
-| final_fuse.pointwise | C | 32x241x351 | 2,706,912 | |
-| decoder1_extra.depthwise | C | 32x241x351 | 2,706,912 | |
-| decoder1_extra.pointwise | C | 32x241x351 | 2,706,912 | |
-| head.stage | B | 11x241x351 | 930,501 | |
-| **Base skeleton subtotal** | B | 14 populations | **17,251,429** | |
-| **Canonical additions subtotal** | C | 23 populations | **55,591,904** | |
-| **Executed total** | | 37 populations | **72,843,333** | **14,023,680 adapted** |
-
-The earlier count placed `project2` after its nearest-neighbor upsample. That was wrong:
-the PLIF state is half-resolution and only its binary spike addresses are fanned out.
+Deployment omits the training-only `aux_head`, `boundary_head`, inherited `refine2`,
+surrogate-gradient logic, and every XL-only module.
 
 ## Inhibition and threshold-adaptation dynamics
 
@@ -379,8 +349,8 @@ fixed-point state. Their time course must match the exported integer reference e
 ## Non-PLIF operations and FPGA treatment
 
 The goal is a **digital neuromorphic FPGA accelerator**. The substrate uses synchronous
-digital circuits and preserves the trained fixed-time SNN semantics: each 50 ms DSEC
-record contains ten explicit 5 ms neural updates. Within each update, only nonzero
+digital circuits and preserves the trained fixed-time SNN semantics: live DSEC input is
+sealed every 5 ms and predictions default to ten such bins (50 ms). Within each bin, only nonzero
 spike locations trigger connected synaptic fan-out/additions, so the synaptic datapath
 remains sparse even though neuron time advances on a fixed schedule. It is not a dense
 ANN accelerator with PLIF inserted only as an activation.
@@ -391,66 +361,119 @@ ANN accelerator with PLIF inserted only as an activation.
 | residual `add + clamp(0,1)` | merge binary spike routes | event merge / binary OR-dedup equivalent |
 | nearest upsample | duplicate spatial spike locations | event-address fan-out/remapping |
 | `torch.cat` | concatenate channel groups | channel-ID/address remapping; no arithmetic |
-| XL projected bridges | preserve spikes around strided paths | timestamp-tagged local residual merge queues |
-| XL parallel d1/d2/d4 context | retain three receptive-field identities | three address generators, channel remap, 384->128 fusion, local residual join |
-| XL Q/K/V spike-mask attention | four local 8-channel coincidence gates | per-location/timestamp rendezvous counters and short V holding buffer; no spatial NxN matrix |
-| local 96-ch PLIF selector | retinotopic binary gate | immediate local event gate; no frame reduction |
-| temporal spike sum | class evidence | integer per-pixel class counters |
-| argmax | final semantic label | comparator tree / sequential maximum |
-| DDD17 timestamp scheduler | reconstruct approximate timed deliveries | digital scheduler feeding event/current arrivals |
+| final `TemporalCurrentReadout` | signed 1x1 class evidence over ten hidden-spike slices | accumulate signed class current per pixel; no output PLIF state |
+| argmax | final semantic label | signed comparator tree / sequential maximum; first-index tie behavior |
+| DDD17 timestamp scheduler | reconstruct approximate timed deliveries | compatibility scheduler feeding the same 5 ms neural-time grid |
 
-The selector's 1x1 synaptic projection and PLIF population remain ordinary spike-native
-SNN computation. A selector event gates only its own retinotopic feature event, avoiding
-the former spatial `amax(H,W)` synchronization barrier.
+XL-only bridges, parallel context, attention, selector, and class-spike head are documented
+separately below because they are not present in the exported v7 graph.
 
 ## Primary implementation goal: digital neuromorphic FPGA
 
 The canonical deployment objective is:
 
 1. keep PyTorch/SpikingJelly as the training and floating-point golden reference;
-2. export only the **37-population executed 140k inference graph** and its learned weights, beta, thresholds,
+2. export only the **27-population executed v7 140k PLIF graph plus its stateless temporal-current readout** and its learned weights, beta, thresholds,
    inhibition, adaptation strength, and adaptation-duration parameters;
 3. define deterministic fixed-point formats, rounding, saturation, and overflow rules;
 4. build a bit-exact integer reference and verify layer currents, membranes, spikes, and
    semantic output against the float model;
 5. instantiate one permanent VHDL actor per executed layer; each owns convolution
    addressing, accumulator lanes, PLIF/mechanism logic, queue, and weight ROM;
-6. store persistent membrane/adaptation state in banked/tiled memory; the fixed-step baseline
-   does not require a per-membrane timestamp; external/onboard DDR is forbidden and fit must be measured;
-7. first establish exact T=10 tiled execution, then add sparse optimizations such as
-   touched-address queues, active-neuron lists, compact lazy-step tags, and clock-enable during idle
-   periods only after equivalence is proven;
+6. store persistent membrane/adaptation state in banked sparse BRAM/LUTRAM together with a
+   compact 24-bit `last_bin_tag`; external/onboard DDR is forbidden and fit must be measured;
+7. implement touched-address queues and lazy `beta^Δk` state updates as baseline behavior because
+   DSEC training already uses touched-neuron asynchronous updates inside the fixed 5 ms time grid;
 8. run RTL simulation, Vivado synthesis/place-and-route, post-implementation timing
    simulation, and representative-event SAIF/VCD power analysis;
 9. optionally validate final latency/power on a physical Nexys Video when available.
 
-## Exact fixed-step sparse layer procedure
+## Exact streaming 5 ms sparse layer procedure
 
-The training backend evaluates `[T,N,C,H,W]` sequences with ten fixed 5 ms updates per
-50 ms DSEC record. The baseline FPGA preserves exactly that temporal contract while
-changing the convolution execution order to exploit sparsity.
+Training remains unchanged. DSEC supplies fixed physical-time updates, and each PLIF stage
+uses touched-neuron lazy state. Live hardware therefore works **bin-major end-to-end**:
+one completed 5 ms camera bin must traverse the entire 27-PLIF deployed graph before that
+bin is retired. The next camera bin may be captured concurrently in the other ingress buffer.
 
-For one layer and one 50 ms record:
+For input bin `k`:
 
-1. Consume the layer's ten chronological input spike/count slices `t0..t9`.
-2. For slice `t`, enumerate only nonzero presynaptic locations `(c,y,x)` and generate
-   valid postsynaptic destinations from kernel, stride, padding, dilation, and group/depthwise rules.
-3. Accumulate the corresponding shared weights into the destination current for that 5 ms step;
-   binary spikes require no activation multiply.
-4. Advance the layer's PLIF/adaptation state once for that 5 ms step using the exported
-   fixed-point equation, then apply threshold, reset, peer inhibition, and threshold adaptation.
-5. Emit the slice's binary output spikes and continue with `t+1` while the layer/state tile
-   remains resident where possible.
-6. After `t9`, write the layer/tile's final persistent state back and provide the ten output
-   spike slices/event lists to the next feed-forward layer.
-7. After the semantic head finishes `t0..t9`, sum class spikes over the 50 ms record and
-   emit one per-pixel argmax segmentation. Persistent neuron state carries into the next
-   consecutive record and resets only at sequence/frame gaps.
+1. Seal the current 5 ms ON/OFF event buffer and immediately switch camera capture to the
+   alternate ping-pong buffer.
+2. Actor 0 consumes sparse nonzero input addresses/counts for bin `k` and generates only
+   valid convolution destinations from kernel, stride, padding, dilation and group rules.
+3. All synaptic contributions targeting the same logical neuron **within this bin** are
+   accumulated before threshold/reset; the neuron is committed at most once for that layer/bin.
+4. Read the destination's sparse state. A missing entry is exact reset state. A live entry
+   provides `V`, optional adaptation age/amplitude, and `last_bin_tag`.
+5. Compute `Δk = (current_bin_tag - last_bin_tag) mod 2^24`. For a live entry apply the
+   exported learned beta exactly `Δk` times (equivalent to `beta^Δk`) before adding current.
+   The initial RTL uses an iterative multiply loop; a LUT/power accelerator is a later
+   performance optimization and must remain bit-exact.
+6. Apply the trained threshold/adaptation/reset/inhibition order, write the new state with
+   `last_bin_tag = current_bin_tag`, reclaim it only when quantized membrane is zero and
+   adaptation is inactive, and emit only output spikes.
+7. Propagate those sparse spikes immediately through actor 1, then actor 2, ... through all
+   27 deployed PLIF actors and the stateless 16->11 signed class-current update.
+8. Only after the final actor/readout update completes is bin `k` retired and bin `k+1`
+   allowed to become the compute bin. PLIF/adaptation state persists across bins.
+9. Signed class current persists only across the configured prediction window. The default
+   is ten bins, so a segmentation argmax is emitted every **50 ms / 20 Hz**, matching training.
+   The prediction-window length is configurable for later latency/accuracy experiments.
 
-There is therefore an explicit 5 ms neural timestep boundary, but no need to run dense
-zero-valued convolution. The baseline does not update/threshold once per raw camera event
-and does not need a per-neuron `last_update_us` timestamp. A lazy step-tag optimization is
-allowed only after exact integer-reference equivalence is demonstrated.
+This is not raw-event asynchronous propagation: raw camera events are integrated for 5 ms.
+It is also not the superseded 50 ms layer-major schedule. The active ordering is:
+
+```text
+capture bin k+1 in buffer B                 capture bin k+2 ...
+             ||
+compute bin k from buffer A:
+actor0 -> actor1 -> ... -> actor26 -> class-current update -> retire bin k
+             ||
+swap A/B, compute bin k+1
+```
+
+### Real-time utilization and throughput contract
+
+Let `C_bin` be the measured FPGA cycles from accepting a sealed bin until the final
+readout update for that bin completes, `f_clk` the achieved clock frequency, and
+`T_bin = 5 ms` the input-bin period.
+
+```text
+hard_cycle_budget   = floor(f_clk * T_bin)
+U                    = C_bin / hard_cycle_budget
+H                    = hard_cycle_budget / C_bin = 1/U
+compute_time         = C_bin / f_clk
+prediction_period    = prediction_bins * 5 ms
+```
+
+Hard sustained real time requires:
+
+```text
+U <= 1.00
+H >= 1.00
+compute_time <= 5 ms
+```
+
+The starting design target reserves 20% timing margin:
+
+```text
+U_target <= 0.80
+H_target >= 1.25
+target_cycle_budget = floor(0.8 * hard_cycle_budget)
+```
+
+At common clocks this gives:
+
+| Routed clock | Hard 5 ms budget | 80% target budget |
+| ---: | ---: | ---: |
+| 100 MHz | 500,000 cycles | 400,000 cycles |
+| 150 MHz | 750,000 cycles | 600,000 cycles |
+| 200 MHz | 1,000,000 cycles | 800,000 cycles |
+
+The controller reports cycles/bin plus hard-deadline and target-budget misses. Sparse
+activity, cache/bank conflicts, iterative lazy-leak cycles, event-FIFO stalls and actor
+parallelism are therefore automatically reflected in `U`; a design that cannot sustain
+`U <= 1` cannot consume a continuous 200-bin/s camera stream without backlog or loss.
 
 ## Static layer-actor FPGA execution
 
@@ -522,94 +545,106 @@ populations, while the registered dead block contains two more populations.
 
 ### Native DSEC layer graph and dimensions
 
-`T=10` below is both the default PyTorch training schedule and the baseline FPGA runtime schedule. Raw DSEC events are accumulated into the same ten 5 ms slices; FPGA input is not a direct asynchronous
-event stream. Hardware may represent the ten 5 ms inputs as sparse event/count lists rather than dense full-frame bins, but their temporal boundaries are explicit. Spatial dimensions and channel identities
-are nevertheless the same.
+`T=10` below is the current software timing schedule. XL is not an FPGA export target; the
+geometry is shown only to keep the software comparison accurate under the native 440x640 DSEC loader.
+Raw DSEC events are accumulated into ten 5 ms slices before either model.
 
 | Stage | Synaptic/spiking operation | Output `T,N,C,H,W` | PLIF populations |
 | --- | --- | --- | ---: |
-| input | rectified ON/OFF counts for training | `10,1,2,241,351` | 0 |
-| stem | 3x3, 2->32, affine, PLIF | `10,1,32,241,351` | 1 |
-| encoder-1 | two residual DW3x3/PW1x1 32-ch blocks | `10,1,32,241,351` | 4 |
-| detail-1 | residual DW3x3/PW1x1 32-ch | `10,1,32,241,351` | 2 |
-| detail-2 | DW3x1 -> DW1x3 -> PW1x1, residual | `10,1,32,241,351` | 3 |
-| detail-3 | residual DW3x3/PW1x1 32-ch | `10,1,32,241,351` | 2 |
-| down2 main | stride-2 DW32 -> PW64 | `10,1,64,121,176` | 2 |
-| bridge12 | stride-2 1x1, 32->64; merge with down2 | `10,1,64,121,176` | 1 |
-| encoder-2 | two residual DW/PW 64-ch blocks | `10,1,64,121,176` | 4 |
-| down3 main | stride-2 DW64 -> PW128 | `10,1,128,61,88` | 2 |
-| bridge23 | stride-2 1x1, 64->128; merge with down3 | `10,1,128,61,88` | 1 |
-| encoder-3 | two residual DW/PW 128-ch blocks | `10,1,128,61,88` | 4 |
-| serial context | two residual dilation-2 DW/PW 128-ch blocks | `10,1,128,61,88` | 4 |
-| parallel context | DW3x3 d1/d2/d4, concat 384, 1x1->128, residual | `10,1,128,61,88` | 4 |
-| local spike attention | Q/K/V 128->32, four heads x eight channels, 32->128 residual | `10,1,128,61,88` | 4 |
-| project3 | 1x1 128->64, then nearest upsample | `10,1,64,121,176` | 1 |
-| decoder-2 fusion | concat project3+x2=128; DW128 -> PW64 | `10,1,64,121,176` | 2 |
-| decoder-2 refine | residual DW/PW 64-ch | `10,1,64,121,176` | 2 |
-| project2 | 1x1 64->32, then nearest upsample | `10,1,32,241,351` | 1 |
-| late merge | concatenate semantic32 + shallow32 + detail32 | `10,1,96,241,351` | 0 |
-| local selector | 1x1 96->96 PLIF, retinotopic gate | `10,1,96,241,351` | 1 |
-| final fusion | DW96 -> PW32 | `10,1,32,241,351` | 2 |
-| decoder-1 refine | residual DW/PW 32-ch | `10,1,32,241,351` | 2 |
-| class head | 1x1 32->11 independent class PLIFs | `10,1,11,241,351` | 1 |
-| readout | sum class spikes over 50 ms, per-pixel argmax | `1,11,241,351` logits | 0 |
+| input | rectified ON/OFF counts for training | `10,1,2,440,640` | 0 |
+| stem | 3x3, 2->32, affine, PLIF | `10,1,32,440,640` | 1 |
+| encoder-1 | two residual DW3x3/PW1x1 32-ch blocks | `10,1,32,440,640` | 4 |
+| detail-1 | residual DW3x3/PW1x1 32-ch | `10,1,32,440,640` | 2 |
+| detail-2 | DW3x1 -> DW1x3 -> PW1x1, residual | `10,1,32,440,640` | 3 |
+| detail-3 | residual DW3x3/PW1x1 32-ch | `10,1,32,440,640` | 2 |
+| down2 main | stride-2 DW32 -> PW64 | `10,1,64,220,320` | 2 |
+| bridge12 | stride-2 1x1, 32->64; merge with down2 | `10,1,64,220,320` | 1 |
+| encoder-2 | two residual DW/PW 64-ch blocks | `10,1,64,220,320` | 4 |
+| down3 main | stride-2 DW64 -> PW128 | `10,1,128,110,160` | 2 |
+| bridge23 | stride-2 1x1, 64->128; merge with down3 | `10,1,128,110,160` | 1 |
+| encoder-3 | two residual DW/PW 128-ch blocks | `10,1,128,110,160` | 4 |
+| serial context | two residual dilation-2 DW/PW 128-ch blocks | `10,1,128,110,160` | 4 |
+| parallel context | DW3x3 d1/d2/d4, concat 384, 1x1->128, residual | `10,1,128,110,160` | 4 |
+| local spike attention | Q/K/V 128->32, four heads x eight channels, 32->128 residual | `10,1,128,110,160` | 4 |
+| project3 | 1x1 128->64, then nearest upsample | `10,1,64,220,320` | 1 |
+| decoder-2 fusion | concat project3+x2=128; DW128 -> PW64 | `10,1,64,220,320` | 2 |
+| decoder-2 refine | residual DW/PW 64-ch | `10,1,64,220,320` | 2 |
+| project2 | 1x1 64->32, then nearest upsample | `10,1,32,440,640` | 1 |
+| late merge | concatenate semantic32 + shallow32 + detail32 | `10,1,96,440,640` | 0 |
+| local selector | 1x1 96->96 PLIF, retinotopic gate | `10,1,96,440,640` | 1 |
+| final fusion | DW96 -> PW32 | `10,1,32,440,640` | 2 |
+| decoder-1 refine | residual DW/PW 32-ch | `10,1,32,440,640` | 2 |
+| class head | 1x1 32->11 independent class PLIFs | `10,1,11,440,640` | 1 |
+| readout | sum class spikes over 50 ms, per-pixel argmax | `1,11,440,640` logits | 0 |
 
-Training-only heads are `64->11` at 121x176 and `128->32->11` at 61x88. They are skipped
+Training-only heads are `64->11` at 220x320 and `128->32->11` at 110x160. They are skipped
 by `model.eval()` and omitted from VHDL export.
 
 #
-## Fixed 50 ms FPGA runtime schedule
+## Active streaming FPGA runtime schedule
 
-The baseline hardware now deliberately matches the trained multi-step execution rather than converting the checkpoint to a different asynchronous neuron model.
+The active controller is `rtl/control/streaming_bin_controller.vhd`. It accepts one sealed
+5 ms bin, walks actor indices 0..26 for that bin, measures cycles-to-completion, increments
+the 24-bit global bin tag, and raises `prediction_due` every configurable prediction
+window (default ten bins). `bin_ready` remains low while a bin is in flight. The ingress
+front end must therefore be ping-pong/double-buffered so the camera can collect the next
+5 ms bin while the current one is computing.
 
-One DSEC semantic record is 50 ms and contains ten chronological 5 ms SNN slices. The hardware scheduling unit is the **complete 50 ms record**, while the neuron integration unit remains **5 ms**:
+The sparse state bank stores `last_bin_tag` with every live entry. `plif_update.vhd` accepts
+`elapsed_bins` and implements the exact baseline lazy leak as repeated learned-beta
+fixed-point multiplies before current integration. `lif_pe.vhd` remains a one-step helper
+only and is not the active state path for neurons that may skip bins.
+
+### Sparse on-chip state requirement
+
+Dense exact lazy state still cannot fit Artix-7: int16 membranes + two int16 adaptation
+fields where enabled + a dense 24-bit last-bin tag would require **248.68 MiB**. The active
+no-DDR experiment therefore uses a lossless zero-default sparse table:
 
 ```text
-raw DSEC events for 50 ms
-        -> rectify / map coordinates
-        -> accumulate into t0..t9 (10 x 5 ms)
-        -> Layer 1: process t0..t9 sequentially with Layer-1 persistent PLIF state
-        -> buffer Layer-1 output spikes for t0..t9
-        -> Layer 2: process t0..t9 sequentially with Layer-2 persistent PLIF state
-        -> ...
-        -> semantic head t0..t9
-        -> temporal class-spike count
-        -> one segmentation result for the 50 ms record
+missing address == membrane 0 and inactive adaptation
+live entry       == address/tag + membrane + last_bin_tag [+ age + amplitude]
 ```
 
-This layer-major schedule is equivalent to the trained `[T,N,C,H,W]` graph because recurrence is local to each PLIF population and inter-layer connections are feed-forward. Computing the complete ten-step output sequence of layer `L` before layer `L+1` consumes it does not change the mathematical result.
+A state may be reclaimed only when its **quantized** membrane is zero and adaptation is
+inactive. Full associative sets assert overflow; live state is never silently evicted.
+The conservative profiler uses 12-byte non-adaptive and 16-byte adaptive aligned entries;
+these budgets include the compact bin tag. Vivado BRAM packing is the final authority.
 
-### Memory consequence
+A previous one-record profile is not a capacity proof. The v7 model must be profiled over
+complete DSEC sequences and report per-layer high-watermarks, set conflicts, FIFO occupancy,
+class-current accumulator occupancy, cycles/bin, utilization `U`, headroom `H`, and margin
+before claiming no-DDR real-time fit.
 
-This schedule is specifically chosen to reduce persistent-state traffic. For a layer or spatial tile:
+### Active RTL baseline blocks
 
-1. load its membrane/adaptation state from backing memory into BRAM/URAM/cache;
-2. keep that state resident while executing `t0` through `t9` in chronological order;
-3. exploit spike sparsity inside each 5 ms slice so zero input locations cause no synaptic weight additions;
-4. update PLIF state once per 5 ms slice under the exported fixed-point equation;
-5. buffer the ten output spike slices/event lists required by the next layer;
-6. write the final state back once after `t9` and advance to the next layer/tile.
+- `rtl/control/streaming_bin_controller.vhd`: bin-major 27-actor scheduling, prediction-window counter and cycles/bin deadline instrumentation;
+- `rtl/state/sparse_state_bank.vhd`: zero-default tagged state with a compact 24-bit `last_bin_tag`;
+- `rtl/neuron/plif_update.vhd`: externally state-backed learned-beta lazy PLIF with iterative `beta^Δk` semantics;
+- `rtl/neuron/lif_pe.vhd`: one-step locally resident helper only (`Δk=1` prerequisite);
+- `rtl/event_conv/event_conv_address.vhd`: sparse convolution destination generation;
+- `rtl/event_conv/event_accumulator.vhd`: saturating synaptic-current accumulation;
+- `rtl/control/class_argmax.vhd`: first-index-tie signed argmax matching PyTorch behavior.
 
-The baseline therefore does **not** require a 32-bit `last_update_us` value per logical membrane. Time advances uniformly in known 5 ms steps. A later lazy-update implementation may use a compact step tag to skip untouched-state decay, but it is an optimization and must be proven equivalent to the fixed-step integer reference.
+The 16->11 readout is not a spiking layer. Final hidden spikes trigger signed readout
+weight additions at the same `(y,x)`. Class currents accumulate across the configured
+prediction window (default ten 5 ms bins) and reset after each prediction; PLIF/adaptation
+state continues across predictions until a sequence/gap reset.
 
-This design is **not fully asynchronous**. It is a fixed-time digital neuromorphic SNN with sparse/event-addressed synaptic work inside each 5 ms slice. The sustained real-time requirement is one complete record every 50 ms (20 Hz). Input acquisition for record `k+1` may be double-buffered while record `k` is computed.
+## FPGA routing/control requirements for v7
 
-## FPGA routing/control requirements
-
-- `bridge12`/`bridge23` require timestamp-tagged merge queues for main and projected paths.
-- Parallel d1/d2/d4 context concatenates channel address ranges and joins the residual by
-  logical timestamp/location; it does not average branches.
-- Attention is local rather than dense spatial attention. For each `(timestamp,y,x)`, Q
-  and K form four eight-channel coincidence counts, each compared with its learned head
-  threshold; the resulting four gates mask corresponding V groups before the 32->128
-  projection. Path latency requires a local rendezvous/V holding buffer, not a global
-  61x88 frame barrier.
-- Decoder concatenations are channel-ID remaps. Nearest upsample is address fan-out.
-- The 96->96 selector gates only the matching `(channel,y,x,timestamp)` event.
-- Persistent state lives in DDR-backed tiles; shared weights and hot queues/tile banks may
-  reside on chip. Weight storage is small compared with logical neuron state.
-- Export and RTL verification must compare branch joins, attention coincidences/gates,
-  membrane/timestamp trajectories, inhibition/adaptation state, emitted events, and final counters.
+- `project3` nearest upsample is event-address fan-out to quarter resolution, followed by
+  address-matched binary OR with the encoder-2 skip.
+- `project2` nearest fanout is OR-merged with encoder-1 at half resolution and then fanned
+  out again to native resolution.
+- Late concatenation is only a channel-ID remap: semantic channels 0..31 plus detail 32..39.
+- There is no v7 selector, attention rendezvous, projected bridge, or class-spike counter.
+- The readout requires signed current accumulation and per-pixel 11-way argmax; common
+  positive readout scaling may be skipped for class selection.
+- Persistent state is on-chip sparse BRAM/LUTRAM under the active experiment. Board DDR3
+  must not be used unless the project requirement is explicitly changed.
+- Verification compares float -> integer -> RTL at layer currents, membrane/adaptation
+  trajectories, emitted hidden spikes, final signed class-current accumulators, and argmax.
 
 ## Canonical naming
 

@@ -1,17 +1,18 @@
 document:
   title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
-  version: 1.7.0
-  status: eventspikeseg140k_native_resolution_accuracy_revision
+  version: 1.8.0
+  status: iteration_3_streaming_5ms_lazy_state_controller_implemented
   created_date: '2026-08-06'
   supersedes:
-    - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
-    - minimal semantic-segmentation project_spec.yaml created during repository cleanup
+  - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
+  - minimal semantic-segmentation project_spec.yaml created during repository cleanup
   intended_uses:
-    - Executable software and digital-neuromorphic FPGA implementation specification
-    - Source of truth for architecture search and experiment tracking
-    - Interface contract between SpikingJelly/PyTorch training and custom VHDL/FPGA deployment
-    - Foundation for an article on lightweight event-based SNN semantic segmentation with sparse digital FPGA inference
+  - Executable software and digital-neuromorphic FPGA implementation specification
+  - Source of truth for architecture search and experiment tracking
+  - Interface contract between SpikingJelly/PyTorch training and custom VHDL/FPGA deployment
+  - Foundation for an article on lightweight event-based SNN semantic segmentation with sparse digital FPGA 
+    inference
   central_interpretation: >-
     One dataset item is one 50 ms Ev-SegNet interval, never a stack of adjacent files.
     Histogram channels carry polarity activity; per-polarity normalized timestamp mean
@@ -26,24 +27,25 @@ document:
     this fixed-time T=10 contract rather than direct per-event asynchronous propagation.
   preservation_policy:
     retained_from_previous_specification:
-      - Hardware-compatible LIF equations and power-of-two leakage
-      - Peer-membrane cross-channel inhibition
-      - Triangular threshold adaptation
-      - Sparse shared-kernel event-address accumulation
-      - Fixed-point formats, saturation, and bit-accurate equivalence requirements
-      - Portable VHDL-2008 actors with Nexys Video XC7A200T as the reference board
-      - SpikingJelly surrogate-gradient training strategy
-      - Synthetic fixtures, golden vectors, and staged hardware verification
-      - Synthesis-guided BRAM/LUTRAM/register memory mapping
-      - Measured-only reporting policy
-      - Spiker+ as related work and implementation inspiration, not a dependency
+    - Hardware-compatible LIF equations and power-of-two leakage
+    - Peer-membrane cross-channel inhibition
+    - Triangular threshold adaptation
+    - Sparse shared-kernel event-address accumulation
+    - Fixed-point formats, saturation, and bit-accurate equivalence requirements
+    - Portable VHDL-2008 actors targeting AMD/Xilinx Artix-7 XC7A200T, with Nexys Video as the reference 
+      carrier
+    - SpikingJelly surrogate-gradient training strategy
+    - Synthetic fixtures, golden vectors, and staged hardware verification
+    - Synthesis-guided BRAM/LUTRAM/register memory mapping
+    - Measured-only reporting policy
+    - Spiker+ as related work and implementation inspiration, not a dependency
     replaced_by_current_project:
-      - Region proposal head
-      - Global vehicle/background classification head
-      - Bounding-box spread decoder
-      - Attention-centroid tracking
-      - MEVDT as the active training dataset
-      - FE108 and DSEC-MOT as active milestones
+    - Region proposal head
+    - Global vehicle/background classification head
+    - Bounding-box spread decoder
+    - Attention-centroid tracking
+    - MEVDT as the active training dataset
+    - FE108 and DSEC-MOT as active milestones
     historical_material_location: legacy_tracking_context
 
 project_goal:
@@ -54,28 +56,36 @@ project_goal:
   primary_research_question: >-
     Which combination of lightweight convolution, multi-scale context, normalization,
     skip fusion, recurrent spiking dynamics, and auxiliary supervision provides the best
-    DDD17/DSEC semantic-segmentation accuracy while retaining a clear mapping to fixed-point PLIF state and event-driven synaptic updates?
+    DDD17/DSEC semantic-segmentation accuracy while retaining a clear mapping to fixed-point PLIF state and event-driven
+    synaptic updates?
   hardware_research_question: >-
-    Can the selected PLIF model be mapped to a custom VHDL FPGA accelerator where learned membrane retention, thresholds, and shared synaptic weights are realized as fixed-point digital state and event-driven arithmetic while preserving semantic accuracy and low energy/latency?
+    Can the selected PLIF model be mapped to a custom VHDL FPGA accelerator where learned membrane retention, thresholds,
+    and shared synaptic weights are realized as fixed-point digital state and event-driven arithmetic while preserving
+    semantic accuracy and low energy/latency?
   secondary_questions:
-    - How many internal SNN timesteps are necessary before mIoU saturates?
-    - Does depthwise-pointwise convolution preserve accuracy while reducing parameters and synaptic additions?
-    - Does multi-scale dilation justify its addressing and buffering cost?
-    - Does a foldable per-channel affine gain provide most of BatchNorm's benefit without batch-statistic dependence?
-    - Does GAP/sigmoid channel gating improve accuracy enough to justify non-spiking global reduction and multiplication?
-    - Do adaptive thresholds improve firing balance and multi-seed stability?
-    - Is one encoder skip sufficient, or are two additive skips required for boundaries and small classes?
-    - What accuracy is lost after weight, membrane, threshold, and accumulator quantization?
-    - Which operations dominate BRAM/LUTRAM state, LUT/DSP usage, event routing, memory bandwidth, and energy on FPGA?
-    - Which non-local operations require dedicated reduction/control logic or a hardware-aware replacement?
+  - How many internal SNN timesteps are necessary before mIoU saturates?
+  - Does depthwise-pointwise convolution preserve accuracy while reducing parameters and synaptic additions?
+  - Does multi-scale dilation justify its addressing and buffering cost?
+  - Does a foldable per-channel affine gain provide most of BatchNorm's benefit without batch-statistic 
+    dependence?
+  - Does GAP/sigmoid channel gating improve accuracy enough to justify non-spiking global reduction and 
+    multiplication?
+  - Do adaptive thresholds improve firing balance and multi-seed stability?
+  - Is one encoder skip sufficient, or are two additive skips required for boundaries and small classes?
+  - What accuracy is lost after weight, membrane, threshold, and accumulator quantization?
+  - Which operations dominate BRAM/LUTRAM state, LUT/DSP usage, event routing, memory bandwidth, and energy on
+    FPGA?
+  - Which non-local operations require dedicated reduction/control logic or a hardware-aware replacement?
   working_hypotheses:
-    - Depthwise-pointwise blocks greatly reduce parameters and weight memory but require pointwise channel mixing.
-    - Additive skips recover spatial detail with less memory and bandwidth than concatenation.
-    - A shallow decoder is sufficient for sparse event statistics and is preferable to a symmetric U-Net.
-    - Per-channel affine scaling will be more robust and hardware-friendly than inference-time BatchNorm.
-    - Four to eight internal timesteps may preserve most accuracy while reducing temporal compute versus twenty steps.
-    - Adaptive feature-map thresholds can reduce dominant channels with very small state overhead.
-    - Sparse hardware cost will correlate more strongly with measured spike rate than with dense FLOP counts.
+  - Depthwise-pointwise blocks greatly reduce parameters and weight memory but require pointwise channel 
+    mixing.
+  - Additive skips recover spatial detail with less memory and bandwidth than concatenation.
+  - A shallow decoder is sufficient for sparse event statistics and is preferable to a symmetric U-Net.
+  - Per-channel affine scaling will be more robust and hardware-friendly than inference-time BatchNorm.
+  - Four to eight internal timesteps may preserve most accuracy while reducing temporal compute versus twenty 
+    steps.
+  - Adaptive feature-map thresholds can reduce dominant channels with very small state overhead.
+  - Sparse hardware cost will correlate more strongly with measured spike rate than with dense FLOP counts.
 
 framework:
   training_stack:
@@ -83,35 +93,37 @@ framework:
     tensor_library: PyTorch
     snn_framework: SpikingJelly_activation_based
     use_in_current_code:
-      - SpikingJelly ATan surrogate gradient when installed
-      - Custom HardwareLIF for exact leak, threshold, reset, peer inhibition, and threshold-adaptation behavior
-      - SpikingJelly activation_based Conv2d as the active spike-driven synaptic kernel
-      - PyTorch nearest-neighbor interpolation for non-learned decoder routing
+    - SpikingJelly ATan surrogate gradient when installed
+    - Custom HardwareLIF for exact leak, threshold, reset, peer inhibition, and threshold-adaptation behavior
+    - SpikingJelly activation_based Conv2d as the active spike-driven synaptic kernel
+    - PyTorch nearest-neighbor interpolation for non-learned decoder routing
     requirement: SpikingJelly is mandatory for model construction; there is no conventional Conv2d fallback.
   custom_framework_decision:
     decision: Do not build a custom autograd or training framework.
-    reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, and data loading.
+    reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, 
+      and data loading.
   hardware_backend:
     primary_type: custom_VHDL_2008_digital_neuromorphic_FPGA
-    primary_target: Digilent_Nexys_Video_XC7A200T
+    primary_target: AMD_Xilinx_Artix7_XC7A200T
     primary_goal: >-
-      Execute the trained spike-native graph as a fixed-time digital neuromorphic accelerator.
-      One 50 ms DSEC record contains ten chronological 5 ms SNN updates. Within each update,
-      sparse spike locations generate only the required shared-weight synaptic additions;
-      PLIF membrane/adaptation state remains persistent and is advanced in the same order as
-      training. The hardware processes the full T=10 record layer-by-layer rather than
-      propagating individual raw events asynchronously through the whole network.
+      Execute the trained spike-native graph as a 5 ms binned streaming digital neuromorphic accelerator. Live DSEC
+      events are collected in ping-pong input buffers; each sealed 5 ms bin traverses the complete 27-PLIF deployed
+      graph before the next bin is retired. Touched neurons retain sparse persistent state and apply learned beta
+      lazily according to a compact last-bin tag. Signed class current accumulates across a configurable prediction
+      window, default ten bins / 50 ms to match training.
     software_reference: SpikingJelly_float_plus_bit_exact_integer_reference
-    implementation_flow: [integer_reference, VHDL_RTL, RTL_simulation, synthesis, place_and_route, post_implementation_timing, activity_based_power, optional_board_measurement]
+    implementation_flow: [integer_reference, VHDL_RTL, RTL_simulation, synthesis, place_and_route, 
+        post_implementation_timing, activity_based_power, optional_board_measurement]
   spiker_plus:
     implementation_status: literature_and_design_inspiration_only
     retained_takeaways:
-      - Fixed-point LIF arithmetic
-      - Power-of-two leakage
-      - Parameterized VHDL generation concepts
-      - Structured software/RTL verification
-      - Resource-aware accelerator design
-    prohibited_claim: The project must not claim to use, extend, or depend on Spiker+ unless that decision is later implemented and documented.
+    - Fixed-point LIF arithmetic
+    - Power-of-two leakage
+    - Parameterized VHDL generation concepts
+    - Structured software/RTL verification
+    - Resource-aware accelerator design
+    prohibited_claim: The project must not claim to use, extend, or depend on Spiker+ unless that decision is 
+      later implemented and documented.
 
 active_dataset:
   name: DDD17_semantic_segmentation_Ev-SegNet_codification
@@ -127,24 +139,24 @@ active_dataset:
       train: /datasets/DDD17/labels/train
       test: /datasets/DDD17/labels/test
     ignored_visualization_data:
-      - event_images
-      - images
+    - event_images
+    - images
   accepted_alternate_layout:
-    - /datasets/DDD17/train/events
-    - /datasets/DDD17/train/labels
-    - /datasets/DDD17/test/events
-    - /datasets/DDD17/test/labels
+  - /datasets/DDD17/train/events
+  - /datasets/DDD17/train/labels
+  - /datasets/DDD17/test/events
+  - /datasets/DDD17/test/labels
   stored_sample:
     expected_shape: [6, H, W]
     batched_shape: [N, 6, H, W]
     dtype: floating_point_or_numeric_npy
     channels:
-      - polarity_0_histogram
-      - polarity_1_histogram
-      - polarity_0_normalized_timestamp_mean
-      - polarity_0_normalized_timestamp_standard_deviation
-      - polarity_1_normalized_timestamp_mean
-      - polarity_1_normalized_timestamp_standard_deviation
+    - polarity_0_histogram
+    - polarity_1_histogram
+    - polarity_0_normalized_timestamp_mean
+    - polarity_0_normalized_timestamp_standard_deviation
+    - polarity_1_normalized_timestamp_mean
+    - polarity_1_normalized_timestamp_standard_deviation
     warning: >-
       These channels are summary statistics of an event interval. They must not be
       reinterpreted as three chronological two-polarity timesteps.
@@ -168,11 +180,11 @@ active_dataset:
       Hold out complete sequence_id groups when more than one exists. With one sequence,
       hold out one contiguous block. The resulting frame gap is a mandatory PLIF reset.
   discovery_requirements:
-    - Do not recursively enumerate unrelated folders such as event_images.
-    - Use bounded directory checks and os.scandir for large Windows bind mounts.
-    - Pair event and label lists deterministically using the dataset's established sorted ordering.
-    - Report event count, label count, selected folders, and mismatch errors explicitly.
-    - Training must fail clearly when events/train exists without labels/train.
+  - Do not recursively enumerate unrelated folders such as event_images.
+  - Use bounded directory checks and os.scandir for large Windows bind mounts.
+  - Pair event and label lists deterministically using the dataset's established sorted ordering.
+  - Report event count, label count, selected folders, and mismatch errors explicitly.
+  - Training must fail clearly when events/train exists without labels/train.
   current_input_limitation: >-
     The installed archive contains per-pixel histogram count plus timestamp mean and
     standard deviation, not every original event tuple. Exact individual arrival times
@@ -183,10 +195,12 @@ active_dataset:
 future_datasets:
   raw_event_segmentation:
     status: dsec_semantic_implemented_pending_accuracy_measurement
-    objective: Validate raw-event ingestion with fixed 50 ms records, ten 5 ms SNN updates, and sparse synaptic execution.
+    objective: Validate raw-event ingestion with fixed 50 ms records, ten 5 ms SNN updates, and sparse 
+      synaptic execution.
     candidates:
-      - DDD17 raw recordings aligned with semantic labels where accessible
-      - DSEC-Semantic (training protocol currently identified as dsec-fixed-time-counts-async-fpga-v4; hardware runtime is fixed-time T=10)
+    - DDD17 raw recordings aligned with semantic labels where accessible
+    - DSEC-Semantic (training protocol currently identified as dsec-fixed-time-counts-async-fpga-v4; hardware 
+      runtime is fixed-time T=10)
     required_fields: [timestamp, x, y, polarity, semantic_label_alignment]
     role: final_algorithm_and_hardware_validation
     dsec_contract:
@@ -195,10 +209,10 @@ future_datasets:
       interval_us: 50000
       spatial_alignment: rectify_map_then_bottom_40_row_crop
       training_input: fixed_physical_time_divisions_with_linear_event_multiplicity
-      fpga_input: raw_events_accumulated_into_ten_5ms_runtime_slices_per_50ms_record
+      fpga_input: live_raw_events_pingpong_binned_into_consecutive_5ms_runtime_bins
       event_value_encoding: every_source_event_contributes_one_no_log_or_cap
       hidden_spike_encoding: binary
-      plif_time_rule: one_beta_based_PLIF_update_per_5ms_slice
+      plif_time_rule: touched_neuron_lazy_beta_power_delta_bins_on_the_fixed_5ms_grid
       full_recording_preload: false
       validation_split:
         sequence_count:
@@ -213,10 +227,12 @@ future_datasets:
         scope: independently_per_training_sequence
         selection: one_contiguous_window_per_sequence_per_epoch
         shuffle: false
+      prediction_window: configurable_bin_count_default_10_bins_50ms
   legacy_mevdt:
     role: optional_future_detection_and_tracking_extension
     status: inactive_for_current_semantic_segmentation_project
-    preserved_reason: Native DAVIS240C 240x180 raw events remain useful for FPGA throughput and tracking experiments.
+    preserved_reason: Native DAVIS240C 240x180 raw events remain useful for FPGA throughput and tracking 
+      experiments.
 
 input_and_time:
   loader_interface:
@@ -230,20 +246,20 @@ input_and_time:
       ddd17: deterministic_contiguous_stream_segment_per_epoch
       dsec: deterministic_contiguous_segment_from_every_training_sequence_per_epoch
   decoded_channel_contract:
-    - polarity_0_activity
-    - polarity_1_activity
-    - polarity_0_normalized_timestamp_mean
-    - polarity_1_normalized_timestamp_mean
-    - polarity_0_normalized_timestamp_standard_deviation
-    - polarity_1_normalized_timestamp_standard_deviation
+  - polarity_0_activity
+  - polarity_1_activity
+  - polarity_0_normalized_timestamp_mean
+  - polarity_1_normalized_timestamp_mean
+  - polarity_0_normalized_timestamp_standard_deviation
+  - polarity_1_normalized_timestamp_standard_deviation
   input_scheduler:
     default_internal_updates: 10
     default_event_clock_us: 5000
     configurability: internal_updates_must_divide_50000_us_exactly
     arrival_approximation:
-      - {offset: mean, activity_fraction: 0.50}
-      - {offset: mean_minus_std, activity_fraction: 0.25}
-      - {offset: mean_plus_std, activity_fraction: 0.25}
+    - {offset: mean, activity_fraction: 0.50}
+    - {offset: mean_minus_std, activity_fraction: 0.25}
+    - {offset: mean_plus_std, activity_fraction: 0.25}
     invariant: scheduled_synaptic_activity_equals_histogram_activity
     note: clock_updates_are_hardware_time_within_one_record_not_stacked_dataset_files
   dsec_fixed_time_divisions:
@@ -251,13 +267,14 @@ input_and_time:
     duration_us: 50000_divided_by_internal_updates
     default_divisions: 10
     invariants:
-      - preserve_source_event_order
-      - preserve_total_linear_event_multiplicity
-      - event_density_never_changes_update_count
-      - carry_fixed_physical_elapsed_microseconds
-      - normalize_logits_and_rates_by_elapsed_physical_time
-      - FPGA_runtime_preserves_all_ten_chronological_5ms_updates
-      - full_50ms_record_is_the_semantic_output_and_memory_scheduling_unit
+    - preserve_source_event_order
+    - preserve_total_linear_event_multiplicity
+    - event_density_never_changes_update_count
+    - carry_fixed_physical_elapsed_microseconds
+    - normalize_logits_and_rates_by_elapsed_physical_time
+    - FPGA_runtime_preserves_all_ten_chronological_5ms_updates
+    - default_prediction_window_is_ten_5ms_bins_50ms
+    - hardware_compute_schedule_is_bin_major_end_to_end
   training_state:
     truncated_bptt_boundary: one_50ms_record
     after_backward: detach_autograd_history_but_retain_numeric_neuron_state
@@ -269,64 +286,101 @@ input_and_time:
       invariant: one_semantic_objective_per_complete_50ms_record
     reset_conditions: [epoch_start, validation_start, sequence_change, frame_index_gap]
   forbidden:
-    - repeated_static_samples
-    - stacking_adjacent_numpy_records_as_one_model_input
-    - shuffled_stream_records
-    - state_carry_across_sequence_boundaries_or_frame_gaps
-    - treating_timestamp_statistics_as_independent_image_channels_in_the_stem
+  - repeated_static_samples
+  - stacking_adjacent_numpy_records_as_one_model_input
+  - shuffled_stream_records
+  - state_carry_across_sequence_boundaries_or_frame_gaps
+  - treating_timestamp_statistics_as_independent_image_channels_in_the_stem
   checkpoint_contract:
     version: ddd17-timestamp-v3
     fingerprint_fields:
-      - manifest_digest
-      - exact_record_membership
-      - input_mode
-      - integration_window_us
-      - internal_updates
-      - event_clock_us
-      - timing_mode
-      - stateful_stream
+    - manifest_digest
+    - exact_record_membership
+    - input_mode
+    - integration_window_us
+    - internal_updates
+    - event_clock_us
+    - timing_mode
+    - stateful_stream
     legacy_policy: reject_all_older_input_protocol_checkpoints
-  dsec_50ms_runtime_execution:
-    scheduling_unit: one_50ms_semantic_record
-    internal_time_steps: 10
-    internal_step_us: 5000
-    temporal_semantics: fixed_step_discrete_time_matching_training
-    graph_schedule: layer_major_over_full_T10_record
+  dsec_streaming_runtime_execution:
+    input_bin_us: 5000
+    input_bin_rate_hz: 200
+    training_prediction_window_bins: 10
+    default_prediction_period_us: 50000
+    default_prediction_rate_hz: 20
+    schedule: bin_major_end_to_end_actor0_through_actor26_then_retire_bin
+    ingress: two_pingpong_5ms_event_buffers_capture_next_bin_while_current_bin_computes
     procedure:
-      - Accumulate/encode raw DSEC events into ten chronological 5 ms polarity maps with exact linear multiplicity.
-      - For one executed layer actor, process t0 through t9 sequentially using that layer's persistent PLIF state.
-      - "Within each 5 ms slice, exploit spike sparsity for convolution: only nonzero spike locations generate connected weight additions."
-      - Apply the layer PLIF threshold/reset/adaptation once per 5 ms step in the same temporal order as the software reference.
-      - Buffer the resulting ten output spike maps or sparse event lists as the T=10 input sequence for the next layer.
-      - After the hidden graph has processed all ten steps, accumulate continuous 1x1 class currents across the record and emit one segmentation result.
-      - Preserve membrane/adaptation state into the next consecutive 50 ms record; reset only at sequence/gap boundaries.
-    memory_schedule:
-      - A membrane/adaptation tile may be loaded from backing memory once, advanced through all ten 5 ms steps for its layer, then written back once.
-      - Spatial tiles may include convolution halo regions; tile size is a bandwidth/resource design parameter.
-      - The baseline explicitly advances fixed 5 ms state and therefore does not require one 32-bit last-update timestamp per membrane.
-      - A future lazy-update optimization may add compact step tags only if integer-reference equivalence is proven.
-    realtime_requirement: sustained processing must complete one 50ms record every 50ms; double buffering may overlap acquisition of record k+1 with compute for record k
-    forbidden: [direct_per_event_end_to_end_asynchronous_propagation, collapsing_50ms_to_one_PLIF_step, reordering_across_5ms_step_boundaries]
+    - Seal one 5 ms raw-event bin and switch acquisition immediately to the alternate input buffer.
+    - Propagate that bin through actor 0, actor 1, ..., actor 26 and the stateless class-current update before
+      retiring it.
+    - Within each actor/bin, route only nonzero presynaptic addresses and accumulate all contributions to each
+      touched destination before one PLIF commit.
+    - Read touched sparse state including membrane, optional adaptation fields and compact last-bin tag.
+    - Compute delta_bins from the current global bin tag and stored last-bin tag, then apply learned beta 
+      exactly delta_bins times before adding current.
+    - Write the updated sparse state with last-bin tag equal to the current bin; untouched neurons incur no 
+      state access or arithmetic.
+    - Accumulate signed final class current across prediction_window_bins and emit argmax when the window 
+      completes; default is ten bins / 50 ms.
+    state_persistence: 
+      PLIF_and_adaptation_state_persists_across_bins_and_predictions_reset_only_at_sequence_or_gap_boundaries
+    last_bin_tag_bits: 24
+    last_bin_tag_wrap_period_at_5ms_hours: 23.30168888888889
+    realtime:
+      hard_condition: U = C_bin/(f_clk*0.005) <= 1.0
+      target_condition: U <= 0.8
+      headroom_definition: H = 1/U = hard_cycle_budget/C_bin
+      hard_headroom_minimum: 1.0
+      target_headroom_minimum: 1.25
+      hard_cycle_budget_formula: floor(f_clk * 0.005)
+      target_cycle_budget_formula: floor(0.8 * hard_cycle_budget)
+      example_cycle_budgets:
+        100MHz:
+          hard: 500000
+          target_80pct: 400000
+        150MHz:
+          hard: 750000
+          target_80pct: 600000
+        200MHz:
+          hard: 1000000
+          target_80pct: 800000
+      deadline_measurement: cycles_from_bin_accept_until_final_readout_update_for_that_bin
+    forbidden:
+    - raw_event_per_event_end_to_end_propagation_without_5ms_binning
+    - retiring_or_overwriting_a_bin_before_its_full_forward_pass_completes
+    - record_major_layer0_t0_to_t9_then_layer1_t0_to_t9_hardware_schedule
+    - collapsing_the_default_50ms_prediction_window_into_one_PLIF_step
 
 
 runtime_batching_decision:
-  decision: process_one_complete_50ms_DSEC_record_layer_by_layer
-  rationale: >-
-    This matches the trained [T,N,C,H,W] execution contract while allowing one layer's
-    membrane/adaptation tile to remain resident across all ten 5 ms updates. It avoids
-    event-by-event layer swapping and preserves temporal PLIF dynamics.
-  record_structure: {record_us: 50000, internal_updates: 10, update_us: 5000}
-  layer_major_equivalence: >-
-    The graph is feed-forward between stages and recurrent only through each stage's own
-    PLIF state. Therefore a complete T=10 sequence may be computed for layer L before
-    layer L+1 consumes that ten-step output sequence, exactly as multi-step SpikingJelly
-    evaluation does.
-  output: one_semantic_segmentation_per_50ms_record_after_temporal_class_current_accumulation
-  memory_implication: load_or_tile_one_layer_state_process_t0_to_t9_then_write_back
+  decision: stream_one_5ms_bin_end_to_end_before_retiring_it
+  rationale: This preserves the fixed 5 ms training time grid and touched-neuron lazy state while allowing 
+    live camera acquisition to overlap computation through ping-pong input buffers. It avoids the superseded 
+    50 ms layer-major schedule.
+  bin_structure:
+    bin_us: 5000
+    required_bin_rate_hz: 200
+  prediction_window:
+    default_bins: 10
+    default_us: 50000
+    default_rate_hz: 20
+    configurable: true
+  graph_order: for_each_bin_actor0_to_actor26_then_class_current_update
+  state_rule: only_touched_neurons_are_accessed; sparse live state persists with 24bit last_bin_tag
+  lazy_decay: delta_bins=current_bin_tag-last_bin_tag_mod_2^24; apply learned_beta delta_bins times before 
+    current
+  double_buffering: capture_bin_k_plus_1_while_compute_bin_k
+  realtime_utilization:
+    U: C_bin/(f_clk*5ms)
+    hard_max: 1.0
+    target_max: 0.8
+    H: 1/U
+    hard_min: 1.0
+    target_min: 1.25
   asynchronous_claim: false
-  sparsity_claim: sparse_synaptic_zero_skipping_within_each_fixed_5ms_step
-  realtime_target: 20_records_per_second_sustained
-
+  sparsity_claim: 5ms_binned_touched_neuron_lazy_execution_with_sparse_synaptic_zero_skipping
 neuron:
   name: HardwareLIF
   equation: V[t] = V[t-1] - V[t-1] / 2^q + I[t]
@@ -345,14 +399,14 @@ neuron:
     between_batches: true
     within_sample_timesteps: false
   operation_order_must_match:
-    - leak_previous_membrane
-    - add_current
-    - form_effective_threshold
-    - compute_candidate_spikes
-    - apply_peer_inhibition_if_enabled
-    - subtract_threshold_for_emitted_spikes
-    - optionally_decrement_competing_membranes
-    - update_threshold_adaptation
+  - leak_previous_membrane
+  - add_current
+  - form_effective_threshold
+  - compute_candidate_spikes
+  - apply_peer_inhibition_if_enabled
+  - subtract_threshold_for_emitted_spikes
+  - optionally_decrement_competing_membranes
+  - update_threshold_adaptation
 
 custom_spiking_dynamics:
   terminology:
@@ -361,15 +415,16 @@ custom_spiking_dynamics:
       instantaneous_inhibition_factor: peer_membrane_inhibition_or_historical_winner_peer_competition
       long_threshold_factor: triangular_threshold_adaptation
       threshold_time_constant: adaptation_duration
-    compatibility: literature_aliases_may_appear_only_in_citations_historical_experiment_IDs_and_legacy_checkpoint_readers
+    compatibility: 
+      literature_aliases_may_appear_only_in_citations_historical_experiment_IDs_and_legacy_checkpoint_readers
   peer_membrane_inhibition:
     concept: instantaneous cross-channel membrane inhibition at the same spatial coordinate
     lineage: Event-Based Trajectory Prediction Using Spiking Neural Networks, 2021
     rule:
-      - Determine whether any neuron spikes at a retinotopic location.
-      - Compute the local RMS membrane energy across peer feature channels.
-      - Subtract a learned fraction of that energy from non-spiking peer membranes.
-      - Keep simultaneous spikes; winner-only suppression is a historical ablation, not the canonical rule.
+    - Determine whether any neuron spikes at a retinotopic location.
+    - Compute the local RMS membrane energy across peer feature channels.
+    - Subtract a learned fraction of that energy from non-spiking peer membranes.
+    - Keep simultaneous spikes; winner-only suppression is a historical ablation, not the canonical rule.
     current_scope: stem_only
     current_kind: peer_membrane
   triangular_threshold_adaptation:
@@ -383,24 +438,24 @@ custom_spiking_dynamics:
       enabled_in_canonical_model: true
       enabled_scope: encoder_context
     expected_effects:
-      - Temporarily raise the local threshold after spiking.
-      - Reduce repeated dominance while retaining spatially local evidence.
+    - Temporarily raise the local threshold after spiking.
+    - Reduce repeated dominance while retaining spatially local evidence.
     limitation: The age and amplitude maps are material FPGA state and are not negligible.
 
 architecture_family:
   implementation_model: EventSpikeSeg140k
   non_target_comparison_model: EventSpikeSegXL
   design_principles:
-    - Binary-spiking learned feature path with continuous final class-current accumulation
-    - Native 440x640 input with learned stride-2 semantic stem
-    - Three-scale 32_64_128 semantic encoder plus persistent 8-channel native detail path
-    - Serial dilation-2 semantic context without QKV attention or parallel context
-    - Additive encoder skips and late semantic_detail concatenation
-    - Nearest-neighbor upsampling rather than transposed convolution where possible
-    - Depthwise spatial filtering plus pointwise event fan-out/channel mixing
-    - Per-channel affine scaling folded into exported fixed-point parameters
-    - Training-only auxiliary head omitted from inference
-    - No bounding-box, attention-centroid, classification-only, or tracking head in the active model
+  - Binary-spiking learned feature path with continuous final class-current accumulation
+  - Native 440x640 input with learned stride-2 semantic stem
+  - Three-scale 32_64_128 semantic encoder plus persistent 8-channel native detail path
+  - Serial dilation-2 semantic context without QKV attention or parallel context
+  - Additive encoder skips and late semantic_detail concatenation
+  - Nearest-neighbor upsampling rather than transposed convolution where possible
+  - Depthwise spatial filtering plus pointwise event fan-out/channel mixing
+  - Per-channel affine scaling folded into exported fixed-point parameters
+  - Training-only auxiliary head omitted from inference
+  - No bounding-box, attention-centroid, classification-only, or tracking head in the active model
   implementation_channel_schedule: [32, 64, 128]
   detail_channels: 8
   attention: none
@@ -411,23 +466,23 @@ architecture_family:
     ignore_index: 255
   common_encoder_decoder:
     conceptual_stages:
-      - six_channel_spiking_stem
-      - high_resolution_encoder_stage
-      - downsampled_encoder_stage
-      - low_resolution_semantic_context_stage
-      - lightweight_upsampling_decoder
-      - one_or_two_additive_encoder_skips
-      - per_pixel_six_class_spiking_head
+    - six_channel_spiking_stem
+    - high_resolution_encoder_stage
+    - downsampled_encoder_stage
+    - low_resolution_semantic_context_stage
+    - lightweight_upsampling_decoder
+    - one_or_two_additive_encoder_skips
+    - per_pixel_six_class_spiking_head
     exact_channels_and_shapes: configuration_and_input_resolution_dependent
 
 architecture_search:
   fairness_contract:
-    - Same training and validation records
-    - Same deterministic seed
-    - Same initialization procedure
-    - Same optimizer, learning-rate schedule, loss, class weights, resolution, and timesteps
-    - Same maximum sample counts
-    - No architecture-specific manual tuning during the first ranking
+  - Same training and validation records
+  - Same deterministic seed
+  - Same initialization procedure
+  - Same optimizer, learning-rate schedule, loss, class weights, resolution, and timesteps
+  - Same maximum sample counts
+  - No architecture-specific manual tuning during the first ranking
   presets:
     v01_std_unet_light:
       purpose: standard_convolution_reference
@@ -481,7 +536,8 @@ architecture_search:
       gap_sigmoid_channel_gate: true
       residual: true
       adaptive_threshold: false
-      hardware_warning: Requires global accumulation, nonlinear gate approximation, and channel multiplication.
+      hardware_warning: Requires global accumulation, nonlinear gate approximation, and channel 
+        multiplication.
     v08_dw_multiscale_aux:
       purpose: auxiliary_supervision_ablation
       depthwise: true
@@ -512,9 +568,9 @@ architecture_search:
     primary_metric: validation_mIoU
     tie_window_mIoU_percentage_points: 0.5
     tie_breaker_order:
-      - lower_parameter_count
-      - lower_output_spike_rate
-      - lower_estimated_synaptic_additions
+    - lower_parameter_count
+    - lower_output_spike_rate
+    - lower_estimated_synaptic_additions
     minimum_confirmation_seeds: [17, 101, 2026]
     promotion_rule: >-
       Do not delete the nine losing presets until the leading architecture has completed
@@ -566,18 +622,18 @@ training:
     stage_3_winner:
       internal_timestep_sweep: [1, 2, 4, 8, 16, 20]
       resolution_progression:
-        - [64, 64]
-        - [112, 176]
-        - [224, 352]
+      - [64, 64]
+      - [112, 176]
+      - [224, 352]
       seeds: [17, 101, 2026]
       dataset_scope: full_available_training_split_when_practical
   runtime_optimization_rules:
     approximate_cost_proportional_to:
-      - number_of_samples
-      - epochs
-      - internal_timesteps
-      - image_height_times_width
-      - architecture_synaptic_cost
+    - number_of_samples
+    - epochs
+    - internal_timesteps
+    - image_height_times_width
+    - architecture_synaptic_cost
     GPU:
       use_when_available: true
       batch_size_sweep: [4, 8, 16]
@@ -585,22 +641,22 @@ training:
       avoid_assuming_more_threads_is_faster: true
       measure_before_changing_torch_thread_count: true
       preferred_first_speed_reductions:
-        - fewer_internal_timesteps
-        - fewer_samples
-        - lower_resolution
-        - staged_architecture_elimination
+      - fewer_internal_timesteps
+      - fewer_samples
+      - lower_resolution
+      - staged_architecture_elimination
   checkpoint_contract:
     required_fields:
-      - architecture_name_and_config
-      - model_state
-      - optimizer_or_training_metadata
-      - seed
-      - class_mapping
-      - validation_split_indices_or_record_identifiers
-      - input_resolution
-      - internal_timesteps
-      - normalization_mode
-      - dataset_representation_version
+    - architecture_name_and_config
+    - model_state
+    - optimizer_or_training_metadata
+    - seed
+    - class_mapping
+    - validation_split_indices_or_record_identifiers
+    - input_resolution
+    - internal_timesteps
+    - normalization_mode
+    - dataset_representation_version
 
 normalization_and_scaling:
   none:
@@ -614,22 +670,23 @@ normalization_and_scaling:
     deployment: Fold gain into output-channel convolution weights.
   BatchNorm:
     role: training_ablation
-    training_behavior: Normalize per output channel using batch and spatial statistics, then apply learned gamma and beta.
+    training_behavior: Normalize per output channel using batch and spatial statistics, then apply learned 
+      gamma and beta.
     inference_behavior: Use frozen running statistics.
     deployment: Fold BN into convolution weights and bias before quantization.
     warning: BatchNorm effects must never simply disappear at inference.
   GAP_channel_gate:
     role: accuracy_ablation_inspired_by_SLTNet
     pipeline:
-      - global_average_pool_each_channel
-      - learned_channel_score
-      - sigmoid_or_approximation
-      - channelwise_scaling
+    - global_average_pool_each_channel
+    - learned_channel_score
+    - sigmoid_or_approximation
+    - channelwise_scaling
     FPGA_costs:
-      - whole_feature_map_reduction
-      - gate_storage
-      - multiplication_or_shift_approximation
-      - global synchronization
+    - whole_feature_map_reduction
+    - gate_storage
+    - multiplication_or_shift_approximation
+    - global synchronization
 
 operation_rationale:
   standard_convolution:
@@ -665,44 +722,45 @@ operation_rationale:
 
 metrics:
   primary_segmentation:
-    - mean_IoU
-    - per_class_IoU
-    - pixel_accuracy
-    - mean_class_accuracy
-    - confusion_matrix
+  - mean_IoU
+  - per_class_IoU
+  - pixel_accuracy
+  - mean_class_accuracy
+  - confusion_matrix
   model_efficiency:
-    - parameter_count
-    - checkpoint_size
-    - dense_operation_estimate
-    - estimated_synaptic_additions
-    - peak_training_memory
-    - samples_per_second
+  - parameter_count
+  - checkpoint_size
+  - dense_operation_estimate
+  - estimated_synaptic_additions
+  - peak_training_memory
+  - samples_per_second
   SNN:
-    - spike_rate_per_layer
-    - output_spike_rate
-    - silent_channel_fraction
-    - dominant_channel_fraction
-    - channel_utilization
-    - membrane_saturation_fraction
-    - internal_timestep_accuracy_curve
+  - spike_rate_per_layer
+  - output_spike_rate
+  - silent_channel_fraction
+  - dominant_channel_fraction
+  - channel_utilization
+  - membrane_saturation_fraction
+  - internal_timestep_accuracy_curve
   robustness:
-    - mean_and_standard_deviation_across_seeds
-    - minimum_seed_mIoU
-    - class_specific_seed_variance
+  - mean_and_standard_deviation_across_seeds
+  - minimum_seed_mIoU
+  - class_specific_seed_variance
   FPGA_future:
-    - LUT
-    - FF
-    - BRAM
-    - distributed_LUTRAM
-    - DSP
-    - maximum_clock_frequency
-    - latency_per_input_interval
-    - sustained_events_per_second
-    - 99th_percentile_FIFO_occupancy
-    - dynamic_power
-    - energy_per_event
-    - energy_per_semantic_output
-  reporting_rule: Only measured values may be placed in RESULTS.md; estimates must be labeled explicitly as estimates.
+  - LUT
+  - FF
+  - BRAM
+  - distributed_LUTRAM
+  - DSP
+  - maximum_clock_frequency
+  - latency_per_input_interval
+  - sustained_events_per_second
+  - 99th_percentile_FIFO_occupancy
+  - dynamic_power
+  - energy_per_event
+  - energy_per_semantic_output
+  reporting_rule: Only measured values may be placed in RESULTS.md; estimates must be labeled explicitly as 
+    estimates.
 
 quantization:
   objective: Match an addition, shift, comparison, saturation, and address-generation FPGA datapath.
@@ -719,25 +777,25 @@ quantization:
     coordinate_y: unsigned_height_dependent
     timestamp_us: unsigned_int32
   mandatory_rules:
-    - Prefer bias-free convolutions.
-    - Preserve learned per-channel beta with the exported UQ1.15 coefficient.
-    - Fold per-channel affine and BatchNorm before hardware export.
-    - Use deterministic rounding and saturating arithmetic.
-    - Freeze clipping and overflow behavior.
-    - Quantize after architecture and timestep selection.
+  - Prefer bias-free convolutions.
+  - Preserve learned per-channel beta with the exported UQ1.15 coefficient.
+  - Fold per-channel affine and BatchNorm before hardware export.
+  - Use deterministic rounding and saturating arithmetic.
+  - Freeze clipping and overflow behavior.
+  - Quantize after architecture and timestep selection.
   experiments:
     weight_bits: [4, 6, 8]
     membrane_bits: [12, 16, 20]
     accumulator_guard_bits: sweep
     process:
-      - floating_point_baseline
-      - post_training_quantization
-      - quantization_aware_fine_tuning
-      - bit_exact_integer_export
-      - layerwise_equivalence_replay
+    - floating_point_baseline
+    - post_training_quantization
+    - quantization_aware_fine_tuning
+    - bit_exact_integer_export
+    - layerwise_equivalence_replay
 
 fpga_implementation:
-  status: iteration_1_lossless_sparse_state_bank_implemented
+  status: iteration_3_streaming_5ms_lazy_state_controller_implemented
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class
@@ -748,13 +806,16 @@ fpga_implementation:
     final_current_readout: one_stateless_1x1_synaptic_accumulator
     omitted_from_RTL: [refine2_dead_block, auxiliary_head, boundary_head, surrogate_gradient]
   target:
-    primary_board: Digilent_Nexys_Video
-    primary_device: XC7A200T-1SBG484C
+    target_name: Artix7_XC7A200T
     family: AMD_Xilinx_Artix_7
+    primary_device: XC7A200T-1SBG484C
+    reference_board: Digilent_Nexys_Video
     selection_reason: conventional_development_board_with_the_largest_Artix7_device
-    official_resources: {logic_cells: 215360, LUT: 134600, registers: 269200, DSP: 740, BRAM_Kib: 13140, max_distributed_RAM_Kib: 2888}
+    official_resources: {logic_cells: 215360, LUT: 134600, registers: 269200, DSP: 740, BRAM_Kib: 13140, 
+        max_distributed_RAM_Kib: 2888}
     official_device_reference: https://docs.amd.com/api/khub/documents/2LByHkO~nSZXcei2D55fTg/content
-    official_board_reference: https://digilent.com/reference/_media/reference/programmable-logic/nexys-video/nexys-video_rm.pdf
+    official_board_reference: 
+      https://digilent.com/reference/_media/reference/programmable-logic/nexys-video/nexys-video_rm.pdf
     fixed_device: true
     RTL_language: VHDL_2008
     initial_clock_target_mhz: 100
@@ -767,19 +828,28 @@ fpga_implementation:
     layer_reconfiguration: forbidden
     partial_reconfiguration: forbidden
     permitted_shared_infrastructure: [clock_reset, input_dispatch, on_chip_state_banks, final_class_readout]
-    actor_owned_blocks: [weight_ROM, convolution_address_generator, synaptic_accumulator_lanes, PLIF_update, mechanism_logic, output_FIFO]
-    model_level: fixed_50ms_record_with_ten_5ms_SNN_updates
+    actor_owned_blocks: [weight_ROM, convolution_address_generator, synaptic_accumulator_lanes, PLIF_update, 
+        mechanism_logic, output_FIFO]
+    model_level: continuous_5ms_bins_with_configurable_prediction_window_default_10_bins
     RTL_level: synchronous_clocked_elastic_pipeline
-    global_neural_timestep_barrier: true_at_each_5ms_step_within_each_layer_sequence
-    FPGA_input_bins: ten_fixed_5ms_runtime_slices_per_50ms_record
-    event_address: [slice_index_0_to_9, polarity_or_channel, y, x]
+    global_neural_timestep_barrier: one_end_to_end_bin_must_finish_all_27_PLIF_actors_before_retirement
+    FPGA_input_bins: continuous_pingpong_5ms_runtime_bins
+    event_address:
+    - global_bin_tag_24bit
+    - polarity_or_channel
+    - y
+    - x
     procedure:
-      - For the current layer, consume its complete T=10 input spike sequence for one 50 ms record.
-      - For each 5 ms slice, route nonzero spike locations only to valid convolution destinations and accumulate shared-kernel weights.
-      - Advance that layer's membrane/adaptation state once for the slice, then emit the slice's binary output spikes.
-      - Repeat for slices 0..9 while the layer state tile remains resident where possible.
-      - Store the updated persistent state and hand the ten output slices to the next layer actor.
-    residual_merge: timestamp_and_address_matched_binary_OR_dedup
+    - Seal a 5 ms input event bin and switch acquisition to the alternate ping-pong buffer.
+    - Process the sealed bin through all 27 deployed PLIF actors in graph order.
+    - Within each actor, accumulate all synaptic contributions for one touched destination before exactly one 
+      PLIF commit for that bin.
+    - Read sparse state including last_bin_tag; apply learned beta once per elapsed bin before current 
+      integration.
+    - Write state with the current bin tag and emit sparse output spikes to the next actor.
+    - After actor 26 update signed class-current state; every prediction_window_bins emit argmax and clear 
+      only class-current state.
+    residual_merge: slice_and_address_matched_binary_OR_dedup
     concat: channel_address_remap_without_arithmetic
     nearest_upsample: event_address_fanout
     frequency_encoding: repeated_events_cause_repeated_weight_additions
@@ -799,32 +869,44 @@ fpga_implementation:
       adaptation_enabled_neurons: 10982400
       class_readout_state: stateless_within_record_accumulators_only
       baseline_dense_storage_MiB:
-        membrane_int16: 82.71
-        adaptation_age_plus_amplitude_int16: 41.90
-        minimum_total_before_counters_queues_and_alignment: 124.61
-        note: fixed_5ms_baseline_has_no_per_membrane_timestamp_field
+        membrane_int16: 82.71484375
+        adaptation_age_plus_amplitude_int16: 41.89453125
+        last_bin_tag_24bit: 124.072265625
+        exact_dense_touched_state_total: 248.681640625
+        note: 
+          microsecond_timestamp_removed_but_exact_lazy_training_semantics_require_compact_24bit_5ms_bin_tag
       Artix7_XC7A200T_capacity:
         BRAM_MiB: 1.6040
         maximum_distributed_LUTRAM_MiB: 0.3525
         absolute_BRAM_plus_all_LUTRAM_MiB: 1.9565
-        BRAM_only_shortfall_MiB: 123.0054
-        BRAM_only_required_over_available: 77.6865
+        BRAM_only_shortfall_MiB: 247.07763671875
+        BRAM_only_required_over_available: 155.0380517503805
       conclusion: exact_dense_state_is_impossible_on_chip
     on_chip_sparse_state_target:
       backing_store: banked_BRAM_plus_selected_LUTRAM
       external_spill: forbidden
       state_store_option: lossless_zero_default_sparse_table
       zero_default: absent_address_means_zero_membrane_and_inactive_adaptation
-      entry_fields: [layer, channel, y, x, membrane, adaptation_age_if_enabled, adaptation_amplitude_if_enabled]
+      entry_fields:
+      - layer
+      - channel
+      - y
+      - x
+      - membrane
+      - last_bin_tag_24bit
+      - adaptation_age_if_enabled
+      - adaptation_amplitude_if_enabled
       exact_reclamation: remove_only_after_quantized_membrane_is_zero_and_adaptation_is_inactive
-      class_counts: sparse_zero_default_counters_with_width_selected_from_trace_maxima
+      final_class_current: 
+        transient_signed_sparse_or_banked_accumulators_reset_each_prediction_window_default_10_bins
       forbidden: [silent_state_drop, overflow_eviction, dense_idle_state_sweep]
       feasibility_gate: >-
-        The integer event simulator must measure maximum live entries, per-layer
-        occupancy, tag/value width, FIFO depths, class-counter occupancy, and bank
-        conflicts on full DSEC sequences. The model is not deployable under the no-DDR
-        requirement unless the measured worst case fits with logic/queue margin.
-      measured_epoch002_one_record:
+        The integer event simulator must measure maximum live entries, per-layer occupancy, tag/value width, FIFO
+        depths, class-current accumulator occupancy, bank conflicts, cycles/bin, utilization U and headroom H on
+        full DSEC sequences. The no-DDR Artix-7 target is not feasible unless worst-case state plus queues/weights
+        fits and sustained U<=1.
+      historical_v6_epoch002_one_record:
+        applicability: superseded_v6_only_not_a_v7_capacity_proof
         artifact: artifacts/fpga_profiles/epoch002_one_record.json
         live_entries: 27182700
         live_fraction_of_logical_membranes: 0.3731666
@@ -833,195 +915,238 @@ fpga_implementation:
         required_over_budget: 295.9765
         dense_one_bit_membrane_only_MiB: 8.6836
         observed_live_one_bit_values_only_MiB: 3.2404
-        conclusion: current_exact_140k_state_does_not_fit_no_DDR_XC7A200T
+        conclusion: superseded_v6_record_did_not_fit_no_DDR_XC7A200T
+      v7_full_sequence_occupancy:
+        status: pending_measurement
+        requirement: full_DSEC_sequences_with_27_PLIF_graph_streaming_5ms_bins_and_lazy_last_bin_tags
+        decision_gate: worst_case_live_state_plus_queues_and_weights_must_fit_on_chip_without_DDR
       no_silent_approximation: model_or_precision_changes_require_QAT_and_accuracy_revalidation
+      aligned_entry_budget_bytes:
+        non_adaptive: 12
+        adaptive: 16
+      aligned_entry_note: 
+        includes_28bit_logical_address_int16_membrane_24bit_last_bin_tag_and_optional_two_int16_adaptation_fields_plus_alignment
   arithmetic:
     common_synapse: signed_weight_lookup_and_saturating_add
     matrix_multiplier_array: none
     pointwise_layer: event_fanout_plus_weight_additions
-    PLIF_decay: quantized_beta_or_retention_LUT_plus_multiplier_for_exact_baseline
+    PLIF_decay: exported_learned_beta_repeated_delta_bins_for_each_touched_neuron
     shift_only_decay: optional_after_QAT_and_bit_accuracy_validation
     peer_membrane_inhibition: exact_cross_channel_energy_first_then_validate_cheaper_L1_or_LUT_approximation
     triangular_threshold_adaptation: counters_comparators_and_quantized_scale
   parallelism:
     per_actor_synapse_lane_sweep: [1, 2, 4, 8, 16]
-    independent_actors: 37
-    mechanisms: [actor_local_weight_ROM, banked_sparse_BRAM_state, selected_LUTRAM, event_FIFOs, ready_valid_backpressure]
-    deadline: sustained_event_rate_and_99th_percentile_FIFO_occupancy_must_be_bounded
-  exactness: float_reference_to_integer_reference_to_RTL_must_match_under_the_exported_fixed_point_contract
+    independent_actors: 27
+    mechanisms: [actor_local_weight_ROM, banked_sparse_BRAM_state, selected_LUTRAM, event_FIFOs, 
+        ready_valid_backpressure]
+    deadline: hard_U_le_1_target_U_le_0_8_and_99th_percentile_FIFO_occupancy_bounded
+    utilization:
+      formula: U=C_bin/(f_clk*0.005)
+      hard_max: 1.0
+      target_max: 0.8
+      headroom_formula: H=1/U
+      hard_min: 1.0
+      target_min: 1.25
+  exactness: 
+    float_training_reference_to_lazy_integer_reference_to_streaming_RTL_must_match_under_exported_fixed_point_and_5ms_bin_contract
 
 export_contract:
   artifacts:
-    - model_spec.yaml
-    - layer_graph.json
-    - quantized_weights.npz
-    - weights/*.mem
-    - parameters/*.json
-    - class_mapping.json
-    - golden_input_samples.npz
-    - golden_layer_currents.npz
-    - golden_layer_membranes.npz
-    - golden_layer_spikes.npz
-    - golden_semantic_outputs.npz
+  - model_spec.yaml
+  - layer_graph.json
+  - quantized_weights.npz
+  - weights/*.mem
+  - parameters/*.json
+  - class_mapping.json
+  - golden_input_samples.npz
+  - golden_layer_currents.npz
+  - golden_layer_membranes.npz
+  - golden_layer_spikes.npz
+  - golden_semantic_outputs.npz
   model_spec_must_include:
-    - layer_order
-    - tensor_shapes
-    - convolution_parameters
-    - normalization_folding
-    - LIF_parameters
-    - peer_inhibition_parameters
-    - threshold_adaptation_parameters
-    - quantization_formats
-    - saturation_and_rounding
-    - timestep_count
-    - class_mapping
-  equivalence_requirement: All exported golden tests must match exactly in the integer reference and RTL simulation.
+  - layer_order
+  - tensor_shapes
+  - convolution_parameters
+  - normalization_folding
+  - LIF_parameters
+  - peer_inhibition_parameters
+  - threshold_adaptation_parameters
+  - quantization_formats
+  - saturation_and_rounding
+  - timestep_count
+  - class_mapping
+  equivalence_requirement: All exported golden tests must match exactly in the integer reference and RTL 
+    simulation.
   implemented_iteration_0:
-    - XL_hard_rejection
-    - exact_27_PLIF_actor_plus_current_readout_manifest
-    - affine_folded_int8_weight_ROMs
-    - quantized_beta_threshold_and_mechanism_parameters
-    - fixed_point_saturation_and_rounding_contract
-    - integer_PLIF_and_sparse_state_store_primitives
-    - backpressured_external_state_PLIF_RTL_lane
+  - XL_hard_rejection
+  - exact_27_PLIF_actor_plus_current_readout_manifest
+  - affine_folded_int8_weight_ROMs
+  - quantized_beta_threshold_and_mechanism_parameters
+  - fixed_point_saturation_and_rounding_contract
+  - integer_PLIF_and_sparse_state_store_primitives
+  - backpressured_external_state_PLIF_RTL_lane
   implemented_iteration_1:
-    - set_associative_zero_default_sparse_state_bank
-    - layer_address_tagged_membrane_timestamp_and_adaptation_records
-    - exact_dead_state_reclamation
-    - no_eviction_full_set_overflow
-    - ready_valid_backpressure
-    - cocotb_collision_update_reclamation_and_overflow_equivalence
-
+  - set_associative_zero_default_sparse_state_bank_prototype
+  - historical_timestamped_state_record_superseded_by_fixed_step_iteration_2
+  - exact_dead_state_reclamation
+  - no_eviction_full_set_overflow
+  - ready_valid_backpressure
+  - cocotb_collision_update_reclamation_and_overflow_equivalence
+  implemented_iteration_2:
+  - superseded_50ms_record_major_controller_retained_only_in_history
+  - Artix7_XC7A200T_target_alias_and_manifest_contract
+  - stateless_signed_class_current_readout_and_first_index_tie_argmax_RTL
+  implemented_iteration_3:
+  - streaming_5ms_bin_runtime_reference
+  - bin_major_27_actor_end_to_end_schedule
+  - 24bit_last_bin_tag_sparse_state_record
+  - lazy_learned_beta_delta_bin_integer_PLIF_reference
+  - iterative_lazy_leak_PLIF_RTL_lane
+  - streaming_bin_controller_with_cycles_per_bin_deadline_and_prediction_window_outputs
+  - utilization_U_and_headroom_H_contract_with_U_target_0_8
+  - double_buffered_ingress_interface_contract
 validation_and_testing:
   required_fast_tests:
-    - configuration_schema
-    - DDD17_modality_first_and_split_first_discovery
-    - event_label_pairing_and_mismatch_detection
-    - six_channel_shape_and_order
-    - ignore_index_handling
-    - deterministic_validation_split
-    - temporal_direct_encoding
-    - LIF_leak_threshold_reset_order
-    - state_reset
-    - peer_inhibition_trigger_and_decrement
-    - threshold_adaptation_rise_and_decay
-    - standard_and_depthwise_convolution_shapes
-    - pointwise_channel_mixing
-    - dilation_and_multiscale_shapes
-    - additive_skip_alignment
-    - all_ten_architecture_forward_and_gradient_paths
-    - checkpoint_round_trip
-    - deterministic_winner_selection
+  - configuration_schema
+  - DDD17_modality_first_and_split_first_discovery
+  - event_label_pairing_and_mismatch_detection
+  - six_channel_shape_and_order
+  - ignore_index_handling
+  - deterministic_validation_split
+  - temporal_direct_encoding
+  - LIF_leak_threshold_reset_order
+  - state_reset
+  - peer_inhibition_trigger_and_decrement
+  - threshold_adaptation_rise_and_decay
+  - standard_and_depthwise_convolution_shapes
+  - pointwise_channel_mixing
+  - dilation_and_multiscale_shapes
+  - additive_skip_alignment
+  - all_ten_architecture_forward_and_gradient_paths
+  - checkpoint_round_trip
+  - deterministic_winner_selection
+  - streaming_5ms_bin_scheduler
+  - lazy_last_bin_tag_decay
+  - runtime_utilization_and_headroom_math
   wider_validation:
-    - smoke_train_on_real_DDD17
-    - all_architecture_same_seed_benchmark
-    - top_three_higher_fidelity_retraining
-    - winner_timestep_ablation
-    - winner_multi_seed_confirmation
-    - full_test_split_evaluation
-    - quantized_vs_float_comparison
-    - sparse_vs_dense_reference_comparison
-    - RTL_vs_integer_reference_when_available
+  - smoke_train_on_real_DDD17
+  - all_architecture_same_seed_benchmark
+  - top_three_higher_fidelity_retraining
+  - winner_timestep_ablation
+  - winner_multi_seed_confirmation
+  - full_test_split_evaluation
+  - quantized_vs_float_comparison
+  - sparse_vs_dense_reference_comparison
+  - RTL_vs_integer_reference_when_available
   tools:
     Python_tests: pytest
     lint: ruff
     RTL_simulation: GHDL_and_cocotb
   failure_policy:
-    - Reproduce the smallest failing case.
-    - Preserve each fixed defect as a regression test.
-    - Never weaken assertions solely to make tests pass.
-    - Report missing tools as blockers rather than claiming validation.
+  - Reproduce the smallest failing case.
+  - Preserve each fixed defect as a regression test.
+  - Never weaken assertions solely to make tests pass.
+  - Report missing tools as blockers rather than claiming validation.
 
 repository_contract:
   active_python_package: src/eventspikeseg
   active_source_files:
-    - model.py
-    - data.py
-    - train.py
-    - evaluate.py
-    - metrics.py
-    - hardware.py
-    - fpga/fixed_point.py
-    - fpga/export.py
-    - fpga/integer_reference.py
-    - __init__.py
+  - model.py
+  - data.py
+  - train.py
+  - evaluate.py
+  - metrics.py
+  - hardware.py
+  - fpga/fixed_point.py
+  - fpga/export.py
+  - fpga/integer_reference.py
+  - fpga/runtime.py
+  - fpga/target.py
+  - __init__.py
   required_documents:
-    - README.md
-    - project_spec.yaml
-    - AGENTS.md
-    - docs/ARCHITECTURE.md
-    - docs/DECISIONS.md
-    - docs/PROGRESS.md
-    - docs/BUGS.md
-    - docs/RESULTS.md
+  - README.md
+  - project_spec.yaml
+  - AGENTS.md
+  - docs/ARCHITECTURE.md
+  - docs/DECISIONS.md
+  - docs/PROGRESS.md
+  - docs/BUGS.md
+  - docs/RESULTS.md
   clean_repository_rules:
-    - Tracking-era files must not remain in active imports or tests.
-    - Retired material may be archived outside the active package but must not be executed.
-    - Dataset files and large checkpoints must not be committed.
-    - README commands must correspond to working Compose or CLI entry points.
-    - The project specification must be updated before major architectural changes.
+  - Tracking-era files must not remain in active imports or tests.
+  - Retired material may be archived outside the active package but must not be executed.
+  - Dataset files and large checkpoints must not be committed.
+  - README commands must correspond to working Compose or CLI entry points.
+  - The project specification must be updated before major architectural changes.
 
 workflow:
   milestone_order:
-    - Validate DDD17 discovery and complete training-label availability.
-    - Complete a small real-data smoke training run.
-    - Preserve the completed ten-architecture benchmark with seed 17.
-    - Complete the structural top-five benchmark with fixed selected neuron dynamics.
-    - Run the accuracy-oriented top-three benchmark using concatenative multiscale fusion, high-resolution detail preservation, and low-resolution spike-mask attention.
-    - Diagnose rare-class collapse before final promotion.
-    - Sweep timesteps for the leading architecture.
-    - Confirm the winner with seeds 17, 101, and 2026.
-    - Promote the winner to the canonical model while preserving ablation results.
-    - Evaluate on the reserved DDD17 test split.
-    - Add post-training quantization and QAT.
-    - Build a bit-accurate integer reference.
-    - Add sparse event/spike scatter reference.
-    - Implement VHDL LIF and convolution primitives.
-    - Integrate multilayer segmentation RTL.
-    - Synthesize the static 37-actor design on Nexys Video XC7A200T and record resources, timing, power estimates, and latency.
-    - Validate raw-event input on DDD17 or DSEC-Semantic.
+  - Validate DDD17 discovery and complete training-label availability.
+  - Complete a small real-data smoke training run.
+  - Preserve the completed ten-architecture benchmark with seed 17.
+  - Complete the structural top-five benchmark with fixed selected neuron dynamics.
+  - Run the accuracy-oriented top-three benchmark using concatenative multiscale fusion, high-resolution 
+    detail preservation, and low-resolution spike-mask attention.
+  - Diagnose rare-class collapse before final promotion.
+  - Sweep timesteps for the leading architecture.
+  - Confirm the winner with seeds 17, 101, and 2026.
+  - Promote the winner to the canonical model while preserving ablation results.
+  - Evaluate on the reserved DDD17 test split.
+  - Add post-training quantization and QAT.
+  - Build a bit-accurate integer reference.
+  - Add sparse event/spike scatter reference.
+  - Implement VHDL LIF and convolution primitives.
+  - Integrate multilayer segmentation RTL.
+  - Synthesize the static 27-PLIF-actor plus current-readout design on Artix-7 XC7A200T and record resources, 
+    timing, power estimates, and latency.
+  - Validate raw-event input on DDD17 or DSEC-Semantic.
   architecture_cleanup_rule: >-
     The ten-preset implementation is temporary experiment infrastructure. Do not remove it
     before the winner is confirmed. After confirmation, simplify the active model to the
     winning architecture, keep benchmark results and configuration records, and remove
     only redundant runtime branches and obsolete files.
   completion_definition:
-    - Implementation exists.
-    - Tests cover normal and edge behavior.
-    - Validation commands pass.
-    - Documentation and YAML are synchronized.
-    - Configuration and splits are reproducible.
-    - No known silent data or tensor mismatch remains.
-    - Claimed metrics are measured and recorded.
+  - Implementation exists.
+  - Tests cover normal and edge behavior.
+  - Validation commands pass.
+  - Documentation and YAML are synchronized.
+  - Configuration and splits are reproducible.
+  - No known silent data or tensor mismatch remains.
+  - Claimed metrics are measured and recorded.
 
 literature_review:
   current_algorithm_references:
-    - id: spiking_edn
-      contribution: Adaptive event encoding, searched multi-resolution encoder, spiking ASPP, and event semantic segmentation.
-      project_use: Accuracy and adaptive-threshold reference; do not copy irregular NAS graph or heavy ASPP directly.
-    - id: evseg_snn
-      contribution: Reduced U-shaped PLIF semantic segmentation for event data.
-      project_use: Evidence that sparse event input can use a shallower U-Net than RGB segmentation.
-    - id: sltnet
-      contribution: Lightweight depthwise/dilated blocks, GAP channel attention, additive skips, auxiliary supervision, and spike-driven global context.
-      project_use: Main source of lightweight component ablations; transformer and GAP gate remain optional due to FPGA cost.
+  - id: spiking_edn
+    contribution: Adaptive event encoding, searched multi-resolution encoder, spiking ASPP, and event semantic
+      segmentation.
+    project_use: Accuracy and adaptive-threshold reference; do not copy irregular NAS graph or heavy ASPP 
+      directly.
+  - id: evseg_snn
+    contribution: Reduced U-shaped PLIF semantic segmentation for event data.
+    project_use: Evidence that sparse event input can use a shallower U-Net than RGB segmentation.
+  - id: sltnet
+    contribution: Lightweight depthwise/dilated blocks, GAP channel attention, additive skips, auxiliary 
+      supervision, and spike-driven global context.
+    project_use: Main source of lightweight component ablations; transformer and GAP gate remain optional due 
+      to FPGA cost.
   preserved_hardware_and_neuron_references:
-    - id: berner2013_sparse_sensor
-      contribution: DAVIS240 sparse ON/OFF event sensor lineage.
-    - id: acharya2019_rpn
-      contribution: Local event activity, LIF convolution, and spatial proposal clustering.
-      status: historical_tracking_context_only
-    - id: debat2021_trajectory
-      contribution: Three-layer convolutional SNN, instantaneous inhibition, long-term threshold adaptation, STDP, and motion-selective features.
-      status: inhibition_and_threshold_adaptation_lineage_retained
-    - id: fang2023_spikingjelly
-      contribution: Trainable SNN infrastructure and surrogate-gradient execution.
-    - id: carpegna2024_spiker_plus
-      contribution: Fixed-point FPGA SNN accelerator generation and verification concepts.
-      status: related_work_only
-    - id: firefly_v2
-      contribution: High-throughput FPGA acceleration methods for modern SNN operations.
-      status: hardware_comparison_reference
+  - id: berner2013_sparse_sensor
+    contribution: DAVIS240 sparse ON/OFF event sensor lineage.
+  - id: acharya2019_rpn
+    contribution: Local event activity, LIF convolution, and spatial proposal clustering.
+    status: historical_tracking_context_only
+  - id: debat2021_trajectory
+    contribution: Three-layer convolutional SNN, instantaneous inhibition, long-term threshold adaptation, 
+      STDP, and motion-selective features.
+    status: inhibition_and_threshold_adaptation_lineage_retained
+  - id: fang2023_spikingjelly
+    contribution: Trainable SNN infrastructure and surrogate-gradient execution.
+  - id: carpegna2024_spiker_plus
+    contribution: Fixed-point FPGA SNN accelerator generation and verification concepts.
+    status: related_work_only
+  - id: firefly_v2
+    contribution: High-throughput FPGA acceleration methods for modern SNN operations.
+    status: hardware_comparison_reference
   identified_gap: >-
     Event-based SNN semantic-segmentation models exist, and generic FPGA SNN accelerators
     exist, but a lightweight event-semantic-segmentation SNN with a deliberately simple
@@ -1033,63 +1158,73 @@ legacy_tracking_context:
   previous_task: event_camera_region_proposal_vehicle_classification_and_tracking
   previous_active_dataset: MEVDT
   previous_model_elements:
-    - three_layer_32_64_128_spiking_encoder
-    - event_supported_attention_map
-    - vehicle_background_spiking_classifier
-    - deterministic_attention_to_box_decoder
-    - alpha_beta_or_component_tracker
+  - three_layer_32_64_128_spiking_encoder
+  - event_supported_attention_map
+  - vehicle_background_spiking_classifier
+  - deterministic_attention_to_box_decoder
+  - alpha_beta_or_component_tracker
   preserved_results_policy: Historical results remain valid only for their original checkpoints and task.
   reason_for_transition: >-
     MEVDT provides boxes and tracking identities but no semantic masks. DDD17-Seg supplies
     pixel-level labels needed to train and evaluate true class-wise semantic maps.
   possible_future_reuse:
-    - derive_instances_from_semantic_components
-    - add_center_or_offset_head_for_instance_separation
-    - associate semantic components temporally
-    - validate raw_event_sparse_backend_on_MEVDT
-  prohibition: Do not mix legacy tracking metrics or checkpoint assumptions into the active DDD17 semantic benchmark.
+  - derive_instances_from_semantic_components
+  - add_center_or_offset_head_for_instance_separation
+  - associate semantic components temporally
+  - validate raw_event_sparse_backend_on_MEVDT
+  prohibition: Do not mix legacy tracking metrics or checkpoint assumptions into the active DDD17 semantic 
+    benchmark.
 
 decision_history:
-  - step: 1
-    issue: Exact continuous-time event decay
-    decision: Deferred
-    reason: Initial goal is a reproducible discrete-time, multiplier-minimized FPGA design.
-  - step: 2
-    issue: Dense software convolution versus sparse hardware execution
-    decision: Accept dense PyTorch/SpikingJelly training and require a mathematically equivalent sparse address-accumulation reference for hardware.
-  - step: 3
-    issue: Custom training framework
-    decision: Rejected
-    reason: PyTorch and SpikingJelly provide the necessary training stack.
-  - step: 4
-    issue: Existing FPGA SNN generator versus custom backend
-    decision: Custom VHDL-2008 backend retained
-    reason: Spatial convolution, segmentation maps, retinotopic neuron dynamics, memory banking, and exact ordering require project-specific control.
-  - step: 5
-    issue: Detection/tracking versus semantic segmentation
-    decision: Active task changed to DDD17 six-class semantic segmentation.
-    reason: Pixel-level labels permit true class-wise region learning and remove the untrained box-scale decoder.
-  - step: 6
-    issue: Raw event stream versus Ev-SegNet codification
-    decision: Use six-channel codification for current architecture search; require raw-event validation later.
-    reason: The downloaded dataset provides ready semantic labels and event-derived statistics but no chronological T dimension.
-  - step: 7
-    issue: Full symmetric U-Net versus lightweight decoder
-    decision: Use shallow encoder-decoder with additive skips.
-    reason: Lower state memory and simpler FPGA mapping while retaining spatial detail.
-  - step: 8
-    issue: Single architecture selected by intuition versus controlled comparison
-    decision: Benchmark ten predefined combinations with identical seed and training budget.
-    reason: Component value must be determined experimentally.
-  - step: 9
-    issue: Twenty internal timesteps for every architecture
-    decision: Use a staged benchmark and later timestep sweep.
-    reason: Internal timesteps are recurrent compute, not camera frames per second; unnecessary steps can multiply runtime without adding information.
-  - step: 10
-    issue: Delete ablation code immediately after one run
-    decision: Delay deletion until higher-fidelity and multi-seed confirmation.
-    reason: A single low-budget seed is insufficient to establish the canonical architecture.
+- step: 1
+  issue: Exact continuous-time event decay
+  decision: Deferred
+  reason: Initial goal is a reproducible discrete-time, multiplier-minimized FPGA design.
+- step: 2
+  issue: Dense software convolution versus sparse hardware execution
+  decision: Accept dense PyTorch/SpikingJelly training and require a mathematically equivalent sparse 
+    address-accumulation reference for hardware.
+- step: 3
+  issue: Custom training framework
+  decision: Rejected
+  reason: PyTorch and SpikingJelly provide the necessary training stack.
+- step: 4
+  issue: Existing FPGA SNN generator versus custom backend
+  decision: Custom VHDL-2008 backend retained
+  reason: Spatial convolution, segmentation maps, retinotopic neuron dynamics, memory banking, and exact 
+    ordering require project-specific control.
+- step: 5
+  issue: Detection/tracking versus semantic segmentation
+  decision: Active task changed to DDD17 six-class semantic segmentation.
+  reason: Pixel-level labels permit true class-wise region learning and remove the untrained box-scale 
+    decoder.
+- step: 6
+  issue: Raw event stream versus Ev-SegNet codification
+  decision: Use six-channel codification for current architecture search; require raw-event validation later.
+  reason: The downloaded dataset provides ready semantic labels and event-derived statistics but no 
+    chronological T dimension.
+- step: 7
+  issue: Full symmetric U-Net versus lightweight decoder
+  decision: Use shallow encoder-decoder with additive skips.
+  reason: Lower state memory and simpler FPGA mapping while retaining spatial detail.
+- step: 8
+  issue: Single architecture selected by intuition versus controlled comparison
+  decision: Benchmark ten predefined combinations with identical seed and training budget.
+  reason: Component value must be determined experimentally.
+- step: 9
+  issue: Twenty internal timesteps for every architecture
+  decision: Use a staged benchmark and later timestep sweep.
+  reason: Internal timesteps are recurrent compute, not camera frames per second; unnecessary steps can 
+    multiply runtime without adding information.
+- step: 10
+  issue: Delete ablation code immediately after one run
+  decision: Delay deletion until higher-fidelity and multi-seed confirmation.
+  reason: A single low-budget seed is insufficient to establish the canonical architecture.
 
+- date: '2026-08-23'
+  decision: replace_50ms_layer_major_FPGA_schedule_with_live_5ms_bin_major_streaming
+  details: training_unchanged; ping-pong ingress; lazy touched-neuron beta^delta with 24-bit last-bin tag; 
+    prediction default 10 bins; hard U<=1 target U<=0.8
 experiment_code_layout:
   canonical_model_file:
     path: src/eventspikeseg/model.py
@@ -1099,13 +1234,13 @@ experiment_code_layout:
   shared_components_file:
     path: src/eventspikeseg/model_components.py
     contents:
-      - standard_and_depthwise_pointwise_spiking_convolution
-      - multiscale_and_dilated_context
-      - additive_decoder
-      - HardwareLIF
-      - ParametricLIF
-      - peer_membrane_inhibition
-      - triangular_threshold_adaptation_and_duration
+    - standard_and_depthwise_pointwise_spiking_convolution
+    - multiscale_and_dilated_context
+    - additive_decoder
+    - HardwareLIF
+    - ParametricLIF
+    - peer_membrane_inhibition
+    - triangular_threshold_adaptation_and_duration
   round_one_file:
     path: src/eventspikeseg/top_ten_models.py
     purpose: Preserve the exact completed ten-model definitions and checkpoint compatibility.
@@ -1114,7 +1249,8 @@ experiment_code_layout:
     purpose: Preserve the completed five-model structural search separately from the canonical model.
   round_three_file:
     path: src/eventspikeseg/top_three_models.py
-    purpose: Isolate the active accuracy-oriented three-model search from the canonical and completed ablation models.
+    purpose: Isolate the active accuracy-oriented three-model search from the canonical and completed ablation
+      models.
 
 round_one_measured_results:
   date: '2026-08-06'
@@ -1127,11 +1263,12 @@ round_one_measured_results:
   batch_size: 4
   source_summary: artifacts/ablation/summary.json
   ranking_by_mIoU:
-    - {rank: 1, architecture: v10_fpga_hybrid, mIoU: 0.3130307198, parameters: 44016, spike_rate: 0.1411708792}
-    - {rank: 2, architecture: v03_dw_dilated, mIoU: 0.2970095277, parameters: 40824, spike_rate: 0.1125130773}
-    - {rank: 3, architecture: v02_dw_light, mIoU: 0.2849613726, parameters: 30744, spike_rate: 0.1305065870}
-    - {rank: 4, architecture: v08_dw_multiscale_aux, mIoU: 0.2591362894, parameters: 44016, spike_rate: 0.1050513466}
-    - {rank: 5, architecture: v04_dw_multiscale, mIoU: 0.2444102764, parameters: 42552, spike_rate: 0.1188160578}
+  - {rank: 1, architecture: v10_fpga_hybrid, mIoU: 0.3130307198, parameters: 44016, spike_rate: 0.1411708792}
+  - {rank: 2, architecture: v03_dw_dilated, mIoU: 0.2970095277, parameters: 40824, spike_rate: 0.1125130773}
+  - {rank: 3, architecture: v02_dw_light, mIoU: 0.2849613726, parameters: 30744, spike_rate: 0.1305065870}
+  - {rank: 4, architecture: v08_dw_multiscale_aux, mIoU: 0.2591362894, parameters: 44016, spike_rate: 
+      0.1050513466}
+  - {rank: 5, architecture: v04_dw_multiscale, mIoU: 0.2444102764, parameters: 42552, spike_rate: 0.1188160578}
   incumbent:
     architecture: v10_fpga_hybrid
     pixel_accuracy: 0.7870869637
@@ -1143,11 +1280,11 @@ round_one_measured_results:
       human: 0.0
       vehicle: 0.3168385327
   interpretation:
-    - v10 is the structural incumbent, not a satisfactory final six-class model.
-    - v03 shows that one dilated block can outperform heavier parallel multiscale context.
-    - v02 is the most parameter-efficient leading structure.
-    - v08 supports retaining auxiliary supervision as a contender component.
-    - BatchNorm lowered training loss but did not improve held-out mIoU in this run.
+  - v10 is the structural incumbent, not a satisfactory final six-class model.
+  - v03 shows that one dilated block can outperform heavier parallel multiscale context.
+  - v02 is the most parameter-efficient leading structure.
+  - v08 supports retaining auxiliary supervision as a contender component.
+  - BatchNorm lowered training loss but did not improve held-out mIoU in this run.
   open_problem: Object and human classes collapsed to zero IoU and require data/prediction diagnostics.
 
 mechanism_screen_measured_results:
@@ -1162,11 +1299,16 @@ mechanism_screen_measured_results:
     internal_timesteps: 8
   source_summary: artifacts/ablation/top_five/summary.json
   ranking_by_mIoU:
-    - {rank: 1, architecture: f05_v02_light_peer_membrane_inhibition, mIoU: 0.1990700960, parameters: 33455, spike_rate: 0.0616127253}
-    - {rank: 2, architecture: f02_v10_plif_threshold_adaptation, mIoU: 0.1459280401, parameters: 46422, spike_rate: 0.0469515721}
-    - {rank: 3, architecture: f01_v10_plif_threshold_wta, mIoU: 0.1402056664, parameters: 46392, spike_rate: 0.0456547340}
-    - {rank: 4, architecture: f04_v03_dilated_threshold_adaptation, mIoU: 0.1366340071, parameters: 42830, spike_rate: 0.0512948520}
-    - {rank: 5, architecture: f03_v10_plif_winner_peer_inhibition, mIoU: 0.1232914403, parameters: 46437, spike_rate: 0.0415132840}
+  - {rank: 1, architecture: f05_v02_light_peer_membrane_inhibition, mIoU: 0.1990700960, parameters: 33455, 
+      spike_rate: 0.0616127253}
+  - {rank: 2, architecture: f02_v10_plif_threshold_adaptation, mIoU: 0.1459280401, parameters: 46422, 
+      spike_rate: 0.0469515721}
+  - {rank: 3, architecture: f01_v10_plif_threshold_wta, mIoU: 0.1402056664, parameters: 46392, spike_rate: 
+      0.0456547340}
+  - {rank: 4, architecture: f04_v03_dilated_threshold_adaptation, mIoU: 0.1366340071, parameters: 42830, 
+      spike_rate: 0.0512948520}
+  - {rank: 5, architecture: f03_v10_plif_winner_peer_inhibition, mIoU: 0.1232914403, parameters: 46437, 
+      spike_rate: 0.0415132840}
   selected_dynamics:
     neuron: PLIF
     learnable_base_threshold: true
@@ -1184,11 +1326,14 @@ mechanism_screen_measured_results:
       adaptation_duration_init: 5.0
     output_class_wta: true
   evidence:
-    - triangular threshold adaptation slightly improved the controlled v10 comparison over PLIF plus learned threshold alone.
-    - winner_peer hidden inhibition caused severe encoder spike starvation and is excluded from the active five.
-    - stem-only peer_membrane inhibition preserved deeper activity and produced the highest mIoU.
-    - the winner learned inhibition strength 0.2082, threshold-adaptation strength 0.1879, and adaptation duration 5.196, close to initialization.
-  limitation: This was a low-budget mechanism screen and is not directly comparable to the full-budget 0.3130 incumbent for promotion.
+  - triangular threshold adaptation slightly improved the controlled v10 comparison over PLIF plus learned 
+    threshold alone.
+  - winner_peer hidden inhibition caused severe encoder spike starvation and is excluded from the active five.
+  - stem-only peer_membrane inhibition preserved deeper activity and produced the highest mIoU.
+  - the winner learned inhibition strength 0.2082, threshold-adaptation strength 0.1879, and adaptation 
+    duration 5.196, close to initialization.
+  limitation: This was a low-budget mechanism screen and is not directly comparable to the full-budget 0.3130 
+    incumbent for promotion.
 
 completed_top_five_structural_search:
   status: completed_2026_08_08
@@ -1246,10 +1391,11 @@ completed_top_five_structural_search:
       parameter_count: 21491
       purpose: FPGA-efficiency candidate
   fairness_contract:
-    - same neuron/inhibition/adaptation configuration for all five
-    - same seed, sample subsets, resolution, internal timesteps, optimizer, loss, and class weighting within one run
-    - no contender-specific hyperparameter tuning
-    - record mIoU, per-class IoU, ground-truth/predicted pixels, layer spike rates, and parameter count
+  - same neuron/inhibition/adaptation configuration for all five
+  - same seed, sample subsets, resolution, internal timesteps, optimizer, loss, and class weighting within one
+    run
+  - no contender-specific hyperparameter tuning
+  - record mIoU, per-class IoU, ground-truth/predicted pixels, layer spike rates, and parameter count
   promotion_gate:
     incumbent_miou: 0.3130307197570801
     larger_budget_rerun_required: true
@@ -1273,22 +1419,34 @@ round_two_measured_results:
     learning_rate: 0.002
   source_summary: artifacts/ablation/top_five/summary.json
   ranking_by_mIoU:
-    - {rank: 1, architecture: f05_compact16_dilated, mIoU: 0.2596460283, pixel_accuracy: 0.7821946144, parameters: 21491, spike_rate: 0.1093264845}
-    - {rank: 2, architecture: f02_wide32_multiscale, mIoU: 0.2283644676, pixel_accuracy: 0.7762918472, parameters: 77751, spike_rate: 0.0965468354}
-    - {rank: 3, architecture: f04_deep4_dilated, mIoU: 0.2078580111, pixel_accuracy: 0.6792449951, parameters: 107131, spike_rate: 0.1494702339}
-    - {rank: 4, architecture: f01_base24_multiscale, mIoU: 0.1625999361, pixel_accuracy: 0.7293534279, parameters: 46423, spike_rate: 0.0497176859}
-    - {rank: 5, architecture: f03_early5x5_multiscale, mIoU: 0.1482063681, pixel_accuracy: 0.6718883514, parameters: 49111, spike_rate: 0.0670325544}
+  - {rank: 1, architecture: f05_compact16_dilated, mIoU: 0.2596460283, pixel_accuracy: 0.7821946144, 
+      parameters: 21491, spike_rate: 0.1093264845}
+  - {rank: 2, architecture: f02_wide32_multiscale, mIoU: 0.2283644676, pixel_accuracy: 0.7762918472, 
+      parameters: 77751, spike_rate: 0.0965468354}
+  - {rank: 3, architecture: f04_deep4_dilated, mIoU: 0.2078580111, pixel_accuracy: 0.6792449951, parameters: 
+      107131, spike_rate: 0.1494702339}
+  - {rank: 4, architecture: f01_base24_multiscale, mIoU: 0.1625999361, pixel_accuracy: 0.7293534279, 
+      parameters: 46423, spike_rate: 0.0497176859}
+  - {rank: 5, architecture: f03_early5x5_multiscale, mIoU: 0.1482063681, pixel_accuracy: 0.6718883514, 
+      parameters: 49111, spike_rate: 0.0670325544}
   key_findings:
-    - The 16/32/64 single-dilation contender was the best overall and by far the most parameter-efficient, so raw capacity is not the primary accuracy bottleneck.
-    - The 32/64/128 contender produced the best object IoU in this round, so moderate width can improve feature diversity.
-    - The four-stage contender produced the strongest aggregate rare-class coverage, especially nature and vehicle, indicating useful deep semantic information that the existing decoder does not preserve well.
-    - Early 5x5 spatial kernels reduced accuracy and are excluded from the next round.
-    - Parallel multi-dilation branch averaging underperformed single dilation; the next round preserves branch identity by concatenating sparse branch outputs before learned spiking fusion.
-    - None of these models displaced the historical 0.3130307198 mIoU v10_fpga_hybrid incumbent.
+  - The 16/32/64 single-dilation contender was the best overall and by far the most parameter-efficient, so 
+    raw capacity is not the primary accuracy bottleneck.
+  - The 32/64/128 contender produced the best object IoU in this round, so moderate width can improve feature 
+    diversity.
+  - The four-stage contender produced the strongest aggregate rare-class coverage, especially nature and 
+    vehicle, indicating useful deep semantic information that the existing decoder does not preserve well.
+  - Early 5x5 spatial kernels reduced accuracy and are excluded from the next round.
+  - Parallel multi-dilation branch averaging underperformed single dilation; the next round preserves branch 
+    identity by concatenating sparse branch outputs before learned spiking fusion.
+  - None of these models displaced the historical 0.3130307198 mIoU v10_fpga_hybrid incumbent.
   rare_class_evidence:
-    f02_wide32_multiscale: {object_iou: 0.0141224666, nature_iou: 0.0389757492, human_iou: 0.0, vehicle_iou: 0.0}
-    f04_deep4_dilated: {object_iou: 0.0048840051, nature_iou: 0.0712307617, human_iou: 0.0059523811, vehicle_iou: 0.1229809299}
-    f05_compact16_dilated: {object_iou: 0.0001719099, nature_iou: 0.0346265808, human_iou: 0.0180736408, vehicle_iou: 0.0756903067}
+    f02_wide32_multiscale: {object_iou: 0.0141224666, nature_iou: 0.0389757492, human_iou: 0.0, vehicle_iou: 
+        0.0}
+    f04_deep4_dilated: {object_iou: 0.0048840051, nature_iou: 0.0712307617, human_iou: 0.0059523811, 
+        vehicle_iou: 0.1229809299}
+    f05_compact16_dilated: {object_iou: 0.0001719099, nature_iou: 0.0346265808, human_iou: 0.0180736408, 
+        vehicle_iou: 0.0756903067}
 
 active_top_three_accuracy_search:
   status: implemented_pending_real_ddd17_measurement
@@ -1304,17 +1462,19 @@ active_top_three_accuracy_search:
     batch_size: 14
     learning_rate: 0.002
   design_rules:
-    - Preserve binary spike transmission between learned stages.
-    - Keep 3x3 spatial kernels; obtain larger receptive fields with dilation instead of early 5x5 kernels.
-    - Prefer depthwise spatial convolution and 1x1 pointwise/channel mixing for FPGA efficiency.
-    - Do not average parallel multi-scale spike branches; concatenate them and let a following spiking 1x1 layer learn the mixture.
-    - Use binary channel gates or low-resolution binary coincidence masks rather than dense softmax attention.
-    - Preserve shallow spatial detail separately when testing deeper semantic paths.
-    - Keep auxiliary semantic supervision and residual/skip paths.
-    - Do not use hidden winner-peer competition.
+  - Preserve binary spike transmission between learned stages.
+  - Keep 3x3 spatial kernels; obtain larger receptive fields with dilation instead of early 5x5 kernels.
+  - Prefer depthwise spatial convolution and 1x1 pointwise/channel mixing for FPGA efficiency.
+  - Do not average parallel multi-scale spike branches; concatenate them and let a following spiking 1x1 layer
+    learn the mixture.
+  - Use binary channel gates or low-resolution binary coincidence masks rather than dense softmax attention.
+  - Preserve shallow spatial detail separately when testing deeper semantic paths.
+  - Keep auxiliary semantic supervision and residual/skip paths.
+  - Do not use hidden winner-peer competition.
   contenders:
     t01_spike_pyramid_concat:
-      hypothesis: Multi-receptive-field sparse evidence is being destroyed by branch averaging and additive skip fusion.
+      hypothesis: Multi-receptive-field sparse evidence is being destroyed by branch averaging and additive 
+        skip fusion.
       encoder_channels: [24, 48, 96]
       context:
         bottleneck_channels: 48
@@ -1325,7 +1485,8 @@ active_top_three_accuracy_search:
       decoder_merge: concatenation_then_depthwise_pointwise_spiking_fusion
       parameter_count: 63147
     t02_dualpath_detail:
-      hypothesis: Rare and small classes are lost during downsampling, so a narrow high-resolution spike path should preserve boundaries and small semantic regions.
+      hypothesis: Rare and small classes are lost during downsampling, so a narrow high-resolution spike path 
+        should preserve boundaries and small semantic regions.
       semantic_encoder_channels: [16, 32, 64]
       semantic_context: depthwise_dilation_2
       high_resolution_detail_channels: 16
@@ -1333,7 +1494,8 @@ active_top_three_accuracy_search:
       selection: binary_spike_count_channel_attention
       parameter_count: 24211
     t03_deep_attention_fpn:
-      hypothesis: The four-stage encoder contains useful rare-class semantics, but needs an FPN decoder and low-resolution global spike interaction to retain them.
+      hypothesis: The four-stage encoder contains useful rare-class semantics, but needs an FPN decoder and 
+        low-resolution global spike interaction to retain them.
       encoder_channels: [24, 48, 96, 128]
       context: depthwise_dilation_2
       attention:
@@ -1345,8 +1507,11 @@ active_top_three_accuracy_search:
       decoder: concatenative_fpn
       parameter_count: 108781
   literature_basis:
-    - SLTNet shows that multi-branch depthwise/dilated event features benefit from explicit channel interaction rather than isolated depthwise processing.
-    - SLTNet also demonstrates spike-driven masked attention and multi-level encoder-to-decoder feature restoration; the project adapts these ideas into smaller FPGA-oriented ablations rather than copying the complete network.
+  - SLTNet shows that multi-branch depthwise/dilated event features benefit from explicit channel interaction 
+    rather than isolated depthwise processing.
+  - SLTNet also demonstrates spike-driven masked attention and multi-level encoder-to-decoder feature 
+    restoration; the project adapts these ideas into smaller FPGA-oriented ablations rather than copying the 
+    complete network.
   promotion_gate:
     incumbent_miou: 0.3130307197570801
     primary_metric: mean_iou

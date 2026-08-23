@@ -97,9 +97,7 @@ with that one objective's output gradients. This releases each chunk graph witho
 applying the complete target to a partial history. The replay state snapshot is kept in
 host RAM so it does not duplicate the model's large persistent neuron state on the GPU.
 
-PLIF leakage is physical-time based:
-`retention(delta_us) = beta ** (delta_us / 5000)`. Logits and activity rates are
-normalized by elapsed physical time rather than packet count. The final 1×1 class
+For the active DSEC path, PLIF time advances on the same fixed grid used by hardware: ten explicit 5 ms updates per 50 ms record. Each baseline update therefore uses the learned per-channel `beta` once; no per-neuron elapsed-time exponent or timestamp is required. Logits and activity rates remain normalized to the complete physical record. The final 1×1 class
 synapse accumulates continuous current over all ten updates rather than quantizing
 confidence to eleven possible output-spike counts.
 
@@ -112,6 +110,8 @@ zero on every record where it has no labelled pixels.
 
 ## FPGA logical-state footprint
 
+The sole active FPGA target is **Artix-7 XC7A200T** (Digilent Nexys Video reference board). The board DDR3 is intentionally disabled by the active no-external-memory experiment.
+
 Parameter count is **not** runtime neuron count. For the active 11-class
 `EventSpikeSeg140k` DSEC implementation at native 440x640, the 27 executed PLIF populations
 require
@@ -122,20 +122,20 @@ N_mem = 72*H*W + 128*H2*W2 + 480*H4*W4 + 1280*H8*W8
       = 43,366,400 membrane values
 ```
 
-Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. A direct asynchronous variant would also require a last-update timestamp per membrane, but the fixed 5 ms baseline does not. With 16-bit membrane plus two 16-bit adaptation fields where enabled, the dense persistent-state baseline is about **124.61 MiB** before queues and counters. Artix-7 XC7A200T has only 1.604 MiB BRAM.
+Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. The active touched-neuron runtime uses a compact **24-bit `last_bin_tag`** instead of a microsecond timestamp. A hypothetical dense exact representation is **248.68 MiB**: 82.71 MiB membrane + 41.90 MiB adaptation + 124.07 MiB bin tags. Artix-7 XC7A200T has only 1.604 MiB BRAM.
 External and onboard DDR are forbidden, so only a lossless zero-default sparse state
 table could fit; measured worst-case occupancy is a hard feasibility gate.
 
 - **static/shared:** convolution weights, per-channel beta, per-channel base threshold;
-- **persistent per-neuron:** membrane and enabled threshold-adaptation state;
+- **persistent per-neuron:** membrane, compact 24-bit `last_bin_tag`, and enabled threshold-adaptation state;
 - **temporary:** touched-event synaptic current and sparse spike FIFOs.
 
 The FPGA instantiates a permanent actor for every executed layer. An actor may sequence
 its own lanes, but arithmetic is not shared across layers and it must preserve one
 logical state record per `(layer,c,y,x)`. The exact sparse execution
-flow for the baseline DSEC runtime is `50 ms raw-event record -> ten 5 ms slices -> layer-major sparse destination-address generation -> fixed-step
+flow for the baseline DSEC runtime is `live raw events -> seal one 5 ms bin -> actor0..actor26 sparse destination-address generation -> lazy touched-neuron PLIF
 decay -> weight addition -> threshold/reset -> state writeback -> emitted events`.
-There is an explicit 5 ms neural timestep boundary; the complete 50 ms record contains ten such ordered updates. See `docs/ARCHITECTURE.md` and
+There is an explicit 5 ms neural timestep boundary; the next bin may be captured concurrently but the current bin must finish the full forward graph before retirement. See `docs/ARCHITECTURE.md` and
 `project_spec.yaml` for the full contract.
 
 ## Main commands
@@ -248,10 +248,10 @@ protocol numbers remain architecture-search evidence only.
 ## Digital neuromorphic FPGA implementation target
 
 Training remains PyTorch + SpikingJelly with fixed physical-time divisions. Deployment
-in VHDL-2008 on the Digilent Nexys Video XC7A200T
+in VHDL-2008 for the AMD/Xilinx Artix-7 XC7A200T, using Digilent Nexys Video as the reference board
 accepts camera events directly: convolution kernels remain shared synaptic weights,
 feature-map positions remain logical PLIF states, hidden communication remains binary
-spikes/events, and membrane/adaptation/timestamp state persists across events and records
+spikes/events, while membrane/adaptation state persists across fixed 5 ms steps and consecutive records
 in a lossless sparse on-chip BRAM/LUTRAM state store. The board's DDR3 is deliberately
 not used. This mapping is conditional on measured worst-case live-state occupancy; the
 dense state cannot fit. The values are fixed-point numerical
@@ -281,7 +281,7 @@ scheduler.
 
 The verification flow is `SpikingJelly float -> bit-exact integer reference -> VHDL RTL
 -> Vivado synthesis/place-route -> post-implementation timing + representative SAIF/VCD
-power analysis -> optional Nexys Video measurement`. Vivado latency/power are reported as
+power analysis -> optional Artix-7/Nexys Video measurement`. Vivado latency/power are reported as
 estimates unless validated on an instrumented board.
 
 Export a trained checkpoint with:
@@ -294,10 +294,12 @@ The exporter hard-rejects XL and emits the exact 27-PLIF-actor plus current-read
 ROMs, per-actor quantized neuron parameters, and the fixed-point contract.
 
 
-## FPGA runtime timing contract (50 ms records)
+## FPGA runtime timing contract (streaming 5 ms bins)
 
-DSEC hardware inference follows the same temporal discretization used for training. Each semantic record spans 50 ms and is represented by ten chronological 5 ms slices. The FPGA treats one complete 50 ms record as the scheduling/output unit, but it must still execute all ten PLIF updates; the ten slices must never be collapsed into one neuron update.
+DSEC training is unchanged and the hardware preserves its 5 ms physical-time grid. Live camera events are accumulated in ping-pong buffers. When one 5 ms bin closes, the FPGA processes that bin **end-to-end through all 27 PLIF actors and the final signed class-current update** while the alternate buffer captures the next bin. The old 50 ms layer-major schedule is superseded.
 
-For memory locality, the intended hardware order is layer-major over the complete temporal record: keep a layer (or a spatial tile of that layer) resident, execute its `t0..t9` updates in order, buffer the resulting ten spike slices, write the final persistent state back, then move to the next layer. Sparse convolution is retained inside every 5 ms slice: only nonzero spike locations generate synaptic additions. The baseline is therefore fixed-time rather than fully asynchronous, and no per-membrane 32-bit timestamp is required.
+Only touched neurons are accessed. Each live sparse entry contains its logical address, int16 membrane, a compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. If a neuron is touched after `delta_bins` intervals, the baseline applies learned beta `delta_bins` times before adding the current bin's accumulated synaptic current. There is no microsecond timestamp and no dense idle-state sweep.
 
-One segmentation result is emitted per 50 ms record (20 Hz dataset cadence) after temporal class-current accumulation. To sustain real time, compute for one record must average no more than 50 ms; double buffering may overlap acquisition of the next record with computation of the previous one.
+The prediction window is configurable; start with **10 bins = 50 ms = 20 Hz** to match training/readout. PLIF state persists across prediction boundaries; only signed class-current accumulation resets after prediction.
+
+Real-time feasibility is measured per bin. With `C_bin` cycles and routed clock `f_clk`, define `U=C_bin/(f_clk*0.005)` and `H=1/U`. Hard sustained operation requires `U<=1` (`H>=1`). The starting target is `U<=0.8` (`H>=1.25`). At 100 MHz that is 500,000 hard cycles/bin and 400,000 target cycles/bin; at 150 MHz 750,000/600,000; at 200 MHz 1,000,000/800,000.
