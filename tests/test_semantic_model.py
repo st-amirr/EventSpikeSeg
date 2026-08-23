@@ -256,7 +256,7 @@ def test_winner_peer_inhibition_keeps_one_winner_and_inhibits_peers() -> None:
     current = torch.tensor([[[[0.8]], [[0.7]], [[0.2]]]], requires_grad=True)
     spikes = neuron(current)
     assert spikes.flatten().tolist() == [1.0, 0.0, 0.0]
-    # Winner resets; both retinotopic peers receive the UInst-like decrement.
+    # Winner resets; both retinotopic peers receive the membrane-energy decrement.
     assert neuron.membrane[0, 1, 0, 0].detach().item() < 0.7
     assert neuron.membrane[0, 2, 0, 0].detach().item() < 0.2
     neuron(torch.full((1, 3, 1, 1), 0.1)).sum().backward()
@@ -483,6 +483,25 @@ def test_detach_state_keeps_membrane_values_without_autograd_history() -> None:
     neuron.detach_state()
     assert torch.equal(neuron.membrane, value)
     assert neuron.membrane.grad_fn is None
+
+
+def test_named_runtime_state_is_serializable_and_restorable() -> None:
+    model = build_model(architecture="EventSpikeSeg140k")
+    model(_timestamp_statistics(16))
+    snapshot = model.capture_named_runtime_state("cpu")
+
+    assert snapshot
+    assert all("membrane" in layer_state for layer_state in snapshot.values())
+    expected = {
+        layer_name: layer_state["membrane"].clone()
+        for layer_name, layer_state in snapshot.items()
+    }
+
+    model.reset()
+    model.restore_named_runtime_state(snapshot)
+    modules = dict(model.named_modules())
+    for layer_name, membrane in expected.items():
+        assert torch.equal(modules[layer_name].membrane.cpu(), membrane)
 
 
 def test_silent_neuron_keeps_surrogate_gradient_below_threshold() -> None:

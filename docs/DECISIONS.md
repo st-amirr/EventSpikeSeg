@@ -362,7 +362,8 @@ Do not use the ~140k parameter count as a proxy for logical PLIF state. Convolut
 are spatially shared and beta/base threshold are shared per output channel, but every
 executed PLIF output element `(layer,c,y,x)` retains its own membrane value. Summing the
 37 inference PLIF populations gives `N_mem = (672+Nclass)HW + 480H2W2 + 1280H4W4`.
-For six-class DDD17 at 212x282, this is **52,524,272 independent membrane states**.
+Corrected for `project2` executing before upsample, six-class DDD17 at 212x282 has
+**51,089,456 independent membrane states**.
 
 The threshold-adaptation-enabled scopes contain `352H2W2 + 1216H4W4` logical neurons, or **9,836,800**
 at 212x282; each carries adaptation age and adaptation amplitude. These persistent states
@@ -452,3 +453,63 @@ compression/quantization result.
 The parallel context and local Q/K/V spike-mask attention are part of the executed graph.
 They require timestamp-tagged local join/rendezvous buffers so residual branches and Q/K/V
 paths are combined deterministically without introducing a global spatial-frame barrier.
+
+## 2026-08-22 — Freeze 140k and use permanent layer actors on U55C
+
+This decision supersedes the 2026-08-21 XL target/platform mapping. The only FPGA target
+is the two-input, 11-class `EventSpikeSeg140k`: 140,589 registered parameters, 134,807
+executed inference parameters, 127,456 executed convolution weights, and 37 executed
+PLIF populations. FPGA export hard-rejects XL and excludes inherited dead `refine2`, the
+training-only auxiliary head, and surrogate gradients.
+
+Instantiate all 37 executed populations as permanent layer actors. Each actor owns its
+convolution address generator, synaptic accumulator lanes, PLIF/inhibition/adaptation
+logic, output FIFO, and initialized local weight ROM. Do not share compute across layers,
+reconfigure actors, or use partial reconfiguration. An actor may sequence its own lanes
+over that actor's logical destinations. Clock/reset, timestamp input dispatch, HBM state
+fabric, and final class readout remain permitted shared infrastructure.
+
+Choose AMD Alveo U55C as the primary board and U280 as fallback. All executed int8
+weights fit comfortably in local BRAM/LUTROM, but the corrected 140k graph has 72,843,333 logical
+membranes and 14,023,680 adaptation-enabled neurons at 241x351. The baseline 16-bit
+membrane, 32-bit timestamp, and two 16-bit adaptation fields require about 470.31 MiB
+before queues/counters. Therefore exact persistent state uses in-package HBM2 behind
+actor-local BRAM/URAM caches. This is not off-board DDR and does not change event-driven
+execution.
+
+Iteration 0 freezes the format/graph/export boundary before new integrated RTL: emit a
+37-actor manifest, affine-folded int8 weight ROMs, quantized neuron/mechanism parameters,
+and deterministic fixed-point rules; validate integer PLIF and sparse-state primitives;
+then generate actor packages and layer-by-layer golden traces. Existing VHDL files remain
+isolated historical primitives until they are proven against this new contract.
+
+## 2026-08-22 — Replace the accelerator card with no-DDR Artix-7
+
+This supersedes the U55C/HBM platform portion of the preceding decision, while retaining
+the frozen 140k graph and 37 permanent actors. Use the conventional Digilent Nexys Video
+with XC7A200T-1SBG484C. Do not use its 512 MiB DDR3 or any other external memory.
+
+The device provides 13,140 Kibit = 1.604 MiB BRAM and at most 2,888 Kibit = 0.3525 MiB
+distributed RAM. The dense 140k runtime state is 481.899 MiB, so BRAM alone is short by
+468.705 MiB/293.209x. Even sacrificing all distributed RAM gives only 1.9565 MiB and
+would leave insufficient LUT logic. Static int8 convolution weights are only 0.122 MiB
+and do fit; persistent spatial neuron state is the incompatibility.
+
+The only semantics-preserving route that might remain on this device is a lossless
+zero-default sparse live-state table with no overflow eviction or spill. Full DSEC traces
+must prove a worst-case occupancy bound including tags, values, queues, weights, and logic
+margin. Until it passes, an all-on-chip full-resolution implementation is explicitly
+classified as infeasible rather than assumed to fit.
+
+## 2026-08-22 — Preserve named neuron runtime state in training checkpoints
+
+Keep recurrent tensors nonpersistent in the ordinary PyTorch `state_dict`, because their
+data-dependent shapes make strict weight loading fragile. Instead, only the best-model
+checkpoint stores a separate `training_runtime_state` mapping keyed by executed layer name;
+periodic and `last.pt` recovery checkpoints remain normal-sized. The canonical checkpoint
+inherits the snapshot when the best checkpoint is copied to it. The snapshot contains the
+membrane, adaptation, threshold-timer/adaptation, and physical-time state captured at the
+end of the training epoch before validation resets or overwrites it. The format and scope
+fields identify this as `layer-named-hardware-lif-v1` forensic state. Normal resume remains
+epoch-boundary weight/optimizer restoration; replaying saved runtime state must be explicit
+so it cannot leak one sequence into another.

@@ -3,7 +3,7 @@
 ## Working now
 
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
-- `model.py` exposes active DSEC/FPGA target `EventSpikeSegXL` and compact reference `EventSpikeSeg140k`
+- `model.py` exposes the sole FPGA target `EventSpikeSeg140k` and optional XL software comparison
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -109,7 +109,29 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 - model parameter count depends on class-head width: XL is 236,445 for six classes and 237,115 for eleven.
 
 
-## 2026-08-19 FPGA implementation direction
+## 2026-08-22 — 140k static-actor FPGA Iteration 0
+
+- froze `EventSpikeSeg140k` as the only FPGA target: 140,589 registered / 134,807
+  executed inference parameters, 127,456 executed convolution weights, 37 PLIF actors;
+- initially selected Alveo U55C, then superseded it with conventional Nexys Video
+  XC7A200T when the no-accelerator-card requirement was clarified;
+- fixed the topology to 37 permanent layer actors with no cross-layer compute sharing,
+  reconfiguration, or partial reconfiguration;
+- assigned local initialized weight ROM, convolution addressing, accumulator lanes,
+  PLIF/mechanism logic, and output queue to every actor;
+- corrected `project2` state to its actual pre-upsample half resolution and measured the
+  exact incompatibility: 470.31 MiB dense state versus 1.604 MiB XC7A200T BRAM (293.2x);
+  no external/onboard DDR is allowed, so lossless sparse live
+  state must pass a measured hard-capacity gate before full deployment is feasible;
+- added `src/eventspikeseg/fpga`: fixed formats, deterministic 37-actor export,
+  affine-folded int8 ROMs, per-actor parameters, integer PLIF, and sparse state profiler;
+- FPGA export hard-rejects XL and omits dead `refine2`, auxiliary training head, and
+  surrogate gradients;
+- added the canonical externally state-backed, ready/valid PLIF RTL lane with learned
+  retention coefficient, integer rounding, saturation, soft reset, and backpressure;
+- 72 Python tests and all 6 GHDL/cocotb RTL groups pass in Docker.
+
+## 2026-08-19 FPGA implementation direction (superseded target/platform details)
 
 - public model names remain `EventSpikeSegXL` and `EventSpikeSeg140k`; XL is the active implementation target;
 - XL DSEC accounting: 237,115 registered / 232,059 training-forward / 226,767 inference-forward parameters;
@@ -130,7 +152,7 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 
 - compact-reference accounting separates 37 executed PLIF populations from the ~140k shared parameter count;
 - general membrane formula: `(672+Nclass)*H*W + 480*H2*W2 + 1280*H4*W4`;
-- six-class 212x282 DDD17 requires **52,524,272 independent membrane values**;
+- six-class 212x282 DDD17 requires **51,089,456 independent membrane values**;
 - threshold-adaptation scopes cover **9,836,800 logical neurons** at that resolution, each with adaptation age and amplitude;
 - implementation contract: static/shared weights and channel parameters, persistent per-`(layer,c,y,x)` neuron state, temporary current accumulators, sparse event FIFOs;
 - exact sparse layer execution accumulates all weight contributions for a timestep before one PLIF threshold/reset update, then writes persistent state back and emits only fired addresses;

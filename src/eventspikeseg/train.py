@@ -1016,6 +1016,7 @@ def train_architecture(
     current_competition_enabled = True
     current_hidden_inhibition_enabled = True
     current_neuron_dynamics_trainable = True
+    last_training_runtime_state: dict[str, object] | None = None
 
     def save_training_checkpoint(
         path: Path,
@@ -1025,6 +1026,7 @@ def train_architecture(
         validation_spike_rate: float | None,
         validation_layer_rates: dict[str, float] | None,
         training_phase_name: str,
+        training_runtime_state: dict[str, object] | None,
         best: bool = False,
     ) -> None:
         diagnostics_fn = getattr(model, "neuron_diagnostics", None)
@@ -1071,6 +1073,17 @@ def train_architecture(
                 "competition_enabled": current_competition_enabled,
                 "hidden_inhibition_enabled": current_hidden_inhibition_enabled,
                 "neuron_dynamics_trainable": current_neuron_dynamics_trainable,
+                "training_runtime_state": training_runtime_state,
+                "training_runtime_state_format": (
+                    "layer-named-hardware-lif-v1"
+                    if training_runtime_state is not None
+                    else None
+                ),
+                "training_runtime_state_scope": (
+                    "end-of-training-epoch-before-validation"
+                    if training_runtime_state is not None
+                    else None
+                ),
                 "amp": amp_enabled,
                 "sequential_chunks": sequential_chunks,
                 "training_sampling_strategy": (
@@ -1477,8 +1490,11 @@ def train_architecture(
             flush=True,
         )
 
-
         if is_final_run:
+            capture_named_state = getattr(model, "capture_named_runtime_state", None)
+            last_training_runtime_state = (
+                capture_named_state("cpu") if callable(capture_named_state) else None
+            )
             validation_metrics, validation_spike_rate, validation_layer_rates = evaluate_model(
                 model,
                 validation_loader,
@@ -1507,6 +1523,7 @@ def train_architecture(
                     validation_spike_rate=validation_spike_rate,
                     validation_layer_rates=validation_layer_rates,
                     training_phase_name=training_phase,
+                    training_runtime_state=last_training_runtime_state,
                     best=True,
                 )
             if epoch % checkpoint_every == 0:
@@ -1520,6 +1537,7 @@ def train_architecture(
                     validation_spike_rate=validation_spike_rate,
                     validation_layer_rates=validation_layer_rates,
                     training_phase_name=training_phase,
+                    training_runtime_state=None,
                 )
             best_marker = " | new best" if improved else ""
             checkpoint_marker = " | checkpoint saved" if epoch % checkpoint_every == 0 else ""
@@ -1560,6 +1578,7 @@ def train_architecture(
             validation_spike_rate=last_validation_spike_rate,
             validation_layer_rates=last_validation_layer_rates,
             training_phase_name=previous_training_phase or "joint",
+            training_runtime_state=None,
         )
         if not best_checkpoint_path.is_file():
             raise RuntimeError("best checkpoint was not created during final-model training")

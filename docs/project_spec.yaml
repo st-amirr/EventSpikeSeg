@@ -1,8 +1,8 @@
 document:
   title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
-  version: 1.5.0
-  status: eventspikeseg140k_artix7_sparse_state_fpga_plan
+  version: 1.6.0
+  status: eventspikeseg140k_u55c_static_actor_iteration_0
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -31,7 +31,7 @@ document:
       - Triangular threshold adaptation
       - Sparse shared-kernel event-address accumulation
       - Fixed-point formats, saturation, and bit-accurate equivalence requirements
-      - Portable VHDL-2008 backend with Artix-7 as the first reference family
+      - Portable VHDL-2008 actors with Nexys Video XC7A200T as the reference board
       - SpikingJelly surrogate-gradient training strategy
       - Synthetic fixtures, golden vectors, and staged hardware verification
       - Synthesis-guided BRAM/LUTRAM/register memory mapping
@@ -93,7 +93,7 @@ framework:
     reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, and data loading.
   hardware_backend:
     primary_type: custom_VHDL_2008_digital_neuromorphic_FPGA
-    primary_target: AMD_Xilinx_Artix_7_family
+    primary_target: Digilent_Nexys_Video_XC7A200T
     primary_goal: >-
       Execute the trained spike-native graph as a digital event-driven accelerator:
       shared convolutional weights generate sparse synaptic additions, PLIF membrane/
@@ -672,19 +672,20 @@ metrics:
 quantization:
   objective: Match an addition, shift, comparison, saturation, and address-generation FPGA datapath.
   initial_formats:
-    weights: signed_int8
-    membrane: signed_int16
-    current_accumulator: signed_int24
-    base_threshold: signed_int16
-    adaptive_threshold: unsigned_int16
+    weights: signed_int8_Q1_6
+    membrane: signed_int16_Q5_10
+    current_accumulator: signed_int24_Q13_10
+    beta: unsigned_int16_UQ1_15
+    base_threshold: signed_int16_Q5_10
+    adaptive_threshold: signed_int16_Q5_10
     spike: 1_bit
-    pixel_class: unsigned_3_bit
+    pixel_class: unsigned_4_bit_for_11_classes
     coordinate_x: unsigned_width_dependent
     coordinate_y: unsigned_height_dependent
-    timestep: unsigned_int16_or_int32
+    timestamp_us: unsigned_int32
   mandatory_rules:
     - Prefer bias-free convolutions.
-    - Use power-of-two-compatible leak.
+    - Preserve learned per-channel beta with the exported UQ1.15 coefficient.
     - Fold per-channel affine and BatchNorm before hardware export.
     - Use deterministic rounding and saturating arithmetic.
     - Freeze clipping and overflow behavior.
@@ -701,7 +702,7 @@ quantization:
       - layerwise_equivalence_replay
 
 fpga_implementation:
-  status: architecture_discussion_before_RTL_generation
+  status: iteration_0_export_integer_and_PLIF_RTL_implemented
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class
@@ -711,14 +712,26 @@ fpga_implementation:
     inference_PLIF_populations: 37
     omitted_from_RTL: [refine2_dead_block, auxiliary_head, surrogate_gradient]
   target:
+    primary_board: Digilent_Nexys_Video
+    primary_device: XC7A200T-1SBG484C
     family: AMD_Xilinx_Artix_7
-    initial_candidates: [XC7A100T, XC7A200T]
-    fixed_device: false_until_sparse_state_occupancy_and_synthesis_are_measured
+    selection_reason: conventional_development_board_with_the_largest_Artix7_device
+    official_resources: {logic_cells: 215360, LUT: 134600, registers: 269200, DSP: 740, BRAM_Kib: 13140, max_distributed_RAM_Kib: 2888}
+    official_device_reference: https://docs.amd.com/api/khub/documents/2LByHkO~nSZXcei2D55fTg/content
+    official_board_reference: https://digilent.com/reference/_media/reference/programmable-logic/nexys-video/nexys-video_rm.pdf
+    fixed_device: true
     RTL_language: VHDL_2008
     initial_clock_target_mhz: 100
     portability: vendor_neutral_ready_valid_interfaces_with_replaceable_RAM_and_FIFO_wrappers
-    URAM_assumed: false
+    external_or_onboard_DDR_allowed: false
+    onboard_DDR3_present_but_forbidden_by_requirement: 512_MiB
   execution:
+    physical_topology: 37_permanently_instantiated_layer_actors
+    cross_layer_compute_sharing: forbidden
+    layer_reconfiguration: forbidden
+    partial_reconfiguration: forbidden
+    permitted_shared_infrastructure: [clock_reset, input_dispatch, on_chip_state_banks, final_class_readout]
+    actor_owned_blocks: [weight_ROM, convolution_address_generator, synaptic_accumulator_lanes, PLIF_update, mechanism_logic, output_FIFO]
     model_level: asynchronous_timestamp_ordered_event_processing
     RTL_level: synchronous_clocked_elastic_pipeline
     global_neural_timestep_barrier: false
@@ -744,29 +757,40 @@ fpga_implementation:
       replication: only_when_required_by_parallel_read_bandwidth
     logical_state_at_DSEC_241x351:
       dimensions: {full: [241, 351], half: [121, 176], quarter: [61, 88]}
-      membrane_formula: N_mem = 683*H*W + 480*H2*W2 + 1280*H4*W4
-      membrane_values: 74868773
+      membrane_formula: N_mem = 651*H*W + 512*H2*W2 + 1280*H4*W4
+      membrane_values: 72843333
+      correction: project2_PLIF_is_half_resolution_before_non_stateful_upsample
       adaptation_formula: N_adapt = 352*H2*W2 + 1216*H4*W4
       adaptation_enabled_neurons: 14023680
       class_counter_values_if_dense: 930501
-      illustrative_dense_storage_MiB:
-        membrane_int8: 71.40
-        adaptation_age_plus_amplitude_int8: 26.75
-        timestamp_uint8: 71.40
-        minimum_total_before_counters_and_queues: 169.55
-      conclusion: dense_persistent_state_does_not_fit_in_Artix7_on_chip_memory
-    no_external_memory_target:
-      state_store: banked_set_associative_BRAM_table_of_live_nonzero_neurons
+      baseline_dense_storage_MiB:
+        membrane_int16: 138.94
+        timestamp_uint32: 277.88
+        adaptation_age_plus_amplitude_int16: 53.50
+        minimum_total_before_counters_queues_and_alignment: 470.31
+      Artix7_XC7A200T_capacity:
+        BRAM_MiB: 1.6040
+        maximum_distributed_LUTRAM_MiB: 0.3525
+        absolute_BRAM_plus_all_LUTRAM_MiB: 1.9565
+        BRAM_only_shortfall_MiB: 468.7050
+        BRAM_only_required_over_available: 293.2094
+        BRAM_plus_all_LUTRAM_required_over_available: 240.384
+      conclusion: exact_dense_state_is_impossible_on_chip
+    on_chip_sparse_state_target:
+      backing_store: banked_BRAM_plus_selected_LUTRAM
+      external_spill: forbidden
+      state_store_option: lossless_zero_default_sparse_table
       zero_default: absent_address_means_zero_membrane_and_inactive_adaptation
       entry_fields: [layer, channel, y, x, membrane, last_update_time, adaptation_age_if_enabled, adaptation_amplitude_if_enabled]
       exact_reclamation: remove_only_after_quantized_membrane_is_zero_and_adaptation_is_inactive
       class_counts: sparse_zero_default_counters_with_width_selected_from_trace_maxima
       forbidden: [silent_state_drop, overflow_eviction, dense_idle_state_sweep]
       feasibility_gate: >-
-        The integer event simulator must measure maximum live entries, per-layer occupancy,
-        tag/value widths, FIFO depths, class-counter occupancy, and lookup conflicts on full
-        DSEC sequences before a device or no-external-memory claim is frozen.
-      fallback_if_capacity_fails: model_or_precision_change_requires_QAT_and_accuracy_revalidation
+        The integer event simulator must measure maximum live entries, per-layer
+        occupancy, tag/value width, FIFO depths, class-counter occupancy, and bank
+        conflicts on full DSEC sequences. The model is not deployable under the no-DDR
+        requirement unless the measured worst case fits with logic/queue margin.
+      no_silent_approximation: model_or_precision_changes_require_QAT_and_accuracy_revalidation
   arithmetic:
     common_synapse: signed_weight_lookup_and_saturating_add
     matrix_multiplier_array: none
@@ -776,17 +800,19 @@ fpga_implementation:
     peer_membrane_inhibition: exact_cross_channel_energy_first_then_validate_cheaper_L1_or_LUT_approximation
     triangular_threshold_adaptation: counters_comparators_and_quantized_scale
   parallelism:
-    processing_element_sweep: [1, 4, 8, 16]
-    mechanisms: [banked_state_RAM, banked_weight_ROM, event_FIFOs, ready_valid_backpressure]
+    per_actor_synapse_lane_sweep: [1, 2, 4, 8, 16]
+    independent_actors: 37
+    mechanisms: [actor_local_weight_ROM, banked_sparse_BRAM_state, selected_LUTRAM, event_FIFOs, ready_valid_backpressure]
     deadline: sustained_event_rate_and_99th_percentile_FIFO_occupancy_must_be_bounded
   exactness: float_reference_to_integer_reference_to_RTL_must_match_under_the_exported_fixed_point_contract
 
 export_contract:
   artifacts:
     - model_spec.yaml
-    - selected_architecture.yaml
+    - layer_graph.json
     - quantized_weights.npz
-    - quantized_parameters.json
+    - weights/*.mem
+    - parameters/*.json
     - class_mapping.json
     - golden_input_samples.npz
     - golden_layer_currents.npz
@@ -806,6 +832,14 @@ export_contract:
     - timestep_count
     - class_mapping
   equivalence_requirement: All exported golden tests must match exactly in the integer reference and RTL simulation.
+  implemented_iteration_0:
+    - XL_hard_rejection
+    - exact_37_actor_manifest
+    - affine_folded_int8_weight_ROMs
+    - quantized_beta_threshold_and_mechanism_parameters
+    - fixed_point_saturation_and_rounding_contract
+    - integer_PLIF_and_sparse_state_store_primitives
+    - backpressured_external_state_PLIF_RTL_lane
 
 validation_and_testing:
   required_fast_tests:
@@ -856,6 +890,9 @@ repository_contract:
     - evaluate.py
     - metrics.py
     - hardware.py
+    - fpga/fixed_point.py
+    - fpga/export.py
+    - fpga/integer_reference.py
     - __init__.py
   required_documents:
     - README.md
@@ -890,7 +927,7 @@ workflow:
     - Add sparse event/spike scatter reference.
     - Implement VHDL LIF and convolution primitives.
     - Integrate multilayer segmentation RTL.
-    - Synthesize on selected Artix-7 references and record resources, timing, power estimates, and latency.
+    - Synthesize the static 37-actor design on Nexys Video XC7A200T and record resources, timing, power estimates, and latency.
     - Validate raw-event input on DDD17 or DSEC-Semantic.
   architecture_cleanup_rule: >-
     The ten-preset implementation is temporary experiment infrastructure. Do not remove it

@@ -2,17 +2,17 @@
 
 ## Active implementation model
 
-`EventSpikeSegXL` is the active detailed 11-class DSEC/FPGA implementation target at
-`241x351`. `EventSpikeSeg140k` remains the compact reference baseline. The XL choice is an
-implementation decision, not a claim of measured accuracy superiority; both public Python
-model names remain stable.
+`EventSpikeSeg140k` is the only 11-class DSEC/FPGA implementation target at `241x351`.
+For two raw-event input polarities and 11 classes it has **140,589 registered
+parameters**, **134,807 executed inference parameters**, **127,456 executed convolution
+weights**, and **37 executed PLIF populations**. `EventSpikeSegXL` remains a software
+comparison and the FPGA exporter rejects it.
 
-For the six-class DDD17 configuration, canonical `EventSpikeSeg140k` has **140,089
-registered trainable parameters**. The Python module tree also contains an inherited
+The Python module tree also contains an inherited
 `refine2` block (5,056 parameters, two SpikingStage populations) that is never called
-by the canonical forward graph. The training forward therefore executes **135,033**
-parameters including the 396-parameter auxiliary head; inference executes **134,637**
-parameters. FPGA deployment must implement the executed inference graph, not
+by the canonical forward graph. The 11-class training forward executes **135,533**
+parameters including the 726-parameter auxiliary head. FPGA deployment implements the
+executed inference graph, not
 the dead inherited block or training-only auxiliary head.
 
 The semantic class count is dataset-dependent: DDD17 uses 6 class populations and
@@ -107,23 +107,23 @@ H4 = ceil(H2 / 2), W4 = ceil(W2 / 2)
 Summing the output channels of all **37 executed inference PLIF populations** gives
 
 ```text
-full-resolution PLIF state coefficient    = 672 + Nclass
-half-resolution PLIF state coefficient    = 480
+full-resolution PLIF state coefficient    = 640 + Nclass
+half-resolution PLIF state coefficient    = 512
 quarter-resolution PLIF state coefficient = 1280
 ```
 
 so the general membrane-state count is
 
 ```text
-N_mem = (672 + Nclass) * H * W
-      + 480 * H2 * W2
+N_mem = (640 + Nclass) * H * W
+      + 512 * H2 * W2
       + 1280 * H4 * W4
 ```
 
 For six-class DDD17 this becomes
 
 ```text
-N_mem = 678 * H * W + 480 * H2 * W2 + 1280 * H4 * W4.
+N_mem = 646 * H * W + 512 * H2 * W2 + 1280 * H4 * W4.
 ```
 
 At the canonical `212 x 282` training/deployment resolution:
@@ -131,14 +131,15 @@ At the canonical `212 x 282` training/deployment resolution:
 ```text
 H2 x W2 = 106 x 141
 H4 x W4 = 53 x 71
-N_mem   = 52,524,272 independent membrane values
+N_mem   = 51,089,456 independent membrane values
 ```
 
-Raw membrane storage alone would therefore be approximately 50.09 MiB at 8 bits,
-75.14 MiB at 12 bits, 100.18 MiB at 16 bits, or 125.23 MiB at 20 bits. This is a
+Raw membrane storage alone would therefore be approximately 48.72 MiB at 8 bits,
+73.08 MiB at 12 bits, 97.45 MiB at 16 bits, or 121.81 MiB at 20 bits. This is a
 **logical-state** requirement, not a requirement for 52.5 million physical PLIF circuits.
-A small array of physical PLIF processing elements may be time-multiplexed as long as
-every logical neuron address retains its own state between visits.
+Each of the 37 permanent layer actors has its own PLIF update lanes. An actor may sequence
+those local lanes across its own logical addresses, but lanes are not shared between
+layers and every logical neuron retains its own state between visits.
 
 Triangular threshold adaptation is enabled only on `down2`, `enc2`, `enc2_extra`, `down3`, `enc3`,
 `enc3_extra`, `context1`, and `context2`. The enabled logical-neuron count is
@@ -271,6 +272,60 @@ divisions: AER events enter the first synaptic/PLIF stage directly.
 There is **no softmax inference head**, no ReLU/GELU feature activation, no BatchNorm
 dependency, and no dense count-domain MLP in the deployed canonical model.
 
+### Exact DSEC membrane-state count by executed population
+
+`B` is a population already present in the shared encoder/decoder skeleton. `C` is a
+population added by the canonical 140k detail/context/selector/refinement architecture.
+Every row is an ordinary PLIF membrane array; custom neuron dynamics do not create a
+second membrane array. `A` marks populations that additionally carry triangular
+adaptation age/amplitude.
+
+| Population | Origin | Output | Membranes | A |
+| --- | :---: | ---: | ---: | :---: |
+| stem | B | 32x241x351 | 2,706,912 | |
+| enc1.depthwise | B | 32x241x351 | 2,706,912 | |
+| enc1.pointwise | B | 32x241x351 | 2,706,912 | |
+| enc1_extra.depthwise | C | 32x241x351 | 2,706,912 | |
+| enc1_extra.pointwise | C | 32x241x351 | 2,706,912 | |
+| detail1.depthwise | C | 32x241x351 | 2,706,912 | |
+| detail1.pointwise | C | 32x241x351 | 2,706,912 | |
+| detail2.depthwise | C | 32x241x351 | 2,706,912 | |
+| detail2.pointwise | C | 32x241x351 | 2,706,912 | |
+| detail3.depthwise | C | 32x241x351 | 2,706,912 | |
+| detail3.pointwise | C | 32x241x351 | 2,706,912 | |
+| down2.depthwise | B | 32x121x176 | 681,472 | A |
+| down2.pointwise | B | 64x121x176 | 1,362,944 | A |
+| enc2.depthwise | B | 64x121x176 | 1,362,944 | A |
+| enc2.pointwise | B | 64x121x176 | 1,362,944 | A |
+| enc2_extra.depthwise | C | 64x121x176 | 1,362,944 | A |
+| enc2_extra.pointwise | C | 64x121x176 | 1,362,944 | A |
+| down3.depthwise | B | 64x61x88 | 343,552 | A |
+| down3.pointwise | B | 128x61x88 | 687,104 | A |
+| enc3.depthwise | B | 128x61x88 | 687,104 | A |
+| enc3.pointwise | B | 128x61x88 | 687,104 | A |
+| enc3_extra.depthwise | C | 128x61x88 | 687,104 | A |
+| enc3_extra.pointwise | C | 128x61x88 | 687,104 | A |
+| context1.depthwise | C | 128x61x88 | 687,104 | A |
+| context1.pointwise | C | 128x61x88 | 687,104 | A |
+| context2.depthwise | C | 128x61x88 | 687,104 | A |
+| context2.pointwise | C | 128x61x88 | 687,104 | A |
+| project3 | B | 64x61x88 | 343,552 | |
+| decoder2_extra.depthwise | C | 64x121x176 | 1,362,944 | |
+| decoder2_extra.pointwise | C | 64x121x176 | 1,362,944 | |
+| project2 | B | 32x121x176 | 681,472 | |
+| final_selector.selector | C | 96x241x351 | 8,120,736 | |
+| final_fuse.depthwise | C | 96x241x351 | 8,120,736 | |
+| final_fuse.pointwise | C | 32x241x351 | 2,706,912 | |
+| decoder1_extra.depthwise | C | 32x241x351 | 2,706,912 | |
+| decoder1_extra.pointwise | C | 32x241x351 | 2,706,912 | |
+| head.stage | B | 11x241x351 | 930,501 | |
+| **Base skeleton subtotal** | B | 14 populations | **17,251,429** | |
+| **Canonical additions subtotal** | C | 23 populations | **55,591,904** | |
+| **Executed total** | | 37 populations | **72,843,333** | **14,023,680 adapted** |
+
+The earlier count placed `project2` after its nearest-neighbor upsample. That was wrong:
+the PLIF state is half-resolution and only its binary spike addresses are fanned out.
+
 ## Inhibition and threshold-adaptation dynamics
 
 ### Peer-membrane inhibition
@@ -321,22 +376,21 @@ the former spatial `amax(H,W)` synchronization barrier.
 The canonical deployment objective is:
 
 1. keep PyTorch/SpikingJelly as the training and floating-point golden reference;
-2. export only the **executed XL inference graph** and its learned weights, beta, thresholds,
+2. export only the **37-population executed 140k inference graph** and its learned weights, beta, thresholds,
    inhibition, adaptation strength, and adaptation-duration parameters;
 3. define deterministic fixed-point formats, rounding, saturation, and overflow rules;
 4. build a bit-exact integer reference and verify layer currents, membranes, spikes, and
    semantic output against the float model;
-5. implement reusable VHDL synaptic-accumulator + PLIF processing elements, preserving
-   shared convolution kernels and binary spike routing;
-6. store persistent membrane/adaptation/timestamp state in external DDR behind banked
-   BRAM/URAM/LUTRAM tile caches and time-multiplex processing elements across tiles,
-   channels, and stages;
+5. instantiate one permanent VHDL actor per executed layer; each owns convolution
+   addressing, accumulator lanes, PLIF/mechanism logic, queue, and weight ROM;
+6. store only losslessly live persistent membrane/adaptation/timestamp entries in banked
+   XC7A200T BRAM/LUTRAM; external/onboard DDR is forbidden and fit must be measured;
 7. first establish exact full/tiled execution, then add sparse optimizations such as
    touched-address queues, active-neuron lists, lazy decay, and clock-enable during idle
    periods only after equivalence is proven;
 8. run RTL simulation, Vivado synthesis/place-and-route, post-implementation timing
    simulation, and representative-event SAIF/VCD power analysis;
-9. optionally validate final latency/power on a physical ZCU104 when available.
+9. optionally validate final latency/power on a physical Nexys Video when available.
 
 ## Exact event-addressed layer procedure
 
@@ -359,10 +413,11 @@ The asynchronous FPGA evaluates the shared network parameters input-centrically:
 There is no global neural timestep barrier in DSEC inference. Fixed-time training
 divisions are a PyTorch approximation sharing the same weights and physical-time decay.
 
-## Scalable FPGA execution
+## Static layer-actor FPGA execution
 
-There is no requirement for one hardware PLIF circuit per logical `[C,H,W]` neuron. A
-small array of digital processing elements can be reused across the network:
+There is no requirement for one hardware PLIF circuit per logical `[C,H,W]` neuron, but
+there is one permanent actor per executed layer. An actor can sequence local lanes over
+its own destinations; those arithmetic blocks are never reused by a different layer:
 
 ```text
 event/spike FIFO -> shared-kernel weight lookup -> synaptic accumulator
@@ -370,9 +425,9 @@ event/spike FIFO -> shared-kernel weight lookup -> synaptic accumulator
                  -> save state -> emit output spike event
 ```
 
-Logical membrane/adaptation state remains persistent in memory between visits. This is
-normal time-multiplexed accelerator execution, not a change to the SNN semantics. The
-main trade-off is processing-element parallelism versus BRAM/URAM bandwidth, event-FIFO
+Logical live membrane/adaptation state remains persistent in banked on-chip BRAM/LUTRAM.
+Common clock/reset and state-bank fabrics are shared infrastructure, not shared layer
+compute. The main trade-off is per-actor lane parallelism versus state-bank bandwidth, event-FIFO
 pressure, logic area, and latency.
 
 ## Why the FPGA implementation is still neuromorphic
@@ -389,11 +444,11 @@ physical voltages/currents—and this distinction must be explicit in the paper.
 The required chain is `SpikingJelly float -> bit-exact integer reference -> VHDL RTL ->
 post-route implementation`. Latency is derived from cycle counts and the achieved routed
 clock. Power should use representative DDD17/DSEC switching activity (SAIF/VCD) with
-Vivado Report Power. These are **post-implementation estimates** unless a ZCU104 is
+Vivado Report Power. These are **post-implementation estimates** unless a Nexys Video is
 actually instrumented; only real board measurements may be called measured power or
 measured hardware latency.
 
-## EventSpikeSegXL
+## EventSpikeSegXL software comparison (not an FPGA target)
 
 ### Exact parameter accounting
 
@@ -469,8 +524,8 @@ by `model.eval()` and omitted from VHDL export.
 
 ## Canonical naming
 
-- `EventSpikeSegXL`: active detailed 11-class DSEC/FPGA implementation target.
-- `EventSpikeSeg140k`: compact reference/baseline.
+- `EventSpikeSeg140k`: only 11-class DSEC/FPGA implementation target.
+- `EventSpikeSegXL`: software-only capacity comparison; rejected by FPGA export.
 
 Historical top-ten/top-five/top-three architecture-search results retain their original
 names and measured values.

@@ -92,8 +92,7 @@ class LIFConfig:
     adaptation_strength_max: float = 0.25
     adaptation_clip: float = 0.35
     # Debat et al. (2021)-inspired peer-membrane inhibition and triangular
-    # threshold adaptation. The paper calls these fInst, fLong, and TThresh;
-    # active project interfaces use descriptive hardware-oriented names.
+    # threshold adaptation. Active interfaces use descriptive hardware names.
     threshold_adaptation_strength_init: float = 0.35
     threshold_adaptation_strength_min: float = 0.0
     threshold_adaptation_strength_max: float = 4.0
@@ -164,9 +163,9 @@ class HardwareLIF(nn.Module):
       membrane potential after subtracting the active threshold adaptation.
 
     The source mechanism is asynchronous: the first neuron to spike prevents retinotopic
-    peers from spiking and reduces their membrane by UInst.  ``winner_peer``
+    peers from spiking and reduces their membrane. ``winner_peer``
     emulates that winner/inhibition rule inside a synchronous timestep;
-    ``peer_membrane`` keeps simultaneous spikes but still applies the UInst-like
+    ``peer_membrane`` keeps simultaneous spikes but still applies the peer
     membrane decrement.  Keeping both lets dense semantic segmentation test the
     published rule against a less destructive adaptation.
     """
@@ -444,7 +443,7 @@ class HardwareLIF(nn.Module):
             return above
         if self.config.inhibition_kind == "peer_membrane":
             # Synchronous adaptation: keep simultaneous feature spikes, then
-            # apply Debat et al. UInst membrane decrement to their peers.
+            # apply the learned membrane-energy decrement to their peers.
             return above
         if self.config.inhibition_kind == "winner_peer":
             # One source/hidden event can make several retinotopic peers cross at
@@ -489,7 +488,7 @@ class HardwareLIF(nn.Module):
         return rms.clamp(max=self.config.membrane_energy_clip).to(adjusted.dtype)
 
     def _triangular_threshold_penalty(self) -> Tensor:
-        """Sum triangular ULong processes at each retinotopic location.
+        """Sum triangular threshold-adaptation processes at each location.
 
         Debat et al. Eq. 6 rises linearly from zero to UMaxThresh over TThresh,
         then falls linearly to zero over another TThresh.  Each feature neuron
@@ -1402,6 +1401,40 @@ class EventSpikeSegBase(nn.Module):
             for module in self.modules()
             if isinstance(module, HardwareLIF)
         ]
+
+    def capture_named_runtime_state(
+        self, device: torch.device | str | None = "cpu"
+    ) -> dict[str, dict[str, Tensor]]:
+        """Return a serializable, layer-named snapshot for checkpoint forensics."""
+        return {
+            module_name: {
+                state_name: getattr(module, state_name)
+                .detach()
+                .to(device=device, copy=True)
+                for state_name in RUNTIME_STATE_NAMES
+            }
+            for module_name, module in self.named_modules()
+            if isinstance(module, HardwareLIF)
+        }
+
+    def restore_named_runtime_state(
+        self, snapshot: dict[str, dict[str, Tensor]]
+    ) -> None:
+        """Restore a layer-named checkpoint snapshot when explicitly requested."""
+        modules = dict(self.named_modules())
+        for module_name, values in snapshot.items():
+            module = modules.get(module_name)
+            if not isinstance(module, HardwareLIF):
+                raise KeyError(f"runtime-state layer is absent: {module_name!r}")
+            for state_name in RUNTIME_STATE_NAMES:
+                if state_name not in values:
+                    raise KeyError(
+                        f"runtime-state layer {module_name!r} is missing {state_name!r}"
+                    )
+                value = values[state_name]
+                setattr(module, state_name, value.to(module.inhibition_scale.device))
+            if isinstance(module, ParametricLIF) and module.plif_core is not None:
+                module.plif_core.v = module.membrane
 
     @staticmethod
     def restore_runtime_state(

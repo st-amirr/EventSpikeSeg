@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
     ("top", "source", "test_module"),
     [
         ("lif_pe", "rtl/neuron/lif_pe.vhd", "test_lif_pe"),
+        ("plif_update", "rtl/neuron/plif_update.vhd", "test_plif_update"),
         (
             "winner_peer_selector",
             "rtl/inhibition/winner_peer_selector.vhd",
@@ -33,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[2]
     ],
     ids=[
         "lif",
+        "plif_update",
         "winner_peer",
         "rate_adaptation",
         "event_conv_address",

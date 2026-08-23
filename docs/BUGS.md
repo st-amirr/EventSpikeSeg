@@ -33,19 +33,20 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The active 11-class DSEC target is `EventSpikeSegXL`: 237,115 registered parameters and
-226,767 executed inference parameters. `EventSpikeSeg140k` remains the compact reference.
-Parameter count is only a proxy for FPGA cost; XL's dominant constraint is persistent
-membrane/adaptation/timestamp traffic, followed by pointwise mixing, branch joins,
-attention rendezvous, event routing, FIFO pressure, and inhibition/adaptation arithmetic.
+The active 11-class DSEC/FPGA target is `EventSpikeSeg140k`: 140,589 registered
+parameters, 134,807 executed inference parameters, and 37 permanent layer actors.
+Parameter count is only a proxy for FPGA cost; the dominant constraint is persistent
+membrane/adaptation/timestamp traffic, followed by pointwise mixing, event routing, FIFO
+pressure, and inhibition/adaptation arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
-At 241x351, XL owns **85,639,973** membrane states. Threshold adaptation adds age/amplitude on
-**20,024,576** neurons, and asynchronous execution needs one last-update timestamp per
-membrane. The illustrative uncompressed persistent store is 566.42 MiB using 16-bit
-membrane/adaptation values and 32-bit timestamps. Time-multiplexed PLIF PEs are allowed, but
-the external-DDR/tile-cache system must preserve every logical `(layer,c,y,x)` state.
+At 241x351, 140k owns **72,843,333** membrane states. Threshold adaptation adds
+age/amplitude on **14,023,680** neurons, and asynchronous execution needs one last-update
+timestamp per membrane. The baseline dense persistent store is about 470.31 MiB using
+16-bit membrane/adaptation and 32-bit timestamps. XC7A200T BRAM is short by about
+468.705 MiB (293.2 times too small). External/onboard DDR is forbidden, so the open
+feasibility issue is whether a lossless sparse table can bound all live states on chip.
 
 ## Open: continuous learned neuron parameters
 

@@ -7,8 +7,9 @@ FPGA accelerator with fixed-point PLIF state, sparse spike routing, and event-dr
 ## Repository layout
 
 ```text
-src/eventspikeseg/model.py              EventSpikeSegXL implementation target plus compact EventSpikeSeg140k baseline
+src/eventspikeseg/model.py              EventSpikeSeg140k FPGA target plus optional XL software comparison
 src/eventspikeseg/model_components.py   shared PLIF/SNN/convolution primitives
+src/eventspikeseg/fpga/                 fixed-point export and integer event reference
 src/eventspikeseg/top_ten_models.py     frozen round-one model registry
 src/eventspikeseg/top_five_models.py    frozen structural top-five registry
 src/eventspikeseg/top_three_models.py   frozen accuracy top-three registry
@@ -111,27 +112,29 @@ zero on every record where it has no labelled pixels.
 ## FPGA logical-state footprint
 
 Parameter count is **not** runtime neuron count. For the active 11-class
-`EventSpikeSegXL` DSEC implementation at 241x351, the 50 executed inference populations
+`EventSpikeSeg140k` DSEC implementation at 241x351, the 37 executed inference populations
 require
 
 ```text
 H2xW2 = 121x176, H4xW4 = 61x88
-N_mem = 683*H*W + 768*H2*W2 + 2144*H4*W4
-      = 85,639,973 membrane values
+N_mem = 651*H*W + 512*H2*W2 + 1280*H4*W4
+      = 72,843,333 membrane values
 ```
 
-Triangular threshold adaptation is enabled on **20,024,576** neurons and stores age plus amplitude. Direct
+Triangular threshold adaptation is enabled on **14,023,680** neurons and stores age plus amplitude. Direct
 asynchronous execution also stores one last-update timestamp per membrane. An
 illustrative 16-bit membrane/age/amplitude plus 32-bit timestamp layout is about
-**566.42 MiB**, before queues and counters. Therefore XL uses external DDR as the exact
-persistent-state backing store and banked on-chip memory as an active-tile cache.
+**470.31 MiB**, before queues and counters. Artix-7 XC7A200T has only 1.604 MiB BRAM.
+External and onboard DDR are forbidden, so only a lossless zero-default sparse state
+table could fit; measured worst-case occupancy is a hard feasibility gate.
 
 - **static/shared:** convolution weights, per-channel beta, per-channel base threshold;
 - **persistent per-neuron:** membrane, last-update timestamp, and enabled threshold-adaptation state;
 - **temporary:** touched-event synaptic current and sparse spike FIFOs.
 
-The FPGA may use far fewer physical PLIF arithmetic units by time-multiplexing them, but
-it must preserve one logical state record per `(layer,c,y,x)`. The exact sparse execution
+The FPGA instantiates a permanent actor for every executed layer. An actor may sequence
+its own lanes, but arithmetic is not shared across layers and it must preserve one
+logical state record per `(layer,c,y,x)`. The exact sparse execution
 flow for DSEC is `timestamped event -> destination-address generation -> lazy physical-time
 decay -> weight addition -> threshold/reset -> state/timestamp writeback -> emitted events`.
 There is no global neural timestep barrier. See `docs/ARCHITECTURE.md` and
@@ -151,8 +154,8 @@ docker compose run --rm train-dsec-xl
 ```
 
 `inspect-ddd17` validates the DDD17 manifest. `inspect-dsec` verifies sequence event,
-rectification, timestamp, and label alignment. `train-dsec-xl` is the active 241x351,
-11-class XL run; `train-dsec` retains the compact reference run.
+rectification, timestamp, and label alignment. `train-dsec` is the active 241x351,
+11-class 140k run; `train-dsec-xl` is an optional software capacity comparison.
 Both DSEC replay services deliberately train in FP32. Do not add `--amp`: FP16
 autocast is incompatible with the memory-bounded asynchronous surrogate-gradient
 replay and can reject every optimizer update while leaving the scalar loss finite.
@@ -175,13 +178,13 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 
 ## EventSpikeSeg models
 
-`EventSpikeSegXL` is the active detailed DSEC/FPGA implementation target. It has 237,115
-registered parameters for 11 classes, 232,059 parameters in its training forward, and
-226,767 in the exported inference graph. `EventSpikeSeg140k` remains the compact
-140,089-parameter six-class DDD17 reference.
+`EventSpikeSeg140k` is the only DSEC/FPGA implementation target. With two raw-event
+inputs and 11 classes it has 140,589 registered parameters, 134,807 executed inference
+parameters, 127,456 executed convolution weights, and 37 executed PLIF populations.
+`EventSpikeSegXL` remains a software-only capacity comparison and is rejected by the
+FPGA exporter.
 
-For reference, DDD17 `EventSpikeSeg140k` registers 140,089 parameters and executes
-134,637 at inference. XL keeps the same 32/64/128 basis and adds:
+The 140k graph keeps the 32/64/128 basis:
 
 ```text
 timestamp/raw-event input → two-polarity synaptic activity → 32-ch PLIF stem
@@ -189,13 +192,10 @@ timestamp/raw-event input → two-polarity synaptic activity → 32-ch PLIF stem
    ├─ persistent 32-ch detail path: three residual DW/PW-PLIF blocks
    └─ main semantic path
 → Encoder 2: stride-2 DW/PW-PLIF + two 64-ch residual refinements
-   └─ projected stride-2 32→64 residual bridge
 → Encoder 3: stride-2 DW/PW-PLIF + two 128-ch residual refinements
-   └─ projected stride-2 64→128 residual bridge
 → serial dilation-2 residual context ×2
-→ parallel d1/d2/d4 residual context
-→ local Q/K/V spike-mask attention: 32 channels, four 8-channel heads
-→ project 128→64 PLIF + upsample + concat 64-ch skip + DW/PW fusion
+→ project 128→64 PLIF + upsample + binary OR with the 64-ch encoder skip
+→ residual 64-ch DW/PW-PLIF decoder refinement
 → project 64→32 PLIF + upsample
 → late semantic32 + shallow32 + detail32 concatenation
 → 96→96 1×1 synaptic projection + PLIF selector + binary channel enable
@@ -208,7 +208,7 @@ Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, ste
 
 ### What “fully spiking” means here
 
-Every learned spatial or channel-mixing stage in both models is a spike-driven synapse
+Every learned spatial or channel-mixing stage in the 140k model is a spike-driven synapse
 population coupled directly to PLIF neurons:
 
 ```text
@@ -216,15 +216,15 @@ input spikes → learned 3×3 or 1×1 synaptic kernel → membrane current → P
 ```
 
 The 3×3 and 1×1 kernels are synaptic weights, not conventional ANN `Conv → ReLU`
-layers. XL inference executes 50 `SpikingStage`/PLIF populations. Depthwise/pointwise
+layers. The deployed 140k inference executes 37 `SpikingStage`/PLIF populations. Depthwise/pointwise
 blocks deliberately contain two PLIF populations, so collapsing them changes trained
 connectivity and temporal state.
 
 There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gate, dense real-valued classifier, fourth downsampling stage, or hard hidden winner-peer WTA in the canonical path.
 
-## XL DSEC training
+## DSEC training
 
-The XL run uses sequence-disjoint DSEC validation, chronological per-sequence training
+The 140k run uses sequence-disjoint DSEC validation, chronological per-sequence training
 windows, ten fixed 5 ms training divisions per 50 ms label interval, and one final loss
 after all ten divisions. Numeric state carries only across consecutive frames in the same
 sequence and resets at sequence/frame gaps.
@@ -241,19 +241,21 @@ Final training validates after every epoch, saves the best validation-mIoU model
 
 ## Accuracy status
 
-XL is the implementation target, but this does not claim it has already outperformed the
-compact model. Accuracy must come from the new DSEC run and subsequent fixed-point
-validation; historical protocol numbers remain architecture-search evidence only.
+Choosing 140k as the implementation target does not make a new accuracy claim. Accuracy
+must come from its DSEC checkpoint and subsequent fixed-point validation; historical
+protocol numbers remain architecture-search evidence only.
 
 
 ## Digital neuromorphic FPGA implementation target
 
 Training remains PyTorch + SpikingJelly with fixed physical-time divisions. Deployment
-in VHDL-2008 on ZCU104
+in VHDL-2008 on the Digilent Nexys Video XC7A200T
 accepts camera events directly: convolution kernels remain shared synaptic weights,
 feature-map positions remain logical PLIF states, hidden communication remains binary
 spikes/events, and membrane/adaptation/timestamp state persists across events and records
-in an external-DDR-backed tile store. The values are fixed-point numerical
+in a lossless sparse on-chip BRAM/LUTRAM state store. The board's DDR3 is deliberately
+not used. This mapping is conditional on measured worst-case live-state occupancy; the
+dense state cannot fit. The values are fixed-point numerical
 membrane/current states—not physical voltages or
 currents.
 
@@ -263,10 +265,10 @@ routing; nearest upsample is spike-address fan-out; residual clamp is event merg
 and temporal class-spike counting/argmax uses integer counters and a comparator. The
 selector is local: its 1×1 PLIF spike gates only the corresponding `(channel,y,x)` event.
 
-The scalable implementation is **coarse-grained and time-multiplexed**. A reusable
-digital synaptic-accumulator + PLIF processing tile operates across spatial partitions,
-channels, and stages while preserving convolutional weight sharing. Logical PLIF
-membrane/adaptation state resides in banked BRAM/URAM/LUTRAM between visits. After an
+The implementation uses **37 permanent layer actors**. Every actor owns convolution
+addressing, accumulator lanes, PLIF/mechanism logic, queues, and local weight ROM; there
+is no cross-layer compute sharing or reconfiguration. Logical PLIF
+membrane/adaptation state resides in banked sparse BRAM/LUTRAM. Within an actor,
 event sparsity is fundamental: touched-address queues, active-neuron lists, per-neuron
 last-update timestamps, lazy physical-time decay, and clock-enable suppress idle work.
 This trades processing-element count for latency and memory bandwidth without
@@ -281,5 +283,14 @@ scheduler.
 
 The verification flow is `SpikingJelly float -> bit-exact integer reference -> VHDL RTL
 -> Vivado synthesis/place-route -> post-implementation timing + representative SAIF/VCD
-power analysis -> optional ZCU104 measurement`. Vivado latency/power are reported as
+power analysis -> optional Nexys Video measurement`. Vivado latency/power are reported as
 estimates unless validated on an instrumented board.
+
+Export a trained checkpoint with:
+
+```powershell
+python scripts/export_fpga_model.py --checkpoint artifacts/EventSpikeSeg140k_seed17_best.pt --output artifacts/fpga_export
+```
+
+The exporter hard-rejects XL and emits the exact 37-actor manifest, affine-folded int8
+ROMs, per-actor quantized neuron parameters, and the fixed-point contract.
