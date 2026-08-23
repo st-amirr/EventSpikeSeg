@@ -340,6 +340,7 @@ def test_loss_profiles_remain_explicit() -> None:
         dice=0.20,
         auxiliary_ce=0.10,
         auxiliary_focal=0.0,
+        boundary=0.10,
     )
 
 

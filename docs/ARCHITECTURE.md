@@ -2,21 +2,57 @@
 
 ## Active implementation model
 
-`EventSpikeSeg140k` is the only 11-class DSEC/FPGA implementation target at `241x351`.
-For two raw-event input polarities and 11 classes it has **140,589 registered
-parameters**, **134,807 executed inference parameters**, **127,456 executed convolution
-weights**, and **37 executed PLIF populations**. `EventSpikeSegXL` remains a software
-comparison and the FPGA exporter rejects it.
+`EventSpikeSeg140k` is the only 11-class DSEC/FPGA implementation target. Revision v7
+uses the native **440x640** semantic plane and has **142,277 registered parameters**,
+**141,535 executed inference parameters**, **135,624 executed synaptic weights**, and
+**27 executed PLIF populations plus one stateless temporal class-current readout**.
+`EventSpikeSegXL` remains a software comparison and the FPGA exporter rejects it.
 
-The Python module tree also contains an inherited
-`refine2` block (5,056 parameters, two SpikingStage populations) that is never called
-by the canonical forward graph. The 11-class training forward executes **135,533**
-parameters including the 726-parameter auxiliary head. FPGA deployment implements the
-executed inference graph, not
-the dead inherited block or training-only auxiliary head.
+The input loader no longer scales rectified event coordinates to 241x351. It schedules
+ten chronological two-polarity 440x640 count maps. A learned standard 5x5 stride-2 PLIF
+stem produces the 32-channel semantic half scale; therefore raw events encounter learned
+filters before spatial reduction. An independent 8-channel native detail stem preserves
+thin boundaries without putting the old 32/96-channel trunk at native resolution.
 
-The semantic class count is dataset-dependent: DDD17 uses 6 class populations and
-DSEC-Semantic uses 11. The feature architecture is otherwise shared.
+```text
+input                         10xNx2x440x640
+native detail stem/block      10xNx8x440x640
+semantic stem + encoder-1     10xNx32x220x320
+encoder-2 / decoder-2         10xNx64x110x160
+encoder-3 / context           10xNx128x55x80
+native semantic/detail merge  10xNx40x440x640
+final PLIF fusion             10xNx16x440x640
+class-current readout         Nx11x440x640
+```
+
+The native detail block, semantic stem/first block, and 32->64 transition use standard
+spatial/channel convolutions. Later blocks remain depthwise/pointwise. Projected decoder
+features are OR-merged with quarter- and half-scale encoder skips, fanned out to native
+resolution, concatenated with the 8-channel detail path, and fused by DW40/PW16 PLIF.
+
+The final 16->11 1x1 synapse consumes binary spikes but does not threshold them into
+class spikes. It accumulates signed current over all ten updates and exposes continuous
+logits only after the complete record. This removes the old eleven-level (0..10)
+confidence bottleneck. The training-only 64->11 auxiliary head and 16->1 boundary head
+are omitted from deployment.
+
+At 440x640 the exact deployed persistent state is:
+
+```text
+N_mem   = 72*440*640 + 128*220*320 + 480*110*160 + 1280*55*80
+        = 43,366,400 membrane values
+N_adapt = 320*110*160 + 1216*55*80
+        = 10,982,400 adaptation-enabled values
+```
+
+With 16-bit membrane and two 16-bit adaptation fields, dense persistent state is
+124.61 MiB before queues and alignment. This is lower than the old 241x351 graph's
+72.84 million membranes/192.44 MiB because the wide paths now begin at half resolution.
+It still cannot fit dense state in XC7A200T BRAM, so the lossless sparse-state feasibility
+gate remains mandatory.
+
+Where later sections retain 241x351, 37-population, selector, or class-spike-count
+figures, they describe the superseded v6 graph and must not be used for new exports.
 
 ## Exact computational primitive
 

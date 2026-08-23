@@ -526,3 +526,34 @@ The FPGA scheduling order is intentionally **layer-major over the complete T=10 
 This scheduling choice is also the baseline state-memory strategy. Load a layer/state tile once, keep it resident while executing all ten 5 ms updates, and write its final state back after `t9`. Sparse event-address convolution remains enabled within each slice, so zero spike locations do not trigger synaptic additions. The baseline explicitly advances every required state in known 5 ms steps and therefore does not require a 32-bit `last_update_us` field per membrane. Timestamp/lazy-decay storage becomes an optional later optimization only if the integer reference proves exact equivalence.
 
 The runtime is **not fully asynchronous**. The real-time throughput target is one complete 50 ms record every 50 ms (20 Hz); record acquisition and compute may be double-buffered. The ten internal 5 ms steps may not be collapsed into a single 50 ms PLIF update.
+
+## 2026-08-23 — Native-resolution learned downsampling and continuous class readout
+
+The 241x351 v6 graph plateaued below the required accuracy and discarded spatial evidence
+before the first learned operation. Supersede it with the v7 `EventSpikeSeg140k` graph.
+DSEC raw events and labels remain at the canonical 440x640 semantic geometry. Do not add
+raw max pooling: the semantic branch begins with a learned standard 5x5 stride-2 PLIF
+stem, while a narrow 8-channel native PLIF path preserves thin objects and boundaries.
+
+Use standard spatial/channel convolution for the native detail block, first 32-channel
+semantic block, and 32->64 transition. Retain depthwise/pointwise processing deeper in
+the network. This improves early cross-channel spatial modelling while keeping the model
+near the original weight budget and reducing persistent state relative to naively running
+the old full-resolution trunk at 440x640.
+
+Remove the local 96-channel selector, 32-channel native decoder refinement, and spiking
+class head. Fuse native semantic32 + detail8 through DW40/PW16 PLIF, then accumulate the
+16->11 synaptic current continuously over all ten updates. The loss is still evaluated
+once per complete 50 ms record. The continuous readout is stateless between records and
+maps to conditional signed weight additions plus integer accumulators on FPGA.
+
+Add a training-only native boundary head with coefficient 0.1 while retaining weighted
+CE, 0.2 present-class Dice, and the 0.1 semantic auxiliary CE. Change the DSEC compose
+profile to native 440x640 and ten replay chunks to bound the activation graph to one
+5 ms update. Keep `artifacts/checkpointsV3/dsec` unchanged, but old v6 checkpoints are
+architecturally incompatible and this run must start from scratch.
+
+The new 11-class graph has 142,277 registered parameters, 141,535 executed inference
+parameters, 135,624 executed synaptic weights, 27 PLIF populations, 43,366,400 logical
+membranes, and 10,982,400 adaptation-enabled states. Dense 16-bit state is 124.61 MiB
+before queues/alignment, so the no-DDR sparse-state feasibility gate remains in force.

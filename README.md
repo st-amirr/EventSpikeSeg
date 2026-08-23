@@ -82,16 +82,16 @@ their chronological order. GPU training groups them into fixed time divisions of
 divisions. Every source event contributes one unit—there is no binary collision collapse,
 logarithm, event-count limit, or count cap. Hidden activations remain binary.
 
-Time division accelerates training; it is not the FPGA input protocol. The deployed
-model accepts camera events directly, lazily decays touched PLIF state from the exact
-timestamp delta, adds shared-kernel contributions, and propagates only generated spikes.
-DSEC necessarily replaces the six-population
-DDD17 class head with eleven spiking output populations: `sky`, `building`, `fence`,
+Training and FPGA inference both preserve ten chronological 5 ms updates per 50 ms
+record. The deployed input accepts camera events directly, routes them into the active
+5 ms slice, adds shared-kernel contributions, and propagates only generated hidden spikes.
+DSEC uses eleven continuous class-current outputs after the binary-spiking feature path:
+`sky`, `building`, `fence`,
 `person`, `pole`, `road`, `sidewalk`, `vegetation`, `vehicle`, `wall`, and
 `traffic-sign`.
 
-The trainer consumes every packet before forming one weighted CE + Dice + auxiliary
-objective. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
+The trainer consumes every packet before forming one weighted CE + Dice + semantic
+auxiliary + boundary objective. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
 complete-record prediction without an activation graph, then replay chronological chunks
 with that one objective's output gradients. This releases each chunk graph without ever
 applying the complete target to a partial history. The replay state snapshot is kept in
@@ -99,8 +99,9 @@ host RAM so it does not duplicate the model's large persistent neuron state on t
 
 PLIF leakage is physical-time based:
 `retention(delta_us) = beta ** (delta_us / 5000)`. Logits and activity rates are
-normalized by elapsed physical time rather than packet count. The local 1×1 PLIF
-selector also removes the previous global frame-reduction barrier.
+normalized by elapsed physical time rather than packet count. The final 1×1 class
+synapse accumulates continuous current over all ten updates rather than quantizing
+confidence to eleven possible output-spike counts.
 
 The DSEC stability profile uses a base learning rate of `5e-4` for both synaptic
 weights and learnable PLIF beta/threshold parameters; neuron parameters receive no
@@ -112,16 +113,16 @@ zero on every record where it has no labelled pixels.
 ## FPGA logical-state footprint
 
 Parameter count is **not** runtime neuron count. For the active 11-class
-`EventSpikeSeg140k` DSEC implementation at 241x351, the 37 executed inference populations
+`EventSpikeSeg140k` DSEC implementation at native 440x640, the 27 executed PLIF populations
 require
 
 ```text
-H2xW2 = 121x176, H4xW4 = 61x88
-N_mem = 651*H*W + 512*H2*W2 + 1280*H4*W4
-      = 72,843,333 membrane values
+H2xW2 = 220x320, H4xW4 = 110x160, H8xW8 = 55x80
+N_mem = 72*H*W + 128*H2*W2 + 480*H4*W4 + 1280*H8*W8
+      = 43,366,400 membrane values
 ```
 
-Triangular threshold adaptation is enabled on **14,023,680** neurons and stores age plus amplitude. A direct asynchronous variant would also require a last-update timestamp per membrane, but the fixed 5 ms baseline does not. With 16-bit membrane plus two 16-bit adaptation fields where enabled, the dense persistent-state baseline is about **192.44 MiB** before queues and counters. Artix-7 XC7A200T has only 1.604 MiB BRAM.
+Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. A direct asynchronous variant would also require a last-update timestamp per membrane, but the fixed 5 ms baseline does not. With 16-bit membrane plus two 16-bit adaptation fields where enabled, the dense persistent-state baseline is about **124.61 MiB** before queues and counters. Artix-7 XC7A200T has only 1.604 MiB BRAM.
 External and onboard DDR are forbidden, so only a lossless zero-default sparse state
 table could fit; measured worst-case occupancy is a hard feasibility gate.
 
@@ -151,7 +152,7 @@ docker compose run --rm train-dsec-xl
 ```
 
 `inspect-ddd17` validates the DDD17 manifest. `inspect-dsec` verifies sequence event,
-rectification, timestamp, and label alignment. `train-dsec` is the active 241x351,
+rectification, timestamp, and label alignment. `train-dsec` is the active native 440x640,
 11-class 140k run; `train-dsec-xl` is an optional software capacity comparison.
 Both DSEC replay services deliberately train in FP32. Do not add `--amp`: FP16
 autocast is incompatible with the memory-bounded temporal surrogate-gradient
@@ -176,48 +177,49 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 ## EventSpikeSeg models
 
 `EventSpikeSeg140k` is the only DSEC/FPGA implementation target. With two raw-event
-inputs and 11 classes it has 140,589 registered parameters, 134,807 executed inference
-parameters, 127,456 executed convolution weights, and 37 executed PLIF populations.
+inputs and 11 classes it has 142,277 registered parameters, 141,535 executed inference
+parameters, 135,624 executed synaptic weights, and 27 executed PLIF populations plus
+one stateless temporal class-current readout.
 `EventSpikeSegXL` remains a software-only capacity comparison and is rejected by the
 FPGA exporter.
 
 The 140k graph keeps the 32/64/128 basis:
 
 ```text
-timestamp/raw-event input → two-polarity synaptic activity → 32-ch PLIF stem
-→ Encoder 1: two residual DW/PW-PLIF blocks at full resolution
-   ├─ persistent 32-ch detail path: three residual DW/PW-PLIF blocks
-   └─ main semantic path
-→ Encoder 2: stride-2 DW/PW-PLIF + two 64-ch residual refinements
-→ Encoder 3: stride-2 DW/PW-PLIF + two 128-ch residual refinements
+native 440x640 two-polarity activity
+   ├─ 2→8 PLIF stem + standard 3x3 PLIF detail block at native resolution
+   └─ learned standard 5x5 stride-2 PLIF semantic stem → 32x220x320
+→ standard 32-channel spatial/channel block + residual DW/PW refinement
+→ standard stride-2 32→64 PLIF + two 64-channel DW/PW refinements at 110x160
+→ stride-2 DW/PW 64→128 + two 128-channel refinements at 55x80
 → serial dilation-2 residual context ×2
-→ project 128→64 PLIF + upsample + binary OR with the 64-ch encoder skip
+→ project 128→64 PLIF + upsample + binary OR with the quarter-scale 64-ch skip
 → residual 64-ch DW/PW-PLIF decoder refinement
-→ project 64→32 PLIF + upsample
-→ late semantic32 + shallow32 + detail32 concatenation
-→ 96→96 1×1 synaptic projection + PLIF selector + binary channel enable
-→ DW96/PW32 PLIF fusion + residual 32-ch refinement
-→ independent spiking class populations
-→ temporal spike-count argmax
+→ project 64→32 PLIF + upsample + binary OR with the half-scale 32-ch skip
+→ nearest event fan-out to native resolution
+→ semantic32 + detail8 concatenation → DW40/PW16 PLIF fusion
+→ 16→11 class synapse → temporal continuous-current accumulation → argmax
 ```
 
 Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, stem-only peer-membrane inhibition, and encoder/context triangular threshold adaptation. PyTorch provides tensors/autograd/optimization; SpikingJelly supplies compatible spiking convolution/PLIF/surrogate infrastructure while project-specific dynamics stay explicit.
 
 ### What “fully spiking” means here
 
-Every learned spatial or channel-mixing stage in the 140k model is a spike-driven synapse
-population coupled directly to PLIF neurons:
+Every learned feature-extraction spatial or channel-mixing stage in the 140k model is a
+spike-driven synapse population coupled directly to PLIF neurons:
 
 ```text
 input spikes → learned 3×3 or 1×1 synaptic kernel → membrane current → PLIF spike output
 ```
 
 The 3×3 and 1×1 kernels are synaptic weights, not conventional ANN `Conv → ReLU`
-layers. The deployed 140k inference executes 37 `SpikingStage`/PLIF populations. Depthwise/pointwise
+layers. The deployed 140k inference executes 27 `SpikingStage`/PLIF populations. Depthwise/pointwise
 blocks deliberately contain two PLIF populations, so collapsing them changes trained
 connectivity and temporal state.
 
-There is no BatchNorm dependency, dense softmax attention, GAP/MLP inference gate, dense real-valued classifier, fourth downsampling stage, or hard hidden winner-peer WTA in the canonical path.
+The only non-spiking learned inference operation is the final 1×1 class-current
+accumulator. It consumes binary spikes and maps to conditional stored-weight additions;
+it avoids the old ten-step output spike-count quantization.
 
 ## DSEC training
 
@@ -230,7 +232,7 @@ The model exposes a late refinement schedule:
 
 ```text
 0–70%   all layers train jointly
-70–90%  semantic backbone frozen; detail/decoder/selector/heads refine
+70–90%  semantic backbone frozen; detail/decoder/readout heads refine
 90–100% all layers unfrozen with an additional 0.20× LR multiplier
 ```
 
@@ -259,21 +261,20 @@ currents.
 The canonical inference path has no softmax, ReLU/GELU, BatchNorm, or dense count-domain
 MLP. `ChannelAffine` can be folded into quantized weights/scales; concat is channel-ID
 routing; nearest upsample is spike-address fan-out; residual clamp is event merge/OR;
-and temporal class-spike counting/argmax uses integer counters and a comparator. The
-selector is local: its 1×1 PLIF spike gates only the corresponding `(channel,y,x)` event.
+and temporal class-current accumulation/argmax uses signed accumulators and a comparator.
 
-The implementation uses **37 permanent layer actors**. Every actor owns convolution
+The implementation uses **27 permanent PLIF layer actors plus one class-current readout**. Every actor owns convolution
 addressing, accumulator lanes, PLIF/mechanism logic, queues, and local weight ROM; there
 is no cross-layer compute sharing or reconfiguration. Logical PLIF
 membrane/adaptation state resides in banked sparse BRAM/LUTRAM. Within an actor,
-event sparsity is fundamental: touched-address queues, active-neuron lists, per-neuron
-last-update timestamps, lazy physical-time decay, and clock-enable suppress idle work.
+event sparsity is fundamental: touched-address queues, active-neuron lists, fixed-step
+state advancement, and clock-enable suppress idle work.
 This trades processing-element count for latency and memory bandwidth without
 changing the trained SNN semantics.
 
-The implementation-sensitive mechanisms are timestamp-aware lazy PLIF decay, stem
-peer-membrane inhibition, encoder/context triangular threshold adaptation, and the local
-96-channel PLIF selector. The first RTL version should reproduce them under the fixed-point golden
+The implementation-sensitive mechanisms are fixed-step PLIF decay, stem
+peer-membrane inhibition, encoder/context triangular threshold adaptation, and the final
+continuous class-current accumulator. The first RTL version should reproduce them under the fixed-point golden
 contract; any simplification requires explicit accuracy revalidation. DSEC raw events are
 the preferred direct event-stream input, while DDD17 uses its existing digital moment
 scheduler.
@@ -289,7 +290,7 @@ Export a trained checkpoint with:
 python scripts/export_fpga_model.py --checkpoint artifacts/EventSpikeSeg140k_seed17_best.pt --output artifacts/fpga_export
 ```
 
-The exporter hard-rejects XL and emits the exact 37-actor manifest, affine-folded int8
+The exporter hard-rejects XL and emits the exact 27-PLIF-actor plus current-readout manifest, affine-folded int8
 ROMs, per-actor quantized neuron parameters, and the fixed-point contract.
 
 
@@ -299,4 +300,4 @@ DSEC hardware inference follows the same temporal discretization used for traini
 
 For memory locality, the intended hardware order is layer-major over the complete temporal record: keep a layer (or a spatial tile of that layer) resident, execute its `t0..t9` updates in order, buffer the resulting ten spike slices, write the final persistent state back, then move to the next layer. Sparse convolution is retained inside every 5 ms slice: only nonzero spike locations generate synaptic additions. The baseline is therefore fixed-time rather than fully asynchronous, and no per-membrane 32-bit timestamp is required.
 
-One segmentation result is emitted per 50 ms record (20 Hz dataset cadence) after temporal class-spike counting. To sustain real time, compute for one record must average no more than 50 ms; double buffering may overlap acquisition of the next record with computation of the previous one.
+One segmentation result is emitted per 50 ms record (20 Hz dataset cadence) after temporal class-current accumulation. To sustain real time, compute for one record must average no more than 50 ms; double buffering may overlap acquisition of the next record with computation of the previous one.

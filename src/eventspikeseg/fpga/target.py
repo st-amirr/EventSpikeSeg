@@ -45,12 +45,12 @@ ARTIX7_BRAM_KIBITS = {
     "XC7A200T": 13_140,
 }
 
-# DSEC 241x351, 37 deployed PLIF populations. Dense arrays omit tags because layer
-# identity and coordinates are implicit in the array address.
-DSEC_MEMBRANE_STATES = 72_843_333
-DSEC_ADAPTATION_STATES = 14_023_680
+# Native DSEC 440x640, 27 deployed PLIF populations. The wide semantic trunk starts
+# at half resolution; only an 8-channel detail path and 40->16 fusion remain native.
+DSEC_MEMBRANE_STATES = 43_366_400
+DSEC_ADAPTATION_STATES = 10_982_400
 DENSE_STATE_BYTES = (
-    DSEC_MEMBRANE_STATES * (2 + 4)  # int16 membrane + uint32 timestamp
+    DSEC_MEMBRANE_STATES * 2  # int16 membrane; fixed 5 ms steps need no timestamp
     + DSEC_ADAPTATION_STATES * (2 + 2)  # int16 age + int16 amplitude
 )
 

@@ -217,6 +217,7 @@ class LossProfile:
     dice: float = 0.75
     auxiliary_ce: float = 0.15
     auxiliary_focal: float = 0.15
+    boundary: float = 0.0
 
 
 HISTORICAL_LOSS_PROFILE = LossProfile(cross_entropy=0.5)
@@ -229,9 +230,10 @@ FINAL_LOSS_PROFILE = LossProfile(
     dice=0.20,
     auxiliary_ce=0.10,
     auxiliary_focal=0.0,
+    boundary=0.10,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-fixed-time-counts-async-fpga-v6"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-native-learned-downsample-current-readout-v7"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -544,6 +546,31 @@ def _training_objective(
             loss = loss + deep_auxiliary_scale * (
                 deep_auxiliary_ce + deep_auxiliary_focal
             )
+    if "boundary_logits" in outputs and loss_profile.boundary > 0.0:
+        valid = target != IGNORE_INDEX
+        boundary = torch.zeros_like(valid)
+        horizontal = valid[:, :, 1:] & valid[:, :, :-1]
+        horizontal &= target[:, :, 1:] != target[:, :, :-1]
+        vertical = valid[:, 1:, :] & valid[:, :-1, :]
+        vertical &= target[:, 1:, :] != target[:, :-1, :]
+        boundary[:, :, 1:] |= horizontal
+        boundary[:, :, :-1] |= horizontal
+        boundary[:, 1:, :] |= vertical
+        boundary[:, :-1, :] |= vertical
+        boundary_logits = outputs["boundary_logits"].squeeze(1)
+        pixel_loss = F.binary_cross_entropy_with_logits(
+            boundary_logits, boundary.to(boundary_logits.dtype), reduction="none"
+        )
+        positive = (boundary & valid).sum().to(boundary_logits.dtype)
+        negative = ((~boundary) & valid).sum().to(boundary_logits.dtype)
+        positive_weight = (negative / positive.clamp_min(1.0)).clamp(1.0, 20.0)
+        pixel_weight = torch.where(boundary, positive_weight, 1.0)
+        boundary_loss = (
+            (pixel_loss * pixel_weight)[valid].mean()
+            if valid.any()
+            else boundary_logits.sum() * 0.0
+        )
+        loss = loss + loss_profile.boundary * boundary_loss
     output_spike_rate = outputs.get("segmentation_rate")
     if output_spike_rate is None:
         output_spike_rate = outputs["segmentation_spikes"].mean()
@@ -1302,7 +1329,7 @@ def train_architecture(
     if is_final_run:
         print(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
-            "objective=weighted-CE+0.2-Dice+0.1-aux-CE | "
+            "objective=weighted-CE+0.2-Dice+0.1-aux-CE+0.1-boundary | "
             "focal=off activity=on | "
             f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "

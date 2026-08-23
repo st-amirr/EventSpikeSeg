@@ -10,7 +10,9 @@
 - PLIF with learnable beta and base thresholds
 - local triangular threshold adaptation
 - stem-only peer-membrane inhibition
-- canonical independent spiking class populations with temporal spike-count semantic readout
+- native 440x640 DSEC input with learned stride-2 semantic stem
+- 8-channel native detail path and memory-bounded 32/64/128 semantic path
+- continuous temporal class-current readout after binary-spiking hidden features
 - explicit 3- or 4-stage channel schedules
 - configurable stem and first-block kernel size
 - dynamic `enc4_spikes` activity/evaluation diagnostics for the deep contender
@@ -55,18 +57,19 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - `t01_spike_pyramid_concat` — 0.1671 mIoU, 63,147 params; parallel multiscale concat did not recover accuracy.
 - `t03_deep_attention_fpn` — 0.1555 mIoU, 108,781 params; extra depth/attention collapsed predictions toward dominant classes.
 
-## Canonical candidate implemented
+## Canonical native-resolution candidate implemented
 
-- 32/64/128 semantic path with projected residual bridges and extra residual DW/PW refinement;
-- persistent 32-channel high-resolution detail path with asymmetric 3×1/1×3 refinement;
-- serial dilation-2 context ×2 plus residual concatenated d1/d2/d4 context;
-- one bottlenecked low-resolution spike-mask attention residual;
-- concatenative mid-decoder fusion and late semantic/shallow/detail concatenation;
-- local 96→96 PLIF 1×1 retinotopic spike selector (no count-domain MLP or frame barrier);
-- two training-only auxiliary heads;
-- independent spiking class neurons and temporal argmax;
+- native 2→8 standard-convolution PLIF detail stem and 8-channel detail refinement;
+- learned standard 5×5 stride-2 2→32 PLIF semantic stem before spatial reduction;
+- standard 32-channel early feature block and standard stride-2 32→64 transition;
+- 32/64/128 semantic path with deeper residual DW/PW refinement and dilation-2 context;
+- additive quarter/half encoder skips and late semantic32/detail8 concatenation;
+- DW40/PW16 native PLIF fusion;
+- continuous 16→11 temporal class-current readout rather than a ten-level class-spike count;
+- training-only quarter-scale semantic auxiliary head and native boundary head;
 - SpikingJelly `Conv2d`/PLIF/surrogate infrastructure where compatible, with project-specific per-channel beta, peer inhibition, threshold adaptation, and operation order preserved;
-- canonical-only 70/20/10 joint → backbone-frozen refinement → low-LR joint-unfreeze schedule.
+- canonical-only 70/20/10 joint → backbone-frozen refinement → low-LR joint-unfreeze schedule;
+- exact 10-way replay in the DSEC compose service so each backward replay holds one 5 ms update.
 
 ## Validation/cleanup state
 
@@ -89,12 +92,26 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - the installed training data is incomplete: 2,887 event tensors versus 10,001 masks, leaving only one event recording usable;
 - with an 11-class DSEC head, XL registers 237,115 parameters and executes 226,767 at inference;
 - learned continuous neuron dynamics and learned attention thresholds remain unquantized;
-- `EventSpikeSegXL` is now the detailed 241x351 DSEC/FPGA implementation target; 140k remains the compact baseline.
+- the native-resolution v7 140k checkpoint has not yet completed a training epoch, so its 50% target remains unmeasured.
 
 ## Next action
 
-Run the 11-class XL DSEC configuration from scratch, then validate its float checkpoint,
-fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
+Run the native 440x640 11-class `EventSpikeSeg140k` configuration from scratch. Verify
+that loss, gradients, class prediction shares, and rare-class IoUs move during epoch 1
+before committing to the full 80 epochs. Then validate its revised fixed-point export.
+
+## 2026-08-23 — native-resolution accuracy revision
+
+- retained the public `EventSpikeSeg140k` FPGA target and checkpoint directory;
+- changed DSEC training geometry from 241x351 to native 440x640;
+- added an 8-channel native detail route and learned 5x5 stride-2 semantic stem;
+- changed the early 32-channel block and 32->64 downsample to standard convolution;
+- moved the semantic bottleneck to 55x80, preserving a three-level 32/64/128 hierarchy;
+- replaced the spiking class head with continuous temporal class-current accumulation;
+- added a training-only native boundary objective at coefficient 0.1;
+- set DSEC replay chunks to 10 so each gradient replay retains only one update graph;
+- revised FPGA export to 27 PLIF actors plus one current readout;
+- revised state accounting to 43,366,400 membranes and 10,982,400 adaptation states.
 
 ## 2026-08-15 timestamp-stream v3
 

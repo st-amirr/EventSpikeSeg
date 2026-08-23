@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build and validate only `EventSpikeSeg140k` for 11-class DSEC at `241x351`, then map its
+Build and validate only `EventSpikeSeg140k` for 11-class DSEC at native `440x640`, then map its
 spike-native PLIF inference graph to a custom static digital-neuromorphic accelerator.
 Training remains PyTorch + SpikingJelly; deployment targets VHDL-2008 on the conventional
 Digilent Nexys Video XC7A200T
@@ -20,12 +20,13 @@ Python constructors/forward methods remain authoritative if older diagrams disag
 
 ## Canonical naming and frozen graph
 
-- `EventSpikeSeg140k`: the only FPGA target; 140,589 registered parameters for
+- `EventSpikeSeg140k`: the only FPGA target; 142,277 registered parameters for
   11-class, two-polarity DSEC.
 - `EventSpikeSegXL`: software-only comparison; FPGA export must reject it.
-- Deployable 140k inference: 134,807 executed parameters, 127,456 convolution weights,
-  and 37 executed Conv/ChannelAffine/PLIF populations.
-- Omit dead `refine2`, training-only `aux_head`, surrogate gradients, and all XL modules.
+- Deployable 140k inference: 141,535 executed parameters, 135,624 synaptic weights,
+  27 Conv/ChannelAffine/PLIF populations, and one temporal class-current readout.
+- Omit dead `refine2`, training-only `aux_head`/`boundary_head`, surrogate gradients,
+  and all XL modules.
 
 ## Exact inference semantics
 
@@ -34,7 +35,9 @@ ParametricLIF -> binary spikes`. Convolution kernels are synaptic weights; the o
 feature-map elements are PLIF neurons. DW/PW blocks contain two distinct PLIF
 populations and must not be collapsed.
 
-Hardware deployment implements the frozen executed 140k inference graph only.
+Hardware deployment implements the frozen executed 140k inference graph only. Hidden
+layers are binary-spiking; the final 1x1 synapse accumulates continuous signed class
+current over the ten updates and does not allocate class PLIF state.
 
 ## PLIF digital FPGA mapping contract
 
@@ -50,9 +53,9 @@ optional optimization only after bit-exact and semantic-accuracy revalidation.
 
 ## Logical state accounting rule
 
-Do not infer neuron-state memory from parameter count. The 37-population 140k graph has
-72,843,333 logical membrane states and 14,023,680 adaptation-enabled states at DSEC
-`241x351`. With the baseline 16-bit membrane and two 16-bit adaptation fields where enabled, dense persistent state is about 192.44 MiB before queues/counters. The fixed 5 ms baseline does not require one 32-bit timestamp per membrane. XC7A200T BRAM is 1.604 MiB, about 120 times too small for the dense state.
+Do not infer neuron-state memory from parameter count. The 27-population 140k graph has
+43,366,400 logical membrane states and 10,982,400 adaptation-enabled states at DSEC
+`440x640`. With the baseline 16-bit membrane and two 16-bit adaptation fields where enabled, dense persistent state is about 124.61 MiB before queues/counters. The fixed 5 ms baseline does not require one 32-bit timestamp per membrane. XC7A200T BRAM is 1.604 MiB, about 77.7 times too small for the dense state.
 External memory, including the board's DDR3, is forbidden. A lossless sparse live-state
 table is the only remaining possible mapping and must pass a measured worst-case bound;
 overflow eviction or state loss is forbidden.
@@ -77,7 +80,7 @@ The primary runtime is fully digital but must preserve neuromorphic/SNN executio
 
 ### Static actor execution rule
 
-Instantiate one permanent actor for each of the 37 executed populations. Each actor owns
+Instantiate one permanent actor for each of the 27 executed PLIF populations. Each actor owns
 its convolution address generator, accumulator lanes, PLIF/mechanism unit, output FIFO,
 and initialized local weight ROM. Cross-layer compute sharing, layer reconfiguration,
 and partial reconfiguration are forbidden. Common clock/reset, timestamp dispatch,
@@ -99,13 +102,13 @@ DSEC FPGA inference is fixed-time and must match training. One 50 ms semantic re
 - concat -> channel-ID routing
 - nearest upsample -> spike-address fan-out
 - residual spike add/clamp -> event merge / OR-dedup
-- class spike sum/argmax -> integer event counters/comparator
+- class current accumulation/argmax -> signed accumulators/comparator
 
 ### Mapping risks requiring explicit validation
 
 - stem peer-membrane inhibition uses retinotopic cross-channel membrane energy;
 - encoder/context triangular threshold adaptation uses age/amplitude and a dynamic threshold;
-- final selector is a local retinotopic binary gate after a 96->96 PLIF projection;
+- final readout is a 16->11 signed current accumulator over all ten updates;
 - DSEC PLIF decay advances in fixed 5 ms steps, with 5 ms as the
   learned-beta reference interval;
 - per-membrane timestamps are not required in the baseline; lazy tagged updates are optional only after equivalence proof.

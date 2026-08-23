@@ -190,9 +190,17 @@ def evaluate(
             outputs = model(sequence)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
-            spikes = outputs["segmentation_spikes"]
-            spike_sum += float(spikes.sum())
-            spike_elements += spikes.numel()
+            spikes = outputs.get("segmentation_spikes")
+            if spikes is None:
+                # The native-resolution 140k model uses a continuous accumulated
+                # current readout.  Reuse its class scores as a one-step raster for
+                # visualization; activity reporting comes from segmentation_rate.
+                spikes = outputs["segmentation_logits"].unsqueeze(0)
+                spike_sum += float(outputs["segmentation_rate"])
+                spike_elements += 1
+            else:
+                spike_sum += float(spikes.sum())
+                spike_elements += spikes.numel()
             if saved < visualizations:
                 _save_visual(
                     visualization_dir, saved, sequence, target[0], prediction[0], spikes

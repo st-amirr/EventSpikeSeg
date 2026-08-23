@@ -12,8 +12,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--height", type=int, default=241)
-    parser.add_argument("--width", type=int, default=351)
+    parser.add_argument("--height", type=int, default=440)
+    parser.add_argument("--width", type=int, default=640)
     args = parser.parse_args()
     manifest = export_checkpoint(
         args.checkpoint, args.output, height=args.height, width=args.width

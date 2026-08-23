@@ -1,7 +1,9 @@
 """Canonical EventSpikeSeg models.
 
-``EventSpikeSeg140k`` is the ~140k spike-native dual-path model and is the project's
-primary architecture for accuracy evaluation and mixed-signal neuromorphic deployment.
+``EventSpikeSeg140k`` is the ~142k native-resolution dual-path model and is the project's
+primary architecture for accuracy evaluation and digital neuromorphic deployment. Its
+hidden feature path is spike-native; the final classifier accumulates continuous class
+current over the complete temporal record.
 ``EventSpikeSegXL`` is the larger ~236k expansion retained as an
 optional high-capacity comparison. The XL variant adds features beyond the canonical
 model:
@@ -43,7 +45,7 @@ from .model_components import (
     TimestampEventInput,
 )
 
-# Selectable finals: canonical EventSpikeSeg140k (~140k) and EventSpikeSegXL (~236k).
+# Selectable finals: canonical EventSpikeSeg140k (~142k) and EventSpikeSegXL (~236k).
 FINAL_ARCHITECTURE = SegmentationArchitecture(
     name="EventSpikeSeg140k",
     channel_schedule=(32, 64, 128),
@@ -78,6 +80,32 @@ def _block_lif(block: SpikingConvBlock) -> LIFConfig:
     stage = block.pointwise if block.pointwise is not None else block.standard
     assert stage is not None
     return stage.neuron.config
+
+
+class TemporalCurrentReadout(nn.Module):
+    """Accumulate continuous class currents over a complete event record.
+
+    Hidden features remain binary spikes.  Each active feature therefore causes a
+    stored-weight addition in hardware, while the final classifier keeps the
+    resulting multi-bit current instead of thresholding it into only ``T + 1``
+    possible spike counts.  Processing one timestep at a time avoids materialising
+    a full ``[T, N, Cclass, H, W]`` current tensor during memory-bound training.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, *, scale: float) -> None:
+        super().__init__()
+        self.synapse = nn.Conv2d(in_channels, out_channels, 1, bias=False)
+        self.scale = float(scale)
+
+    def forward(self, sequence: Tensor) -> Tensor:
+        if sequence.ndim != 5:
+            raise ValueError("expected a TNCHW spike sequence")
+        accumulated: Tensor | None = None
+        for step in sequence:
+            current = self.synapse(step.float())
+            accumulated = current if accumulated is None else accumulated + current
+        assert accumulated is not None
+        return accumulated * (self.scale / float(sequence.shape[0]))
 
 
 class PLIFChannelSelector(nn.Module):
@@ -532,7 +560,7 @@ class EventSpikeSegXL(EventSpikeSegBase):
 
 
 class EventSpikeSeg140k(EventSpikeSegBase):
-    """Canonical ~140k dual-path fully-spiking segmentation model."""
+    """Memory-bounded native-resolution dual-path DSEC segmentation model."""
 
     refinement_schedule = (
         FINAL_REFINEMENT_FREEZE_START,
@@ -570,20 +598,48 @@ class EventSpikeSeg140k(EventSpikeSegBase):
             else nn.Identity()
         )
         architecture = self.architecture
+        stem_lif = self.stem.neuron.config
         encoder_lif = _block_lif(self.enc1)
         context_lif = _block_lif(self.enc3)
         decoder_lif = self.project3.neuron.config
-        highres_lif = replace(encoder_lif, threshold_adaptation_enabled=False)
+        half_lif = replace(encoder_lif, threshold_adaptation_enabled=False)
+        native_lif = replace(
+            decoder_lif,
+            inhibition_enabled=False,
+            threshold_adaptation_enabled=False,
+        )
 
+        # Preserve native DSEC evidence until it reaches learned filters, but put
+        # the wide semantic trunk at half resolution.  This is substantially less
+        # expensive than executing the old 32/96-channel graph at 440x640.
+        self.detail_stem = SpikingStage(
+            2, 8, kernel_size=3, norm=architecture.norm,
+            lif=native_lif, neuron_kind=architecture.neuron_kind,
+        )
+        self.detail1 = SpikingConvBlock(
+            8, 8, depthwise=False, norm=architecture.norm,
+            lif=native_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.detail2 = nn.Identity()
+        self.detail3 = nn.Identity()
+
+        self.stem = SpikingStage(
+            2, 32, kernel_size=5, stride=2, norm=architecture.norm,
+            lif=stem_lif, neuron_kind=architecture.neuron_kind,
+        )
+        # Early joint spatial/channel filtering is intentionally standard rather
+        # than depthwise-separable; later stages retain efficient DW/PW blocks.
         self.enc1 = SpikingConvBlock(
-            32, 32, kernel_size=architecture.first_block_kernel_size,
-            depthwise=architecture.depthwise, norm=architecture.norm,
-            lif=highres_lif, neuron_kind=architecture.neuron_kind,
-            residual=architecture.residual,
+            32, 32, depthwise=False, norm=architecture.norm,
+            lif=half_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
         self.enc1_extra = SpikingConvBlock(
             32, 32, depthwise=True, norm=architecture.norm,
-            lif=highres_lif, neuron_kind=architecture.neuron_kind, residual=True,
+            lif=half_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.down2 = SpikingConvBlock(
+            32, 64, stride=2, depthwise=False, norm=architecture.norm,
+            lif=encoder_lif, neuron_kind=architecture.neuron_kind,
         )
         self.enc2_extra = SpikingConvBlock(
             64, 64, depthwise=True, norm=architecture.norm,
@@ -602,35 +658,24 @@ class EventSpikeSeg140k(EventSpikeSegBase):
             lif=context_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
 
-        self.detail1 = SpikingConvBlock(
-            32, 32, depthwise=True, norm=architecture.norm,
-            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
-        )
-        self.detail2 = SpikingConvBlock(
-            32, 32, depthwise=True, norm=architecture.norm,
-            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
-        )
-        self.detail3 = SpikingConvBlock(
-            32, 32, depthwise=True, norm=architecture.norm,
-            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
-        )
-
         self.decoder2_extra = SpikingConvBlock(
             64, 64, depthwise=True, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
-        self.final_selector = PLIFChannelSelector(
-            96, lif=decoder_lif, norm=architecture.norm
-        )
+        self.final_selector = nn.Identity()
         self.final_fuse = SpikingConvBlock(
-            96, 32, depthwise=True, norm=architecture.norm,
+            40, 16, depthwise=True, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind,
         )
-        self.decoder1_extra = SpikingConvBlock(
-            32, 32, depthwise=True, norm=architecture.norm,
-            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        self.decoder1_extra = nn.Identity()
+        self.head = TemporalCurrentReadout(
+            16, class_count, scale=architecture.output_rate_scale
+        )
+        self.boundary_head = TemporalCurrentReadout(
+            16, 1, scale=architecture.output_rate_scale
         )
         self.context = nn.Identity()
+        self.refine2 = nn.Identity()
         self.refine1 = nn.Identity()
 
     def set_semantic_backbone_trainable(self, trainable: bool) -> None:
@@ -653,8 +698,9 @@ class EventSpikeSeg140k(EventSpikeSegBase):
 
     def forward(self, source: Tensor) -> dict[str, Tensor]:
         sequence = self.timestamp_input(source)
+        native_size = sequence.shape[-2:]
+        detail = self.detail1(self.detail_stem(sequence))
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
-        detail = self.detail3(self.detail2(self.detail1(x1)))
 
         x2 = self.enc2_extra(self.enc2(self.down2(x1)))
         x3 = self.enc3_extra(self.enc3(self.down3(x2)))
@@ -670,26 +716,27 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         )
 
         semantic = self._upsample(self.project2(d2), x1.shape[-2:])
-        merged = torch.cat((semantic, x1, detail), dim=2)
-        d1 = self.final_fuse(self.final_selector(merged))
+        semantic = torch.clamp(semantic + x1, 0.0, 1.0)
+        semantic = self._upsample(semantic, native_size)
+        merged = torch.cat((semantic, detail), dim=2)
+        d1 = self.final_fuse(merged)
         d1 = self.decoder1_extra(d1)
 
-        class_spikes = self.head(d1)
-        normalization = self.temporal_normalization_steps(sequence)
-        logits = class_spikes.sum(dim=0) * (
-            self.architecture.output_rate_scale / normalization
-        )
+        logits = self.head(d1)
         result = {
             "segmentation_logits": logits,
-            "segmentation_rate": self.temporal_rate(class_spikes),
+            # There are no output class spikes; report the last hidden spike rate
+            # for activity regularisation and run diagnostics.
+            "segmentation_rate": self.temporal_rate(d1),
             "enc1_rate": self.temporal_rate(x1),
             "enc2_rate": self.temporal_rate(x2),
             "enc3_rate": self.temporal_rate(x3),
             "decoder_rate": self.temporal_rate(d1),
         }
-        if not self.training:
-            result["segmentation_spikes"] = class_spikes
+        if self.training:
+            result["boundary_logits"] = self.boundary_head(d1)
         if auxiliary_spikes is not None:
+            normalization = self.temporal_normalization_steps(sequence)
             result["auxiliary_logits"] = auxiliary_spikes.sum(dim=0) * (
                 self.architecture.output_rate_scale / normalization
             )

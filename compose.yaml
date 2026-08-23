@@ -115,7 +115,7 @@ services:
        # FP16 backward is unsafe with asynchronous temporal replay: gradients
        # become non-finite before AdamW can perform its first update.
        "--device", "auto",
-       "--height", "241", "--width", "351",
+       "--height", "440", "--width", "640",
       #  "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2",
        "--internal-updates", "10", "--sequential-chunks", "5",

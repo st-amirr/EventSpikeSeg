@@ -33,17 +33,18 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The active 11-class DSEC/FPGA target is `EventSpikeSeg140k`: 140,589 registered
-parameters, 134,807 executed inference parameters, and 37 permanent layer actors.
+The active 11-class DSEC/FPGA target is `EventSpikeSeg140k`: 142,277 registered
+parameters, 141,535 executed inference parameters, 27 permanent PLIF actors, and one
+temporal class-current readout.
 Parameter count is only a proxy for FPGA cost; the dominant constraint is persistent
 membrane/adaptation/timestamp traffic, followed by pointwise mixing, event routing, FIFO
 pressure, and inhibition/adaptation arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
-At 241x351, 140k owns **72,843,333** membrane states. Threshold adaptation adds
-age/amplitude on **14,023,680** neurons. The previously proposed asynchronous execution also required one 32-bit last-update timestamp per membrane, but that is no longer baseline. Under fixed 5 ms runtime, 16-bit membrane plus two 16-bit adaptation fields require about **192.44 MiB** before counters/queues/alignment. XC7A200T BRAM is short by about
-**190.84 MiB** (about **120x** the available BRAM). External/onboard DDR is forbidden, so the open
+At native 440x640, v7 owns **43,366,400** membrane states. Threshold adaptation adds
+age/amplitude on **10,982,400** neurons. The previously proposed asynchronous execution also required one 32-bit last-update timestamp per membrane, but that is no longer baseline. Under fixed 5 ms runtime, 16-bit membrane plus two 16-bit adaptation fields require about **124.61 MiB** before counters/queues/alignment. XC7A200T BRAM is short by about
+**123.01 MiB** (about **77.7x** the available BRAM). External/onboard DDR is forbidden, so the open
 feasibility issue is whether a lossless sparse table can bound all live states on chip.
 
 ## Open: continuous learned neuron parameters

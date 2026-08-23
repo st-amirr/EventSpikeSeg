@@ -15,3 +15,13 @@ desktop.ini
 *.pt
 kaggle/
 Icon
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+[Dd]esktop.ini
+Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/

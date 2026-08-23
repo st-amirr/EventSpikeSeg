@@ -25,36 +25,37 @@ def test_frozen_140k_inference_graph_contract(tmp_path) -> None:
     model = EventSpikeSeg140k(class_count=11, input_channels=2)
     manifest = export_model(model, tmp_path)
 
-    assert len(EVENTSPIKESEG140K_INFERENCE_STAGES) == 37
+    assert len(EVENTSPIKESEG140K_INFERENCE_STAGES) == 27
     assert manifest["model"] == "EventSpikeSeg140k"
-    assert manifest["registered_parameters"] == 140_589
-    assert manifest["executed_inference_parameters"] == 134_807
-    assert manifest["executed_convolution_weights"] == 127_456
-    assert manifest["logical_membrane_states"] == 72_843_333
-    assert manifest["base_skeleton_membrane_states"] == 17_251_429
-    assert manifest["canonical_addition_membrane_states"] == 55_591_904
+    assert manifest["registered_parameters"] == 142_277
+    assert manifest["executed_inference_parameters"] == 141_535
+    assert manifest["executed_convolution_weights"] == 135_624
+    assert manifest["logical_membrane_states"] == 43_366_400
+    assert manifest["base_skeleton_membrane_states"] == 10_700_800
+    assert manifest["canonical_addition_membrane_states"] == 32_665_600
     assert "refine2" in manifest["deployment_excludes"]
     assert "aux_head" in manifest["deployment_excludes"]
     assert manifest["hardware_topology"]["cross_layer_compute_sharing"] is False
     assert manifest["target"]["device"] == "XC7A200T-1SBG484C"
     assert manifest["dense_state_memory_budget"]["required_over_available"] == pytest.approx(
-        293.2093785673516
+        77.6864535768645
     )
 
     model_spec = json.loads((tmp_path / "model_spec.yaml").read_text(encoding="utf-8"))
-    assert [layer["name"] for layer in model_spec["layers"]] == list(
+    assert [layer["name"] for layer in model_spec["layers"][:-1]] == list(
         EVENTSPIKESEG140K_INFERENCE_STAGES
     )
-    assert model_spec["layer_order"] == list(EVENTSPIKESEG140K_INFERENCE_STAGES)
-    assert model_spec["layers"][11]["input_hw"] == [241, 351]
-    assert model_spec["layers"][11]["output_hw"] == [121, 176]
+    assert model_spec["layers"][-1]["name"] == "head.synapse"
+    assert model_spec["layer_order"][-1] == "head.synapse"
+    assert model_spec["layers"][2]["input_hw"] == [440, 640]
+    assert model_spec["layers"][2]["output_hw"] == [220, 320]
     stem_parameters = json.loads(
-        (tmp_path / model_spec["layers"][0]["parameter_file"]).read_text()
+        (tmp_path / model_spec["layers"][2]["parameter_file"]).read_text()
     )
     assert stem_parameters["inhibition_strength_q"] is not None
     assert "inhibition_strength" not in stem_parameters
-    rom_lines = (tmp_path / model_spec["layers"][0]["weight_rom"]).read_text().splitlines()
-    assert len(rom_lines) == model_spec["layers"][0]["weight_count"]
+    rom_lines = (tmp_path / model_spec["layers"][2]["weight_rom"]).read_text().splitlines()
+    assert len(rom_lines) == model_spec["layers"][2]["weight_count"]
     assert all(len(value) == 2 for value in rom_lines)
 
 
@@ -115,9 +116,9 @@ def test_sparse_state_does_not_reclaim_active_adaptation() -> None:
 def test_artix7_memory_shortfall_uses_binary_units() -> None:
     budget = memory_budget(NEXYS_VIDEO_XC7A200T.bram_kibits)
     assert NEXYS_VIDEO_XC7A200T.bram_mib == pytest.approx(1.60400390625)
-    assert budget["state_mib"] == pytest.approx(470.308988571167)
-    assert budget["missing_mib"] == pytest.approx(468.704984664917)
-    assert budget["percent_missing"] == pytest.approx(99.65894787522022)
+    assert budget["state_mib"] == pytest.approx(124.609375)
+    assert budget["missing_mib"] == pytest.approx(123.00537109375)
+    assert budget["percent_missing"] == pytest.approx(98.7127742946709)
 
 
 def test_live_state_mask_reclaims_quantized_zero_and_expired_adaptation() -> None:

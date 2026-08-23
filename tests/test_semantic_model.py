@@ -314,16 +314,17 @@ def test_canonical_model_is_140k_and_xl_is_selectable() -> None:
     assert model.architecture.adaptation_kind == "triangular_threshold"
     assert model.architecture.threshold_adaptation_scope == "encoder_context"
     assert not model.stem.neuron.config.threshold_adaptation_enabled
-    assert model.enc1.depthwise is not None
-    assert not model.enc1.depthwise.neuron.config.threshold_adaptation_enabled
+    assert model.stem.conv.stride == (2, 2)
+    assert model.stem.conv.kernel_size == (5, 5)
+    assert model.enc1.standard is not None
+    assert not model.enc1.standard.neuron.config.threshold_adaptation_enabled
     assert model.enc2.depthwise is not None
     assert model.enc2.depthwise.neuron.config.threshold_adaptation_enabled
-    assert model.detail1.depthwise is not None
-    assert not model.detail1.depthwise.neuron.config.threshold_adaptation_enabled
-    # Independent spiking class neurons accumulate evidence over time instead
-    # of using hard per-timestep class WTA.
+    assert model.detail_stem.conv.out_channels == 8
+    assert model.detail1.standard is not None
+    assert not model.detail1.standard.neuron.config.threshold_adaptation_enabled
     assert not model.architecture.output_competition_enabled
-    assert model.parameter_count() == 140_089
+    assert model.parameter_count() == 141_867
     assert xl.parameter_count() == 236_445
 
 
@@ -331,7 +332,7 @@ def test_final_140k_model_is_selectable() -> None:
     model = build_model(architecture="EventSpikeSeg140k")
     assert isinstance(model, EventSpikeSeg140k)
     assert model.architecture.name == "EventSpikeSeg140k"
-    assert model.parameter_count() == 140_089
+    assert model.parameter_count() == 141_867
 
 
 def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
@@ -346,19 +347,15 @@ def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
     assert all(parameter.requires_grad for parameter in model.stem.parameters())
 
 
-def test_final_channel_selector_is_plif_spike_native() -> None:
+def test_final_model_uses_native_detail_and_continuous_current_readout() -> None:
     model = build_model()
-    selector = model.final_selector
-    assert selector.selector.conv.kernel_size == (1, 1)
-    assert selector.selector.conv.in_channels == 96
-    assert selector.selector.conv.out_channels == 96
-    assert hasattr(selector.selector.neuron, "beta_logit")
-    assert not any(isinstance(module, torch.nn.Linear) for module in selector.modules())
-
-    sequence = torch.ones(3, 1, 96, 8, 8)
-    selected = selector(sequence)
-    assert selected.shape == sequence.shape
-    assert torch.all((selected == 0) | (selected == 1))
+    assert isinstance(model.final_selector, torch.nn.Identity)
+    assert model.final_fuse.depthwise is not None
+    assert model.final_fuse.depthwise.conv.in_channels == 40
+    assert model.final_fuse.pointwise is not None
+    assert model.final_fuse.pointwise.conv.out_channels == 16
+    assert model.head.synapse.in_channels == 16
+    assert model.head.synapse.out_channels == 6
 
 
 def test_xl_model_richer_spiking_paths_and_residual_bridges() -> None:
@@ -398,13 +395,15 @@ def test_xl_dsec_parameter_accounting_matches_fpga_spec() -> None:
     assert inference_parameters == 226_767
 
 
-def test_final_eval_keeps_only_output_spike_raster() -> None:
+def test_final_eval_returns_native_continuous_logits_without_class_spike_raster() -> None:
     model = build_model()
     model.eval()
     statistics = _timestamp_statistics(16)
     with torch.no_grad():
         outputs = model(statistics)
-    assert outputs["segmentation_spikes"].shape == (10, 1, 6, 16, 16)
+    assert outputs["segmentation_logits"].shape == (1, 6, 16, 16)
+    assert "segmentation_spikes" not in outputs
+    assert "boundary_logits" not in outputs
     assert "enc1_spikes" not in outputs
     assert "decoder_spikes" not in outputs
 

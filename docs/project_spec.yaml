@@ -1,8 +1,8 @@
 document:
   title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
-  version: 1.6.0
-  status: eventspikeseg140k_u55c_static_actor_iteration_0
+  version: 1.7.0
+  status: eventspikeseg140k_native_resolution_accuracy_revision
   created_date: '2026-08-06'
   supersedes:
     - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -263,7 +263,7 @@ input_and_time:
     after_backward: detach_autograd_history_but_retain_numeric_neuron_state
     dsec_sequential_chunks:
       cli_default: 1
-      compose_profile: 5
+      compose_profile: 10
       behavior: no_grad_full_record_then_replay_chunks_with_one_objective_output_gradients
       state_snapshot: host_RAM_to_avoid_duplicate_GPU_neuron_state
       invariant: one_semantic_objective_per_complete_50ms_record
@@ -298,7 +298,7 @@ input_and_time:
       - "Within each 5 ms slice, exploit spike sparsity for convolution: only nonzero spike locations generate connected weight additions."
       - Apply the layer PLIF threshold/reset/adaptation once per 5 ms step in the same temporal order as the software reference.
       - Buffer the resulting ten output spike maps or sparse event lists as the T=10 input sequence for the next layer.
-      - After the semantic head has processed all ten steps, accumulate class spikes across the 50 ms record and emit one segmentation result.
+      - After the hidden graph has processed all ten steps, accumulate continuous 1x1 class currents across the record and emit one segmentation result.
       - Preserve membrane/adaptation state into the next consecutive 50 ms record; reset only at sequence/gap boundaries.
     memory_schedule:
       - A membrane/adaptation tile may be loaded from backing memory once, advanced through all ten 5 ms steps for its layer, then written back once.
@@ -321,7 +321,7 @@ runtime_batching_decision:
     PLIF state. Therefore a complete T=10 sequence may be computed for layer L before
     layer L+1 consumes that ten-step output sequence, exactly as multi-step SpikingJelly
     evaluation does.
-  output: one_semantic_segmentation_per_50ms_record_after_temporal_class_spike_count
+  output: one_semantic_segmentation_per_50ms_record_after_temporal_class_current_accumulation
   memory_implication: load_or_tile_one_layer_state_process_t0_to_t9_then_write_back
   asynchronous_claim: false
   sparsity_claim: sparse_synaptic_zero_skipping_within_each_fixed_5ms_step
@@ -391,22 +391,23 @@ architecture_family:
   implementation_model: EventSpikeSeg140k
   non_target_comparison_model: EventSpikeSegXL
   design_principles:
-    - Fully spiking learned feature and class-map path
-    - Three-scale 32_64_128 semantic encoder plus persistent 32-channel detail path
+    - Binary-spiking learned feature path with continuous final class-current accumulation
+    - Native 440x640 input with learned stride-2 semantic stem
+    - Three-scale 32_64_128 semantic encoder plus persistent 8-channel native detail path
     - Serial dilation-2 semantic context without QKV attention or parallel context
-    - Additive encoder skips and late semantic_shallow_detail concatenation
+    - Additive encoder skips and late semantic_detail concatenation
     - Nearest-neighbor upsampling rather than transposed convolution where possible
     - Depthwise spatial filtering plus pointwise event fan-out/channel mixing
     - Per-channel affine scaling folded into exported fixed-point parameters
     - Training-only auxiliary head omitted from inference
     - No bounding-box, attention-centroid, classification-only, or tracking head in the active model
   implementation_channel_schedule: [32, 64, 128]
-  detail_channels: 32
+  detail_channels: 8
   attention: none
   output:
-    temporal_spikes_shape_dsec: [T, N, 11, 241, 351]
-    accumulated_activity: sum_or_rate_over_T
-    decoded_semantic_map: argmax_over_class_activity
+    class_current_shape_dsec: [N, 11, 440, 640]
+    accumulated_activity: continuous_weighted_current_mean_over_T
+    decoded_semantic_map: argmax_over_class_current
     ignore_index: 255
   common_encoder_decoder:
     conceptual_stages:
@@ -740,11 +741,12 @@ fpga_implementation:
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class
-    registered_parameters: 140589
-    executed_training_parameters: 135533
-    executed_inference_parameters: 134807
-    inference_PLIF_populations: 37
-    omitted_from_RTL: [refine2_dead_block, auxiliary_head, surrogate_gradient]
+    registered_parameters: 142277
+    executed_training_parameters: 142277
+    executed_inference_parameters: 141535
+    inference_PLIF_populations: 27
+    final_current_readout: one_stateless_1x1_synaptic_accumulator
+    omitted_from_RTL: [refine2_dead_block, auxiliary_head, boundary_head, surrogate_gradient]
   target:
     primary_board: Digilent_Nexys_Video
     primary_device: XC7A200T-1SBG484C
@@ -760,7 +762,7 @@ fpga_implementation:
     external_or_onboard_DDR_allowed: false
     onboard_DDR3_present_but_forbidden_by_requirement: 512_MiB
   execution:
-    physical_topology: 37_permanently_instantiated_layer_actors
+    physical_topology: 27_permanent_PLIF_actors_plus_one_final_current_readout
     cross_layer_compute_sharing: forbidden
     layer_reconfiguration: forbidden
     partial_reconfiguration: forbidden
@@ -789,26 +791,24 @@ fpga_implementation:
       large_and_pointwise_tables: banked_BRAM_initialized_as_ROM
       small_depthwise_tables_and_scalars: LUTROM_or_registers
       replication: only_when_required_by_parallel_read_bandwidth
-    logical_state_at_DSEC_241x351:
-      dimensions: {full: [241, 351], half: [121, 176], quarter: [61, 88]}
-      membrane_formula: N_mem = 651*H*W + 512*H2*W2 + 1280*H4*W4
-      membrane_values: 72843333
-      correction: project2_PLIF_is_half_resolution_before_non_stateful_upsample
-      adaptation_formula: N_adapt = 352*H2*W2 + 1216*H4*W4
-      adaptation_enabled_neurons: 14023680
-      class_counter_values_if_dense: 930501
+    logical_state_at_DSEC_440x640:
+      dimensions: {native: [440, 640], half: [220, 320], quarter: [110, 160], eighth: [55, 80]}
+      membrane_formula: N_mem = 72*H*W + 128*H2*W2 + 480*H4*W4 + 1280*H8*W8
+      membrane_values: 43366400
+      adaptation_formula: N_adapt = 320*H4*W4 + 1216*H8*W8
+      adaptation_enabled_neurons: 10982400
+      class_readout_state: stateless_within_record_accumulators_only
       baseline_dense_storage_MiB:
-        membrane_int16: 138.94
-        adaptation_age_plus_amplitude_int16: 53.50
-        minimum_total_before_counters_queues_and_alignment: 192.44
+        membrane_int16: 82.71
+        adaptation_age_plus_amplitude_int16: 41.90
+        minimum_total_before_counters_queues_and_alignment: 124.61
         note: fixed_5ms_baseline_has_no_per_membrane_timestamp_field
       Artix7_XC7A200T_capacity:
         BRAM_MiB: 1.6040
         maximum_distributed_LUTRAM_MiB: 0.3525
         absolute_BRAM_plus_all_LUTRAM_MiB: 1.9565
-        BRAM_only_shortfall_MiB: 190.8360
-        BRAM_only_required_over_available: 119.9751
-        BRAM_plus_all_LUTRAM_required_over_available: 98.358
+        BRAM_only_shortfall_MiB: 123.0054
+        BRAM_only_required_over_available: 77.6865
       conclusion: exact_dense_state_is_impossible_on_chip
     on_chip_sparse_state_target:
       backing_store: banked_BRAM_plus_selected_LUTRAM
@@ -878,7 +878,7 @@ export_contract:
   equivalence_requirement: All exported golden tests must match exactly in the integer reference and RTL simulation.
   implemented_iteration_0:
     - XL_hard_rejection
-    - exact_37_actor_manifest
+    - exact_27_PLIF_actor_plus_current_readout_manifest
     - affine_folded_int8_weight_ROMs
     - quantized_beta_threshold_and_mechanism_parameters
     - fixed_point_saturation_and_rounding_contract

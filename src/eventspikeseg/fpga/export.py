@@ -17,19 +17,13 @@ from .fixed_point import FPGA_FORMATS
 from .target import NEXYS_VIDEO_XC7A200T, memory_budget
 
 EVENTSPIKESEG140K_INFERENCE_STAGES = (
+    "detail_stem",
+    "detail1.standard",
     "stem",
-    "enc1.depthwise",
-    "enc1.pointwise",
+    "enc1.standard",
     "enc1_extra.depthwise",
     "enc1_extra.pointwise",
-    "detail1.depthwise",
-    "detail1.pointwise",
-    "detail2.depthwise",
-    "detail2.pointwise",
-    "detail3.depthwise",
-    "detail3.pointwise",
-    "down2.depthwise",
-    "down2.pointwise",
+    "down2.standard",
     "enc2.depthwise",
     "enc2.pointwise",
     "enc2_extra.depthwise",
@@ -48,21 +42,26 @@ EVENTSPIKESEG140K_INFERENCE_STAGES = (
     "decoder2_extra.depthwise",
     "decoder2_extra.pointwise",
     "project2",
-    "final_selector.selector",
     "final_fuse.depthwise",
     "final_fuse.pointwise",
-    "decoder1_extra.depthwise",
-    "decoder1_extra.pointwise",
-    "head.stage",
 )
+EVENTSPIKESEG140K_CURRENT_READOUT = "head.synapse"
 
 _SPATIAL_TIERS = {
-    **{name: "full" for name in EVENTSPIKESEG140K_INFERENCE_STAGES},
+    **{name: "native" for name in EVENTSPIKESEG140K_INFERENCE_STAGES},
     **{
         name: "half"
         for name in (
-            "down2.depthwise",
-            "down2.pointwise",
+            "stem",
+            "enc1.standard",
+            "enc1_extra.depthwise",
+            "enc1_extra.pointwise",
+        )
+    },
+    **{
+        name: "quarter"
+        for name in (
+            "down2.standard",
             "enc2.depthwise",
             "enc2.pointwise",
             "enc2_extra.depthwise",
@@ -73,7 +72,7 @@ _SPATIAL_TIERS = {
         )
     },
     **{
-        name: "quarter"
+        name: "eighth"
         for name in (
             "down3.depthwise",
             "down3.pointwise",
@@ -91,16 +90,15 @@ _SPATIAL_TIERS = {
 }
 
 _INPUT_SPATIAL_TIER = {
-    "down2.depthwise": "full",
-    "down3.depthwise": "half",
+    "stem": "native",
+    "down2.standard": "half",
+    "down3.depthwise": "quarter",
 }
 
 _BASE_SKELETON_STAGES = {
     "stem",
-    "enc1.depthwise",
-    "enc1.pointwise",
-    "down2.depthwise",
-    "down2.pointwise",
+    "enc1.standard",
+    "down2.standard",
     "enc2.depthwise",
     "enc2.pointwise",
     "down3.depthwise",
@@ -109,7 +107,6 @@ _BASE_SKELETON_STAGES = {
     "enc3.pointwise",
     "project3",
     "project2",
-    "head.stage",
 }
 
 
@@ -170,9 +167,10 @@ def _stage_parameters(stage: SpikingStage) -> dict[str, object]:
 
 def _spatial_shapes(height: int, width: int) -> dict[str, list[int]]:
     return {
-        "full": [height, width],
+        "native": [height, width],
         "half": [(height + 1) // 2, (width + 1) // 2],
         "quarter": [(height + 3) // 4, (width + 3) // 4],
+        "eighth": [(height + 7) // 8, (width + 7) // 8],
     }
 
 
@@ -190,6 +188,8 @@ def _validate_model(model: nn.Module) -> EventSpikeSeg140k:
         for name in EVENTSPIKESEG140K_INFERENCE_STAGES
     ):
         raise TypeError("all frozen inference entries must be SpikingStage modules")
+    if not isinstance(named.get(EVENTSPIKESEG140K_CURRENT_READOUT), nn.Conv2d):
+        raise TypeError("the final inference readout must be a 1x1 Conv2d synapse")
     return model
 
 
@@ -197,8 +197,8 @@ def export_model(
     model: nn.Module,
     output_dir: str | Path,
     *,
-    height: int = 241,
-    width: int = 351,
+    height: int = 440,
+    width: int = 640,
     checkpoint_metadata: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Export the frozen 140k inference graph and return its manifest."""
@@ -269,48 +269,86 @@ def export_model(
             }
         )
 
+    readout = named[EVENTSPIKESEG140K_CURRENT_READOUT]
+    assert isinstance(readout, nn.Conv2d)
+    readout_q = FPGA_FORMATS["weight"].quantize(
+        readout.weight.detach().cpu().float()
+    ).to(torch.int8).numpy()
+    readout_id = len(layers)
+    readout_rom_name = f"{readout_id:02d}_head_synapse.mem"
+    (weights_dir / readout_rom_name).write_text(
+        "".join(f"{int(value) & 0xFF:02x}\n" for value in readout_q.reshape(-1)),
+        encoding="ascii",
+    )
+    arrays[EVENTSPIKESEG140K_CURRENT_READOUT] = readout_q
+    readout_parameters = sum(parameter.numel() for parameter in readout.parameters())
+    executed_parameters += readout_parameters
+    convolution_weights += readout.weight.numel()
+    layers.append(
+        {
+            "id": readout_id,
+            "name": EVENTSPIKESEG140K_CURRENT_READOUT,
+            "actor": "temporal_class_current_readout",
+            "kind": "stateless_temporal_current_accumulator",
+            "spatial_tier": "native",
+            "input_hw": shapes["native"],
+            "output_hw": shapes["native"],
+            "in_channels": readout.in_channels,
+            "out_channels": readout.out_channels,
+            "logical_membrane_states": 0,
+            "kernel": list(readout.kernel_size),
+            "stride": list(readout.stride),
+            "padding": list(readout.padding),
+            "dilation": list(readout.dilation),
+            "groups": readout.groups,
+            "weight_count": readout.weight.numel(),
+            "parameter_count": readout_parameters,
+            "weight_rom": f"weights/{readout_rom_name}",
+            "normalization": "none",
+        }
+    )
+
     registered_parameters = sum(parameter.numel() for parameter in model.parameters())
-    if len(layers) != 37 or convolution_weights != 127_456:
+    if len(layers) != 28 or convolution_weights != 135_624:
         raise ValueError(
-            "140k inference graph contract changed: expected 37 stages and 127456 conv weights"
+            "140k inference graph contract changed: expected 27 PLIF stages plus readout "
+            "and 135624 synaptic weights"
         )
-    if registered_parameters != 140_589 or executed_parameters != 134_807:
+    if registered_parameters != 142_277 or executed_parameters != 141_535:
         raise ValueError(
-            "140k parameter contract changed: expected registered/executed 140589/134807, "
+            "140k parameter contract changed: expected registered/executed 142277/141535, "
             f"got {registered_parameters}/{executed_parameters}"
         )
     total_membrane_states = sum(
         int(layer["logical_membrane_states"]) for layer in layers
     )
-    if total_membrane_states != 72_843_333:
+    if total_membrane_states != 43_366_400:
         raise ValueError(
-            "140k DSEC state contract changed: expected 72843333 membrane states, "
+            "native-resolution state contract changed: expected 43366400 membrane states, "
             f"got {total_membrane_states}"
         )
     base_membrane_states = sum(
         int(layer["logical_membrane_states"])
         for layer in layers
-        if layer["origin"] == "base_encoder_decoder_skeleton"
+        if layer.get("origin") == "base_encoder_decoder_skeleton"
     )
 
     np.savez_compressed(destination / "quantized_weights.npz", **arrays)
     class_mapping = {str(index): name for index, name in enumerate(DSEC_CLASS_NAMES)}
     _json_write(destination / "class_mapping.json", class_mapping)
     graph_operations = [
-        {"after": "project3", "operation": "nearest_event_fanout", "target": "half"},
+        {"after": "stem", "operation": "learned_stride2_downsample", "target": "half"},
+        {"after": "project3", "operation": "nearest_event_fanout", "target": "quarter"},
         {"before": "decoder2_extra.depthwise", "operation": "binary_OR", "with": "enc2"},
-        {"after": "project2", "operation": "nearest_event_fanout", "target": "full"},
+        {"after": "project2", "operation": "nearest_event_fanout", "target": "half"},
+        {"after": "project2_upsampled", "operation": "binary_OR", "with": "enc1"},
+        {"after": "semantic_half", "operation": "nearest_event_fanout", "target": "native"},
         {
-            "before": "final_selector.selector",
+            "before": "final_fuse.depthwise",
             "operation": "channel_concat_remap",
-            "sources": ["project2_upsampled", "enc1", "detail3"],
+            "sources": ["semantic_half_upsampled", "detail1"],
         },
-        {
-            "after": "final_selector.selector",
-            "operation": "retinotopic_binary_gate",
-            "source": "concat",
-        },
-        {"after": "head.stage", "operation": "class_spike_counter_and_argmax"},
+        {"after": "head.synapse", "operation": "temporal_current_accumulate_and_argmax"},
     ]
     manifest: dict[str, Any] = {
         "schema_version": "1.0.0",
@@ -320,18 +358,20 @@ def export_model(
         "input_channels": 2,
         "input_event": ["timestamp_us", "polarity", "y", "x"],
         "input_size": [height, width],
-        "timing_model": "asynchronous_timestamp_ordered_no_input_bins",
+        "timing_model": "fixed_time_ten_ordered_5ms_updates",
         "spatial_shapes": shapes,
         "registered_parameters": registered_parameters,
         "executed_inference_parameters": executed_parameters,
         "executed_convolution_weights": convolution_weights,
-        "inference_PLIF_populations": len(layers),
+        "inference_PLIF_populations": len(EVENTSPIKESEG140K_INFERENCE_STAGES),
         "logical_membrane_states": total_membrane_states,
         "base_skeleton_membrane_states": base_membrane_states,
         "canonical_addition_membrane_states": total_membrane_states - base_membrane_states,
-        "deployment_excludes": ["refine2", "aux_head", "surrogate_gradient", "XL_modules"],
+        "deployment_excludes": [
+            "refine2", "aux_head", "boundary_head", "surrogate_gradient", "XL_modules"
+        ],
         "hardware_topology": {
-            "layer_actors": "one_dedicated_actor_per_executed_population",
+            "layer_actors": "27_dedicated_PLIF_actors_plus_final_current_readout",
             "cross_layer_compute_sharing": False,
             "partial_reconfiguration": False,
             "event_flow": "timestamp_ordered_ready_valid",
@@ -342,7 +382,10 @@ def export_model(
         "target": NEXYS_VIDEO_XC7A200T.to_dict(),
         "dense_state_memory_budget": memory_budget(NEXYS_VIDEO_XC7A200T.bram_kibits),
         "quantization": {name: fmt.to_dict() for name, fmt in FPGA_FORMATS.items()},
-        "layer_order": list(EVENTSPIKESEG140K_INFERENCE_STAGES),
+        "layer_order": [
+            *EVENTSPIKESEG140K_INFERENCE_STAGES,
+            EVENTSPIKESEG140K_CURRENT_READOUT,
+        ],
         "layers": layers,
         "graph_operations": graph_operations,
         "class_mapping_file": "class_mapping.json",
@@ -362,8 +405,8 @@ def export_checkpoint(
     checkpoint_path: str | Path,
     output_dir: str | Path,
     *,
-    height: int = 241,
-    width: int = 351,
+    height: int = 440,
+    width: int = 640,
 ) -> dict[str, object]:
     checkpoint = torch.load(Path(checkpoint_path), map_location="cpu")
     if checkpoint.get("architecture") != "EventSpikeSeg140k":

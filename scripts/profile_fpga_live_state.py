@@ -47,7 +47,7 @@ def main() -> None:
     dataset = DSECRawEventDataset(
         args.root,
         split="train",
-        output_size=(241, 351),
+        output_size=(440, 640),
         internal_updates=internal_updates,
     )
     profile = LiveStateProfile()
