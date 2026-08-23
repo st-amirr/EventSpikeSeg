@@ -121,23 +121,20 @@ N_mem = 651*H*W + 512*H2*W2 + 1280*H4*W4
       = 72,843,333 membrane values
 ```
 
-Triangular threshold adaptation is enabled on **14,023,680** neurons and stores age plus amplitude. Direct
-asynchronous execution also stores one last-update timestamp per membrane. An
-illustrative 16-bit membrane/age/amplitude plus 32-bit timestamp layout is about
-**470.31 MiB**, before queues and counters. Artix-7 XC7A200T has only 1.604 MiB BRAM.
+Triangular threshold adaptation is enabled on **14,023,680** neurons and stores age plus amplitude. A direct asynchronous variant would also require a last-update timestamp per membrane, but the fixed 5 ms baseline does not. With 16-bit membrane plus two 16-bit adaptation fields where enabled, the dense persistent-state baseline is about **192.44 MiB** before queues and counters. Artix-7 XC7A200T has only 1.604 MiB BRAM.
 External and onboard DDR are forbidden, so only a lossless zero-default sparse state
 table could fit; measured worst-case occupancy is a hard feasibility gate.
 
 - **static/shared:** convolution weights, per-channel beta, per-channel base threshold;
-- **persistent per-neuron:** membrane, last-update timestamp, and enabled threshold-adaptation state;
+- **persistent per-neuron:** membrane and enabled threshold-adaptation state;
 - **temporary:** touched-event synaptic current and sparse spike FIFOs.
 
 The FPGA instantiates a permanent actor for every executed layer. An actor may sequence
 its own lanes, but arithmetic is not shared across layers and it must preserve one
 logical state record per `(layer,c,y,x)`. The exact sparse execution
-flow for DSEC is `timestamped event -> destination-address generation -> lazy physical-time
-decay -> weight addition -> threshold/reset -> state/timestamp writeback -> emitted events`.
-There is no global neural timestep barrier. See `docs/ARCHITECTURE.md` and
+flow for the baseline DSEC runtime is `50 ms raw-event record -> ten 5 ms slices -> layer-major sparse destination-address generation -> fixed-step
+decay -> weight addition -> threshold/reset -> state writeback -> emitted events`.
+There is an explicit 5 ms neural timestep boundary; the complete 50 ms record contains ten such ordered updates. See `docs/ARCHITECTURE.md` and
 `project_spec.yaml` for the full contract.
 
 ## Main commands
@@ -157,7 +154,7 @@ docker compose run --rm train-dsec-xl
 rectification, timestamp, and label alignment. `train-dsec` is the active 241x351,
 11-class 140k run; `train-dsec-xl` is an optional software capacity comparison.
 Both DSEC replay services deliberately train in FP32. Do not add `--amp`: FP16
-autocast is incompatible with the memory-bounded asynchronous surrogate-gradient
+autocast is incompatible with the memory-bounded temporal surrogate-gradient
 replay and can reject every optimizer update while leaving the scalar loss finite.
 
 ## Measured architecture-search evidence
@@ -294,3 +291,12 @@ python scripts/export_fpga_model.py --checkpoint artifacts/EventSpikeSeg140k_see
 
 The exporter hard-rejects XL and emits the exact 37-actor manifest, affine-folded int8
 ROMs, per-actor quantized neuron parameters, and the fixed-point contract.
+
+
+## FPGA runtime timing contract (50 ms records)
+
+DSEC hardware inference follows the same temporal discretization used for training. Each semantic record spans 50 ms and is represented by ten chronological 5 ms slices. The FPGA treats one complete 50 ms record as the scheduling/output unit, but it must still execute all ten PLIF updates; the ten slices must never be collapsed into one neuron update.
+
+For memory locality, the intended hardware order is layer-major over the complete temporal record: keep a layer (or a spatial tile of that layer) resident, execute its `t0..t9` updates in order, buffer the resulting ten spike slices, write the final persistent state back, then move to the next layer. Sparse convolution is retained inside every 5 ms slice: only nonzero spike locations generate synaptic additions. The baseline is therefore fixed-time rather than fully asynchronous, and no per-membrane 32-bit timestamp is required.
+
+One segmentation result is emitted per 50 ms record (20 Hz dataset cadence) after temporal class-spike counting. To sustain real time, compute for one record must average no more than 50 ms; double buffering may overlap acquisition of the next record with computation of the previous one.

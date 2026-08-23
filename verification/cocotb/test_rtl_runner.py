@@ -31,6 +31,11 @@ ROOT = Path(__file__).resolve().parents[2]
             "rtl/event_conv/event_accumulator.vhd",
             "test_event_accumulator",
         ),
+        (
+            "sparse_state_bank",
+            "rtl/state/sparse_state_bank.vhd",
+            "test_sparse_state_bank",
+        ),
     ],
     ids=[
         "lif",
@@ -39,6 +44,7 @@ ROOT = Path(__file__).resolve().parents[2]
         "rate_adaptation",
         "event_conv_address",
         "event_accumulator",
+        "sparse_state_bank",
     ],
 )
 def test_rtl_unit(top: str, source: str, test_module: str, tmp_path: Path) -> None:

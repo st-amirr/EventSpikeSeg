@@ -190,8 +190,7 @@ N_adapt_XL = 416*H2*W2 + 2080*H4*W4
 ```
 
 Each adaptation-enabled neuron stores age and amplitude, adding 40,049,152 persistent values. Direct
-asynchronous DSEC additionally needs one last-update timestamp for each of the 85,639,973
-membrane states. Raw storage examples are:
+A direct asynchronous variant would additionally need one last-update timestamp for every membrane state, but that is no longer the baseline runtime contract. Raw storage examples are:
 
 | Persistent state | Count | Illustrative format | Storage |
 | --- | ---: | ---: | ---: |
@@ -239,11 +238,7 @@ synaptic accumulator/PLIF stage.
 
 ### DSEC-Semantic
 
-DSEC is the preferred direct event-stream FPGA deployment path. Exact raw `(t,x,y,p)`
-events are sliced before each semantic timestamp and rectified. GPU training accumulates
-them into fixed physical-time divisions while retaining linear event multiplicity. Event
-density never changes the number of training updates. The FPGA does not create these
-divisions: AER events enter the first synaptic/PLIF stage directly.
+DSEC starts from exact raw `(t,x,y,p)` events sliced before each semantic timestamp and rectified. Both training and the baseline FPGA runtime use the same fixed-time contract: each 50 ms semantic interval is accumulated into ten chronological 5 ms polarity slices with linear event multiplicity. Event density never changes the number of SNN updates. The baseline FPGA therefore does **not** propagate raw camera events asynchronously through the whole network; raw events are first assigned to one of the ten 5 ms runtime slices.
 
 ## Canonical EventSpikeSeg140k forward graph
 
@@ -348,10 +343,11 @@ fixed-point state. Their time course must match the exported integer reference e
 ## Non-PLIF operations and FPGA treatment
 
 The goal is a **digital neuromorphic FPGA accelerator**. The substrate uses synchronous
-digital circuits internally, but model execution is asynchronous: camera/hidden events
-trigger only affected fan-out, touched neurons decay from their stored last-update
-timestamp, and there is no global model timestep barrier. It is not a dense ANN
-accelerator with PLIF inserted only as an activation.
+digital circuits and preserves the trained fixed-time SNN semantics: each 50 ms DSEC
+record contains ten explicit 5 ms neural updates. Within each update, only nonzero
+spike locations trigger connected synaptic fan-out/additions, so the synaptic datapath
+remains sparse even though neuron time advances on a fixed schedule. It is not a dense
+ANN accelerator with PLIF inserted only as an activation.
 
 | Software operation | Exact role | FPGA interpretation |
 | --- | --- | --- |
@@ -383,35 +379,42 @@ The canonical deployment objective is:
    semantic output against the float model;
 5. instantiate one permanent VHDL actor per executed layer; each owns convolution
    addressing, accumulator lanes, PLIF/mechanism logic, queue, and weight ROM;
-6. store only losslessly live persistent membrane/adaptation/timestamp entries in banked
-   XC7A200T BRAM/LUTRAM; external/onboard DDR is forbidden and fit must be measured;
-7. first establish exact full/tiled execution, then add sparse optimizations such as
-   touched-address queues, active-neuron lists, lazy decay, and clock-enable during idle
+6. store persistent membrane/adaptation state in banked/tiled memory; the fixed-step baseline
+   does not require a per-membrane timestamp; external/onboard DDR is forbidden and fit must be measured;
+7. first establish exact T=10 tiled execution, then add sparse optimizations such as
+   touched-address queues, active-neuron lists, compact lazy-step tags, and clock-enable during idle
    periods only after equivalence is proven;
 8. run RTL simulation, Vivado synthesis/place-and-route, post-implementation timing
    simulation, and representative-event SAIF/VCD power analysis;
 9. optionally validate final latency/power on a physical Nexys Video when available.
 
-## Exact event-addressed layer procedure
+## Exact fixed-step sparse layer procedure
 
-The training backend evaluates dense tensor `Conv2d` on fixed physical-time divisions.
-The asynchronous FPGA evaluates the shared network parameters input-centrically:
+The training backend evaluates `[T,N,C,H,W]` sequences with ten fixed 5 ms updates per
+50 ms DSEC record. The baseline FPGA preserves exactly that temporal contract while
+changing the convolution execution order to exploit sparsity.
 
-1. Receive one timestamped presynaptic event `(t,c,y,x)`.
-2. Generate only valid postsynaptic destinations from kernel, stride, padding, dilation,
-   and group/depthwise address rules.
-3. For each touched destination, load `V`, adaptation, and its `last_update_timestamp`.
-4. Apply `retention = beta ** ((t-last_update)/5000us)`, then add the corresponding
-   shared weight and execute threshold, reset, peer inhibition, and threshold adaptation in the exported order.
-5. Write the state and timestamp back. Enqueue each generated binary spike at timestamp
-   `t`; if no spike is generated, propagation along that path stops.
-6. Merge residual events, remap concatenated channels, and fan out nearest-upsample events
-   by address. The local selector never waits for a complete spatial frame.
-7. Read semantic class-spike counters at label timestamps. Persistent neuron state resets
-   only at sequence/frame gaps, not at semantic-label boundaries.
+For one layer and one 50 ms record:
 
-There is no global neural timestep barrier in DSEC inference. Fixed-time training
-divisions are a PyTorch approximation sharing the same weights and physical-time decay.
+1. Consume the layer's ten chronological input spike/count slices `t0..t9`.
+2. For slice `t`, enumerate only nonzero presynaptic locations `(c,y,x)` and generate
+   valid postsynaptic destinations from kernel, stride, padding, dilation, and group/depthwise rules.
+3. Accumulate the corresponding shared weights into the destination current for that 5 ms step;
+   binary spikes require no activation multiply.
+4. Advance the layer's PLIF/adaptation state once for that 5 ms step using the exported
+   fixed-point equation, then apply threshold, reset, peer inhibition, and threshold adaptation.
+5. Emit the slice's binary output spikes and continue with `t+1` while the layer/state tile
+   remains resident where possible.
+6. After `t9`, write the layer/tile's final persistent state back and provide the ten output
+   spike slices/event lists to the next feed-forward layer.
+7. After the semantic head finishes `t0..t9`, sum class spikes over the 50 ms record and
+   emit one per-pixel argmax segmentation. Persistent neuron state carries into the next
+   consecutive record and resets only at sequence/frame gaps.
+
+There is therefore an explicit 5 ms neural timestep boundary, but no need to run dense
+zero-valued convolution. The baseline does not update/threshold once per raw camera event
+and does not need a per-neuron `last_update_us` timestamp. A lazy step-tag optimization is
+allowed only after exact integer-reference equivalence is demonstrated.
 
 ## Static layer-actor FPGA execution
 
@@ -424,6 +427,19 @@ event/spike FIFO -> shared-kernel weight lookup -> synaptic accumulator
                  -> load PLIF state -> fixed-point leak/integrate/threshold/reset
                  -> save state -> emit output spike event
 ```
+
+The state path is banked and locality-aware. A layer actor does not issue a backing-memory
+transaction for every individual synaptic addition. It retains recently touched state in
+actor-local banks, accumulates the contribution for the destination being serviced, performs
+one PLIF update, and writes the resulting state once. A missing sparse-table address is the
+exact reset state. A state entry may be reclaimed only when quantized membrane and adaptation
+are inactive; a full associative set reports overflow and never evicts live state silently.
+
+This reduces traffic but does not remove the fundamental per-neuron state requirement. A
+presynaptic event that touches a postsynaptic destination must eventually read or already
+have that destination's state locally. Conventional and neuromorphic hardware differ mainly
+in where that state resides, how spikes are multicast, and how well local memory exploits
+event locality.
 
 Logical live membrane/adaptation state remains persistent in banked on-chip BRAM/LUTRAM.
 Common clock/reset and state-bank fabrics are shared infrastructure, not shared layer
@@ -470,8 +486,8 @@ populations, while the registered dead block contains two more populations.
 
 ### Native DSEC layer graph and dimensions
 
-`T=10` below is the default PyTorch training schedule. FPGA input is a direct asynchronous
-event stream and does not store ten input bins. Spatial dimensions and channel identities
+`T=10` below is both the default PyTorch training schedule and the baseline FPGA runtime schedule. Raw DSEC events are accumulated into the same ten 5 ms slices; FPGA input is not a direct asynchronous
+event stream. Hardware may represent the ten 5 ms inputs as sparse event/count lists rather than dense full-frame bins, but their temporal boundaries are explicit. Spatial dimensions and channel identities
 are nevertheless the same.
 
 | Stage | Synaptic/spiking operation | Output `T,N,C,H,W` | PLIF populations |
@@ -505,7 +521,44 @@ are nevertheless the same.
 Training-only heads are `64->11` at 121x176 and `128->32->11` at 61x88. They are skipped
 by `model.eval()` and omitted from VHDL export.
 
-### FPGA routing/control requirements
+#
+## Fixed 50 ms FPGA runtime schedule
+
+The baseline hardware now deliberately matches the trained multi-step execution rather than converting the checkpoint to a different asynchronous neuron model.
+
+One DSEC semantic record is 50 ms and contains ten chronological 5 ms SNN slices. The hardware scheduling unit is the **complete 50 ms record**, while the neuron integration unit remains **5 ms**:
+
+```text
+raw DSEC events for 50 ms
+        -> rectify / map coordinates
+        -> accumulate into t0..t9 (10 x 5 ms)
+        -> Layer 1: process t0..t9 sequentially with Layer-1 persistent PLIF state
+        -> buffer Layer-1 output spikes for t0..t9
+        -> Layer 2: process t0..t9 sequentially with Layer-2 persistent PLIF state
+        -> ...
+        -> semantic head t0..t9
+        -> temporal class-spike count
+        -> one segmentation result for the 50 ms record
+```
+
+This layer-major schedule is equivalent to the trained `[T,N,C,H,W]` graph because recurrence is local to each PLIF population and inter-layer connections are feed-forward. Computing the complete ten-step output sequence of layer `L` before layer `L+1` consumes it does not change the mathematical result.
+
+### Memory consequence
+
+This schedule is specifically chosen to reduce persistent-state traffic. For a layer or spatial tile:
+
+1. load its membrane/adaptation state from backing memory into BRAM/URAM/cache;
+2. keep that state resident while executing `t0` through `t9` in chronological order;
+3. exploit spike sparsity inside each 5 ms slice so zero input locations cause no synaptic weight additions;
+4. update PLIF state once per 5 ms slice under the exported fixed-point equation;
+5. buffer the ten output spike slices/event lists required by the next layer;
+6. write the final state back once after `t9` and advance to the next layer/tile.
+
+The baseline therefore does **not** require a 32-bit `last_update_us` value per logical membrane. Time advances uniformly in known 5 ms steps. A later lazy-update implementation may use a compact step tag to skip untouched-state decay, but it is an optimization and must be proven equivalent to the fixed-step integer reference.
+
+This design is **not fully asynchronous**. It is a fixed-time digital neuromorphic SNN with sparse/event-addressed synaptic work inside each 5 ms slice. The sustained real-time requirement is one complete record every 50 ms (20 Hz). Input acquisition for record `k+1` may be double-buffered while record `k` is computed.
+
+## FPGA routing/control requirements
 
 - `bridge12`/`bridge23` require timestamp-tagged merge queues for main and projected paths.
 - Parallel d1/d2/d4 context concatenates channel address ranges and joins the residual by

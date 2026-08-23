@@ -42,10 +42,8 @@ pressure, and inhibition/adaptation arithmetic.
 ### Logical-state footprint is much larger than parameter memory
 
 At 241x351, 140k owns **72,843,333** membrane states. Threshold adaptation adds
-age/amplitude on **14,023,680** neurons, and asynchronous execution needs one last-update
-timestamp per membrane. The baseline dense persistent store is about 470.31 MiB using
-16-bit membrane/adaptation and 32-bit timestamps. XC7A200T BRAM is short by about
-468.705 MiB (293.2 times too small). External/onboard DDR is forbidden, so the open
+age/amplitude on **14,023,680** neurons. The previously proposed asynchronous execution also required one 32-bit last-update timestamp per membrane, but that is no longer baseline. Under fixed 5 ms runtime, 16-bit membrane plus two 16-bit adaptation fields require about **192.44 MiB** before counters/queues/alignment. XC7A200T BRAM is short by about
+**190.84 MiB** (about **120x** the available BRAM). External/onboard DDR is forbidden, so the open
 feasibility issue is whether a lossless sparse table can bound all live states on chip.
 
 ## Open: continuous learned neuron parameters
@@ -79,3 +77,8 @@ Previously one six-channel sample was repeated or adjacent files were stacked as
 **Status:** dataset installation issue detected automatically.
 
 The installed `events/train` folder has 2,887 NumPy tensors while `labels/train` has 10,001 indexed masks. Only `rec1487339175_export` is represented in the active event manifest. This loss of recording diversity is a likely accuracy limiter and must be fixed at the dataset installation level; the loader reports the mismatch explicitly.
+
+
+## Resolved: DSEC FPGA timing contract is no longer direct asynchronous AER
+
+The baseline hardware now follows the trained fixed-time representation: one 50 ms DSEC record contains ten ordered 5 ms SNN updates. The full record is processed layer-by-layer, with each layer/tile retaining state while stepping through `t0..t9`. This removes the semantic mismatch between fixed-time training and direct raw-event PLIF updates and removes the mandatory per-membrane 32-bit timestamp from the baseline state format. A future lazy-update/tagged implementation remains an optimization, not the reference behavior.

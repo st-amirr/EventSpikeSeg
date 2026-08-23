@@ -400,7 +400,7 @@ This changes the DSEC temporal protocol to `dsec-log-count-events-full-window-v2
 binary/partial-loss checkpoints are intentionally incompatible. EventSpikeSeg140k remains
 the canonical deployment model; EventSpikeSegXL is an explicitly named comparison run.
 
-## 2026-08-21 — Make DSEC deployment asynchronous and training timestamp-aware
+## 2026-08-21 — Make DSEC deployment asynchronous and training timestamp-aware (superseded 2026-08-22)
 
 The bounded-log/full-window decision above still described a clocked input model and is
 superseded for DSEC. The final FPGA must accept sequential camera events directly; it must
@@ -513,3 +513,16 @@ end of the training epoch before validation resets or overwrites it. The format 
 fields identify this as `layer-named-hardware-lif-v1` forensic state. Normal resume remains
 epoch-boundary weight/optimizer restoration; replaying saved runtime state must be explicit
 so it cannot leak one sequence into another.
+
+
+## 2026-08-22 — Use 50 ms record-level, T=10 fixed-step FPGA inference
+
+This supersedes the 2026-08-21 decision that made DSEC deployment direct asynchronous AER execution. Preserve the trained timing contract instead of translating the checkpoint to a new event-time neuron model.
+
+DSEC still starts from exact raw `(t,x,y,p)` events, but both software training and baseline FPGA inference assign every event to one of ten chronological 5 ms slices inside the 50 ms semantic interval. Event multiplicity is preserved. The network therefore executes ten fixed PLIF updates per record and emits one segmentation result after temporal class-spike counting over the complete 50 ms interval.
+
+The FPGA scheduling order is intentionally **layer-major over the complete T=10 record**. For layer `L`, process slices `t0..t9` sequentially using that layer's own persistent membrane/adaptation state, buffer its ten output spike slices, then let layer `L+1` consume that sequence. This is equivalent to the trained multi-step feed-forward graph because recurrent state is local to each PLIF population.
+
+This scheduling choice is also the baseline state-memory strategy. Load a layer/state tile once, keep it resident while executing all ten 5 ms updates, and write its final state back after `t9`. Sparse event-address convolution remains enabled within each slice, so zero spike locations do not trigger synaptic additions. The baseline explicitly advances every required state in known 5 ms steps and therefore does not require a 32-bit `last_update_us` field per membrane. Timestamp/lazy-decay storage becomes an optional later optimization only if the integer reference proves exact equivalence.
+
+The runtime is **not fully asynchronous**. The real-time throughput target is one complete 50 ms record every 50 ms (20 Hz); record acquisition and compute may be double-buffered. The ten internal 5 ms steps may not be collapsed into a single 50 ms PLIF update.

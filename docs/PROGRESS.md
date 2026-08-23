@@ -120,7 +120,7 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 - assigned local initialized weight ROM, convolution addressing, accumulator lanes,
   PLIF/mechanism logic, and output queue to every actor;
 - corrected `project2` state to its actual pre-upsample half resolution and measured the
-  exact incompatibility: 470.31 MiB dense state versus 1.604 MiB XC7A200T BRAM (293.2x);
+  exact fixed-step incompatibility: about 192.44 MiB dense membrane/adaptation state versus 1.604 MiB XC7A200T BRAM (~120x); the earlier 470.31 MiB figure included a now-superseded 32-bit timestamp per membrane;
   no external/onboard DDR is allowed, so lossless sparse live
   state must pass a measured hard-capacity gate before full deployment is feasible;
 - added `src/eventspikeseg/fpga`: fixed formats, deterministic 37-actor export,
@@ -130,6 +130,23 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 - added the canonical externally state-backed, ready/valid PLIF RTL lane with learned
   retention coefficient, integer rounding, saturation, soft reset, and backpressure;
 - 72 Python tests and all 6 GHDL/cocotb RTL groups pass in Docker.
+
+## 2026-08-22 — 140k static-actor FPGA Iteration 1 state bank
+
+- added a ready/valid, set-associative, zero-default sparse neuron-state bank in VHDL;
+- stores address tags, membrane, last timestamp, adaptation age, and adaptation amplitude;
+- supports exact hit update, missing-address reset reads, and exact dead-state reclamation;
+- forbids live-state eviction: a full set raises an explicit capacity overflow without
+  altering resident state;
+- added collision/reclamation cocotb coverage; all 7 GHDL RTL groups pass and Python lint
+  passes in the CPU-only Docker verification service;
+- next integration is state-bank read -> lazy-retention selection -> PLIF update ->
+  state-bank writeback inside one actor-local event lane.
+- the epoch-2 one-record sparse profile reached 27,182,700 live entries (37.32% of all
+  logical membranes) and 320.08 MiB of tagged state, requiring 295.98x the usable Artix-7
+  state budget after weights and reserve; even one bit for every logical membrane would
+  require 8.68 MiB, so an exact no-DDR XC7A200T deployment is now rejected rather than
+  treated as a likely compression target.
 
 ## 2026-08-19 FPGA implementation direction (superseded target/platform details)
 
@@ -142,9 +159,9 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 - no softmax exists in the canonical deployed path;
 - coarse-grained synaptic-accumulator + PLIF processing elements are time-multiplexed across spatial tiles/channels/stages while persistent state stays in banked memory;
 - first hardware milestone is bit-exact integer/RTL equivalence; sparse touched-address/lazy-decay/clock-enable optimizations follow only after exactness;
-- DSEC training uses fixed physical-time count divisions; direct FPGA events use lazy physical-time decay and no global neural timestep;
+- DSEC training and baseline FPGA runtime both use ten fixed 5 ms updates per 50 ms record; sparse synaptic work is retained inside each update;
 - memory-bounded replay forms one complete-record objective before propagating its gradients through chronological chunks;
-- remaining RTL-sensitive mechanisms are timestamp-based lazy decay, peer-membrane inhibition, triangular threshold adaptation, and the local PLIF selector;
+- remaining RTL-sensitive mechanisms are fixed-step PLIF decay, peer-membrane inhibition, triangular threshold adaptation, and the local PLIF selector;
 - XL adds projected bridge joins, parallel-context joins, local Q/K/V rendezvous, and an external-DDR state-store requirement;
 - evaluation flow is RTL simulation -> synthesis/place-route -> post-implementation timing -> representative SAIF/VCD Vivado power -> optional ZCU104 measurement.
 
@@ -156,13 +173,24 @@ fixed-point export, DDR-backed state traffic, and RTL branch/attention joins.
 - threshold-adaptation scopes cover **9,836,800 logical neurons** at that resolution, each with adaptation age and amplitude;
 - implementation contract: static/shared weights and channel parameters, persistent per-`(layer,c,y,x)` neuron state, temporary current accumulators, sparse event FIFOs;
 - exact sparse layer execution accumulates all weight contributions for a timestep before one PLIF threshold/reset update, then writes persistent state back and emits only fired addresses;
-- a small physical PE array may be time-multiplexed, but logical state addresses may not be aliased; timestamp-based lazy decay is part of the bit-exact DSEC baseline.
+- a small physical PE array may be time-multiplexed, but logical state addresses may not be aliased; fixed 5 ms state advancement is part of the bit-exact DSEC baseline.
 
 ### 2026-08-21 XL DSEC implementation accounting
 
 - native dimensions: 241x351 -> 121x176 -> 61x88;
 - 50 inference PLIF populations and 226,767 executed inference parameters;
 - 85,639,973 membrane states plus 40,049,152 threshold-adaptation age/amplitude values;
-- one last-update timestamp per membrane state for direct asynchronous execution;
+- the fixed-step baseline does not require a per-membrane last-update timestamp; layer/tile state can remain resident across t0..t9;
 - illustrative exact persistent store: 566.42 MiB at membrane/adaptation 16-bit and timestamp 32-bit;
 - implementation memory: external DDR backing store with banked on-chip active-tile cache.
+
+
+### 2026-08-22 fixed 50 ms FPGA runtime decision
+
+- one DSEC semantic record = 50 ms = ten chronological 5 ms SNN updates;
+- baseline FPGA runtime now matches this trained timing contract rather than direct per-event asynchronous propagation;
+- preferred hardware order is layer-major across the full T=10 record: load/cache one layer or spatial state tile, process t0..t9, write state back once, then advance to the next layer;
+- sparse event-addressed convolution remains active inside each 5 ms slice;
+- one segmentation output is produced per 50 ms record after temporal class-spike counting;
+- baseline fixed-step state no longer requires one 32-bit timestamp per membrane; lazy step-tagging is future optional optimization;
+- sustained real-time target is 20 records/s, with optional double buffering of acquisition and compute.

@@ -52,9 +52,7 @@ optional optimization only after bit-exact and semantic-accuracy revalidation.
 
 Do not infer neuron-state memory from parameter count. The 37-population 140k graph has
 72,843,333 logical membrane states and 14,023,680 adaptation-enabled states at DSEC
-`241x351`. With the baseline 16-bit membrane, 32-bit timestamp, and two 16-bit
-adaptation fields, dense persistent state is about 470.31 MiB before queues/counters.
-XC7A200T BRAM is 1.604 MiB, about 293.2 times too small for the dense state.
+`241x351`. With the baseline 16-bit membrane and two 16-bit adaptation fields where enabled, dense persistent state is about 192.44 MiB before queues/counters. The fixed 5 ms baseline does not require one 32-bit timestamp per membrane. XC7A200T BRAM is 1.604 MiB, about 120 times too small for the dense state.
 External memory, including the board's DDR3, is forbidden. A lossless sparse live-state
 table is the only remaining possible mapping and must pass a measured worst-case bound;
 overflow eviction or state loss is forbidden.
@@ -88,14 +86,7 @@ still stored, not implemented as one physical register/neuron each.
 
 ### Exact sparse execution order
 
-DSEC inference is asynchronous. For each timestamped `(polarity,y,x)` event, generate its
-valid destinations, lazily decay each touched state from its own last-update timestamp,
-add the shared synaptic weight, apply PLIF/inhibition/adaptation/reset, write the state and timestamp,
-then immediately route emitted spikes to the next layer. There is no input bin, dense idle
-state sweep, or global layer/timestep barrier.
-
-DDD17 retains its historical fixed-step approximation because source event tuples are not
-available. Its per-timestep accumulation barrier is not the DSEC/FPGA execution contract.
+DSEC FPGA inference is fixed-time and must match training. One 50 ms semantic record is represented by ten chronological 5 ms slices. Do not implement direct raw-event end-to-end asynchronous propagation as the baseline. Within each 5 ms slice, sparse spike addresses may drive only the connected synaptic additions, but PLIF state advances under an explicit 5 ms step boundary. The preferred hardware schedule is layer-major over the full T=10 record: process t0..t9 for one layer/tile while its state is resident, then pass the ten output spike slices to the next layer.
 
 ### Natural mappings
 
@@ -115,9 +106,9 @@ available. Its per-timestep accumulation barrier is not the DSEC/FPGA execution 
 - stem peer-membrane inhibition uses retinotopic cross-channel membrane energy;
 - encoder/context triangular threshold adaptation uses age/amplitude and a dynamic threshold;
 - final selector is a local retinotopic binary gate after a 96->96 PLIF projection;
-- DSEC PLIF decay is a function of physical timestamp delta, with 5 ms as the
+- DSEC PLIF decay advances in fixed 5 ms steps, with 5 ms as the
   learned-beta reference interval;
-- touched state uses physical-time lazy decay in the asynchronous FPGA path.
+- per-membrane timestamps are not required in the baseline; lazy tagged updates are optional only after equivalence proof.
 
 Do not silently replace these. If hardware cannot reproduce them, define an explicit
 hardware-compatible approximation and revalidate/fine-tune accuracy.
@@ -144,3 +135,8 @@ Compare layer currents, membrane trajectories, spikes, output spike counts, sema
 accuracy, cycle counts, and overflow/saturation behavior. Post-route timing and Vivado
 power are estimates and must be labeled as such; only instrumented board results may be
 called measured FPGA power/latency.
+
+
+## 50 ms DSEC runtime rule
+
+Treat each 50 ms DSEC record as one hardware scheduling transaction containing exactly ten 5 ms SNN steps. Preserve chronological step order and persistent PLIF/adaptation state. It is legal and preferred to process all ten steps of one layer (or one spatial state tile) before moving to the next feed-forward layer, because this matches multi-step SpikingJelly semantics. Never collapse ten steps into one, never threshold/reset once per raw camera event, and never claim the baseline is asynchronous.

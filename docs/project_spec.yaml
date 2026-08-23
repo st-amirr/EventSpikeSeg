@@ -21,9 +21,9 @@ document:
     frame-index gaps. The manifest is authoritative for stream order. New checkpoints
     use ddd17-timestamp-v3 and fingerprint the manifest, split, representation, physical
     interval, and event-clock contract. DDD17 requires no HDF5 input. DSEC instead
-    slices and rectifies exact raw events. GPU training accumulates them into fixed
-    physical-time divisions, while the FPGA consumes the asynchronous camera stream
-    directly with physical-time lazy PLIF decay.
+    slices and rectifies exact raw events, then schedules each 50 ms semantic interval
+    into the same ten fixed 5 ms updates used during training. FPGA inference follows
+    this fixed-time T=10 contract rather than direct per-event asynchronous propagation.
   preservation_policy:
     retained_from_previous_specification:
       - Hardware-compatible LIF equations and power-of-two leakage
@@ -95,11 +95,12 @@ framework:
     primary_type: custom_VHDL_2008_digital_neuromorphic_FPGA
     primary_target: Digilent_Nexys_Video_XC7A200T
     primary_goal: >-
-      Execute the trained spike-native graph as a digital event-driven accelerator:
-      shared convolutional weights generate sparse synaptic additions, PLIF membrane/
-      adaptation state is stored in fixed-point memory, and only emitted spikes are
-      routed between learned stages. Avoid dense ANN-style feature processing where
-      event sparsity can be exploited.
+      Execute the trained spike-native graph as a fixed-time digital neuromorphic accelerator.
+      One 50 ms DSEC record contains ten chronological 5 ms SNN updates. Within each update,
+      sparse spike locations generate only the required shared-weight synaptic additions;
+      PLIF membrane/adaptation state remains persistent and is advanced in the same order as
+      training. The hardware processes the full T=10 record layer-by-layer rather than
+      propagating individual raw events asynchronously through the whole network.
     software_reference: SpikingJelly_float_plus_bit_exact_integer_reference
     implementation_flow: [integer_reference, VHDL_RTL, RTL_simulation, synthesis, place_and_route, post_implementation_timing, activity_based_power, optional_board_measurement]
   spiker_plus:
@@ -182,10 +183,10 @@ active_dataset:
 future_datasets:
   raw_event_segmentation:
     status: dsec_semantic_implemented_pending_accuracy_measurement
-    objective: Validate chronological event clocks and truly sparse event-address inference.
+    objective: Validate raw-event ingestion with fixed 50 ms records, ten 5 ms SNN updates, and sparse synaptic execution.
     candidates:
       - DDD17 raw recordings aligned with semantic labels where accessible
-      - DSEC-Semantic (implemented as dsec-fixed-time-counts-async-fpga-v4)
+      - DSEC-Semantic (training protocol currently identified as dsec-fixed-time-counts-async-fpga-v4; hardware runtime is fixed-time T=10)
     required_fields: [timestamp, x, y, polarity, semantic_label_alignment]
     role: final_algorithm_and_hardware_validation
     dsec_contract:
@@ -194,10 +195,10 @@ future_datasets:
       interval_us: 50000
       spatial_alignment: rectify_map_then_bottom_40_row_crop
       training_input: fixed_physical_time_divisions_with_linear_event_multiplicity
-      fpga_input: direct_AER_camera_events_without_bins
+      fpga_input: raw_events_accumulated_into_ten_5ms_runtime_slices_per_50ms_record
       event_value_encoding: every_source_event_contributes_one_no_log_or_cap
       hidden_spike_encoding: binary
-      plif_time_rule: retention_equals_beta_power_delta_us_over_5000
+      plif_time_rule: one_beta_based_PLIF_update_per_5ms_slice
       full_recording_preload: false
       validation_split:
         sequence_count:
@@ -246,7 +247,7 @@ input_and_time:
     invariant: scheduled_synaptic_activity_equals_histogram_activity
     note: clock_updates_are_hardware_time_within_one_record_not_stacked_dataset_files
   dsec_fixed_time_divisions:
-    purpose: GPU_training_acceleration_not_FPGA_input_storage
+    purpose: shared_training_and_FPGA_runtime_time_contract
     duration_us: 50000_divided_by_internal_updates
     default_divisions: 10
     invariants:
@@ -255,6 +256,8 @@ input_and_time:
       - event_density_never_changes_update_count
       - carry_fixed_physical_elapsed_microseconds
       - normalize_logits_and_rates_by_elapsed_physical_time
+      - FPGA_runtime_preserves_all_ten_chronological_5ms_updates
+      - full_50ms_record_is_the_semantic_output_and_memory_scheduling_unit
   training_state:
     truncated_bptt_boundary: one_50ms_record
     after_backward: detach_autograd_history_but_retain_numeric_neuron_state
@@ -283,15 +286,46 @@ input_and_time:
       - timing_mode
       - stateful_stream
     legacy_policy: reject_all_older_input_protocol_checkpoints
-  dsec_asynchronous_execution:
-    event_transition:
-      - Accept one timestamped source or hidden event
-      - Generate only connected postsynaptic destination addresses
-      - Lazily decay each touched state from its last_update_timestamp
-      - Add the shared synaptic weight
-      - Apply threshold_inhibition_adaptation_and_reset
-      - Enqueue generated binary spikes at the same timestamp
-    forbidden: [global_neural_timestep_barrier, FPGA_input_bins, dense_idle_state_sweep]
+  dsec_50ms_runtime_execution:
+    scheduling_unit: one_50ms_semantic_record
+    internal_time_steps: 10
+    internal_step_us: 5000
+    temporal_semantics: fixed_step_discrete_time_matching_training
+    graph_schedule: layer_major_over_full_T10_record
+    procedure:
+      - Accumulate/encode raw DSEC events into ten chronological 5 ms polarity maps with exact linear multiplicity.
+      - For one executed layer actor, process t0 through t9 sequentially using that layer's persistent PLIF state.
+      - "Within each 5 ms slice, exploit spike sparsity for convolution: only nonzero spike locations generate connected weight additions."
+      - Apply the layer PLIF threshold/reset/adaptation once per 5 ms step in the same temporal order as the software reference.
+      - Buffer the resulting ten output spike maps or sparse event lists as the T=10 input sequence for the next layer.
+      - After the semantic head has processed all ten steps, accumulate class spikes across the 50 ms record and emit one segmentation result.
+      - Preserve membrane/adaptation state into the next consecutive 50 ms record; reset only at sequence/gap boundaries.
+    memory_schedule:
+      - A membrane/adaptation tile may be loaded from backing memory once, advanced through all ten 5 ms steps for its layer, then written back once.
+      - Spatial tiles may include convolution halo regions; tile size is a bandwidth/resource design parameter.
+      - The baseline explicitly advances fixed 5 ms state and therefore does not require one 32-bit last-update timestamp per membrane.
+      - A future lazy-update optimization may add compact step tags only if integer-reference equivalence is proven.
+    realtime_requirement: sustained processing must complete one 50ms record every 50ms; double buffering may overlap acquisition of record k+1 with compute for record k
+    forbidden: [direct_per_event_end_to_end_asynchronous_propagation, collapsing_50ms_to_one_PLIF_step, reordering_across_5ms_step_boundaries]
+
+
+runtime_batching_decision:
+  decision: process_one_complete_50ms_DSEC_record_layer_by_layer
+  rationale: >-
+    This matches the trained [T,N,C,H,W] execution contract while allowing one layer's
+    membrane/adaptation tile to remain resident across all ten 5 ms updates. It avoids
+    event-by-event layer swapping and preserves temporal PLIF dynamics.
+  record_structure: {record_us: 50000, internal_updates: 10, update_us: 5000}
+  layer_major_equivalence: >-
+    The graph is feed-forward between stages and recurrent only through each stage's own
+    PLIF state. Therefore a complete T=10 sequence may be computed for layer L before
+    layer L+1 consumes that ten-step output sequence, exactly as multi-step SpikingJelly
+    evaluation does.
+  output: one_semantic_segmentation_per_50ms_record_after_temporal_class_spike_count
+  memory_implication: load_or_tile_one_layer_state_process_t0_to_t9_then_write_back
+  asynchronous_claim: false
+  sparsity_claim: sparse_synaptic_zero_skipping_within_each_fixed_5ms_step
+  realtime_target: 20_records_per_second_sustained
 
 neuron:
   name: HardwareLIF
@@ -702,7 +736,7 @@ quantization:
       - layerwise_equivalence_replay
 
 fpga_implementation:
-  status: iteration_0_export_integer_and_PLIF_RTL_implemented
+  status: iteration_1_lossless_sparse_state_bank_implemented
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class
@@ -732,17 +766,17 @@ fpga_implementation:
     partial_reconfiguration: forbidden
     permitted_shared_infrastructure: [clock_reset, input_dispatch, on_chip_state_banks, final_class_readout]
     actor_owned_blocks: [weight_ROM, convolution_address_generator, synaptic_accumulator_lanes, PLIF_update, mechanism_logic, output_FIFO]
-    model_level: asynchronous_timestamp_ordered_event_processing
+    model_level: fixed_50ms_record_with_ten_5ms_SNN_updates
     RTL_level: synchronous_clocked_elastic_pipeline
-    global_neural_timestep_barrier: false
-    FPGA_input_bins: false
-    event_address: [timestamp_us, polarity_or_channel, y, x]
+    global_neural_timestep_barrier: true_at_each_5ms_step_within_each_layer_sequence
+    FPGA_input_bins: ten_fixed_5ms_runtime_slices_per_50ms_record
+    event_address: [slice_index_0_to_9, polarity_or_channel, y, x]
     procedure:
-      - Route one ordered camera or hidden spike to valid convolution destinations.
-      - Lazily decay only each touched neuron from its stored last-update timestamp.
-      - Add its shared-kernel weight; binary spikes require no activation multiply.
-      - Apply threshold, reset, peer inhibition, and triangular threshold adaptation.
-      - Store updated state and immediately enqueue emitted spikes.
+      - For the current layer, consume its complete T=10 input spike sequence for one 50 ms record.
+      - For each 5 ms slice, route nonzero spike locations only to valid convolution destinations and accumulate shared-kernel weights.
+      - Advance that layer's membrane/adaptation state once for the slice, then emit the slice's binary output spikes.
+      - Repeat for slices 0..9 while the layer state tile remains resident where possible.
+      - Store the updated persistent state and hand the ten output slices to the next layer actor.
     residual_merge: timestamp_and_address_matched_binary_OR_dedup
     concat: channel_address_remap_without_arithmetic
     nearest_upsample: event_address_fanout
@@ -765,23 +799,23 @@ fpga_implementation:
       class_counter_values_if_dense: 930501
       baseline_dense_storage_MiB:
         membrane_int16: 138.94
-        timestamp_uint32: 277.88
         adaptation_age_plus_amplitude_int16: 53.50
-        minimum_total_before_counters_queues_and_alignment: 470.31
+        minimum_total_before_counters_queues_and_alignment: 192.44
+        note: fixed_5ms_baseline_has_no_per_membrane_timestamp_field
       Artix7_XC7A200T_capacity:
         BRAM_MiB: 1.6040
         maximum_distributed_LUTRAM_MiB: 0.3525
         absolute_BRAM_plus_all_LUTRAM_MiB: 1.9565
-        BRAM_only_shortfall_MiB: 468.7050
-        BRAM_only_required_over_available: 293.2094
-        BRAM_plus_all_LUTRAM_required_over_available: 240.384
+        BRAM_only_shortfall_MiB: 190.8360
+        BRAM_only_required_over_available: 119.9751
+        BRAM_plus_all_LUTRAM_required_over_available: 98.358
       conclusion: exact_dense_state_is_impossible_on_chip
     on_chip_sparse_state_target:
       backing_store: banked_BRAM_plus_selected_LUTRAM
       external_spill: forbidden
       state_store_option: lossless_zero_default_sparse_table
       zero_default: absent_address_means_zero_membrane_and_inactive_adaptation
-      entry_fields: [layer, channel, y, x, membrane, last_update_time, adaptation_age_if_enabled, adaptation_amplitude_if_enabled]
+      entry_fields: [layer, channel, y, x, membrane, adaptation_age_if_enabled, adaptation_amplitude_if_enabled]
       exact_reclamation: remove_only_after_quantized_membrane_is_zero_and_adaptation_is_inactive
       class_counts: sparse_zero_default_counters_with_width_selected_from_trace_maxima
       forbidden: [silent_state_drop, overflow_eviction, dense_idle_state_sweep]
@@ -790,6 +824,16 @@ fpga_implementation:
         occupancy, tag/value width, FIFO depths, class-counter occupancy, and bank
         conflicts on full DSEC sequences. The model is not deployable under the no-DDR
         requirement unless the measured worst case fits with logic/queue margin.
+      measured_epoch002_one_record:
+        artifact: artifacts/fpga_profiles/epoch002_one_record.json
+        live_entries: 27182700
+        live_fraction_of_logical_membranes: 0.3731666
+        tagged_state_MiB: 320.084
+        usable_state_budget_MiB_after_weights_and_reserve: 1.08145
+        required_over_budget: 295.9765
+        dense_one_bit_membrane_only_MiB: 8.6836
+        observed_live_one_bit_values_only_MiB: 3.2404
+        conclusion: current_exact_140k_state_does_not_fit_no_DDR_XC7A200T
       no_silent_approximation: model_or_precision_changes_require_QAT_and_accuracy_revalidation
   arithmetic:
     common_synapse: signed_weight_lookup_and_saturating_add
@@ -840,6 +884,13 @@ export_contract:
     - fixed_point_saturation_and_rounding_contract
     - integer_PLIF_and_sparse_state_store_primitives
     - backpressured_external_state_PLIF_RTL_lane
+  implemented_iteration_1:
+    - set_associative_zero_default_sparse_state_bank
+    - layer_address_tagged_membrane_timestamp_and_adaptation_records
+    - exact_dead_state_reclamation
+    - no_eviction_full_set_overflow
+    - ready_valid_backpressure
+    - cocotb_collision_update_reclamation_and_overflow_equivalence
 
 validation_and_testing:
   required_fast_tests:
