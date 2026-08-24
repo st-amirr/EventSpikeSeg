@@ -2,7 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
--- End-to-end 5 ms streaming scheduler for EventSpikeSeg140k v7.
+-- End-to-end 5 ms streaming scheduler for EventSpikeSeg140k v8.
 --
 -- A sealed input bin is accepted only when the previous bin has traversed all
 -- deployed actors.  Ingress is expected to use two alternating buffers so the
@@ -11,7 +11,7 @@ use ieee.numeric_std.all;
 -- (U <= 1.0) and the preferred utilization target (default U <= 0.8).
 entity streaming_bin_controller is
   generic (
-    ACTOR_COUNT             : positive := 27;
+    ACTOR_COUNT             : positive := 25;
     PREDICTION_BINS         : positive := 10;
     ACTOR_INDEX_WIDTH       : positive := 5;
     BIN_TAG_WIDTH           : positive := 24;

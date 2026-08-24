@@ -324,7 +324,7 @@ def test_canonical_model_is_140k_and_xl_is_selectable() -> None:
     assert model.detail1.standard is not None
     assert not model.detail1.standard.neuron.config.threshold_adaptation_enabled
     assert not model.architecture.output_competition_enabled
-    assert model.parameter_count() == 141_867
+    assert model.parameter_count() == 149_835
     assert xl.parameter_count() == 236_445
 
 
@@ -332,7 +332,7 @@ def test_final_140k_model_is_selectable() -> None:
     model = build_model(architecture="EventSpikeSeg140k")
     assert isinstance(model, EventSpikeSeg140k)
     assert model.architecture.name == "EventSpikeSeg140k"
-    assert model.parameter_count() == 141_867
+    assert model.parameter_count() == 149_835
 
 
 def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
@@ -350,10 +350,15 @@ def test_final_model_freezes_only_semantic_backbone_for_refinement() -> None:
 def test_final_model_uses_native_detail_and_continuous_current_readout() -> None:
     model = build_model()
     assert isinstance(model.final_selector, torch.nn.Identity)
-    assert model.final_fuse.depthwise is not None
-    assert model.final_fuse.depthwise.conv.in_channels == 40
-    assert model.final_fuse.pointwise is not None
-    assert model.final_fuse.pointwise.conv.out_channels == 16
+    assert model.decoder2_fuse.conv.in_channels == 128
+    assert model.decoder2_fuse.conv.out_channels == 64
+    assert model.decoder2_fuse.conv.kernel_size == (1, 1)
+    assert model.final_fuse.standard is not None
+    assert model.final_fuse.standard.conv.in_channels == 40
+    assert model.final_fuse.standard.conv.out_channels == 16
+    assert model.final_fuse.standard.conv.kernel_size == (3, 3)
+    assert model.final_fuse.depthwise is None
+    assert model.final_fuse.pointwise is None
     assert model.head.synapse.in_channels == 16
     assert model.head.synapse.out_channels == 6
 

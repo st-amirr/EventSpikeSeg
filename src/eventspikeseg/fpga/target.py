@@ -53,9 +53,9 @@ ARTIX7_BRAM_KIBITS = {
     "XC7A200T": 13_140,
 }
 
-# Native DSEC 440x640, 27 deployed PLIF populations. The wide semantic trunk starts
-# at half resolution; only an 8-channel detail path and 40->16 fusion remain native.
-DSEC_MEMBRANE_STATES = 43_366_400
+# Native DSEC 440x640, 25 deployed PLIF populations. Concatenative quarter fusion
+# and standard native fusion remove the two intermediate DW/PW membrane banks.
+DSEC_MEMBRANE_STATES = 30_976_000
 DSEC_ADAPTATION_STATES = 10_982_400
 BIN_TAG_WIDTH = 24
 BIN_TAG_BYTES = 3

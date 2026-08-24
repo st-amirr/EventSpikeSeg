@@ -6,20 +6,20 @@ import pytest
 import torch
 
 from eventspikeseg.fpga import (
-    EVENTSPIKESEG140K_INFERENCE_STAGES,
-    FPGA_FORMATS,
     ARTIX7_XC7A200T,
-    NEXYS_VIDEO_XC7A200T,
     BIN_TAG_WIDTH,
     BIN_US,
     DEFAULT_TARGET_UTILIZATION,
-    FixedTimeRuntime,
-    RuntimeTiming,
+    EVENTSPIKESEG140K_INFERENCE_STAGES,
+    FPGA_FORMATS,
+    NEXYS_VIDEO_XC7A200T,
     STEPS_PER_RECORD,
-    StreamingBinRuntime,
+    FixedTimeRuntime,
     IntegerPLIF,
     LiveStateProfile,
+    RuntimeTiming,
     SparseStateStore,
+    StreamingBinRuntime,
     export_checkpoint,
     export_model,
     live_state_mask,
@@ -33,14 +33,14 @@ def test_frozen_140k_inference_graph_contract(tmp_path) -> None:
     model = EventSpikeSeg140k(class_count=11, input_channels=2)
     manifest = export_model(model, tmp_path)
 
-    assert len(EVENTSPIKESEG140K_INFERENCE_STAGES) == 27
+    assert len(EVENTSPIKESEG140K_INFERENCE_STAGES) == 25
     assert manifest["model"] == "EventSpikeSeg140k"
-    assert manifest["registered_parameters"] == 142_277
-    assert manifest["executed_inference_parameters"] == 141_535
-    assert manifest["executed_convolution_weights"] == 135_624
-    assert manifest["logical_membrane_states"] == 43_366_400
+    assert manifest["registered_parameters"] == 150_245
+    assert manifest["executed_inference_parameters"] == 149_503
+    assert manifest["executed_convolution_weights"] == 143_904
+    assert manifest["logical_membrane_states"] == 30_976_000
     assert manifest["base_skeleton_membrane_states"] == 10_700_800
-    assert manifest["canonical_addition_membrane_states"] == 32_665_600
+    assert manifest["canonical_addition_membrane_states"] == 20_275_200
     assert "refine2" in manifest["deployment_excludes"]
     assert "aux_head" in manifest["deployment_excludes"]
     assert manifest["hardware_topology"]["cross_layer_compute_sharing"] is False
@@ -58,7 +58,7 @@ def test_frozen_140k_inference_graph_contract(tmp_path) -> None:
     assert manifest["hardware_topology"]["state_record_timestamp_field"] is False
     assert manifest["hardware_topology"]["state_record_last_bin_tag_bits"] == 24
     assert manifest["dense_state_memory_budget"]["required_over_available"] == pytest.approx(
-        155.0380517503805
+        118.20395738203958
     )
 
     model_spec = json.loads((tmp_path / "model_spec.yaml").read_text(encoding="utf-8"))
@@ -155,9 +155,9 @@ def test_sparse_state_does_not_reclaim_active_adaptation() -> None:
 def test_artix7_memory_shortfall_uses_binary_units() -> None:
     budget = memory_budget(NEXYS_VIDEO_XC7A200T.bram_kibits)
     assert NEXYS_VIDEO_XC7A200T.bram_mib == pytest.approx(1.60400390625)
-    assert budget["state_mib"] == pytest.approx(248.681640625)
-    assert budget["missing_mib"] == pytest.approx(247.07763671875)
-    assert budget["percent_missing"] == pytest.approx(99.35499705478107)
+    assert budget["state_mib"] == pytest.approx(189.599609375)
+    assert budget["missing_mib"] == pytest.approx(187.99560546875)
+    assert budget["percent_missing"] == pytest.approx(99.15400463559104)
 
 
 def test_live_state_mask_reclaims_quantized_zero_and_expired_adaptation() -> None:
@@ -176,7 +176,7 @@ def test_live_state_mask_reclaims_quantized_zero_and_expired_adaptation() -> Non
 def test_empty_live_state_profile_fits_reserved_bram() -> None:
     summary = LiveStateProfile().summary()
     assert summary["fits_on_chip_bram"] is True
-    assert summary["state_budget_bytes"] == 1_125_816
+    assert summary["state_budget_bytes"] == 1_117_536
     assert summary["current_entries_sum"] == 0
 
 
@@ -203,7 +203,7 @@ def test_streaming_runtime_uses_bin_major_end_to_end_order() -> None:
 def test_runtime_utilization_and_headroom_contract() -> None:
     timing = RuntimeTiming(clock_hz=100_000_000)
     assert BIN_US == 5_000
-    assert DEFAULT_TARGET_UTILIZATION == pytest.approx(0.8)
+    assert pytest.approx(0.8) == DEFAULT_TARGET_UTILIZATION
     assert timing.hard_cycle_budget == 500_000
     assert timing.target_cycle_budget == 400_000
     assert timing.prediction_period_us == 50_000

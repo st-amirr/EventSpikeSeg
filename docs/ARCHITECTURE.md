@@ -2,10 +2,10 @@
 
 ## Active implementation model
 
-`EventSpikeSeg140k` is the only 11-class DSEC/FPGA implementation target. Revision v7
-uses the native **440x640** semantic plane and has **142,277 registered parameters**,
-**141,535 executed inference parameters**, **135,624 executed synaptic weights**, and
-**27 executed PLIF populations plus one stateless temporal class-current readout**.
+`EventSpikeSeg140k` is the only 11-class DSEC/FPGA implementation target. Revision v8
+uses the native **440x640** semantic plane and has **150,245 registered parameters**,
+**149,503 executed inference parameters**, **143,904 executed synaptic weights**, and
+**25 executed PLIF populations plus one stateless temporal class-current readout**.
 `EventSpikeSegXL` remains a software comparison and the FPGA exporter rejects it.
 
 The input loader no longer scales rectified event coordinates to 241x351. It schedules
@@ -26,9 +26,12 @@ class-current readout         Nx11x440x640
 ```
 
 The native detail block, semantic stem/first block, and 32->64 transition use standard
-spatial/channel convolutions. Later blocks remain depthwise/pointwise. Projected decoder
-features are OR-merged with quarter- and half-scale encoder skips, fanned out to native
-resolution, concatenated with the 8-channel detail path, and fused by DW40/PW16 PLIF.
+spatial/channel convolutions. Later encoder blocks remain depthwise/pointwise. At quarter
+scale, projected decoder64 and encoder64 spikes are concatenated and mixed by one standard
+1x1 128->64 PLIF stage. At half scale, coincident projected/skip spikes retain multiplicity
+instead of being binary-OR deduplicated. Native semantic32 and detail8 spikes are then
+concatenated and fused by one standard 3x3 40->16 PLIF stage, so cross-channel and spatial
+evidence combines before thresholding.
 
 The final 16->11 1x1 synapse consumes binary spikes but does not threshold them into
 class spikes. It accumulates signed current over all ten updates and exposes continuous
@@ -39,14 +42,14 @@ are omitted from deployment.
 At 440x640 the exact deployed persistent state is:
 
 ```text
-N_mem   = 72*440*640 + 128*220*320 + 480*110*160 + 1280*55*80
-        = 43,366,400 membrane values
+N_mem   = 32*440*640 + 128*220*320 + 416*110*160 + 1280*55*80
+        = 30,976,000 membrane values
 N_adapt = 320*110*160 + 1216*55*80
         = 10,982,400 adaptation-enabled values
 ```
 
 With 16-bit membrane and two 16-bit adaptation fields, dense persistent state is
-124.61 MiB before queues and alignment. This is lower than the old 241x351 graph's
+100.98 MiB before lazy-update tags, queues, and alignment. This is lower than the old 241x351 graph's
 72.84 million membranes/192.44 MiB because the wide paths now begin at half resolution.
 It still cannot fit dense state in XC7A200T BRAM, so the lossless sparse-state feasibility
 gate remains mandatory.
@@ -126,7 +129,7 @@ accuracy and bit-level behavior are explicitly revalidated.
 
 ## Logical neuron-state count: parameters are not neuron states
 
-The v7 ~142k parameter count is not the number of physical or logical PLIF neurons.
+The v8 ~150k parameter count is not the number of physical or logical PLIF neurons.
 Weights, learned beta, and base thresholds are shared; membrane and adaptation state are
 owned separately by every executed `(layer, channel, y, x)` logical neuron.
 
@@ -139,20 +142,20 @@ H2 x W2 = 110 x 160  (quarter)
 H3 x W3 =  55 x  80  (eighth)
 ```
 
-The **27 deployed PLIF populations** sum to the following channel-equivalent state maps:
+The **25 deployed PLIF populations** sum to the following channel-equivalent state maps:
 
 ```text
-native  :   72 * H0 * W0
+native  :   32 * H0 * W0
 half    :  128 * H1 * W1
-quarter :  480 * H2 * W2
+quarter :  416 * H2 * W2
 eighth  : 1280 * H3 * W3
 ```
 
 Therefore:
 
 ```text
-N_mem = 72*440*640 + 128*220*320 + 480*110*160 + 1280*55*80
-      = 43,366,400 independent membrane values
+N_mem = 32*440*640 + 128*220*320 + 416*110*160 + 1280*55*80
+      = 30,976,000 independent membrane values
 ```
 
 Triangular threshold adaptation is disabled on the native and half-resolution paths.
@@ -173,10 +176,10 @@ For a hypothetical dense exact-state implementation the persistent payload is th
 
 | State | Values | Storage |
 | --- | ---: | ---: |
-| membrane, int16 | 43,366,400 | 82.71 MiB |
+| membrane, int16 | 30,976,000 | 59.08 MiB |
 | adaptation age + amplitude, two int16 fields | 21,964,800 | 41.90 MiB |
-| last-bin tag, 24 bit | 43,366,400 | 124.07 MiB |
-| exact dense touched-state total | — | **248.68 MiB** |
+| last-bin tag, 24 bit | 30,976,000 | 88.62 MiB |
+| exact dense touched-state total | — | **189.60 MiB** |
 
 The active implementation is sparse, so last-bin tags exist only for live table entries.
 With a 28-bit logical address, int16 membrane and 24-bit bin tag, the raw non-adaptive
@@ -186,22 +189,22 @@ entry budgets. This is the exact reason sparse-state occupancy is a hard feasibi
 The XC7A200T has about 1.604 MiB BRAM; the board DDR3 exists but is forbidden by the
 active no-external-memory experiment.
 
-### Why v7 is structurally cheaper than v6
+### Why v8 is structurally cheaper than v6
 
 The revision intentionally spends slightly more static weight memory to remove expensive
 high-resolution stateful transformations:
 
-| Metric | superseded v6 | active v7 | change |
+| Metric | superseded v6 | active v8 | change |
 | --- | ---: | ---: | ---: |
-| executed PLIF populations | 37 | 27 | -27.0% |
-| executed synaptic weights | 127,456 | 135,624 | +6.4% |
-| logical membranes | 72.84M | 43.37M | **-40.5%** |
-| membrane+adaptation payload (excluding lazy bin tag) | 192.44 MiB | 124.61 MiB | **-35.2%** |
-| full/native-resolution state coefficient | 651 | 72 | **-88.9%** |
+| executed PLIF populations | 37 | 25 | -32.4% |
+| executed synaptic weights | 127,456 | 143,904 | +12.9% |
+| logical membranes | 72.84M | 30.98M | **-57.5%** |
+| membrane+adaptation payload (excluding lazy bin tag) | 192.44 MiB | 100.98 MiB | **-47.5%** |
+| full/native-resolution state coefficient | 651 | 32 | **-95.1%** |
 
-The comparison is especially notable because v7 processes the **native 440x640** semantic
+The comparison is especially notable because v8 processes the **native 440x640** semantic
 plane rather than 241x351. It has about 3.33x as many input pixels but still owns fewer
-logical membranes. The state-per-synaptic-weight ratio falls from roughly 572 to 320.
+logical membranes. The state-per-synaptic-weight ratio falls from roughly 572 to 215.
 This is the intended state-first hardware design direction: static int8 weights are cheap;
 large read/write PLIF maps are expensive.
 
@@ -218,7 +221,7 @@ The reduction comes from four code-level changes:
 These figures are structural cost proxies, not measured event-driven operation counts.
 Actual synaptic additions still depend on spike activity and must be reported from traces.
 
-### Exact v7 deployed PLIF populations at DSEC 440x640
+### Exact v8 deployed PLIF populations at DSEC 440x640
 
 `A` marks populations that additionally own triangular adaptation age/amplitude.
 
@@ -246,11 +249,9 @@ Actual synaptic additions still depend on spike activity and must be reported fr
 | context2.depthwise | 128x55x80 | 563,200 | A |
 | context2.pointwise | 128x55x80 | 563,200 | A |
 | project3 | 64x55x80 | 281,600 | |
-| decoder2_extra.depthwise | 64x110x160 | 1,126,400 | |
-| decoder2_extra.pointwise | 64x110x160 | 1,126,400 | |
+| decoder2_fuse | 64x110x160 | 1,126,400 | |
 | project2 | 32x110x160 | 563,200 | |
-| final_fuse.depthwise | 40x440x640 | 11,264,000 | |
-| final_fuse.pointwise | 16x440x640 | 4,505,600 | |
+| final_fuse.standard | 16x440x640 | 4,505,600 | |
 
 The `16->11` class readout has **zero PLIF membrane state**. For each native pixel it sums
 signed 1x1 synaptic current caused by the final hidden spikes over `t0..t9`. The common
@@ -285,12 +286,12 @@ DDD17 remains an approximation input path and is not the active FPGA target.
 ### DSEC-Semantic
 
 DSEC starts from exact raw `(t,x,y,p)` events sliced before each semantic timestamp and
-rectified to the canonical 640x440 semantic plane. **There is no 241x351 resize in v7.**
+rectified to the canonical 640x440 semantic plane. **There is no 241x351 resize in v8.**
 Each 50 ms interval is assigned to ten ordered 5 ms ON/OFF slices with linear event
 multiplicity. The hardware may keep those slices as sparse address/count lists rather
 than dense tensors, but the ten temporal boundaries are explicit.
 
-## Canonical EventSpikeSeg140k v7 forward graph
+## Canonical EventSpikeSeg140k v8 forward graph
 
 ```text
 raw DSEC events -> rectify -> ten 5 ms two-polarity sparse slices @ 440x640
@@ -311,15 +312,16 @@ semantic branch:
   -> residual DW128/PW128
   -> two residual dilation-2 DW128/PW128 blocks
 
- decoder:
-  project3 128->64 PLIF -> nearest fanout to 110x160 -> binary OR with x2
-  -> residual DW64/PW64
-  -> project2 64->32 PLIF -> nearest fanout to 220x320 -> binary OR with x1
+decoder:
+  project3 128->64 PLIF -> nearest fanout to 110x160
+  -> concatenate with x2 = 128 channels -> standard 1x1 128->64 PLIF
+  -> project2 64->32 PLIF -> nearest fanout to 220x320
+  -> multiplicity-preserving event sum with x1 (values 0, 1, or 2)
   -> nearest fanout to 440x640
 
 late native fusion:
   concat semantic32 + detail8 = 40 channels
-  -> DW40 PLIF -> PW16 PLIF
+  -> standard 3x3 40->16 PLIF
   -> 1x1 16->11 signed temporal-current readout (no PLIF)
   -> accumulate over t0..t9 -> per-pixel argmax
 ```
@@ -358,7 +360,8 @@ ANN accelerator with PLIF inserted only as an activation.
 | Software operation | Exact role | FPGA interpretation |
 | --- | --- | --- |
 | `ChannelAffine` | per-channel current gain | fold into quantized weight/scale before export |
-| residual `add + clamp(0,1)` | merge binary spike routes | event merge / binary OR-dedup equivalent |
+| quarter skip concat | preserve encoder/decoder event identity until learned fusion | channel-ID remap into one 1x1 synaptic accumulator |
+| half skip sum | preserve coincident spike evidence | route both events; values 0/1/2 in dense training are event multiplicity, not an analog activation |
 | nearest upsample | duplicate spatial spike locations | event-address fan-out/remapping |
 | `torch.cat` | concatenate channel groups | channel-ID/address remapping; no arithmetic |
 | final `TemporalCurrentReadout` | signed 1x1 class evidence over ten hidden-spike slices | accumulate signed class current per pixel; no output PLIF state |
@@ -366,14 +369,14 @@ ANN accelerator with PLIF inserted only as an activation.
 | DDD17 timestamp scheduler | reconstruct approximate timed deliveries | compatibility scheduler feeding the same 5 ms neural-time grid |
 
 XL-only bridges, parallel context, attention, selector, and class-spike head are documented
-separately below because they are not present in the exported v7 graph.
+separately below because they are not present in the exported v8 graph.
 
 ## Primary implementation goal: digital neuromorphic FPGA
 
 The canonical deployment objective is:
 
 1. keep PyTorch/SpikingJelly as the training and floating-point golden reference;
-2. export only the **27-population executed v7 140k PLIF graph plus its stateless temporal-current readout** and its learned weights, beta, thresholds,
+2. export only the **25-population executed v8 140k PLIF graph plus its stateless temporal-current readout** and its learned weights, beta, thresholds,
    inhibition, adaptation strength, and adaptation-duration parameters;
 3. define deterministic fixed-point formats, rounding, saturation, and overflow rules;
 4. build a bit-exact integer reference and verify layer currents, membranes, spikes, and
@@ -392,7 +395,7 @@ The canonical deployment objective is:
 
 Training remains unchanged. DSEC supplies fixed physical-time updates, and each PLIF stage
 uses touched-neuron lazy state. Live hardware therefore works **bin-major end-to-end**:
-one completed 5 ms camera bin must traverse the entire 27-PLIF deployed graph before that
+one completed 5 ms camera bin must traverse the entire 25-PLIF deployed graph before that
 bin is retired. The next camera bin may be captured concurrently in the other ingress buffer.
 
 For input bin `k`:
@@ -413,7 +416,7 @@ For input bin `k`:
    `last_bin_tag = current_bin_tag`, reclaim it only when quantized membrane is zero and
    adaptation is inactive, and emit only output spikes.
 7. Propagate those sparse spikes immediately through actor 1, then actor 2, ... through all
-   27 deployed PLIF actors and the stateless 16->11 signed class-current update.
+   25 deployed PLIF actors and the stateless 16->11 signed class-current update.
 8. Only after the final actor/readout update completes is bin `k` retired and bin `k+1`
    allowed to become the compute bin. PLIF/adaptation state persists across bins.
 9. Signed class current persists only across the configured prediction window. The default
@@ -427,7 +430,7 @@ It is also not the superseded 50 ms layer-major schedule. The active ordering is
 capture bin k+1 in buffer B                 capture bin k+2 ...
              ||
 compute bin k from buffer A:
-actor0 -> actor1 -> ... -> actor26 -> class-current update -> retire bin k
+actor0 -> actor1 -> ... -> actor24 -> class-current update -> retire bin k
              ||
 swap A/B, compute bin k+1
 ```
@@ -598,7 +601,7 @@ only and is not the active state path for neurons that may skip bins.
 ### Sparse on-chip state requirement
 
 Dense exact lazy state still cannot fit Artix-7: int16 membranes + two int16 adaptation
-fields where enabled + a dense 24-bit last-bin tag would require **248.68 MiB**. The active
+fields where enabled + a dense 24-bit last-bin tag would require **189.60 MiB**. The active
 no-DDR experiment therefore uses a lossless zero-default sparse table:
 
 ```text
@@ -611,14 +614,14 @@ inactive. Full associative sets assert overflow; live state is never silently ev
 The conservative profiler uses 12-byte non-adaptive and 16-byte adaptive aligned entries;
 these budgets include the compact bin tag. Vivado BRAM packing is the final authority.
 
-A previous one-record profile is not a capacity proof. The v7 model must be profiled over
+A previous one-record profile is not a capacity proof. The v8 model must be profiled over
 complete DSEC sequences and report per-layer high-watermarks, set conflicts, FIFO occupancy,
 class-current accumulator occupancy, cycles/bin, utilization `U`, headroom `H`, and margin
 before claiming no-DDR real-time fit.
 
 ### Active RTL baseline blocks
 
-- `rtl/control/streaming_bin_controller.vhd`: bin-major 27-actor scheduling, prediction-window counter and cycles/bin deadline instrumentation;
+- `rtl/control/streaming_bin_controller.vhd`: bin-major 25-actor scheduling, prediction-window counter and cycles/bin deadline instrumentation;
 - `rtl/state/sparse_state_bank.vhd`: zero-default tagged state with a compact 24-bit `last_bin_tag`;
 - `rtl/neuron/plif_update.vhd`: externally state-backed learned-beta lazy PLIF with iterative `beta^Δk` semantics;
 - `rtl/neuron/lif_pe.vhd`: one-step locally resident helper only (`Δk=1` prerequisite);
@@ -631,14 +634,14 @@ weight additions at the same `(y,x)`. Class currents accumulate across the confi
 prediction window (default ten 5 ms bins) and reset after each prediction; PLIF/adaptation
 state continues across predictions until a sequence/gap reset.
 
-## FPGA routing/control requirements for v7
+## FPGA routing/control requirements for v8
 
-- `project3` nearest upsample is event-address fan-out to quarter resolution, followed by
-  address-matched binary OR with the encoder-2 skip.
-- `project2` nearest fanout is OR-merged with encoder-1 at half resolution and then fanned
-  out again to native resolution.
+- `project3` nearest upsample is event-address fan-out to quarter resolution; its channels
+  are concatenated with encoder-2 and fused by `decoder2_fuse` before one PLIF threshold.
+- `project2` nearest fanout is multiplicity-summed with encoder-1 at half resolution and
+  then fanned out again to native resolution. Coincident events are not deduplicated.
 - Late concatenation is only a channel-ID remap: semantic channels 0..31 plus detail 32..39.
-- There is no v7 selector, attention rendezvous, projected bridge, or class-spike counter.
+- There is no v8 selector, attention rendezvous, projected bridge, or class-spike counter.
 - The readout requires signed current accumulation and per-pixel 11-way argmax; common
   positive readout scaling may be skipped for class selection.
 - Persistent state is on-chip sparse BRAM/LUTRAM under the active experiment. Board DDR3

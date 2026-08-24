@@ -234,7 +234,7 @@ FINAL_LOSS_PROFILE = LossProfile(
     boundary=0.10,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-native-macro-class-ce-current-readout-v8"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-spike-preserving-fusion-macro-class-v9"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625

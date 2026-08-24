@@ -1,6 +1,6 @@
 """Canonical EventSpikeSeg models.
 
-``EventSpikeSeg140k`` is the ~142k native-resolution dual-path model and is the project's
+``EventSpikeSeg140k`` is the ~150k native-resolution dual-path model and is the project's
 primary architecture for accuracy evaluation and digital neuromorphic deployment. Its
 hidden feature path is spike-native; the final classifier accumulates continuous class
 current over the complete temporal record.
@@ -45,7 +45,7 @@ from .model_components import (
     TimestampEventInput,
 )
 
-# Selectable finals: canonical EventSpikeSeg140k (~142k) and EventSpikeSegXL (~236k).
+# Selectable finals: canonical EventSpikeSeg140k (~150k) and EventSpikeSegXL (~236k).
 FINAL_ARCHITECTURE = SegmentationArchitecture(
     name="EventSpikeSeg140k",
     channel_schedule=(32, 64, 128),
@@ -658,13 +658,16 @@ class EventSpikeSeg140k(EventSpikeSegBase):
             lif=context_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
 
-        self.decoder2_extra = SpikingConvBlock(
-            64, 64, depthwise=True, norm=architecture.norm,
-            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        # Keep encoder and decoder spike identities separate until one shared
+        # synaptic accumulator has combined them. This replaces binary OR plus a
+        # DW->PLIF->PW bottleneck with one cross-channel fusion before threshold.
+        self.decoder2_fuse = SpikingStage(
+            128, 64, kernel_size=1, norm=architecture.norm,
+            lif=decoder_lif, neuron_kind=architecture.neuron_kind,
         )
         self.final_selector = nn.Identity()
         self.final_fuse = SpikingConvBlock(
-            40, 16, depthwise=True, norm=architecture.norm,
+            40, 16, depthwise=False, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind,
         )
         self.decoder1_extra = nn.Identity()
@@ -707,8 +710,7 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         deepest = self.context2(self.context1(x3))
 
         d2 = self._upsample(self.project3(deepest), x2.shape[-2:])
-        d2 = torch.clamp(d2 + x2, 0.0, 1.0)
-        d2 = self.decoder2_extra(d2)
+        d2 = self.decoder2_fuse(torch.cat((d2, x2), dim=2))
         auxiliary_spikes = (
             self.aux_head(d2)
             if self.training and self.aux_head is not None
@@ -716,7 +718,10 @@ class EventSpikeSeg140k(EventSpikeSegBase):
         )
 
         semantic = self._upsample(self.project2(d2), x1.shape[-2:])
-        semantic = torch.clamp(semantic + x1, 0.0, 1.0)
+        # Preserve coincident encoder/decoder events as multiplicity 2 instead of
+        # collapsing them with binary OR. The following standard convolution
+        # accumulates both contributions before its single PLIF threshold.
+        semantic = semantic + x1
         semantic = self._upsample(semantic, native_size)
         merged = torch.cat((semantic, detail), dim=2)
         d1 = self.final_fuse(merged)

@@ -119,8 +119,8 @@ services:
        "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load","artifacts/checkpointsV3/dsec/EventSpikeSeg140k_seed17_epoch005.pt",
-       "--checkpoint-dir", "artifacts/checkpointsV3/dsec"]
+      #  "--load","artifacts/checkpointsV3/dsec/EventSpikeSeg140k_seed17_epoch006.pt",
+       "--checkpoint-dir", "artifacts/checkpointsV4/dsec"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.
   train-dsec-xl:

@@ -33,8 +33,8 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The active 11-class DSEC/FPGA target is `EventSpikeSeg140k`: 142,277 registered
-parameters, 141,535 executed inference parameters, 27 permanent PLIF actors, and one
+The active 11-class DSEC/FPGA target is `EventSpikeSeg140k`: 150,245 registered
+parameters, 149,503 executed inference parameters, 25 permanent PLIF actors, and one
 temporal class-current readout.
 Parameter count is only a proxy for FPGA cost; the dominant constraint is persistent
 membrane/adaptation traffic, followed by pointwise mixing, event routing, FIFO
@@ -42,8 +42,8 @@ pressure, and inhibition/adaptation arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
-At native 440x640, v7 owns **43,366,400** membrane states. Threshold adaptation adds
-age/amplitude on **10,982,400** neurons. Because the current DSEC training path uses touched-neuron lazy updates, exact runtime needs a compact 24-bit `last_bin_tag` for every live sparse state. A hypothetical dense exact representation is about **248.68 MiB** before queues/alignment; XC7A200T BRAM is short by about **247.08 MiB** (about **155.0x** the available BRAM). External/onboard DDR is forbidden, so the open
+At native 440x640, v8 owns **30,976,000** membrane states. Threshold adaptation adds
+age/amplitude on **10,982,400** neurons. Because the current DSEC training path uses touched-neuron lazy updates, exact runtime needs a compact 24-bit `last_bin_tag` for every live sparse state. A hypothetical dense exact representation is about **189.60 MiB** before queues/alignment; XC7A200T BRAM is short by about **188.00 MiB** (about **118.2x** the available BRAM). External/onboard DDR is forbidden, so the open
 feasibility issue is whether a lossless sparse table can bound all live states on chip.
 
 ## Open: continuous learned neuron parameters

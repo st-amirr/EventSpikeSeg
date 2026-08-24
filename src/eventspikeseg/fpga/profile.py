@@ -11,7 +11,7 @@ from ..model_components import ParametricLIF
 from .fixed_point import FPGA_FORMATS
 from .target import ARTIX7_XC7A200T
 
-EXECUTED_WEIGHT_BYTES = 135_624
+EXECUTED_WEIGHT_BYTES = 143_904
 # Conservative aligned sparse-entry budgets. Raw payload now includes the 24-bit
 # last-bin tag; it still fits within these 12/16-byte alignment envelopes.
 NON_ADAPTIVE_ENTRY_BYTES = 12

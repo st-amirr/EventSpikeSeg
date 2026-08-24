@@ -113,16 +113,16 @@ zero on every record where it has no labelled pixels.
 The sole active FPGA target is **Artix-7 XC7A200T** (Digilent Nexys Video reference board). The board DDR3 is intentionally disabled by the active no-external-memory experiment.
 
 Parameter count is **not** runtime neuron count. For the active 11-class
-`EventSpikeSeg140k` DSEC implementation at native 440x640, the 27 executed PLIF populations
+`EventSpikeSeg140k` DSEC implementation at native 440x640, the 25 executed PLIF populations
 require
 
 ```text
 H2xW2 = 220x320, H4xW4 = 110x160, H8xW8 = 55x80
-N_mem = 72*H*W + 128*H2*W2 + 480*H4*W4 + 1280*H8*W8
-      = 43,366,400 membrane values
+N_mem = 32*H*W + 128*H2*W2 + 416*H4*W4 + 1280*H8*W8
+      = 30,976,000 membrane values
 ```
 
-Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. The active touched-neuron runtime uses a compact **24-bit `last_bin_tag`** instead of a microsecond timestamp. A hypothetical dense exact representation is **248.68 MiB**: 82.71 MiB membrane + 41.90 MiB adaptation + 124.07 MiB bin tags. Artix-7 XC7A200T has only 1.604 MiB BRAM.
+Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. The active touched-neuron runtime uses a compact **24-bit `last_bin_tag`** instead of a microsecond timestamp. A hypothetical dense exact representation is **189.60 MiB**: 59.08 MiB membrane + 41.90 MiB adaptation + 88.62 MiB bin tags. Artix-7 XC7A200T has only 1.604 MiB BRAM.
 External and onboard DDR are forbidden, so only a lossless zero-default sparse state
 table could fit; measured worst-case occupancy is a hard feasibility gate.
 
@@ -133,7 +133,7 @@ table could fit; measured worst-case occupancy is a hard feasibility gate.
 The FPGA instantiates a permanent actor for every executed layer. An actor may sequence
 its own lanes, but arithmetic is not shared across layers and it must preserve one
 logical state record per `(layer,c,y,x)`. The exact sparse execution
-flow for the baseline DSEC runtime is `live raw events -> seal one 5 ms bin -> actor0..actor26 sparse destination-address generation -> lazy touched-neuron PLIF
+flow for the baseline DSEC runtime is `live raw events -> seal one 5 ms bin -> actor0..actor24 sparse destination-address generation -> lazy touched-neuron PLIF
 decay -> weight addition -> threshold/reset -> state writeback -> emitted events`.
 There is an explicit 5 ms neural timestep boundary; the next bin may be captured concurrently but the current bin must finish the full forward graph before retirement. See `docs/ARCHITECTURE.md` and
 `project_spec.yaml` for the full contract.
@@ -177,8 +177,8 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 ## EventSpikeSeg models
 
 `EventSpikeSeg140k` is the only DSEC/FPGA implementation target. With two raw-event
-inputs and 11 classes it has 142,277 registered parameters, 141,535 executed inference
-parameters, 135,624 executed synaptic weights, and 27 executed PLIF populations plus
+inputs and 11 classes it has 150,245 registered parameters, 149,503 executed inference
+parameters, 143,904 executed synaptic weights, and 25 executed PLIF populations plus
 one stateless temporal class-current readout.
 `EventSpikeSegXL` remains a software-only capacity comparison and is rejected by the
 FPGA exporter.
@@ -193,11 +193,11 @@ native 440x640 two-polarity activity
 → standard stride-2 32→64 PLIF + two 64-channel DW/PW refinements at 110x160
 → stride-2 DW/PW 64→128 + two 128-channel refinements at 55x80
 → serial dilation-2 residual context ×2
-→ project 128→64 PLIF + upsample + binary OR with the quarter-scale 64-ch skip
-→ residual 64-ch DW/PW-PLIF decoder refinement
-→ project 64→32 PLIF + upsample + binary OR with the half-scale 32-ch skip
+→ project 128→64 PLIF + upsample + concatenate the quarter-scale 64-ch skip
+→ standard 1×1 128→64 PLIF fusion
+→ project 64→32 PLIF + upsample + multiplicity-preserving sum with the half-scale 32-ch skip
 → nearest event fan-out to native resolution
-→ semantic32 + detail8 concatenation → DW40/PW16 PLIF fusion
+→ semantic32 + detail8 concatenation → standard 3×3 40→16 PLIF fusion
 → 16→11 class synapse → temporal continuous-current accumulation → argmax
 ```
 
@@ -213,7 +213,7 @@ input spikes → learned 3×3 or 1×1 synaptic kernel → membrane current → P
 ```
 
 The 3×3 and 1×1 kernels are synaptic weights, not conventional ANN `Conv → ReLU`
-layers. The deployed 140k inference executes 27 `SpikingStage`/PLIF populations. Depthwise/pointwise
+layers. The deployed 140k inference executes 25 `SpikingStage`/PLIF populations. Depthwise/pointwise
 blocks deliberately contain two PLIF populations, so collapsing them changes trained
 connectivity and temporal state.
 
@@ -263,7 +263,7 @@ MLP. `ChannelAffine` can be folded into quantized weights/scales; concat is chan
 routing; nearest upsample is spike-address fan-out; residual clamp is event merge/OR;
 and temporal class-current accumulation/argmax uses signed accumulators and a comparator.
 
-The implementation uses **27 permanent PLIF layer actors plus one class-current readout**. Every actor owns convolution
+The implementation uses **25 permanent PLIF layer actors plus one class-current readout**. Every actor owns convolution
 addressing, accumulator lanes, PLIF/mechanism logic, queues, and local weight ROM; there
 is no cross-layer compute sharing or reconfiguration. Logical PLIF
 membrane/adaptation state resides in banked sparse BRAM/LUTRAM. Within an actor,
@@ -290,13 +290,13 @@ Export a trained checkpoint with:
 python scripts/export_fpga_model.py --checkpoint artifacts/EventSpikeSeg140k_seed17_best.pt --output artifacts/fpga_export
 ```
 
-The exporter hard-rejects XL and emits the exact 27-PLIF-actor plus current-readout manifest, affine-folded int8
+The exporter hard-rejects XL and emits the exact 25-PLIF-actor plus current-readout manifest, affine-folded int8
 ROMs, per-actor quantized neuron parameters, and the fixed-point contract.
 
 
 ## FPGA runtime timing contract (streaming 5 ms bins)
 
-DSEC training is unchanged and the hardware preserves its 5 ms physical-time grid. Live camera events are accumulated in ping-pong buffers. When one 5 ms bin closes, the FPGA processes that bin **end-to-end through all 27 PLIF actors and the final signed class-current update** while the alternate buffer captures the next bin. The old 50 ms layer-major schedule is superseded.
+DSEC training and hardware preserve the same 5 ms physical-time grid. Live camera events are accumulated in ping-pong buffers. When one 5 ms bin closes, the FPGA processes that bin **end-to-end through all 25 PLIF actors and the final signed class-current update** while the alternate buffer captures the next bin. The old 50 ms layer-major schedule is superseded.
 
 Only touched neurons are accessed. Each live sparse entry contains its logical address, int16 membrane, a compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. If a neuron is touched after `delta_bins` intervals, the baseline applies learned beta `delta_bins` times before adding the current bin's accumulated synaptic current. There is no microsecond timestamp and no dense idle-state sweep.
 

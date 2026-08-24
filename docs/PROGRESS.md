@@ -66,7 +66,9 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - standard 32-channel early feature block and standard stride-2 32→64 transition;
 - 32/64/128 semantic path with deeper residual DW/PW refinement and dilation-2 context;
 - additive quarter/half encoder skips and late semantic32/detail8 concatenation;
-- DW40/PW16 native PLIF fusion;
+- concatenative quarter-scale 128->64 standard 1x1 PLIF fusion;
+- multiplicity-preserving half-scale spike skip;
+- standard 3x3 40->16 native semantic/detail fusion before one PLIF threshold;
 - continuous 16→11 temporal class-current readout rather than a ten-level class-spike count;
 - training-only quarter-scale semantic auxiliary head and native boundary head;
 - SpikingJelly `Conv2d`/PLIF/surrogate infrastructure where compatible, with project-specific per-channel beta, peer inhibition, threshold adaptation, and operation order preserved;
@@ -112,8 +114,8 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - replaced the spiking class head with continuous temporal class-current accumulation;
 - added a training-only native boundary objective at coefficient 0.1;
 - set DSEC replay chunks to 10 so each gradient replay retains only one update graph;
-- revised FPGA export to 27 PLIF actors plus one current readout;
-- revised state accounting to 43,366,400 membranes and 10,982,400 adaptation states.
+- revised FPGA export to 25 PLIF actors plus one current readout;
+- revised state accounting to 30,976,000 membranes and 10,982,400 adaptation states.
 
 ## 2026-08-15 timestamp-stream v3
 
@@ -217,8 +219,8 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 ## 2026-08-23 — v7 fixed-step Artix-7 implementation iteration 2
 
 - rebased hardware docs on the native 440x640 v7 `EventSpikeSeg140k` graph;
-- canonical deployment is 27 PLIF stages + stateless 16->11 temporal current readout;
-- documented 43,366,400 membrane states and 10,982,400 adaptation-enabled neurons;
+- canonical deployment is 25 PLIF stages + stateless 16->11 temporal current readout;
+- documented 30,976,000 membrane states and 10,982,400 adaptation-enabled neurons;
 - recorded the state-first trade: +6.4% synaptic weights versus v6, but -40.5% logical membranes and -35.2% dense persistent state;
 - made Artix-7 XC7A200T the explicit FPGA target, using Nexys Video only as the reference carrier board;
 - removed `last_timestamp_us` from the integer reference and sparse RTL state record;
@@ -239,7 +241,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - changed the integer PLIF reference to repeated learned-beta decay for `delta_bins`;
 - changed `plif_update.vhd` to a multi-cycle iterative lazy-leak lane;
 - changed the sparse state bank to store/read the compact bin tag;
-- added `streaming_bin_controller.vhd` for actor 0..26 bin-major scheduling, cycles/bin instrumentation, deadline/target flags, global bin tags and prediction-due;
+- added `streaming_bin_controller.vhd`; its actor-count generic is now configured for actor 0..24 bin-major scheduling, cycles/bin instrumentation, deadline/target flags, global bin tags and prediction-due;
 - the old `fixed_record_controller` schedule is superseded;
-- exact dense touched-state reference is now 248.68 MiB including a dense 24-bit tag, while conservative sparse aligned entries remain budgeted at 12 bytes non-adaptive / 16 bytes adaptive;
+- v8 exact dense touched-state reference is 189.60 MiB including a dense 24-bit tag, while conservative sparse aligned entries remain budgeted at 12 bytes non-adaptive / 16 bytes adaptive;
 - full actor integration, ping-pong ingress storage, sparse class-current storage, and GHDL/Vivado verification remain open.

@@ -2,7 +2,7 @@ document:
   title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
   version: 1.8.0
-  status: iteration_3_streaming_5ms_lazy_state_controller_implemented
+  status: v8_spike_preserving_fusion_with_iteration_3_streaming_RTL
   created_date: '2026-08-06'
   supersedes:
   - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -107,7 +107,7 @@ framework:
     primary_target: AMD_Xilinx_Artix7_XC7A200T
     primary_goal: >-
       Execute the trained spike-native graph as a 5 ms binned streaming digital neuromorphic accelerator. Live DSEC
-      events are collected in ping-pong input buffers; each sealed 5 ms bin traverses the complete 27-PLIF deployed
+      events are collected in ping-pong input buffers; each sealed 5 ms bin traverses the complete 25-PLIF deployed
       graph before the next bin is retired. Touched neurons retain sparse persistent state and apply learned beta
       lazily according to a compact last-bin tag. Signed class current accumulates across a configurable prediction
       window, default ten bins / 50 ms to match training.
@@ -311,11 +311,11 @@ input_and_time:
     training_prediction_window_bins: 10
     default_prediction_period_us: 50000
     default_prediction_rate_hz: 20
-    schedule: bin_major_end_to_end_actor0_through_actor26_then_retire_bin
+    schedule: bin_major_end_to_end_actor0_through_actor24_then_retire_bin
     ingress: two_pingpong_5ms_event_buffers_capture_next_bin_while_current_bin_computes
     procedure:
     - Seal one 5 ms raw-event bin and switch acquisition immediately to the alternate input buffer.
-    - Propagate that bin through actor 0, actor 1, ..., actor 26 and the stateless class-current update before
+    - Propagate that bin through actor 0, actor 1, ..., actor 24 and the stateless class-current update before
       retiring it.
     - Within each actor/bin, route only nonzero presynaptic addresses and accumulate all contributions to each
       touched destination before one PLIF commit.
@@ -369,7 +369,7 @@ runtime_batching_decision:
     default_us: 50000
     default_rate_hz: 20
     configurable: true
-  graph_order: for_each_bin_actor0_to_actor26_then_class_current_update
+  graph_order: for_each_bin_actor0_to_actor24_then_class_current_update
   state_rule: only_touched_neurons_are_accessed; sparse live state persists with 24bit last_bin_tag
   lazy_decay: delta_bins=current_bin_tag-last_bin_tag_mod_2^24; apply learned_beta delta_bins times before 
     current
@@ -805,10 +805,11 @@ fpga_implementation:
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class
-    registered_parameters: 142277
-    executed_training_parameters: 142277
-    executed_inference_parameters: 141535
-    inference_PLIF_populations: 27
+    registered_parameters: 150245
+    executed_training_parameters: 150245
+    executed_inference_parameters: 149503
+    executed_synaptic_weights: 143904
+    inference_PLIF_populations: 25
     final_current_readout: one_stateless_1x1_synaptic_accumulator
     omitted_from_RTL: [refine2_dead_block, auxiliary_head, boundary_head, surrogate_gradient]
   target:
@@ -829,7 +830,7 @@ fpga_implementation:
     external_or_onboard_DDR_allowed: false
     onboard_DDR3_present_but_forbidden_by_requirement: 512_MiB
   execution:
-    physical_topology: 27_permanent_PLIF_actors_plus_one_final_current_readout
+    physical_topology: 25_permanent_PLIF_actors_plus_one_final_current_readout
     cross_layer_compute_sharing: forbidden
     layer_reconfiguration: forbidden
     partial_reconfiguration: forbidden
@@ -838,7 +839,7 @@ fpga_implementation:
         mechanism_logic, output_FIFO]
     model_level: continuous_5ms_bins_with_configurable_prediction_window_default_10_bins
     RTL_level: synchronous_clocked_elastic_pipeline
-    global_neural_timestep_barrier: one_end_to_end_bin_must_finish_all_27_PLIF_actors_before_retirement
+    global_neural_timestep_barrier: one_end_to_end_bin_must_finish_all_25_PLIF_actors_before_retirement
     FPGA_input_bins: continuous_pingpong_5ms_runtime_bins
     event_address:
     - global_bin_tag_24bit
@@ -847,46 +848,47 @@ fpga_implementation:
     - x
     procedure:
     - Seal a 5 ms input event bin and switch acquisition to the alternate ping-pong buffer.
-    - Process the sealed bin through all 27 deployed PLIF actors in graph order.
+    - Process the sealed bin through all 25 deployed PLIF actors in graph order.
     - Within each actor, accumulate all synaptic contributions for one touched destination before exactly one 
       PLIF commit for that bin.
     - Read sparse state including last_bin_tag; apply learned beta once per elapsed bin before current 
       integration.
     - Write state with the current bin tag and emit sparse output spikes to the next actor.
-    - After actor 26 update signed class-current state; every prediction_window_bins emit argmax and clear 
+    - After actor 24 update signed class-current state; every prediction_window_bins emit argmax and clear
       only class-current state.
-    residual_merge: slice_and_address_matched_binary_OR_dedup
+    quarter_skip_merge: concatenate_project3_and_encoder2_channels_then_standard_1x1_fusion_before_PLIF
+    half_skip_merge: event_multiplicity_sum_without_OR_dedup
     concat: channel_address_remap_without_arithmetic
     nearest_upsample: event_address_fanout
     frequency_encoding: repeated_events_cause_repeated_weight_additions
   memory:
     weights:
       initial_format: signed_int8
-      registered_parameter_upper_bound_MiB: 0.1341
+      registered_parameter_upper_bound_MiB: 0.1433
       external_ROM_required: false
       large_and_pointwise_tables: banked_BRAM_initialized_as_ROM
       small_depthwise_tables_and_scalars: LUTROM_or_registers
       replication: only_when_required_by_parallel_read_bandwidth
     logical_state_at_DSEC_440x640:
       dimensions: {native: [440, 640], half: [220, 320], quarter: [110, 160], eighth: [55, 80]}
-      membrane_formula: N_mem = 72*H*W + 128*H2*W2 + 480*H4*W4 + 1280*H8*W8
-      membrane_values: 43366400
+      membrane_formula: N_mem = 32*H*W + 128*H2*W2 + 416*H4*W4 + 1280*H8*W8
+      membrane_values: 30976000
       adaptation_formula: N_adapt = 320*H4*W4 + 1216*H8*W8
       adaptation_enabled_neurons: 10982400
       class_readout_state: stateless_within_record_accumulators_only
       baseline_dense_storage_MiB:
-        membrane_int16: 82.71484375
+        membrane_int16: 59.08203125
         adaptation_age_plus_amplitude_int16: 41.89453125
-        last_bin_tag_24bit: 124.072265625
-        exact_dense_touched_state_total: 248.681640625
+        last_bin_tag_24bit: 88.623046875
+        exact_dense_touched_state_total: 189.599609375
         note: 
           microsecond_timestamp_removed_but_exact_lazy_training_semantics_require_compact_24bit_5ms_bin_tag
       Artix7_XC7A200T_capacity:
         BRAM_MiB: 1.6040
         maximum_distributed_LUTRAM_MiB: 0.3525
         absolute_BRAM_plus_all_LUTRAM_MiB: 1.9565
-        BRAM_only_shortfall_MiB: 247.07763671875
-        BRAM_only_required_over_available: 155.0380517503805
+        BRAM_only_shortfall_MiB: 187.99560546875
+        BRAM_only_required_over_available: 118.20395738203958
       conclusion: exact_dense_state_is_impossible_on_chip
     on_chip_sparse_state_target:
       backing_store: banked_BRAM_plus_selected_LUTRAM
@@ -912,7 +914,7 @@ fpga_implementation:
         full DSEC sequences. The no-DDR Artix-7 target is not feasible unless worst-case state plus queues/weights
         fits and sustained U<=1.
       historical_v6_epoch002_one_record:
-        applicability: superseded_v6_only_not_a_v7_capacity_proof
+        applicability: superseded_v6_only_not_a_v8_capacity_proof
         artifact: artifacts/fpga_profiles/epoch002_one_record.json
         live_entries: 27182700
         live_fraction_of_logical_membranes: 0.3731666
@@ -922,9 +924,9 @@ fpga_implementation:
         dense_one_bit_membrane_only_MiB: 8.6836
         observed_live_one_bit_values_only_MiB: 3.2404
         conclusion: superseded_v6_record_did_not_fit_no_DDR_XC7A200T
-      v7_full_sequence_occupancy:
+      v8_full_sequence_occupancy:
         status: pending_measurement
-        requirement: full_DSEC_sequences_with_27_PLIF_graph_streaming_5ms_bins_and_lazy_last_bin_tags
+        requirement: full_DSEC_sequences_with_25_PLIF_graph_streaming_5ms_bins_and_lazy_last_bin_tags
         decision_gate: worst_case_live_state_plus_queues_and_weights_must_fit_on_chip_without_DDR
       no_silent_approximation: model_or_precision_changes_require_QAT_and_accuracy_revalidation
       aligned_entry_budget_bytes:
@@ -942,7 +944,7 @@ fpga_implementation:
     triangular_threshold_adaptation: counters_comparators_and_quantized_scale
   parallelism:
     per_actor_synapse_lane_sweep: [1, 2, 4, 8, 16]
-    independent_actors: 27
+    independent_actors: 25
     mechanisms: [actor_local_weight_ROM, banked_sparse_BRAM_state, selected_LUTRAM, event_FIFOs, 
         ready_valid_backpressure]
     deadline: hard_U_le_1_target_U_le_0_8_and_99th_percentile_FIFO_occupancy_bounded
@@ -985,7 +987,7 @@ export_contract:
     simulation.
   implemented_iteration_0:
   - XL_hard_rejection
-  - exact_27_PLIF_actor_plus_current_readout_manifest
+  - exact_25_PLIF_actor_plus_current_readout_manifest
   - affine_folded_int8_weight_ROMs
   - quantized_beta_threshold_and_mechanism_parameters
   - fixed_point_saturation_and_rounding_contract
@@ -1004,7 +1006,7 @@ export_contract:
   - stateless_signed_class_current_readout_and_first_index_tie_argmax_RTL
   implemented_iteration_3:
   - streaming_5ms_bin_runtime_reference
-  - bin_major_27_actor_end_to_end_schedule
+  - bin_major_25_actor_end_to_end_schedule
   - 24bit_last_bin_tag_sparse_state_record
   - lazy_learned_beta_delta_bin_integer_PLIF_reference
   - iterative_lazy_leak_PLIF_RTL_lane
@@ -1103,7 +1105,7 @@ workflow:
   - Add sparse event/spike scatter reference.
   - Implement VHDL LIF and convolution primitives.
   - Integrate multilayer segmentation RTL.
-  - Synthesize the static 27-PLIF-actor plus current-readout design on Artix-7 XC7A200T and record resources, 
+  - Synthesize the static 25-PLIF-actor plus current-readout design on Artix-7 XC7A200T and record resources,
     timing, power estimates, and latency.
   - Validate raw-event input on DDD17 or DSEC-Semantic.
   architecture_cleanup_rule: >-

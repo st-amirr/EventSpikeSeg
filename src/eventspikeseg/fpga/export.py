@@ -46,11 +46,9 @@ EVENTSPIKESEG140K_INFERENCE_STAGES = (
     "context2.depthwise",
     "context2.pointwise",
     "project3",
-    "decoder2_extra.depthwise",
-    "decoder2_extra.pointwise",
+    "decoder2_fuse",
     "project2",
-    "final_fuse.depthwise",
-    "final_fuse.pointwise",
+    "final_fuse.standard",
 )
 EVENTSPIKESEG140K_CURRENT_READOUT = "head.synapse"
 
@@ -73,8 +71,7 @@ _SPATIAL_TIERS = {
             "enc2.pointwise",
             "enc2_extra.depthwise",
             "enc2_extra.pointwise",
-            "decoder2_extra.depthwise",
-            "decoder2_extra.pointwise",
+            "decoder2_fuse",
             "project2",
         )
     },
@@ -316,22 +313,22 @@ def export_model(
     )
 
     registered_parameters = sum(parameter.numel() for parameter in model.parameters())
-    if len(layers) != 28 or convolution_weights != 135_624:
+    if len(layers) != 26 or convolution_weights != 143_904:
         raise ValueError(
-            "140k inference graph contract changed: expected 27 PLIF stages plus readout "
-            "and 135624 synaptic weights"
+            "140k inference graph contract changed: expected 25 PLIF stages plus readout "
+            "and 143904 synaptic weights"
         )
-    if registered_parameters != 142_277 or executed_parameters != 141_535:
+    if registered_parameters != 150_245 or executed_parameters != 149_503:
         raise ValueError(
-            "140k parameter contract changed: expected registered/executed 142277/141535, "
+            "140k parameter contract changed: expected registered/executed 150245/149503, "
             f"got {registered_parameters}/{executed_parameters}"
         )
     total_membrane_states = sum(
         int(layer["logical_membrane_states"]) for layer in layers
     )
-    if total_membrane_states != 43_366_400:
+    if total_membrane_states != 30_976_000:
         raise ValueError(
-            "native-resolution state contract changed: expected 43366400 membrane states, "
+            "native-resolution state contract changed: expected 30976000 membrane states, "
             f"got {total_membrane_states}"
         )
     base_membrane_states = sum(
@@ -346,12 +343,21 @@ def export_model(
     graph_operations = [
         {"after": "stem", "operation": "learned_stride2_downsample", "target": "half"},
         {"after": "project3", "operation": "nearest_event_fanout", "target": "quarter"},
-        {"before": "decoder2_extra.depthwise", "operation": "binary_OR", "with": "enc2"},
+        {
+            "before": "decoder2_fuse",
+            "operation": "channel_concat_remap",
+            "sources": ["project3_upsampled", "enc2"],
+        },
         {"after": "project2", "operation": "nearest_event_fanout", "target": "half"},
-        {"after": "project2_upsampled", "operation": "binary_OR", "with": "enc1"},
+        {
+            "after": "project2_upsampled",
+            "operation": "event_multiplicity_sum",
+            "with": "enc1",
+            "output_values": [0, 1, 2],
+        },
         {"after": "semantic_half", "operation": "nearest_event_fanout", "target": "native"},
         {
-            "before": "final_fuse.depthwise",
+            "before": "final_fuse.standard",
             "operation": "channel_concat_remap",
             "sources": ["semantic_half_upsampled", "detail1"],
         },
@@ -392,7 +398,7 @@ def export_model(
             "refine2", "aux_head", "boundary_head", "surrogate_gradient", "XL_modules"
         ],
         "hardware_topology": {
-            "layer_actors": "27_dedicated_PLIF_actors_plus_final_current_readout",
+            "layer_actors": "25_dedicated_PLIF_actors_plus_final_current_readout",
             "cross_layer_compute_sharing": False,
             "partial_reconfiguration": False,
             "event_flow": "streaming_5ms_bin_ready_valid",

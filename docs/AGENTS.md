@@ -20,11 +20,11 @@ Python constructors/forward methods remain authoritative if older diagrams disag
 
 ## Canonical naming and frozen graph
 
-- `EventSpikeSeg140k`: the only FPGA target; 142,277 registered parameters for
+- `EventSpikeSeg140k`: the only FPGA target; 150,245 registered parameters for
   11-class, two-polarity DSEC.
 - `EventSpikeSegXL`: software-only comparison; FPGA export must reject it.
-- Deployable 140k inference: 141,535 executed parameters, 135,624 synaptic weights,
-  27 Conv/ChannelAffine/PLIF populations, and one temporal class-current readout.
+- Deployable 140k inference: 149,503 executed parameters, 143,904 synaptic weights,
+  25 Conv/ChannelAffine/PLIF populations, and one temporal class-current readout.
 - Omit dead `refine2`, training-only `aux_head`/`boundary_head`, surrogate gradients,
   and all XL modules.
 
@@ -53,9 +53,9 @@ optional optimization only after bit-exact and semantic-accuracy revalidation.
 
 ## Logical state accounting rule
 
-Do not infer neuron-state memory from parameter count. The 27-population 140k graph has
-43,366,400 logical membrane states and 10,982,400 adaptation-enabled states at DSEC
-`440x640`. With int16 membrane, two int16 adaptation fields where enabled, and the compact 24-bit last-bin tag required by the trained touched-neuron runtime, a hypothetical dense exact state is about 248.68 MiB before queues/counters. No microsecond timestamp is used. XC7A200T BRAM is 1.604 MiB, so the implementation must remain losslessly sparse and prove measured occupancy.
+Do not infer neuron-state memory from parameter count. The 25-population 140k graph has
+30,976,000 logical membrane states and 10,982,400 adaptation-enabled states at DSEC
+`440x640`. With int16 membrane, two int16 adaptation fields where enabled, and the compact 24-bit last-bin tag required by the trained touched-neuron runtime, a hypothetical dense exact state is about 189.60 MiB before queues/counters. No microsecond timestamp is used. XC7A200T BRAM is 1.604 MiB, so the implementation must remain losslessly sparse and prove measured occupancy.
 External memory, including the board's DDR3, is forbidden. A lossless sparse live-state
 table is the only remaining possible mapping and must pass a measured worst-case bound;
 overflow eviction or state loss is forbidden.
@@ -80,7 +80,7 @@ The primary runtime is fully digital but must preserve neuromorphic/SNN executio
 
 ### Static actor execution rule
 
-Instantiate one permanent actor for each of the 27 executed PLIF populations. Each actor owns
+Instantiate one permanent actor for each of the 25 executed PLIF populations. Each actor owns
 its convolution address generator, accumulator lanes, PLIF/mechanism unit, output FIFO,
 and initialized local weight ROM. Cross-layer compute sharing, layer reconfiguration,
 and partial reconfiguration are forbidden. Common clock/reset, fixed-slice input dispatch,
@@ -89,7 +89,7 @@ still stored, not implemented as one physical register/neuron each.
 
 ### Exact sparse execution order
 
-DSEC FPGA inference must match the trained fixed 5 ms time grid while streaming live input. Raw camera events are accumulated into consecutive 5 ms bins. The active hardware schedule is **bin-major end-to-end**: one sealed bin traverses actor 0 through actor 26 plus the class-current update before that bin is retired. Acquisition of the next bin overlaps computation through ping-pong input buffers. This is not raw-event asynchronous propagation and is not the superseded 50 ms layer-major schedule.
+DSEC FPGA inference must match the trained fixed 5 ms time grid while streaming live input. Raw camera events are accumulated into consecutive 5 ms bins. The active hardware schedule is **bin-major end-to-end**: one sealed bin traverses actor 0 through actor 24 plus the class-current update before that bin is retired. Acquisition of the next bin overlaps computation through ping-pong input buffers. This is not raw-event asynchronous propagation and is not the superseded 50 ms layer-major schedule.
 
 ### Natural mappings
 
@@ -101,7 +101,8 @@ DSEC FPGA inference must match the trained fixed 5 ms time grid while streaming 
 - ChannelAffine -> fold into quantized weight/scale
 - concat -> channel-ID routing
 - nearest upsample -> spike-address fan-out
-- residual spike add/clamp -> event merge / OR-dedup
+- quarter skip concat -> channel-ID routing into one 1x1 fusion accumulator
+- half skip sum -> preserve coincident event multiplicity rather than OR-dedup
 - class current accumulation/argmax -> signed accumulators/comparator
 
 ### Mapping risks requiring explicit validation
@@ -142,7 +143,7 @@ called measured FPGA power/latency.
 
 ## Streaming 5 ms DSEC runtime rule
 
-Live DSEC input is sealed every 5 ms. The FPGA must propagate the current bin through the complete 27-PLIF deployed graph before retiring it; meanwhile the alternate ingress buffer captures the next 5 ms of camera events. PLIF/adaptation state persists across bins and predictions. Each touched state stores a 24-bit last-bin tag; `delta_bins` controls the exact repeated learned-beta leak before current integration. All contributions to one destination for a layer/bin must be accumulated before one threshold/reset commit.
+Live DSEC input is sealed every 5 ms. The FPGA must propagate the current bin through the complete 25-PLIF deployed graph before retiring it; meanwhile the alternate ingress buffer captures the next 5 ms of camera events. PLIF/adaptation state persists across bins and predictions. Each touched state stores a 24-bit last-bin tag; `delta_bins` controls the exact repeated learned-beta leak before current integration. All contributions to one destination for a layer/bin must be accumulated before one threshold/reset commit.
 
 Prediction cadence is configurable, with **10 bins = 50 ms = 20 Hz** as the starting point to match training. Measure cycles/bin after implementation. Define `U = C_bin/(f_clk*0.005)` and `H = 1/U`. Hard sustained real time requires `U<=1` / `H>=1`; the starting design target is `U<=0.8` / `H>=1.25`. At 100 MHz this means 500,000 hard cycles/bin and 400,000 target cycles/bin.
 
@@ -152,4 +153,4 @@ The sparse-state entry contains logical address/tag, int16 membrane, compact 24-
 
 ## Active fixed-step RTL interfaces
 
-The baseline sparse-state entry contains address/tag, membrane, and adaptation age/amplitude only where enabled. It must not contain `last_timestamp_us`. `plif_update` consumes the exported learned per-channel beta directly once per 5 ms step. `fixed_record_controller` is the global 27-layer x 10-step scheduler. The final 16->11 readout is stateless between records and uses signed current accumulation plus first-index-tie argmax; do not recreate output PLIF neurons or class-spike counting.
+The baseline sparse-state entry contains address/tag, membrane, and adaptation age/amplitude only where enabled. It must not contain `last_timestamp_us`. `plif_update` consumes the exported learned per-channel beta directly once per 5 ms step. Any fixed-record compatibility controller uses 25 layers x 10 steps. The final 16->11 readout is stateless between records and uses signed current accumulation plus first-index-tie argmax; do not recreate output PLIF neurons or class-spike counting.

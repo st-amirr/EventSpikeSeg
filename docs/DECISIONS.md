@@ -581,6 +581,25 @@ Codex's v7 canonical `EventSpikeSeg140k` is now the sole hardware graph: native 
 
 This revision is accepted as the new state-first architecture because it increases static synaptic weights by about 6.4% relative to v6 while reducing PLIF populations by 27.0%, logical membrane state by about 40.5%, and dense persistent state from about 192.44 MiB to 124.61 MiB even though v7 runs at native 440x640. Hardware architecture search must continue to treat writable neuron state as more expensive than static weight ROM.
 
+## 2026-08-24 — Preserve spike evidence through decoder and native fusion (v8)
+
+The v7 quarter skip used binary OR before a DW->PLIF->PW decoder block, and the native
+semantic/detail concatenation also crossed a depthwise PLIF before any channel mixing.
+Those intermediate thresholds could discard weak small-object evidence distributed across
+encoder, decoder, semantic, and detail channels. Replace quarter OR plus DW/PW refinement
+with channel concatenation and one standard 1x1 128->64 PLIF fusion. At the half skip,
+retain coincident encoder/decoder events as multiplicity two rather than OR-deduplicating
+them. Replace native DW40->PW16 with one standard 3x3 40->16 PLIF so spatial and channel
+evidence accumulates jointly before thresholding.
+
+The 11-class graph now has 150,245 registered parameters, 149,503 executed inference
+parameters, 143,904 executed synaptic weights, 25 PLIF populations, and 30,976,000 logical
+membranes. Threshold-adaptation scope remains 10,982,400 neurons. Compared with v7 this
+adds 8,280 static synaptic weights but removes 12,390,400 persistent membrane values and
+two PLIF actors. Dense exact membrane/adaptation/24-bit-tag storage falls from 248.68 MiB
+to 189.60 MiB. This is accepted as the accuracy/state trade because static ROM growth is
+small while fusion becomes less lossy and writable state falls by 28.6%.
+
 The FPGA family is explicitly **AMD/Xilinx Artix-7**, with `XC7A200T-1SBG484C` on Digilent Nexys Video as the reference implementation board. The board DDR3 remains forbidden by the active no-external-memory experiment.
 
 The baseline runtime is fixed-time and identical to training: one 50 ms record contains ten ordered 5 ms steps, executed layer-major. Remove the superseded per-neuron `last_timestamp_us` state and `beta**(delta/5ms)` runtime coefficient path. `plif_update` consumes learned beta directly once per 5 ms step, `sparse_state_bank` stores no timestamp, and `fixed_record_controller` sequences 27 PLIF layers x 10 steps. The final readout accumulates signed current and performs first-index-tie argmax; do not recreate output PLIF/class-spike counting.
