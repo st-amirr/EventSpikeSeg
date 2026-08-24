@@ -6,7 +6,6 @@ import pytest
 import torch
 from PIL import Image
 
-import eventspikeseg.data as data_module
 from eventspikeseg.data import temporal_collate
 from eventspikeseg.evaluate import _records_for_checkpoint
 from eventspikeseg.train import (
@@ -19,11 +18,11 @@ from eventspikeseg.train import (
     _training_objective,
     architecture_presets,
     checkpoint_mechanism_scale,
-    estimate_class_weights,
     final_mechanism_scale,
     format_class_validation_report,
     infer_model_suite,
     loss_profile_for_suite,
+    macro_class_cross_entropy,
     refinement_phase_for_epoch,
     restored_resume_learning_rates,
     scale_learning_rates,
@@ -251,46 +250,6 @@ def test_temporal_chunk_outputs_form_one_weighted_full_window_prediction() -> No
     assert torch.allclose(late_logits.grad, torch.tensor([0.6]))
 
 
-def test_class_weight_estimation_reads_masks_without_temporal_events(
-    tmp_path: Path, monkeypatch
-) -> None:
-    _write_sequence(tmp_path, "recA", count=10)
-    train_pool, _, _, _ = _prepare_datasets(
-        tmp_path,
-        seed=17,
-        output_size=(32, 32),
-        validation_fraction=0.20,
-        input_mode="timestamp-events",
-        manifest=None,
-    )
-
-    def unexpected_load(_record):
-        raise AssertionError("class weights must not load temporal event tensors")
-
-    monkeypatch.setattr(data_module, "_load_record_events", unexpected_load)
-    weights = estimate_class_weights(train_pool)
-    assert weights.shape == (6,)
-
-
-def test_class_weight_estimation_uses_capped_median_frequency_weights() -> None:
-    class ToyDataset:
-        def __len__(self) -> int:
-            return 1
-
-        def target_mask(self, _index: int) -> torch.Tensor:
-            return torch.tensor([0] * 100 + [1] * 50 + [2] * 20 + [3] * 10 + [4] * 5 + [5])
-
-    weights = estimate_class_weights(ToyDataset())
-    assert weights[0] < weights[1] < weights[2] < weights[3] < weights[4]
-    assert weights[5] == 8.0
-
-    softened = estimate_class_weights(
-        ToyDataset(), power=0.5, maximum_weight=3.0
-    )
-    assert torch.all(softened <= 3.0)
-    assert torch.allclose(softened[:5].square(), weights[:5], atol=1e-5)
-
-
 def test_stable_final_mechanism_reaches_and_holds_best_checkpoint_scale() -> None:
     assert final_mechanism_scale(8, 80) == 0.0
     assert final_mechanism_scale(12, 80) == pytest.approx(0.03125)
@@ -352,6 +311,47 @@ def test_soft_dice_loss_reports_each_class() -> None:
     assert torch.all((losses >= 0.0) & (losses <= 1.0))
 
 
+def test_macro_class_ce_gives_present_classes_equal_weight() -> None:
+    logits = torch.tensor(
+        [[[[3.0, 3.0], [3.0, 3.0]], [[0.0, 0.0], [0.0, 0.0]]]]
+    )
+    target = torch.tensor([[[0, 0], [0, 1]]])
+    pixel_nll = torch.nn.functional.cross_entropy(logits, target, reduction="none")
+    expected = 0.5 * (pixel_nll[target == 0].mean() + pixel_nll[target == 1].mean())
+    assert torch.allclose(macro_class_cross_entropy(logits, target, 2), expected)
+    assert not torch.allclose(expected, pixel_nll.mean())
+
+
+def test_historical_suite_objective_also_uses_macro_class_ce() -> None:
+    logits = torch.tensor(
+        [[[[3.0, 3.0], [3.0, 3.0]], [[0.0, 0.0], [0.0, 0.0]]]]
+    )
+    target = torch.tensor([[[0, 0], [0, 1]]])
+    outputs = {
+        "segmentation_logits": logits,
+        "segmentation_rate": torch.tensor(0.05),
+        "enc1_rate": torch.tensor(0.05),
+        "enc2_rate": torch.tensor(0.05),
+        "enc3_rate": torch.tensor(0.05),
+        "decoder_rate": torch.tensor(0.05),
+    }
+    loss, _, _ = _training_objective(
+        outputs,
+        target,
+        class_count=2,
+        loss_profile=LossProfile(
+            cross_entropy=1.0,
+            focal=0.0,
+            dice=0.0,
+            auxiliary_ce=0.0,
+            auxiliary_focal=0.0,
+        ),
+        is_final_run=False,
+        training_phase="joint",
+    )
+    assert torch.allclose(loss, macro_class_cross_entropy(logits, target, 2))
+
+
 def test_final_objective_keeps_ce_dice_activity_and_auxiliary_supervision() -> None:
     logits = torch.tensor(
         [[[[2.0, 2.0], [2.0, 2.0]], [[4.0, 4.0], [4.0, 4.0]]]]
@@ -368,11 +368,9 @@ def test_final_objective_keeps_ce_dice_activity_and_auxiliary_supervision() -> N
         "auxiliary_logits": torch.full_like(logits, 100.0),
         "deep_auxiliary_logits": torch.full_like(logits, -100.0),
     }
-    class_weights = torch.tensor([0.5, 3.0])
     loss, dice_losses, _ = _training_objective(
         outputs,
         target,
-        class_weights=class_weights,
         class_count=2,
         loss_profile=LossProfile(
             cross_entropy=1.0,
@@ -384,15 +382,13 @@ def test_final_objective_keeps_ce_dice_activity_and_auxiliary_supervision() -> N
         is_final_run=True,
         training_phase="decoder_detail_refinement",
     )
-    auxiliary_ce = torch.nn.functional.cross_entropy(
-        outputs["auxiliary_logits"], target, weight=class_weights
-    )
-    deep_auxiliary_ce = torch.nn.functional.cross_entropy(
-        outputs["deep_auxiliary_logits"], target, weight=class_weights
+    auxiliary_ce = macro_class_cross_entropy(outputs["auxiliary_logits"], target, 2)
+    deep_auxiliary_ce = macro_class_cross_entropy(
+        outputs["deep_auxiliary_logits"], target, 2
     )
     activity_regularizer = torch.tensor(0.0055)
     expected = (
-        torch.nn.functional.cross_entropy(logits, target, weight=class_weights)
+        macro_class_cross_entropy(logits, target, 2)
         + 0.20 * dice_losses.mean()
         + 0.10 * auxiliary_ce
         + 0.05 * deep_auxiliary_ce
@@ -418,15 +414,13 @@ def test_present_class_dice_excludes_target_absent_classes() -> None:
     loss, dice_losses, _ = _training_objective(
         outputs,
         target,
-        class_weights=torch.ones(2),
         class_count=2,
         loss_profile=LossProfile(cross_entropy=0.0, focal=0.0, dice=1.0),
         is_final_run=True,
         training_phase="joint",
     )
     assert dice_losses[1] > dice_losses[0]
-    expected_ce = torch.nn.functional.cross_entropy(logits, target)
-    assert torch.allclose(loss, expected_ce + dice_losses[0])
+    assert torch.allclose(loss, dice_losses[0])
 
 
 def test_final_refinement_schedule_phases() -> None:

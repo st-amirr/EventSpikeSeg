@@ -501,7 +501,7 @@ must prove a worst-case occupancy bound including tags, values, queues, weights,
 margin. Until it passes, an all-on-chip full-resolution implementation is explicitly
 classified as infeasible rather than assumed to fit.
 
-## 2026-08-22 — Preserve named neuron runtime state in training checkpoints
+## 2026-08-22 — Preserve named neuron runtime state in training checkpoints (superseded 2026-08-23)
 
 Keep recurrent tensors nonpersistent in the ordinary PyTorch `state_dict`, because their
 data-dependent shapes make strict weight loading fragile. Instead, only the best-model
@@ -513,6 +513,23 @@ end of the training epoch before validation resets or overwrites it. The format 
 fields identify this as `layer-named-hardware-lif-v1` forensic state. Normal resume remains
 epoch-boundary weight/optimizer restoration; replaying saved runtime state must be explicit
 so it cannot leak one sequence into another.
+
+This one-off forensic snapshot was removed on 2026-08-23. Best, periodic, last, and
+canonical checkpoints now contain ordinary trainable model/optimizer/protocol state only;
+they do not serialize data-dependent membrane, adaptation, or elapsed-time tensors.
+
+## 2026-08-23 — Replace static class weights with macro per-class loss in every suite
+
+DSEC person pixels occupy about 0.078% of the installed training masks and traffic-sign
+pixels about 0.325%. A capped static weight cannot make their contribution comparable to
+large road/building regions. For every suite, compute mean negative log-probability
+separately for each target-present class and average those class means equally. Apply the
+same macro rule to focal loss where a historical profile enables focal, and to semantic
+auxiliary heads. Classes absent from a record have no positive
+term, but their logits remain competitors in the softmax denominator. Retain 0.2 present-
+class Dice, 0.1 auxiliary CE, 0.1 boundary supervision, and activity regularisation; keep
+focal disabled in the final profile. Existing historical measurements remain records of
+their original objectives; new comparison runs use the unified macro balancing rule.
 
 
 ## 2026-08-22 — Use 50 ms record-level, T=10 fixed-step FPGA inference

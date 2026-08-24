@@ -13,6 +13,8 @@
 - native 440x640 DSEC input with learned stride-2 semantic stem
 - 8-channel native detail path and memory-bounded 32/64/128 semantic path
 - continuous temporal class-current readout after binary-spiking hidden features
+- equal-per-present-class macro CE/focal without static class weights in every suite
+- ordinary-sized checkpoints without captured membrane/adaptation runtime tensors
 - explicit 3- or 4-stage channel schedules
 - configurable stem and first-block kernel size
 - dynamic `enc4_spikes` activity/evaluation diagnostics for the deep contender
@@ -74,7 +76,7 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 ## Validation/cleanup state
 
 - all architecture suites now dispatch through `train.py`; the duplicate standalone top-three trainer is retired;
-- historical top-ten/top-five/top-three loss weights are explicit and separated from the final CE=1.0 profile;
+- every suite uses macro per-present-class CE (and macro focal where configured); static class-weight estimation is removed from training;
 - the generated `ddd17_temporal_manifest.json` is the required chronology source; the runtime neither generates it nor infers sequence boundaries from filenames;
 - `timestamp-events` is the sole input representation; HDF5/raw and multi-file window paths are removed;
 - one 50 ms record is scheduled over ten 5 ms input clocks and PLIF state persists across consecutive records;
@@ -82,7 +84,7 @@ None beat the 0.3130 historical result under the then-current repeated-static in
 - checkpoints fingerprint the manifest/split/physical-clock protocol and reject all older input protocols;
 - auxiliary heads are skipped in evaluation/inference;
 - native-resolution checkpoints are supported by `evaluate.py` when `output_size` is `None`;
-- single-sequence contiguous validation and exact checkpoint holdout reconstruction are covered by regression tests; limited per-epoch training preserves temporal order; class-weight estimation reads masks only;
+- single-sequence contiguous validation and exact checkpoint holdout reconstruction are covered by regression tests; limited per-epoch training preserves temporal order;
 - obsolete `benchmark_top_three.py`, MEVDT/EventSCNN scripts, the dead `rtl-test` PowerShell wrapper, and checked-in `.ruff_cache` were removed; the completed DDD17 architecture-search plan is archived under `docs/exec-plans/completed/`.
 
 ## Open issues

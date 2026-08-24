@@ -221,9 +221,10 @@ class LossProfile:
 
 
 HISTORICAL_LOSS_PROFILE = LossProfile(cross_entropy=0.5)
-# The final objective keeps stable pixelwise, overlap, and deep-supervision
-# signals. Unweighted CE dropped rare DSEC classes; focal is omitted because it
-# would amplify hard pixels again on top of class weighting and Dice.
+# The final objective gives every target-present semantic class one equal CE term.
+# Dice, deep supervision, and boundary supervision remain complementary signals;
+# focal is intentionally absent from the final suite; static class weights are
+# absent from every suite because all semantic terms use macro class reduction.
 FINAL_LOSS_PROFILE = LossProfile(
     cross_entropy=1.0,
     focal=0.0,
@@ -233,7 +234,7 @@ FINAL_LOSS_PROFILE = LossProfile(
     boundary=0.10,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-native-learned-downsample-current-readout-v7"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-native-macro-class-ce-current-readout-v8"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -338,46 +339,59 @@ def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
     return 1.0 - numerator / denominator
 
 
-def estimate_class_weights(
-    dataset: TemporalDataset,
-    maximum: int | None = None,
-    *,
-    power: float = 1.0,
-    maximum_weight: float = 8.0,
+def macro_class_cross_entropy(
+    logits: Tensor, target: Tensor, class_count: int
 ) -> Tensor:
-    """Use softened, capped median-frequency balancing over the training subset."""
-    if not (0.0 < power <= 1.0):
-        raise ValueError("class-weight power must satisfy 0 < value <= 1")
-    if maximum_weight <= 0.0:
-        raise ValueError("maximum class weight must be positive")
-    class_count = int(getattr(dataset, "class_count", DDD17_CLASS_COUNT))
-    counts = torch.zeros(class_count, dtype=torch.float64)
-    limit = len(dataset) if maximum is None else min(len(dataset), maximum)
-    for index in range(limit):
-        mask = dataset.target_mask(index)
-        valid = mask != IGNORE_INDEX
-        counts += torch.bincount(mask[valid], minlength=class_count)
-    frequencies = counts / counts.sum().clamp_min(1.0)
-    median_frequency = frequencies[counts > 0].median().clamp_min(1e-6)
-    weights = (median_frequency / frequencies.clamp_min(1e-6)).pow(power)
-    return weights.float().clamp(max=maximum_weight)
+    """Average one mean CE term per target-present semantic class.
+
+    Pixelwise CE lets a large road region overwhelm a small person instance. Here
+    every valid pixel first contributes to its own class mean, then all classes
+    present in the record are averaged equally. Target-absent classes cannot have
+    a positive-class term, but are still penalized through the softmax denominator.
+    """
+    valid = target != IGNORE_INDEX
+    if not valid.any():
+        return logits.sum() * 0.0
+    safe_target = target.masked_fill(~valid, 0)
+    selected_nll = -F.log_softmax(logits, dim=1).gather(
+        1, safe_target.unsqueeze(1)
+    ).squeeze(1)
+    flat_target = safe_target[valid]
+    flat_nll = selected_nll[valid]
+    class_sums = torch.zeros(
+        class_count, device=logits.device, dtype=flat_nll.dtype
+    ).scatter_add_(0, flat_target, flat_nll)
+    class_counts = torch.bincount(flat_target, minlength=class_count)
+    present = class_counts > 0
+    class_means = class_sums / class_counts.clamp_min(1).to(flat_nll.dtype)
+    return class_means[present].mean()
 
 
 def focal_cross_entropy(
     logits: Tensor,
     target: Tensor,
-    class_weights: Tensor,
+    class_count: int,
     *,
     gamma: float = 1.5,
 ) -> Tensor:
+    """Macro-average focal loss over target-present classes."""
     valid = target != IGNORE_INDEX
+    if not valid.any():
+        return logits.sum() * 0.0
     safe_target = target.masked_fill(~valid, 0)
     log_probability = F.log_softmax(logits, dim=1)
     selected = log_probability.gather(1, safe_target.unsqueeze(1)).squeeze(1)
     probability = selected.exp()
     focal = -(1.0 - probability).pow(gamma) * selected
-    focal = focal * class_weights[safe_target]
-    return focal[valid].mean() if valid.any() else logits.sum() * 0.0
+    flat_target = safe_target[valid]
+    flat_focal = focal[valid]
+    class_sums = torch.zeros(
+        class_count, device=logits.device, dtype=flat_focal.dtype
+    ).scatter_add_(0, flat_target, flat_focal)
+    class_counts = torch.bincount(flat_target, minlength=class_count)
+    present = class_counts > 0
+    class_means = class_sums / class_counts.clamp_min(1).to(flat_focal.dtype)
+    return class_means[present].mean()
 
 
 def _activity_regularizer(outputs: dict[str, Tensor]) -> Tensor:
@@ -474,7 +488,6 @@ def _training_objective(
     outputs: dict[str, Tensor],
     target: Tensor,
     *,
-    class_weights: Tensor,
     class_count: int,
     loss_profile: LossProfile,
     is_final_run: bool,
@@ -482,12 +495,7 @@ def _training_objective(
 ) -> tuple[Tensor, Tensor, Tensor]:
     """Build one complete temporal record's objective and reporting spike rate."""
     logits = outputs["segmentation_logits"]
-    ce = F.cross_entropy(
-        logits,
-        target,
-        weight=class_weights,
-        ignore_index=IGNORE_INDEX,
-    )
+    ce = macro_class_cross_entropy(logits, target, class_count)
     dice_losses = soft_dice_loss(logits, target, class_count)
     valid_target = target[target != IGNORE_INDEX]
     present_classes = (
@@ -502,12 +510,12 @@ def _training_objective(
     )
     if is_final_run:
         loss = (
-            ce
+            loss_profile.cross_entropy * ce
             + loss_profile.dice * present_dice_loss
             + _activity_regularizer(outputs)
         )
     else:
-        focal = focal_cross_entropy(logits, target, class_weights)
+        focal = focal_cross_entropy(logits, target, class_count)
         loss = (
             loss_profile.cross_entropy * ce
             + loss_profile.focal * focal
@@ -518,27 +526,23 @@ def _training_objective(
         auxiliary = F.interpolate(
             outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
         )
-        auxiliary_ce = F.cross_entropy(
-            auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
-        )
+        auxiliary_ce = macro_class_cross_entropy(auxiliary, target, class_count)
         loss = loss + loss_profile.auxiliary_ce * auxiliary_ce
         if not is_final_run:
-            auxiliary_focal = focal_cross_entropy(
-                auxiliary, target, class_weights
-            )
+            auxiliary_focal = focal_cross_entropy(auxiliary, target, class_count)
             loss = loss + loss_profile.auxiliary_focal * auxiliary_focal
     if "deep_auxiliary_logits" in outputs:
         deep_auxiliary = F.interpolate(
             outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
         )
-        deep_auxiliary_ce = F.cross_entropy(
-            deep_auxiliary, target, weight=class_weights, ignore_index=IGNORE_INDEX
+        deep_auxiliary_ce = macro_class_cross_entropy(
+            deep_auxiliary, target, class_count
         )
         if is_final_run:
             loss = loss + 0.5 * loss_profile.auxiliary_ce * deep_auxiliary_ce
         else:
             deep_auxiliary_focal = focal_cross_entropy(
-                deep_auxiliary, target, class_weights
+                deep_auxiliary, target, class_count
             )
             deep_auxiliary_scale = (
                 0.20 if training_phase == "decoder_detail_refinement" else 0.10
@@ -1001,12 +1005,6 @@ def train_architecture(
         )
     optimizer = torch.optim.AdamW(parameter_groups)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
-    class_weights = estimate_class_weights(
-        train_pool,
-        power=0.5 if is_final_run else 1.0,
-        maximum_weight=3.0 if is_final_run else 8.0,
-    ).to(resolved_device)
-
     raw_refinement_schedule = getattr(model, "refinement_schedule", None)
     refinement_schedule = (
         tuple(float(value) for value in raw_refinement_schedule)
@@ -1043,8 +1041,6 @@ def train_architecture(
     current_competition_enabled = True
     current_hidden_inhibition_enabled = True
     current_neuron_dynamics_trainable = True
-    last_training_runtime_state: dict[str, object] | None = None
-
     def save_training_checkpoint(
         path: Path,
         *,
@@ -1053,7 +1049,6 @@ def train_architecture(
         validation_spike_rate: float | None,
         validation_layer_rates: dict[str, float] | None,
         training_phase_name: str,
-        training_runtime_state: dict[str, object] | None,
         best: bool = False,
     ) -> None:
         diagnostics_fn = getattr(model, "neuron_diagnostics", None)
@@ -1091,26 +1086,16 @@ def train_architecture(
                 "training_phase": training_phase_name,
                 "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
                 "training_objective": (
-                    "full-window-weighted-ce-plus-0.2-dice-plus-0.1-aux-ce"
+                    "full-window-present-class-macro-ce-plus-0.2-dice-plus-0.1-aux-ce-plus-0.1-boundary"
                     if is_final_run
-                    else "historical-compound"
+                    else "macro-present-class-historical-compound"
                 ),
-                "class_weights": class_weights.detach().cpu().tolist(),
+                "class_weights": None,
+                "class_balancing": "equal-mean-loss-over-target-present-classes",
                 "mechanism_scale": current_mechanism_scale,
                 "competition_enabled": current_competition_enabled,
                 "hidden_inhibition_enabled": current_hidden_inhibition_enabled,
                 "neuron_dynamics_trainable": current_neuron_dynamics_trainable,
-                "training_runtime_state": training_runtime_state,
-                "training_runtime_state_format": (
-                    "layer-named-hardware-lif-v1"
-                    if training_runtime_state is not None
-                    else None
-                ),
-                "training_runtime_state_scope": (
-                    "end-of-training-epoch-before-validation"
-                    if training_runtime_state is not None
-                    else None
-                ),
                 "amp": amp_enabled,
                 "sequential_chunks": sequential_chunks,
                 "training_sampling_strategy": (
@@ -1319,17 +1304,14 @@ def train_architecture(
             flush=True,
         )
     print(
-        "Soft median-frequency class weights | "
-        + ", ".join(
-            f"{class_name}={weight:.3f}"
-            for class_name, weight in zip(class_names, class_weights.tolist())
-        ),
+        "Class balancing | equal mean loss over every target-present class; "
+        "static class weights=off",
         flush=True,
     )
     if is_final_run:
         print(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
-            "objective=weighted-CE+0.2-Dice+0.1-aux-CE+0.1-boundary | "
+            "objective=macro-class-CE+0.2-Dice+0.1-macro-aux-CE+0.1-boundary | "
             "focal=off activity=on | "
             f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "
@@ -1437,7 +1419,6 @@ def train_architecture(
                             _training_objective(
                                 outputs,
                                 target,
-                                class_weights=class_weights,
                                 class_count=class_count,
                                 loss_profile=loss_profile,
                                 is_final_run=is_final_run,
@@ -1518,10 +1499,6 @@ def train_architecture(
         )
 
         if is_final_run:
-            capture_named_state = getattr(model, "capture_named_runtime_state", None)
-            last_training_runtime_state = (
-                capture_named_state("cpu") if callable(capture_named_state) else None
-            )
             validation_metrics, validation_spike_rate, validation_layer_rates = evaluate_model(
                 model,
                 validation_loader,
@@ -1550,7 +1527,6 @@ def train_architecture(
                     validation_spike_rate=validation_spike_rate,
                     validation_layer_rates=validation_layer_rates,
                     training_phase_name=training_phase,
-                    training_runtime_state=last_training_runtime_state,
                     best=True,
                 )
             if epoch % checkpoint_every == 0:
@@ -1564,7 +1540,6 @@ def train_architecture(
                     validation_spike_rate=validation_spike_rate,
                     validation_layer_rates=validation_layer_rates,
                     training_phase_name=training_phase,
-                    training_runtime_state=None,
                 )
             best_marker = " | new best" if improved else ""
             checkpoint_marker = " | checkpoint saved" if epoch % checkpoint_every == 0 else ""
@@ -1605,7 +1580,6 @@ def train_architecture(
             validation_spike_rate=last_validation_spike_rate,
             validation_layer_rates=last_validation_layer_rates,
             training_phase_name=previous_training_phase or "joint",
-            training_runtime_state=None,
         )
         if not best_checkpoint_path.is_file():
             raise RuntimeError("best checkpoint was not created during final-model training")

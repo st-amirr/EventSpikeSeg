@@ -112,8 +112,6 @@ services:
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
        "--input-mode", "raw-events",
-       # FP16 backward is unsafe with asynchronous temporal replay: gradients
-       # become non-finite before AdamW can perform its first update.
        "--device", "auto",
        "--height", "440", "--width", "640",
       #  "--height", "185", "--width", "320",
@@ -121,6 +119,7 @@ services:
        "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
+       "--load","artifacts/checkpointsV3/dsec/EventSpikeSeg140k_seed17_epoch005.pt",
        "--checkpoint-dir", "artifacts/checkpointsV3/dsec"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.

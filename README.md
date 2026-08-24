@@ -90,7 +90,7 @@ DSEC uses eleven continuous class-current outputs after the binary-spiking featu
 `person`, `pole`, `road`, `sidewalk`, `vegetation`, `vehicle`, `wall`, and
 `traffic-sign`.
 
-The trainer consumes every packet before forming one weighted CE + Dice + semantic
+The trainer consumes every packet before forming one equal-per-present-class macro CE + Dice + semantic
 auxiliary + boundary objective. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
 complete-record prediction without an activation graph, then replay chronological chunks
 with that one objective's output gradients. This releases each chunk graph without ever

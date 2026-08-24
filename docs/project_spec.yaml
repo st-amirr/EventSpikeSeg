@@ -293,6 +293,8 @@ input_and_time:
   - treating_timestamp_statistics_as_independent_image_channels_in_the_stem
   checkpoint_contract:
     version: ddd17-timestamp-v3
+    recurrent_runtime_state_saved: false
+    recurrent_runtime_state_reason: checkpoints_store_trainable_and_optimizer_state_only_not_data_dependent_membranes_or_adaptation_tensors
     fingerprint_fields:
     - manifest_digest
     - exact_record_membership
@@ -480,7 +482,7 @@ architecture_search:
   - Same training and validation records
   - Same deterministic seed
   - Same initialization procedure
-  - Same optimizer, learning-rate schedule, loss, class weights, resolution, and timesteps
+  - Same optimizer, learning-rate schedule, macro class-balancing rule, resolution, and timesteps
   - Same maximum sample counts
   - No architecture-specific manual tuning during the first ranking
   presets:
@@ -586,10 +588,14 @@ training:
     default_weight_decay: 0.0001
   scheduler: cosine_annealing
   loss:
-    primary: pixelwise_cross_entropy_on_temporally_accumulated_class_activity
+    primary: equal_mean_cross_entropy_per_target_present_class_on_temporally_accumulated_class_current
     ignore_index: 255
-    class_balancing: training_split_class_weights
-    auxiliary_head_weight: configuration_dependent
+    class_balancing: macro_average_over_target_present_classes_without_static_class_weights_for_all_suites
+    focal_balancing: macro_average_over_target_present_classes_where_focal_is_enabled
+    final_dice_weight: 0.2
+    final_auxiliary_macro_ce_weight: 0.1
+    final_boundary_weight: 0.1
+    absent_class_behavior: no_positive_class_term_but_logits_remain_in_every_present_class_softmax_denominator
     optional_future_regularizers:
       spike_rate: 0.001
       channel_utilization_balance: 0.001
@@ -1392,7 +1398,7 @@ completed_top_five_structural_search:
       purpose: FPGA-efficiency candidate
   fairness_contract:
   - same neuron/inhibition/adaptation configuration for all five
-  - same seed, sample subsets, resolution, internal timesteps, optimizer, loss, and class weighting within one
+  - same seed, sample subsets, resolution, internal timesteps, optimizer, loss, and macro class balancing within one
     run
   - no contender-specific hyperparameter tuning
   - record mIoU, per-class IoU, ground-truth/predicted pixels, layer spike rates, and parameter count
