@@ -90,6 +90,14 @@ DSEC uses eleven continuous class-current outputs after the binary-spiking featu
 `person`, `pole`, `road`, `sidewalk`, `vegetation`, `vehicle`, `wall`, and
 `traffic-sign`.
 
+After every final-model validation pass, training saves the same three seed-selected
+validation records under `<checkpoint-dir>/images`. Each PNG contains the complete 50 ms
+event-count map on the left (negative events red, positive events blue, logarithmic
+count-to-intensity scaling), the coloured ground-truth mask in the middle, and the
+coloured semantic prediction on the right. The predictions are captured during the
+normal chronological validation pass, so this adds no extra forward passes and does not
+disturb recurrent stream state.
+
 The trainer consumes every packet before forming one equal-per-present-class macro CE + Dice + semantic
 auxiliary + boundary objective. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
 complete-record prediction without an activation graph, then replay chronological chunks

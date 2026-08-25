@@ -165,6 +165,10 @@ def test_dsec_memory_bounded_replay_trains_one_complete_record(tmp_path: Path) -
     )
     assert result.epochs == 1
     assert Path(result.checkpoint).is_file()
+    preview_paths = sorted((tmp_path / "checkpoints" / "images").glob("*.png"))
+    assert len(preview_paths) == 2
+    with Image.open(preview_paths[0]) as preview:
+        assert preview.size == (48, 16)
 
 
 def test_dsec_validation_scales_complete_sequence_count_with_train_fraction() -> None:

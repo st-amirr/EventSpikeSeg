@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -18,18 +19,74 @@ from eventspikeseg.train import (
     _training_objective,
     architecture_presets,
     checkpoint_mechanism_scale,
+    dsec_colour_mask,
+    dsec_event_count_image,
     final_mechanism_scale,
+    fixed_validation_preview_indices,
     format_class_validation_report,
     infer_model_suite,
     loss_profile_for_suite,
     macro_class_cross_entropy,
     refinement_phase_for_epoch,
     restored_resume_learning_rates,
+    save_dsec_validation_previews,
     scale_learning_rates,
     select_winner,
     set_neuron_dynamics_trainable,
     soft_dice_loss,
 )
+
+
+def test_validation_preview_indices_are_random_but_reproducible() -> None:
+    first = fixed_validation_preview_indices(234, seed=17)
+    second = fixed_validation_preview_indices(234, seed=17)
+    assert first == second
+    assert len(first) == 3
+    assert len(set(first)) == 3
+    assert first != fixed_validation_preview_indices(234, seed=18)
+    assert fixed_validation_preview_indices(2, seed=17) == (0, 1)
+
+
+def test_dsec_preview_colours_polarity_by_complete_window_count() -> None:
+    counts = torch.zeros(2, 2, 3)
+    counts[0, 0, 0] = 1
+    counts[0, 0, 1] = 8
+    counts[1, 1, 1] = 8
+    counts[:, 1, 2] = 8
+    image = dsec_event_count_image(counts)
+    assert image.shape == (2, 3, 3)
+    assert 0 < image[0, 0, 0] < image[0, 1, 0] == 255
+    assert image[0, 1, 2] == 0
+    assert image[1, 1].tolist() == [0, 0, 255]
+    assert image[1, 2].tolist() == [255, 0, 255]
+
+
+def test_save_dsec_preview_is_event_target_prediction_panel(tmp_path: Path) -> None:
+    dataset = SimpleNamespace(
+        records=[SimpleNamespace(sequence_id="zurich_city_02_a", frame_index=12)]
+    )
+    previews = {
+        0: (
+            torch.zeros(2, 4, 5),
+            torch.zeros(4, 5, dtype=torch.long),
+            torch.full((4, 5), 10, dtype=torch.long),
+        )
+    }
+    paths = save_dsec_validation_previews(
+        tmp_path,
+        epoch=3,
+        preview_indices=(0,),
+        previews=previews,
+        dataset=dataset,
+    )
+    assert paths == (
+        tmp_path / "epoch_003_sample_01_zurich_city_02_a_000012.png",
+    )
+    with Image.open(paths[0]) as panel:
+        pixels = np.asarray(panel)
+    assert pixels.shape == (4, 15, 3)
+    assert np.array_equal(pixels[:, 5:10], dsec_colour_mask(previews[0][1]))
+    assert np.array_equal(pixels[:, 10:15], dsec_colour_mask(previews[0][2]))
 
 
 def _result(name: str, miou: float, parameters: int, spike_rate: float) -> TrainResult:

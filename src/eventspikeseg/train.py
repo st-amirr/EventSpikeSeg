@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from PIL import Image
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -793,12 +794,99 @@ def _epoch_train_dataset(
     indices = list(range(start, start + count))
     return train_pool.subset(indices)
 
+
+_DSEC_VISUAL_PALETTE = np.array(
+    [
+        [70, 130, 180],   # sky
+        [70, 70, 70],     # building
+        [190, 153, 153],  # fence
+        [220, 20, 60],    # person
+        [153, 153, 153],  # pole
+        [128, 64, 128],   # road
+        [244, 35, 232],   # sidewalk
+        [107, 142, 35],   # vegetation
+        [0, 0, 142],      # vehicle
+        [102, 102, 156],  # wall
+        [220, 220, 0],    # traffic-sign
+    ],
+    dtype=np.uint8,
+)
+
+
+def fixed_validation_preview_indices(
+    dataset_size: int, *, seed: int, count: int = 3
+) -> tuple[int, ...]:
+    """Choose reproducible random validation records without changing global RNG state."""
+    if dataset_size < 0:
+        raise ValueError("dataset_size must be non-negative")
+    if count < 0:
+        raise ValueError("count must be non-negative")
+    selected = random.Random(seed).sample(range(dataset_size), min(count, dataset_size))
+    return tuple(sorted(selected))
+
+
+def dsec_event_count_image(event_counts: Tensor) -> np.ndarray:
+    """Render a complete DSEC window: negative red and positive blue by event count."""
+    if event_counts.ndim != 3 or event_counts.shape[0] != 2:
+        raise ValueError("DSEC event counts must have shape [2,H,W]")
+    counts = event_counts.detach().float().cpu().clamp_min(0).numpy()
+    maximum = max(float(counts.max()), 1.0)
+    intensity = np.log1p(counts) / np.log1p(maximum)
+    image = np.zeros((*counts.shape[1:], 3), dtype=np.uint8)
+    image[..., 0] = np.rint(intensity[0] * 255.0).astype(np.uint8)
+    image[..., 2] = np.rint(intensity[1] * 255.0).astype(np.uint8)
+    return image
+
+
+def dsec_colour_mask(mask: Tensor) -> np.ndarray:
+    """Map DSEC class indices to a stable, high-contrast RGB palette."""
+    values = mask.detach().cpu().numpy()
+    image = np.zeros((*values.shape, 3), dtype=np.uint8)
+    valid = (values >= 0) & (values < len(_DSEC_VISUAL_PALETTE))
+    image[valid] = _DSEC_VISUAL_PALETTE[values[valid]]
+    return image
+
+
+def save_dsec_validation_previews(
+    destination: Path,
+    *,
+    epoch: int,
+    preview_indices: Sequence[int],
+    previews: dict[int, tuple[Tensor, Tensor, Tensor]],
+    dataset: DSECRawEventDataset,
+) -> tuple[Path, ...]:
+    """Save event | target | prediction panels captured by chronological validation."""
+    destination.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    for sample_number, dataset_index in enumerate(preview_indices, start=1):
+        if dataset_index not in previews:
+            raise RuntimeError(f"validation preview {dataset_index} was not captured")
+        event_counts, target, prediction = previews[dataset_index]
+        panel = np.concatenate(
+            (
+                dsec_event_count_image(event_counts),
+                dsec_colour_mask(target),
+                dsec_colour_mask(prediction),
+            ),
+            axis=1,
+        )
+        record = dataset.records[dataset_index]
+        path = destination / (
+            f"epoch_{epoch:03d}_sample_{sample_number:02d}_"
+            f"{record.sequence_id}_{record.frame_index:06d}.png"
+        )
+        Image.fromarray(panel).save(path)
+        paths.append(path)
+    return tuple(paths)
+
 def evaluate_model(
     model: nn.Module,
     loader: DataLoader,
     *,
     device: torch.device,
     stateful_stream: bool = True,
+    preview_indices: Sequence[int] = (),
+    preview_sink: dict[int, tuple[Tensor, Tensor, Tensor]] | None = None,
 ) -> tuple[dict[str, object], float, dict[str, float]]:
     model.eval()
     class_count = int(loader.dataset.class_count)
@@ -815,6 +903,9 @@ def evaluate_model(
     layer_elements: dict[str, int] = {}
     scalar_rate_sums: dict[str, float] = {}
     scalar_rate_batches: dict[str, int] = {}
+    requested_previews = set(preview_indices)
+    if preview_sink is not None:
+        preview_sink.clear()
     with torch.no_grad():
         for batch_index, batch in enumerate(loader):
             sequence, target, deltas_us = unpack_temporal_batch(batch)
@@ -831,6 +922,16 @@ def evaluate_model(
             outputs = model(sequence)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
+            if preview_sink is not None and batch_index in requested_previews:
+                if sequence.ndim != 5 or sequence.shape[1:3] != (1, 2):
+                    raise ValueError(
+                        "DSEC validation previews require input shaped [T,1,2,H,W]"
+                    )
+                preview_sink[batch_index] = (
+                    sequence[:, 0].sum(dim=0).detach().cpu(),
+                    target[0].detach().cpu(),
+                    prediction[0].detach().cpu(),
+                )
             for key in tracked_spike_keys:
                 if key not in outputs:
                     continue
@@ -970,6 +1071,12 @@ def train_architecture(
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     output_dir.mkdir(parents=True, exist_ok=True)
     is_final_run = resolved_suite == "final"
+    validation_preview_indices = (
+        fixed_validation_preview_indices(len(validation_dataset), seed=seed)
+        if dataset_name == "dsec" and is_final_run
+        else ()
+    )
+    validation_preview_dir = output_dir / "images"
     if checkpoint_every < 1:
         raise ValueError("checkpoint_every must be >= 1")
     base_neuron_parameters = []
@@ -1499,12 +1606,26 @@ def train_architecture(
         )
 
         if is_final_run:
+            validation_previews: dict[int, tuple[Tensor, Tensor, Tensor]] = {}
             validation_metrics, validation_spike_rate, validation_layer_rates = evaluate_model(
                 model,
                 validation_loader,
                 device=resolved_device,
                 stateful_stream=continuous_state,
+                preview_indices=validation_preview_indices,
+                preview_sink=validation_previews,
             )
+            preview_paths: tuple[Path, ...] = ()
+            if dataset_name == "dsec":
+                if not isinstance(validation_dataset, DSECRawEventDataset):
+                    raise TypeError("DSEC validation requires DSECRawEventDataset")
+                preview_paths = save_dsec_validation_previews(
+                    validation_preview_dir,
+                    epoch=epoch,
+                    preview_indices=validation_preview_indices,
+                    previews=validation_previews,
+                    dataset=validation_dataset,
+                )
             last_validation_metrics = validation_metrics
             last_validation_spike_rate = validation_spike_rate
             last_validation_layer_rates = validation_layer_rates
@@ -1556,6 +1677,12 @@ def train_architecture(
                 format_class_validation_report(class_names, validation_metrics),
                 flush=True,
             )
+            if preview_paths:
+                print(
+                    f"Validation images | saved={len(preview_paths)} | "
+                    f"directory={validation_preview_dir}",
+                    flush=True,
+                )
 
             model.train()
 

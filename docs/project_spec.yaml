@@ -223,6 +223,14 @@ future_datasets:
         fixed_for_run: true
         installed_at_train_0_5: [zurich_city_02_a]
         installed_at_train_0_7: [zurich_city_01_a, zurich_city_02_a]
+        qualitative_previews:
+          count: 3
+          selection: random_indices_from_run_seed_reused_every_epoch
+          capture: existing_chronological_validation_pass_no_extra_forward
+          output_directory: checkpoint_dir/images
+          panel_order: [complete_50ms_event_count_map, coloured_ground_truth, coloured_prediction]
+          event_colours: {polarity_0_negative: red, polarity_1_positive: blue}
+          count_intensity: shared_per_sample_log1p_scale
       fractional_epoch_sampling:
         scope: independently_per_training_sequence
         selection: one_contiguous_window_per_sequence_per_epoch

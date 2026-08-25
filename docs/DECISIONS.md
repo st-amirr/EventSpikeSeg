@@ -611,6 +611,16 @@ This supersedes the same-day 50 ms layer-major FPGA scheduling decision while le
 
 The current DSEC training path enables touched-neuron lazy updates. Runtime must therefore preserve that behavior: each live sparse neuron state stores a compact 24-bit `last_bin_tag`; when touched at bin `k`, compute `delta_bins = k - last_bin_tag (mod 2^24)` and apply the learned beta once per elapsed bin before adding current. The first RTL implementation uses an iterative beta multiply so long-idle neurons consume additional cycles; a beta-power LUT/accelerator is allowed later only with bit-exact validation. No 32-bit microsecond timestamp is used.
 
+## 2026-08-24 — Save fixed qualitative DSEC validation previews every epoch
+
+Choose three validation-record indices once from the run seed and reuse those records for
+every epoch. Capture their outputs inside the existing chronological validation pass so
+recurrent state stays correct and validation does not require extra forward executions.
+Save `event | ground truth | prediction` PNG panels under `<checkpoint-dir>/images`.
+The event panel collapses all ten 5 ms divisions into the complete 50 ms count map:
+polarity 0 is red (negative), polarity 1 is blue (positive), and a shared logarithmic
+count scale controls intensity so both low- and high-count pixels remain visible.
+
 The signed 16->11 class-current readout accumulates over a configurable prediction window. Start with ten bins, therefore one prediction every 50 ms / 20 Hz, because that matches training. PLIF/adaptation state continues across prediction boundaries and resets only at sequence/frame gaps.
 
 Define real-time utilization `U = C_bin / (f_clk * 5 ms)` and throughput headroom `H = 1/U`. Sustained operation requires `U <= 1` (`H >= 1`). The starting engineering target is `U <= 0.8` (`H >= 1.25`), leaving 20% timing margin. At 100/150/200 MHz the hard budgets are 500k/750k/1M cycles per bin and the 80% target budgets are 400k/600k/800k cycles. These values must come from measured controller cycle counts after synthesis/RTL integration, not from parameter count.

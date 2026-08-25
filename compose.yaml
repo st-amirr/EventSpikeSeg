@@ -100,7 +100,7 @@ services:
        # Add "--no-continuous-state" here only for the stateless-record ablation.
        "--train-samples", "0.7", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch015.pt",
+       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch004.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   # Canonical EventSpikeSeg140k with an 11-class head and exact DSEC raw-event clocks.
