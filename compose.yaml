@@ -100,7 +100,7 @@ services:
        # Add "--no-continuous-state" here only for the stateless-record ablation.
        "--train-samples", "0.7", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch004.pt",
+       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch006.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
   # Canonical EventSpikeSeg140k with an 11-class head and exact DSEC raw-event clocks.
@@ -119,7 +119,7 @@ services:
        "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-      #  "--load","artifacts/checkpointsV3/dsec/EventSpikeSeg140k_seed17_epoch006.pt",
+       "--load","artifacts/checkpointsV4/dsec/EventSpikeSeg140k_seed17_epoch006.pt",
        "--checkpoint-dir", "artifacts/checkpointsV4/dsec"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.

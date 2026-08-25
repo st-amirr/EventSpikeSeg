@@ -376,7 +376,7 @@ class HardwareLIF(nn.Module):
 
         A missing schedule preserves the historical 5 ms discrete-time update.
         DSEC fixed-time training supplies the physical step duration, so learned
-        leakage has the same time unit in PyTorch and the asynchronous FPGA.
+        leakage has the same time unit in PyTorch and the asynchronous ASIC actors.
         """
         if deltas_us is None:
             self.step_deltas_us = torch.empty(0, device=self.inhibition_scale.device)

@@ -4,9 +4,9 @@
 
 Build and validate only `EventSpikeSeg140k` for 11-class DSEC at native `440x640`, then map its
 spike-native PLIF inference graph to a custom static digital-neuromorphic accelerator.
-Training remains PyTorch + SpikingJelly; deployment targets VHDL-2008 on the conventional
-AMD/Xilinx Artix-7 XC7A200T (Digilent Nexys Video reference board)
-with fixed-point PLIF state, sparse event routing, and activity-aware execution.
+Training remains PyTorch + SpikingJelly; deployment is a custom ASIC described directly in
+synthesizable SystemVerilog, with Icarus/cocotb and Yosys/OpenROAD as the open verification
+and PPA path.
 
 ## Source-of-truth order
 
@@ -20,9 +20,9 @@ Python constructors/forward methods remain authoritative if older diagrams disag
 
 ## Canonical naming and frozen graph
 
-- `EventSpikeSeg140k`: the only FPGA target; 150,245 registered parameters for
+- `EventSpikeSeg140k`: the only ASIC target; 150,245 registered parameters for
   11-class, two-polarity DSEC.
-- `EventSpikeSegXL`: software-only comparison; FPGA export must reject it.
+- `EventSpikeSegXL`: software-only comparison; ASIC export must reject it.
 - Deployable 140k inference: 149,503 executed parameters, 143,904 synaptic weights,
   25 Conv/ChannelAffine/PLIF populations, and one temporal class-current readout.
 - Omit dead `refine2`, training-only `aux_head`/`boundary_head`, surrogate gradients,
@@ -39,13 +39,13 @@ Hardware deployment implements the frozen executed 140k inference graph only. Hi
 layers are binary-spiking; the final 1x1 synapse accumulates continuous signed class
 current over the ten updates and does not allocate class PLIF state.
 
-## PLIF digital FPGA mapping contract
+## PLIF digital ASIC mapping contract
 
 Per output channel, `beta=sigmoid(beta_logit)` and threshold are learned. Spatial
 neurons keep individual membrane state. Software charge is equivalent to
 `candidate = beta * membrane + current` before dynamic threshold/reset effects.
 
-FPGA values are fixed-point numerical SNN states, not physical volts/amps. Freeze the
+ASIC values are fixed-point numerical SNN states, not physical volts/amps. Freeze the
 weight, beta, threshold, membrane, accumulator, adaptation, rounding, saturation, and
 overflow formats in the integer export contract. The baseline must preserve the learned
 per-channel beta with a quantized coefficient. Shift-only/power-of-two leak is an
@@ -55,18 +55,15 @@ optional optimization only after bit-exact and semantic-accuracy revalidation.
 
 Do not infer neuron-state memory from parameter count. The 25-population 140k graph has
 30,976,000 logical membrane states and 10,982,400 adaptation-enabled states at DSEC
-`440x640`. With int16 membrane, two int16 adaptation fields where enabled, and the compact 24-bit last-bin tag required by the trained touched-neuron runtime, a hypothetical dense exact state is about 189.60 MiB before queues/counters. No microsecond timestamp is used. XC7A200T BRAM is 1.604 MiB, so the implementation must remain losslessly sparse and prove measured occupancy.
-External memory, including the board's DDR3, is forbidden. A lossless sparse live-state
-table is the only remaining possible mapping and must pass a measured worst-case bound;
-overflow eviction or state loss is forbidden.
+`440x640`. With int16 membrane, two int16 adaptation fields where enabled, and the compact 24-bit last-bin tag required by the trained touched-neuron runtime, a hypothetical dense exact state is about 189.60 MiB before queues/counters. No microsecond timestamp is used. Actor ownership eliminates cross-layer fetching but not this capacity. Full-chip PPA therefore requires characterized local SRAM macros; a lossless sparse live-state SRAM is allowed only after measured worst-case occupancy proves its bound. Overflow eviction or state loss is forbidden.
 
-Each actor may sequence its own lanes across spatial/channel destinations, but may not
-lend those lanes to another layer. It must never alias logical membrane addresses from
-different channels, positions, or layers. Current accumulators are temporary;
+Each actor owns direct-indexed local state across its spatial/channel destinations and may
+not lend that state or compute identity to another layer. It must never alias logical
+membrane addresses from different channels, positions, or layers. Current accumulators are temporary;
 persistent membrane/adaptation state survives events and consecutive records until the
 documented reset boundary.
 
-## Digital neuromorphic FPGA deployment rule
+## Digital neuromorphic ASIC deployment rule
 
 The primary runtime is fully digital but must preserve neuromorphic/SNN execution:
 
@@ -87,9 +84,20 @@ and partial reconfiguration are forbidden. Common clock/reset, fixed-slice input
 on-chip state banks, and final readout may be shared infrastructure. Logical spatial states are
 still stored, not implemented as one physical register/neuron each.
 
-### Exact sparse execution order
+### Exact autonomous actor execution order
 
-DSEC FPGA inference must match the trained fixed 5 ms time grid while streaming live input. Raw camera events are accumulated into consecutive 5 ms bins. The active hardware schedule is **bin-major end-to-end**: one sealed bin traverses actor 0 through actor 24 plus the class-current update before that bin is retired. Acquisition of the next bin overlaps computation through ping-pong input buffers. This is not raw-event asynchronous propagation and is not the superseded 50 ms layer-major schedule.
+DSEC ASIC inference must match the trained fixed 5 ms time grid while streaming live input.
+Within a bin, actors run autonomously using ready/valid spike traffic. An ordered completion
+token follows the final presynaptic event; it causes the receiving actor to update each
+touched PLIF exactly once and then forward completion. This is logically asynchronous
+actor dataflow, but the current RTL is clocked and makes no electrically clockless/QDI claim.
+Never threshold after each signed tap contribution.
+
+For a 3x3 convolution, approximately nine parallel tap projection cells calculate valid
+postsynaptic destinations and signed weights. They all feed the same canonical destination
+current/membrane array. A tap is a synapse projection, not a separate PLIF and not a separate
+membrane copy. Stride is output-address divisibility in the scatter equation; it is not a
+dense sliding scan.
 
 ### Natural mappings
 
@@ -121,35 +129,35 @@ hardware-compatible approximation and revalidate/fine-tune accuracy.
 
 DDD17 uses the 50 ms statistic scheduler and is an approximation because raw tuples are
 unavailable. DSEC uses exact raw rectified events and bypasses the moment scheduler. GPU
-training accumulates events into fixed physical-time divisions; the FPGA accepts the
+training accumulates events into fixed physical-time divisions; the ASIC ingress accepts the
 camera stream directly and does not store those training divisions as input bins.
 
 ## Verification
 
-For the FPGA target, preserve this staged golden comparison:
+For the ASIC target, preserve this staged golden comparison:
 
 1. SpikingJelly floating-point trained model
 2. exported bit-exact fixed-point integer reference
-3. VHDL unit/full RTL simulation
-4. Vivado XC7A200T synthesis + place-and-route + post-implementation timing simulation
-5. representative-event SAIF/VCD power analysis
-6. optional instrumented Nexys Video measurement
+3. SystemVerilog unit/full RTL simulation with Icarus and cocotb
+4. Yosys synthesis and technology mapping
+5. OpenROAD placement/routing, parasitic extraction, timing, and representative-event VCD/SAIF power
+6. later test-silicon measurement
 
 Compare layer currents, membrane trajectories, adaptation, hidden spikes, signed class-current accumulators, semantic
-accuracy, cycle counts, and overflow/saturation behavior. Post-route timing and Vivado
-power are estimates and must be labeled as such; only instrumented board results may be
-called measured FPGA power/latency.
+accuracy, latency, and overflow/saturation behavior. ASAP7 is predictive research PPA,
+not tapeout signoff. Full-chip PPA is invalid until state arrays use characterized SRAM
+macros; standard-cell-expanded memory must never be reported as the implementation.
 
 
-## Streaming 5 ms DSEC runtime rule
+## Autonomous 5 ms DSEC runtime rule
 
-Live DSEC input is sealed every 5 ms. The FPGA must propagate the current bin through the complete 25-PLIF deployed graph before retiring it; meanwhile the alternate ingress buffer captures the next 5 ms of camera events. PLIF/adaptation state persists across bins and predictions. Each touched state stores a 24-bit last-bin tag; `delta_bins` controls the exact repeated learned-beta leak before current integration. All contributions to one destination for a layer/bin must be accumulated before one threshold/reset commit.
+Live DSEC input retains 5 ms semantic epochs. Events and an ordered completion token propagate through the complete permanent 25-PLIF graph without a global actor scheduler. PLIF/adaptation state persists across epochs and predictions. Each touched state stores a 24-bit last-bin tag; `delta_bins` controls the exact repeated learned-beta leak before current integration. All contributions to one destination for a layer/epoch must be accumulated before one threshold/reset commit.
 
 Prediction cadence is configurable, with **10 bins = 50 ms = 20 Hz** as the starting point to match training. Measure cycles/bin after implementation. Define `U = C_bin/(f_clk*0.005)` and `H = 1/U`. Hard sustained real time requires `U<=1` / `H>=1`; the starting design target is `U<=0.8` / `H>=1.25`. At 100 MHz this means 500,000 hard cycles/bin and 400,000 target cycles/bin.
 
-## Active streaming RTL interfaces
+## Active autonomous RTL interfaces
 
-The sparse-state entry contains logical address/tag, int16 membrane, compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. `plif_update` receives `elapsed_bins` and iterates learned beta once per elapsed 5 ms bin before charging. `streaming_bin_controller` schedules actor 0..24 for one bin, counts cycles/bin, reports deadline/target misses, advances the global bin tag, and asserts prediction-due after the configurable window. `ping_pong_event_buffer` retains each sealed bin until end-to-end release, and `touched_neuron_lane` sequences sparse lookup, lazy PLIF update, and exact writeback for one accumulated destination. `fixed_record_controller` is superseded. The final 16->11 readout remains non-spiking; `class_current_update` implements signed saturating updates and prediction flush while its sparse per-pixel backing bank remains an integration task.
+`presynaptic_tap_array` generates every valid nonzero kernel contribution in parallel for one channel plane. `convolution_plif_actor` serializes those contributions into the canonical actor-local destination array. `asynchronous_plif_actor` accumulates repeated destinations into one current entry, records first touches, and on completion walks only that queue through `plif_update`; spike and completion outputs are independently backpressured. The current behavioral state arrays are an equivalence prototype and must become actor-local SRAM macros. The final 16->11 readout remains non-spiking.
 
 ## Active fixed-step RTL interfaces
 

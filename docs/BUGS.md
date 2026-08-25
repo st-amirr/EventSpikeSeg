@@ -33,22 +33,21 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 
 ## Open: structural-cost trade-off
 
-The active 11-class DSEC/FPGA target is `EventSpikeSeg140k`: 150,245 registered
+The active 11-class DSEC/ASIC target is `EventSpikeSeg140k`: 150,245 registered
 parameters, 149,503 executed inference parameters, 25 permanent PLIF actors, and one
 temporal class-current readout.
-Parameter count is only a proxy for FPGA cost; the dominant constraint is persistent
+Parameter count is only a proxy for ASIC logic cost; the dominant constraint is persistent
 membrane/adaptation traffic, followed by pointwise mixing, event routing, FIFO
 pressure, and inhibition/adaptation arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
 At native 440x640, v8 owns **30,976,000** membrane states. Threshold adaptation adds
-age/amplitude on **10,982,400** neurons. Because the current DSEC training path uses touched-neuron lazy updates, exact runtime needs a compact 24-bit `last_bin_tag` for every live sparse state. A hypothetical dense exact representation is about **189.60 MiB** before queues/alignment; XC7A200T BRAM is short by about **188.00 MiB** (about **118.2x** the available BRAM). External/onboard DDR is forbidden, so the open
-feasibility issue is whether a lossless sparse table can bound all live states on chip.
+age/amplitude on **10,982,400** neurons. Because the current DSEC training path uses touched-neuron lazy updates, exact runtime needs a compact 24-bit `last_bin_tag` for every live sparse state. A hypothetical dense exact representation is about **189.60 MiB** before queues/alignment. The full ASIC therefore requires characterized actor-local SRAM macros; a sparse implementation is valid only if full-sequence measurements establish a lossless bound.
 
 ## Open: continuous learned neuron parameters
 
-PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are learned numerical training variables. For FPGA deployment they require frozen fixed-point formats, deterministic rounding/saturation, and integer-reference regression. The baseline preserves quantized per-channel beta; shift-only/power-of-two leakage is an optional optimization that requires accuracy revalidation.
+PLIF beta, base threshold, inhibition strength, threshold-adaptation strength, and adaptation duration are learned numerical training variables. ASIC deployment requires frozen fixed-point formats, deterministic rounding/saturation, and integer-reference regression. The baseline preserves quantized per-channel beta; shift-only/power-of-two leakage is an optional optimization that requires accuracy revalidation.
 
 
 ## Open: native-resolution CPU stream-training cost
@@ -79,16 +78,6 @@ Previously one six-channel sample was repeated or adjacent files were stacked as
 The installed `events/train` folder has 2,887 NumPy tensors while `labels/train` has 10,001 indexed masks. Only `rec1487339175_export` is represented in the active event manifest. This loss of recording diversity is a likely accuracy limiter and must be fixed at the dataset installation level; the loader reports the mismatch explicitly.
 
 
-## Resolved: DSEC FPGA timing contract is no longer direct asynchronous AER
+## Full-chip ASIC integration still incomplete
 
-The baseline hardware now follows the trained fixed-time representation: one 50 ms DSEC record contains ten ordered 5 ms SNN updates. The full record is processed layer-by-layer, with each layer/tile retaining state while stepping through `t0..t9`. This removes the semantic mismatch between fixed-time training and direct raw-event PLIF updates and removes the mandatory per-membrane 32-bit timestamp from the baseline state format. A future lazy-update/tagged implementation remains an optimization, not the reference behavior.
-
-
-## Resolved: fixed-step baseline no longer stores per-neuron timestamps
-
-The older integer/RTL sparse-state prototype still stored `last_timestamp_us` and generated `beta**(delta/5ms)`, which contradicted the fixed 50 ms / ten 5 ms runtime decision. Iteration 2 removes that field from `NeuronState` and `sparse_state_bank.vhd`; `plif_update` now consumes the learned per-channel beta directly once per 5 ms step. Raw DSEC timestamps are used only to assign input events to one of the ten slices.
-
-
-## Streaming-bin integration still incomplete
-
-The active contract is now 5 ms bin-major end-to-end execution with ping-pong ingress, 24-bit last-bin tags, lazy `beta^delta_bins`, and default ten-bin prediction windows. The reference scheduler, lossless ping-pong event buffer, state record, actor-local sparse-read/PLIF/writeback lane, streaming controller, and signed temporal class-current update exist and pass component-level GHDL/cocotb verification. Full 25-actor graph wiring, sparse per-pixel class-current backing storage and flush enumeration, peer-inhibition/adaptation integration, full-graph equivalence, and Vivado verification remain open. Do not report the implementation as real-time until measured cycles/bin satisfy `U<=1`; the design target is `U<=0.8`.
+Native SystemVerilog now covers presynaptic kernel scatter, actor-local current/membrane/tag storage, exact PLIF commit, completion/spike backpressure, inhibition, adaptation, and class-current/argmax primitives. The integrated convolution/PLIF actor passes component simulation. Full 25-actor graph generation, channel fanout, SRAM macro substitution, mechanism insertion into the actor commit lane, full-graph equivalence, and routed activity-based PPA remain open. Do not report real-time or power results until those paths are measured.

@@ -122,7 +122,7 @@ class PLIFChannelSelector(nn.Module):
     channel contributes its stored weight to selector-neuron membrane current.
     No dense multi-bit count-domain MLP, sigmoid attention, softmax, or global
     spatial reduction is needed at inference. Each selector spike gates only the
-    corresponding retinotopic feature, so an FPGA can propagate it immediately
+    corresponding retinotopic feature, so event-driven hardware can propagate it immediately
     without waiting for a complete frame.
     """
 

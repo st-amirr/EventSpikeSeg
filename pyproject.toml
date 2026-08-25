@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eventspikeseg"
 version = "0.2.0"
-description = "Lightweight event-camera spiking semantic segmentation for FPGA research"
+description = "Lightweight event-camera spiking semantic segmentation for neuromorphic ASIC research"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
 dependencies = [

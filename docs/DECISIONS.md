@@ -624,3 +624,25 @@ count scale controls intensity so both low- and high-count pixels remain visible
 The signed 16->11 class-current readout accumulates over a configurable prediction window. Start with ten bins, therefore one prediction every 50 ms / 20 Hz, because that matches training. PLIF/adaptation state continues across prediction boundaries and resets only at sequence/frame gaps.
 
 Define real-time utilization `U = C_bin / (f_clk * 5 ms)` and throughput headroom `H = 1/U`. Sustained operation requires `U <= 1` (`H >= 1`). The starting engineering target is `U <= 0.8` (`H >= 1.25`), leaving 20% timing margin. At 100/150/200 MHz the hard budgets are 500k/750k/1M cycles per bin and the 80% target budgets are 400k/600k/800k cycles. These values must come from measured controller cycle counts after synthesis/RTL integration, not from parameter count.
+
+## 2026-08-25 — Replace the global FPGA scheduler with permanent autonomous ASIC actors
+
+Keep all 25 PLIF populations resident and prohibit runtime layer reconfiguration. A standard
+3x3 convolution plane uses nine parallel presynaptic tap projection cells. Each tap applies
+the YAML scatter address equation and emits a signed weight contribution; taps do not own
+membranes. All contributions for `(layer, output-channel, y, x)` accumulate in one canonical
+actor-local current slot and update one actor-local membrane entry.
+
+Preserve the trained 5 ms time semantics with ordered completion tokens. A receiving actor
+accepts sparse contributions until its upstream token arrives, commits every touched PLIF
+exactly once, emits its spikes, and then forwards completion. This is logically asynchronous
+dataflow without a central actor scheduler. The initial VHDL is still a clocked ready/valid
+reference; no clockless/QDI claim is made.
+
+Keep VHDL-2008 and replace Vivado for ASIC PPA with GHDL -> Yosys -> OpenROAD. Use ASAP7
+only for reproducible predictive 7 nm logic PPA and SKY130RAM only for a manufacturable
+tile experiment. Neither is a full-chip tapeout decision. The native graph has 30,976,000
+membranes and 189.60 MiB of dense exact state under the current tag/adaptation contract, so
+credible full-chip area/power requires characterized high-density SRAM macros and an
+accessible 22 nm-or-better foundry PDK. Flip-flop-expanded behavioral arrays are forbidden
+as a claimed full-model PPA result.

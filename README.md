@@ -2,14 +2,14 @@
 
 Fully spiking event-camera semantic segmentation for DDD17 and DSEC-Semantic,
 designed so the learned inference path can be mapped to a custom digital neuromorphic
-FPGA accelerator with fixed-point PLIF state, sparse spike routing, and event-driven synaptic updates.
+ASIC with fixed-point PLIF state, sparse spike routing, and event-driven synaptic updates.
 
 ## Repository layout
 
 ```text
-src/eventspikeseg/model.py              EventSpikeSeg140k FPGA target plus optional XL software comparison
+src/eventspikeseg/model.py              EventSpikeSeg140k ASIC target plus optional XL software comparison
 src/eventspikeseg/model_components.py   shared PLIF/SNN/convolution primitives
-src/eventspikeseg/fpga/                 fixed-point export and integer event reference
+src/eventspikeseg/asic/                 fixed-point export, capacity, and integer event reference
 src/eventspikeseg/top_ten_models.py     frozen round-one model registry
 src/eventspikeseg/top_five_models.py    frozen structural top-five registry
 src/eventspikeseg/top_three_models.py   frozen accuracy top-three registry
@@ -22,6 +22,7 @@ docs/DECISIONS.md                       chronological design decisions
 docs/RESULTS.md                         measured experiment results
 docs/PROGRESS.md                        current implementation/validation state
 docs/BUGS.md                            open limitations and resolved failures
+asic/                                   native SystemVerilog RTL and OpenROAD flow setup
 ```
 
 The historical model registries remain importable for reproducibility, but there is only one training engine. `train.py` handles `top-ten`, `top-five`, `top-three`, and `final`; the old standalone top-three benchmark runner is retired.
@@ -82,7 +83,7 @@ their chronological order. GPU training groups them into fixed time divisions of
 divisions. Every source event contributes one unit—there is no binary collision collapse,
 logarithm, event-count limit, or count cap. Hidden activations remain binary.
 
-Training and FPGA inference both preserve ten chronological 5 ms updates per 50 ms
+Training and ASIC inference both preserve ten chronological 5 ms updates per 50 ms
 record. The deployed input accepts camera events directly, routes them into the active
 5 ms slice, adds shared-kernel contributions, and propagates only generated hidden spikes.
 DSEC uses eleven continuous class-current outputs after the binary-spiking feature path:
@@ -116,9 +117,9 @@ classes, but the scalar Dice objective averages only semantic classes present in
 current target mask. This prevents an absent rare class from being trained toward
 zero on every record where it has no labelled pixels.
 
-## FPGA logical-state footprint
+## ASIC logical-state footprint
 
-The sole active FPGA target is **Artix-7 XC7A200T** (Digilent Nexys Video reference board). The board DDR3 is intentionally disabled by the active no-external-memory experiment.
+The sole hardware implementation target is a custom actor-local-memory ASIC.
 
 Parameter count is **not** runtime neuron count. For the active 11-class
 `EventSpikeSeg140k` DSEC implementation at native 440x640, the 25 executed PLIF populations
@@ -130,20 +131,18 @@ N_mem = 32*H*W + 128*H2*W2 + 416*H4*W4 + 1280*H8*W8
       = 30,976,000 membrane values
 ```
 
-Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. The active touched-neuron runtime uses a compact **24-bit `last_bin_tag`** instead of a microsecond timestamp. A hypothetical dense exact representation is **189.60 MiB**: 59.08 MiB membrane + 41.90 MiB adaptation + 88.62 MiB bin tags. Artix-7 XC7A200T has only 1.604 MiB BRAM.
-External and onboard DDR are forbidden, so only a lossless zero-default sparse state
-table could fit; measured worst-case occupancy is a hard feasibility gate.
+Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. The active touched-neuron runtime uses a compact **24-bit `last_bin_tag`** instead of a microsecond timestamp. A hypothetical dense exact representation is **189.60 MiB**: 59.08 MiB membrane + 41.90 MiB adaptation + 88.62 MiB bin tags. This requires characterized high-density local SRAM macros; expanding it into standard-cell registers is not a valid full-chip implementation or PPA estimate.
 
 - **static/shared:** convolution weights, per-channel beta, per-channel base threshold;
 - **persistent per-neuron:** membrane, compact 24-bit `last_bin_tag`, and enabled threshold-adaptation state;
 - **temporary:** touched-event synaptic current and sparse spike FIFOs.
 
-The FPGA instantiates a permanent actor for every executed layer. An actor may sequence
-its own lanes, but arithmetic is not shared across layers and it must preserve one
-logical state record per `(layer,c,y,x)`. The exact sparse execution
-flow for the baseline DSEC runtime is `live raw events -> seal one 5 ms bin -> actor0..actor24 sparse destination-address generation -> lazy touched-neuron PLIF
-decay -> weight addition -> threshold/reset -> state writeback -> emitted events`.
-There is an explicit 5 ms neural timestep boundary; the next bin may be captured concurrently but the current bin must finish the full forward graph before retirement. See `docs/ARCHITECTURE.md` and
+The ASIC instantiates a permanent actor for every executed layer. For a standard 3x3
+plane, nine parallel presynaptic tap cells emit signed contributions into one canonical
+postsynaptic current/membrane array. Actors accept sparse events autonomously; the ordered
+completion token for a 5 ms epoch triggers exactly one commit per touched destination and
+then propagates downstream. The SystemVerilog RTL uses clocked ready/valid channels and does not
+claim an electrically clockless/QDI implementation. See `docs/ARCHITECTURE.md` and
 `project_spec.yaml` for the full contract.
 
 ## Main commands
@@ -184,12 +183,12 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 
 ## EventSpikeSeg models
 
-`EventSpikeSeg140k` is the only DSEC/FPGA implementation target. With two raw-event
+`EventSpikeSeg140k` is the only DSEC/ASIC implementation target. With two raw-event
 inputs and 11 classes it has 150,245 registered parameters, 149,503 executed inference
 parameters, 143,904 executed synaptic weights, and 25 executed PLIF populations plus
 one stateless temporal class-current readout.
 `EventSpikeSegXL` remains a software-only capacity comparison and is rejected by the
-FPGA exporter.
+ASIC exporter.
 
 The 140k graph keeps the 32/64/128 basis:
 
@@ -253,16 +252,13 @@ must come from its DSEC checkpoint and subsequent fixed-point validation; histor
 protocol numbers remain architecture-search evidence only.
 
 
-## Digital neuromorphic FPGA implementation target
+## Digital neuromorphic ASIC implementation target
 
 Training remains PyTorch + SpikingJelly with fixed physical-time divisions. Deployment
-in VHDL-2008 for the AMD/Xilinx Artix-7 XC7A200T, using Digilent Nexys Video as the reference board
-accepts camera events directly: convolution kernels remain shared synaptic weights,
-feature-map positions remain logical PLIF states, hidden communication remains binary
-spikes/events, while membrane/adaptation state persists across fixed 5 ms steps and consecutive records
-in a lossless sparse on-chip BRAM/LUTRAM state store. The board's DDR3 is deliberately
-not used. This mapping is conditional on measured worst-case live-state occupancy; the
-dense state cannot fit. The values are fixed-point numerical
+uses native SystemVerilog, Yosys technology mapping, and OpenROAD physical design.
+Convolution kernels remain shared synaptic weights, feature-map positions remain
+logical PLIF states, and hidden communication remains binary spike events. Membrane and
+adaptation state stays in the owning actor's local memory. The values are fixed-point numerical
 membrane/current states—not physical voltages or
 currents.
 
@@ -272,9 +268,8 @@ routing; nearest upsample is spike-address fan-out; residual clamp is event merg
 and temporal class-current accumulation/argmax uses signed accumulators and a comparator.
 
 The implementation uses **25 permanent PLIF layer actors plus one class-current readout**. Every actor owns convolution
-addressing, accumulator lanes, PLIF/mechanism logic, queues, and local weight ROM; there
-is no cross-layer compute sharing or reconfiguration. Logical PLIF
-membrane/adaptation state resides in banked sparse BRAM/LUTRAM. Within an actor,
+addressing, accumulator lanes, PLIF/mechanism logic, queues, local weight ROM, and local
+state SRAM; there is no cross-layer compute sharing or reconfiguration. Within an actor,
 event sparsity is fundamental: touched-address queues, active-neuron lists, fixed-step
 state advancement, and clock-enable suppress idle work.
 This trades processing-element count for latency and memory bandwidth without
@@ -287,24 +282,28 @@ contract; any simplification requires explicit accuracy revalidation. DSEC raw e
 the preferred direct event-stream input, while DDD17 uses its existing digital moment
 scheduler.
 
-The verification flow is `SpikingJelly float -> bit-exact integer reference -> VHDL RTL
--> Vivado synthesis/place-route -> post-implementation timing + representative SAIF/VCD
-power analysis -> optional Artix-7/Nexys Video measurement`. Vivado latency/power are reported as
-estimates unless validated on an instrumented board.
+The verification flow is `SpikingJelly float -> bit-exact integer reference -> SystemVerilog RTL
+-> Icarus/cocotb -> Yosys/OpenROAD routed timing/parasitics -> representative DSEC VCD/SAIF power`.
+ASAP7 is an open predictive 7 nm research-PPA platform, not a tapeout PDK. SKY130RAM is
+reserved for a manufacturable actor-tile check. A scale-suitable full chip requires an
+accessible 22/28 nm-or-better PDK and characterized SRAM macros.
 
 Export a trained checkpoint with:
 
 ```powershell
-python scripts/export_fpga_model.py --checkpoint artifacts/EventSpikeSeg140k_seed17_best.pt --output artifacts/fpga_export
+python scripts/export_asic_model.py --checkpoint artifacts/EventSpikeSeg140k_seed17_best.pt --output artifacts/asic_export
 ```
 
 The exporter hard-rejects XL and emits the exact 25-PLIF-actor plus current-readout manifest, affine-folded int8
 ROMs, per-actor quantized neuron parameters, and the fixed-point contract.
 
 
-## FPGA runtime timing contract (streaming 5 ms bins)
+## ASIC runtime timing contract (autonomous actors, 5 ms semantic epochs)
 
-DSEC training and hardware preserve the same 5 ms physical-time grid. Live camera events are accumulated in ping-pong buffers. When one 5 ms bin closes, the FPGA processes that bin **end-to-end through all 25 PLIF actors and the final signed class-current update** while the alternate buffer captures the next bin. The old 50 ms layer-major schedule is superseded.
+DSEC training and hardware preserve the same 5 ms physical-time grid. Events move through
+the permanently wired actor graph without a global layer scheduler. A completion token
+follows the last event of each epoch; each actor drains its touched destinations, forwards
+resulting spikes, and only then forwards completion. Per-contribution thresholding is forbidden.
 
 Only touched neurons are accessed. Each live sparse entry contains its logical address, int16 membrane, a compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. If a neuron is touched after `delta_bins` intervals, the baseline applies learned beta `delta_bins` times before adding the current bin's accumulated synaptic current. There is no microsecond timestamp and no dense idle-state sweep.
 
@@ -312,9 +311,7 @@ The prediction window is configurable; start with **10 bins = 50 ms = 20 Hz** to
 
 Real-time feasibility is measured per bin. With `C_bin` cycles and routed clock `f_clk`, define `U=C_bin/(f_clk*0.005)` and `H=1/U`. Hard sustained operation requires `U<=1` (`H>=1`). The starting target is `U<=0.8` (`H>=1.25`). At 100 MHz that is 500,000 hard cycles/bin and 400,000 target cycles/bin; at 150 MHz 750,000/600,000; at 200 MHz 1,000,000/800,000.
 
-FPGA iteration 4 provides component-level RTL for lossless ping-pong ingress,
-actor-local sparse state lookup/lazy PLIF/writeback, and signed temporal class-current
-updates. These blocks are weight-independent: trained convolution and readout weights
-remain replaceable ROM contents. The complete exported 25-actor graph, exact
-inhibition/adaptation integration, sparse per-pixel readout store, and Vivado implementation
-remain subsequent milestones.
+The first native SystemVerilog ASIC iteration adds a synthesizable parallel presynaptic tap array and an autonomous
+completion-token PLIF actor with direct-indexed local current/membrane state. Trained
+weights remain replaceable ROM contents. The next milestones are local SRAM macro wrappers,
+channel fanout/weight ROM integration, exact inhibition/adaptation, and the complete 25-actor graph.

@@ -1,17 +1,17 @@
 document:
-  title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
-  short_name: EventSpikeSeg-FPGA
-  version: 1.9.0
-  status: v8_spike_preserving_fusion_with_iteration_4_streaming_integration_RTL
+  title: Digital Neuromorphic ASIC Event-Camera Spiking Neural Network for Semantic Segmentation
+  short_name: EventSpikeSeg-ASIC
+  version: 2.0.0
+  status: native_SystemVerilog_ASIC_actor_integration
   created_date: '2026-08-06'
   supersedes:
   - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
   - minimal semantic-segmentation project_spec.yaml created during repository cleanup
   intended_uses:
-  - Executable software and digital-neuromorphic FPGA implementation specification
+  - Executable software and custom digital-neuromorphic ASIC implementation specification
   - Source of truth for architecture search and experiment tracking
-  - Interface contract between SpikingJelly/PyTorch training and custom VHDL/FPGA deployment
-  - Foundation for an article on lightweight event-based SNN semantic segmentation with sparse digital FPGA 
+  - Interface contract between SpikingJelly/PyTorch training and custom SystemVerilog ASIC deployment
+  - Foundation for an article on lightweight event-based SNN semantic segmentation with sparse digital ASIC
     inference
   central_interpretation: >-
     One dataset item is one 50 ms Ev-SegNet interval, never a stack of adjacent files.
@@ -23,8 +23,10 @@ document:
     use ddd17-timestamp-v3 and fingerprint the manifest, split, representation, physical
     interval, and event-clock contract. DDD17 requires no HDF5 input. DSEC instead
     slices and rectifies exact raw events, then schedules each 50 ms semantic interval
-    into the same ten fixed 5 ms updates used during training. FPGA inference follows
-    this fixed-time T=10 contract rather than direct per-event asynchronous propagation.
+    into the same ten fixed 5 ms updates used during training. Deployment preserves
+    those semantic epochs but uses autonomous event actors: an upstream completion token
+    causes each actor to commit every touched destination exactly once, emit spikes, and
+    forward completion. It is not immediate thresholding after each signed contribution.
   preservation_policy:
     retained_from_previous_specification:
     - Hardware-compatible LIF equations and power-of-two leakage
@@ -32,8 +34,7 @@ document:
     - Triangular threshold adaptation
     - Sparse shared-kernel event-address accumulation
     - Fixed-point formats, saturation, and bit-accurate equivalence requirements
-    - Portable VHDL-2008 actors targeting AMD/Xilinx Artix-7 XC7A200T, with Nexys Video as the reference 
-      carrier
+    - Native synthesizable SystemVerilog actor interfaces
     - SpikingJelly surrogate-gradient training strategy
     - Synthetic fixtures, golden vectors, and staged hardware verification
     - Synthesis-guided BRAM/LUTRAM/register memory mapping
@@ -52,16 +53,16 @@ project_goal:
   primary_goal: >-
     Design, train, compare, quantize, and eventually deploy a lightweight fully spiking
     semantic-segmentation network for event-camera data, with an architecture chosen for
-    sparse digital neuromorphic FPGA inference rather than GPU efficiency alone.
+    sparse digital neuromorphic ASIC inference rather than GPU efficiency alone.
   primary_research_question: >-
     Which combination of lightweight convolution, multi-scale context, normalization,
     skip fusion, recurrent spiking dynamics, and auxiliary supervision provides the best
     DDD17/DSEC semantic-segmentation accuracy while retaining a clear mapping to fixed-point PLIF state and event-driven
     synaptic updates?
   hardware_research_question: >-
-    Can the selected PLIF model be mapped to a custom VHDL FPGA accelerator where learned membrane retention, thresholds,
-    and shared synaptic weights are realized as fixed-point digital state and event-driven arithmetic while preserving
-    semantic accuracy and low energy/latency?
+    Can the selected PLIF model be mapped to a custom ASIC in which every permanent actor owns its shared tap weights and
+    direct-indexed membrane array, while autonomous spike/completion-token traffic preserves exact trained epochs and avoids
+    inter-layer state fetches?
   secondary_questions:
   - How many internal SNN timesteps are necessary before mIoU saturates?
   - Does depthwise-pointwise convolution preserve accuracy while reducing parameters and synaptic additions?
@@ -73,8 +74,7 @@ project_goal:
   - Do adaptive thresholds improve firing balance and multi-seed stability?
   - Is one encoder skip sufficient, or are two additive skips required for boundaries and small classes?
   - What accuracy is lost after weight, membrane, threshold, and accumulator quantization?
-  - Which operations dominate BRAM/LUTRAM state, LUT/DSP usage, event routing, memory bandwidth, and energy on
-    FPGA?
+  - Which operations dominate local SRAM, standard-cell logic, event routing, memory bandwidth, and ASIC energy?
   - Which non-local operations require dedicated reduction/control logic or a hardware-aware replacement?
   working_hypotheses:
   - Depthwise-pointwise blocks greatly reduce parameters and weight memory but require pointwise channel 
@@ -103,23 +103,31 @@ framework:
     reason: PyTorch and SpikingJelly already provide optimization, surrogate gradients, temporal execution, 
       and data loading.
   hardware_backend:
-    primary_type: custom_VHDL_2008_digital_neuromorphic_FPGA
-    primary_target: AMD_Xilinx_Artix7_XC7A200T
+    primary_type: custom_SystemVerilog_digital_neuromorphic_ASIC
+    primary_target: technology_agnostic_actor_array_with_local_SRAM_macros
     primary_goal: >-
-      Execute the trained spike-native graph as a 5 ms binned streaming digital neuromorphic accelerator. Live DSEC
-      events are collected in ping-pong input buffers; each sealed 5 ms bin traverses the complete 25-PLIF deployed
-      graph before the next bin is retired. Touched neurons retain sparse persistent state and apply learned beta
-      lazily according to a compact last-bin tag. Signed class current accumulates across a configurable prediction
-      window, default ten bins / 50 ms to match training.
+      Instantiate all 25 trained PLIF populations permanently. A convolution actor uses parallel kernel-tap projection
+      cells and one canonical current/membrane state per postsynaptic channel and spatial address. Weighted spike events
+      accumulate locally; an upstream 5 ms completion token triggers one PLIF commit per touched destination and is then
+      forwarded. No layer is loaded or reconfigured at runtime.
     software_reference: SpikingJelly_float_plus_bit_exact_integer_reference
-    implementation_flow: [integer_reference, VHDL_RTL, RTL_simulation, synthesis, place_and_route, 
-        post_implementation_timing, activity_based_power, optional_board_measurement]
+    implementation_flow: [integer_reference, SystemVerilog_RTL, Icarus_cocotb_simulation,
+        Yosys_technology_mapping, OpenROAD_place_route_and_parasitics, activity_based_OpenSTA_power]
+    open_PPA_platform:
+      name: ASAP7
+      purpose: reproducible_predictive_7nm_logic_PPA_and_scaling_research
+      limitation: predictive_nonmanufacturable_and_not_tapeout_signoff
+    manufacturable_tile_platform:
+      name: SKY130RAM
+      purpose: open_actor_tile_and_SRAM_macro_validation
+      limitation: 130nm_is_not_dense_enough_for_economical_full_native_resolution_state
+    full_model_tapeout_gate: accessible_22nm_or_better_foundry_PDK_plus_characterized_high_density_SRAM_compiler
   spiker_plus:
     implementation_status: literature_and_design_inspiration_only
     retained_takeaways:
     - Fixed-point LIF arithmetic
     - Power-of-two leakage
-    - Parameterized VHDL generation concepts
+    - Parameterized synthesizable RTL generation concepts
     - Structured software/RTL verification
     - Resource-aware accelerator design
     prohibited_claim: The project must not claim to use, extend, or depend on Spiker+ unless that decision is 
@@ -199,8 +207,8 @@ future_datasets:
       synaptic execution.
     candidates:
     - DDD17 raw recordings aligned with semantic labels where accessible
-    - DSEC-Semantic (training protocol currently identified as dsec-fixed-time-counts-async-fpga-v4; hardware 
-      runtime is fixed-time T=10)
+    - DSEC-Semantic (the checkpoint protocol retains its historical
+      dsec-fixed-time-counts-async-fpga-v4 identifier; ASIC runtime uses the same ten 5 ms updates)
     required_fields: [timestamp, x, y, polarity, semantic_label_alignment]
     role: final_algorithm_and_hardware_validation
     dsec_contract:
@@ -209,7 +217,7 @@ future_datasets:
       interval_us: 50000
       spatial_alignment: rectify_map_then_bottom_40_row_crop
       training_input: fixed_physical_time_divisions_with_linear_event_multiplicity
-      fpga_input: live_raw_events_pingpong_binned_into_consecutive_5ms_runtime_bins
+      asic_input: live_raw_events_partitioned_into_consecutive_5ms_semantic_epochs
       event_value_encoding: every_source_event_contributes_one_no_log_or_cap
       hidden_spike_encoding: binary
       plif_time_rule: touched_neuron_lazy_beta_power_delta_bins_on_the_fixed_5ms_grid
@@ -271,7 +279,7 @@ input_and_time:
     invariant: scheduled_synaptic_activity_equals_histogram_activity
     note: clock_updates_are_hardware_time_within_one_record_not_stacked_dataset_files
   dsec_fixed_time_divisions:
-    purpose: shared_training_and_FPGA_runtime_time_contract
+    purpose: shared_training_and_ASIC_runtime_time_contract
     duration_us: 50000_divided_by_internal_updates
     default_divisions: 10
     invariants:
@@ -280,7 +288,7 @@ input_and_time:
     - event_density_never_changes_update_count
     - carry_fixed_physical_elapsed_microseconds
     - normalize_logits_and_rates_by_elapsed_physical_time
-    - FPGA_runtime_preserves_all_ten_chronological_5ms_updates
+    - ASIC_runtime_preserves_all_ten_chronological_5ms_updates
     - default_prediction_window_is_ten_5ms_bins_50ms
     - hardware_compute_schedule_is_bin_major_end_to_end
   training_state:
@@ -319,14 +327,15 @@ input_and_time:
     training_prediction_window_bins: 10
     default_prediction_period_us: 50000
     default_prediction_rate_hz: 20
-    schedule: bin_major_end_to_end_actor0_through_actor24_then_retire_bin
+    schedule: autonomous_actor_dataflow_with_ordered_5ms_completion_tokens
     ingress: two_pingpong_5ms_event_buffers_capture_next_bin_while_current_bin_computes
     procedure:
     - Seal one 5 ms raw-event bin and switch acquisition immediately to the alternate input buffer.
-    - Propagate that bin through actor 0, actor 1, ..., actor 24 and the stateless class-current update before
-      retiring it.
-    - Within each actor/bin, route only nonzero presynaptic addresses and accumulate all contributions to each
-      touched destination before one PLIF commit.
+    - Actor 0 consumes nonzero presynaptic events, followed by a completion token for that 5 ms epoch.
+    - Each actor independently scatters a spike through its valid nonzero kernel taps, accumulates signed contributions
+      in one canonical current slot per postsynaptic channel/spatial destination, and commits touched PLIFs only after
+      the upstream completion token proves that no more contributions can arrive for that epoch.
+    - Emit resulting spike addresses as soon as they are committed, then forward the same completion token downstream.
     - Read touched sparse state including membrane, optional adaptation fields and compact last-bin tag.
     - Compute delta_bins from the current global bin tag and stored last-bin tag, then apply learned beta 
       exactly delta_bins times before adding current.
@@ -362,10 +371,12 @@ input_and_time:
     - retiring_or_overwriting_a_bin_before_its_full_forward_pass_completes
     - record_major_layer0_t0_to_t9_then_layer1_t0_to_t9_hardware_schedule
     - collapsing_the_default_50ms_prediction_window_into_one_PLIF_step
+    - thresholding_a_PLIF_after_each_individual_signed_kernel_contribution
+    - allocating_one_membrane_copy_per_kernel_tap
 
 
 runtime_batching_decision:
-  decision: stream_one_5ms_bin_end_to_end_before_retiring_it
+  decision: autonomous_actor_pipeline_with_ordered_5ms_completion_tokens
   rationale: This preserves the fixed 5 ms training time grid and touched-neuron lazy state while allowing 
     live camera acquisition to overlap computation through ping-pong input buffers. It avoids the superseded 
     50 ms layer-major schedule.
@@ -377,8 +388,8 @@ runtime_batching_decision:
     default_us: 50000
     default_rate_hz: 20
     configurable: true
-  graph_order: for_each_bin_actor0_to_actor24_then_class_current_update
-  state_rule: only_touched_neurons_are_accessed; sparse live state persists with 24bit last_bin_tag
+  graph_order: events_and_completion_tokens_follow_the_static_actor0_to_actor24_graph
+  state_rule: every_actor_owns_direct_indexed_current_membrane_and_tag_arrays; only_touched_destinations_commit
   lazy_decay: delta_bins=current_bin_tag-last_bin_tag_mod_2^24; apply learned_beta delta_bins times before 
     current
   double_buffering: capture_bin_k_plus_1_while_compute_bin_k
@@ -389,7 +400,9 @@ runtime_batching_decision:
     H: 1/U
     hard_min: 1.0
     target_min: 1.25
-  asynchronous_claim: false
+  asynchronous_claim: true
+  asynchronous_scope: logical_event_driven_ready_valid_actor_dataflow_without_a_global_actor_scheduler
+  electrically_clockless_QDI_claim: false
   sparsity_claim: 5ms_binned_touched_neuron_lazy_execution_with_sparse_synaptic_zero_skipping
 neuron:
   name: HardwareLIF
@@ -450,7 +463,7 @@ custom_spiking_dynamics:
     expected_effects:
     - Temporarily raise the local threshold after spiking.
     - Reduce repeated dominance while retaining spatially local evidence.
-    limitation: The age and amplitude maps are material FPGA state and are not negligible.
+    limitation: The age and amplitude maps are material ASIC SRAM state and are not negligible.
 
 architecture_family:
   implementation_model: EventSpikeSeg140k
@@ -696,7 +709,7 @@ normalization_and_scaling:
     - learned_channel_score
     - sigmoid_or_approximation
     - channelwise_scaling
-    FPGA_costs:
+    ASIC_costs:
     - whole_feature_map_reduction
     - gate_storage
     - multiplication_or_shift_approximation
@@ -760,12 +773,10 @@ metrics:
   - mean_and_standard_deviation_across_seeds
   - minimum_seed_mIoU
   - class_specific_seed_variance
-  FPGA_future:
-  - LUT
-  - FF
-  - BRAM
-  - distributed_LUTRAM
-  - DSP
+  ASIC_future:
+  - standard_cell_area
+  - SRAM_macro_area
+  - routing_area
   - maximum_clock_frequency
   - latency_per_input_interval
   - sustained_events_per_second
@@ -777,7 +788,7 @@ metrics:
     estimates.
 
 quantization:
-  objective: Match an addition, shift, comparison, saturation, and address-generation FPGA datapath.
+  objective: Match the addition, multiplication, comparison, saturation, and address-generation ASIC datapath.
   initial_formats:
     weights: signed_int8_Q1_6
     membrane: signed_int16_Q5_10
@@ -808,8 +819,53 @@ quantization:
     - bit_exact_integer_export
     - layerwise_equivalence_replay
 
-fpga_implementation:
-  status: iteration_4_ingress_touched_state_and_class_current_lanes_implemented
+asic_implementation:
+  status: native_SystemVerilog_convolution_PLIF_actor_reference_implemented
+  topology:
+    permanent_actors: 25_PLIF_populations_plus_stateless_readout
+    runtime_reconfiguration: forbidden
+    kernel_mapping:
+      standard_3x3: nine_parallel_tap_projection_cells_per_active_input_output_channel_plane
+      depthwise_3x3: nine_taps_restricted_to_the_same_channel
+      pointwise_1x1: one_spatial_tap_with_output_channel_fanout
+      dilated_3x3: nine_taps_with_dilated_coordinate_offsets
+      standard_5x5: twenty_five_parallel_tap_projection_cells
+    state_ownership: one_canonical_current_and_membrane_entry_per_layer_channel_y_x_destination
+    invariant: kernel_taps_never_own_or_duplicate_membrane_state
+    firing_rule: commit_each_touched_PLIF_once_after_upstream_epoch_completion
+  RTL:
+    language: SystemVerilog_2012
+    logical_asynchrony: clocked_ready_valid_events_and_completion_tokens
+    electrically_clockless_QDI: false
+    implemented_blocks:
+    - asic/rtl/presynaptic_tap_array.sv
+    - asic/rtl/plif_update.sv
+    - asic/rtl/asynchronous_plif_actor.sv
+    - asic/rtl/convolution_plif_actor.sv
+    - asic/rtl/peer_membrane_inhibition.sv
+    - asic/rtl/triangular_threshold_adaptation.sv
+    - asic/rtl/class_current_update.sv
+    - asic/rtl/class_argmax.sv
+    current_memory_model: small_direct_indexed_behavioral_arrays_for_control_and_equivalence_testing
+    required_memory_replacement: actor_local_characterized_SRAM_macros_before_full_chip_PPA
+  EDA:
+    front_end: native_SystemVerilog
+    synthesis: Yosys
+    physical_design: OpenROAD_Flow_Scripts
+    open_research_platform: ASAP7_predictive_7nm
+    open_tile_platform: SKY130RAM
+    power_method: post_route_parasitics_plus_representative_DSEC_VCD_or_SAIF
+    vectorless_power_label: preliminary_only
+  scale_gate:
+    weights_int8_MiB: 0.137237548828125
+    logical_membranes: 30976000
+    dense_exact_state_MiB: 189.599609375
+    conclusion: full_chip_PPA_requires_real_SRAM_macros; standard_cell_expanded_arrays_are_invalid_for_scale_or_power
+    tapeout_target: pending_access_to_22nm_or_better_PDK_and_high_density_SRAM_compiler
+
+legacy_fpga_history:
+  status: implementation_removed_from_active_repository
+  non_normative: true
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class
@@ -1029,13 +1085,26 @@ export_contract:
   - signed_11_class_temporal_current_update_with_saturation_flush_and_first_tie_argmax
   - streaming_controller_and_class_readout_added_to_executable_GHDL_cocotb_suite
   - current_RTL_unit_groups_12_passing
-  remaining_after_iteration_4:
+  implemented_native_SystemVerilog_iteration_1:
+  - parallel_presynaptic_kernel_tap_scatter_with_stride_dilation_padding_and_zero_weight_suppression
+  - direct_indexed_actor_local_current_membrane_and_epoch_tag_arrays
+  - first_touch_destination_queue_avoiding_dense_epoch_end_state_sweeps
+  - duplicate_contribution_accumulation_into_one_canonical_destination
+  - upstream_completion_token_triggered_single_PLIF_commit_and_downstream_completion
+  - ready_valid_spike_and_completion_backpressure
+  - static_kernel_convolution_scatter_integrated_with_actor_local_PLIF_population
+  - native_SystemVerilog_compilation_with_Icarus_Verilog
+  - all_8_Icarus_cocotb_RTL_groups_passing
+  - ASAP7_OpenROAD_flow_configuration_for_representative_actor_PPA
+  remaining_after_native_iteration_1:
   - instantiate_and_wire_the_exported_25_actor_graph
-  - actor_weight_ROM_and_destination_accumulator_integration
+  - expand_integrated_tap_actor_to_full_input_output_channel_fanout
+  - replace_behavioral_state_arrays_with_actor_local_SRAM_macro_wrappers
   - exact_peer_membrane_inhibition_and_triangular_adaptation_inside_actor_lane
   - sparse_per_pixel_class_current_bank_and_prediction_flush_enumerator
-  - full_sequence_occupancy_FIFO_and_cycles_per_bin_measurement
-  - Vivado_synthesis_place_route_timing_and_power
+  - full_sequence_activity_FIFO_latency_and_energy_measurement
+  - full_graph_equivalence_and_open_PPA_tile_sweep
+  - select_accessible_manufacturable_22nm_or_better_PDK_and_SRAM_compiler
 validation_and_testing:
   required_fast_tests:
   - configuration_schema
@@ -1072,7 +1141,7 @@ validation_and_testing:
   tools:
     Python_tests: pytest
     lint: ruff
-    RTL_simulation: GHDL_and_cocotb
+    RTL_simulation: Icarus_Verilog_and_cocotb
   failure_policy:
   - Reproduce the smallest failing case.
   - Preserve each fixed defect as a regression test.
@@ -1087,12 +1156,10 @@ repository_contract:
   - train.py
   - evaluate.py
   - metrics.py
-  - hardware.py
-  - fpga/fixed_point.py
-  - fpga/export.py
-  - fpga/integer_reference.py
-  - fpga/runtime.py
-  - fpga/target.py
+  - asic/contracts.py
+  - asic/fixed_point.py
+  - asic/export.py
+  - asic/integer_reference.py
   - __init__.py
   required_documents:
   - README.md
@@ -1126,10 +1193,10 @@ workflow:
   - Add post-training quantization and QAT.
   - Build a bit-accurate integer reference.
   - Add sparse event/spike scatter reference.
-  - Implement VHDL LIF and convolution primitives.
-  - Integrate multilayer segmentation RTL.
-  - Synthesize the static 25-PLIF-actor plus current-readout design on Artix-7 XC7A200T and record resources,
-    timing, power estimates, and latency.
+  - Implement SystemVerilog PLIF and convolution actor primitives.
+  - Integrate the complete 25-actor segmentation graph.
+  - Map actor-local state arrays to characterized SRAM macros and record routed resources,
+    timing, activity-based power, and latency on a scale-suitable ASIC platform.
   - Validate raw-event input on DDD17 or DSEC-Semantic.
   architecture_cleanup_rule: >-
     The ten-preset implementation is temporary experiment infrastructure. Do not remove it
@@ -1259,9 +1326,9 @@ decision_history:
 experiment_code_layout:
   canonical_model_file:
     path: src/eventspikeseg/model.py
-    rule: Contains public final models; the FPGA exporter selects only EventSpikeSeg140k.
+    rule: Contains public final models; the ASIC exporter selects only EventSpikeSeg140k.
     current_architecture: EventSpikeSeg140k
-    status: active_training_and_FPGA_implementation_target
+    status: active_training_and_ASIC_implementation_target
   shared_components_file:
     path: src/eventspikeseg/model_components.py
     contents:

@@ -256,3 +256,25 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - added executable coverage for the streaming controller, class argmax, ingress buffer, touched-neuron lane, and class-current update;
 - all 12 RTL unit groups pass with GHDL 6.0.0 and cocotb 1.9.2; the updated cocotb sources pass Ruff;
 - next integration is exported weight ROM + convolution destination accumulation into 25 instantiated actor lanes, followed by exact inhibition/adaptation, sparse per-pixel readout storage/flush, full-graph equivalence, and measured occupancy/cycles per bin.
+
+## 2026-08-25 — ASIC iteration 5: autonomous tap-scatter PLIF actor
+
+- changed the primary hardware direction from globally scheduled FPGA execution to 25 permanent ASIC actors connected by spike and completion-token channels;
+- defined the exact 3x3 mapping as nine parallel presynaptic tap projections feeding one canonical postsynaptic current/membrane array;
+- added `presynaptic_tap_array.vhd` with padding, stride divisibility, dilation, bounds, signed shared weight, and zero-weight suppression;
+- added `asynchronous_plif_actor.vhd` with duplicate contribution accumulation, a first-touch commit queue (no dense destination sweep), actor-local direct-indexed state, lazy learned-beta PLIF updates, and lossless spike/completion backpressure;
+- added cocotb tests for 3x3 address fanout, border/zero suppression, completion-gated firing, shared membrane accumulation, and channel backpressure;
+- both new VHDL blocks pass GHDL 6 synthesis elaboration, and all 14 RTL unit groups pass with cocotb 1.9.2;
+- added a VHDL-preserving GHDL-to-Verilog flow and an ASAP7 ORFS actor configuration for open predictive PPA;
+- documented that full-model PPA is blocked on explicit actor-local SRAM macros and a scale-suitable 22 nm-or-better manufacturable PDK; behavioral arrays may be used only for control/equivalence prototypes.
+
+## 2026-08-25 — Native SystemVerilog ASIC implementation
+
+- replaced the VHDL/FPGA hardware tree with native synthesizable SystemVerilog under `asic/rtl`;
+- integrated static convolution kernel taps with the actor-local PLIF current/membrane/tag population in `convolution_plif_actor`;
+- retained autonomous ready/valid spike traffic and ordered completion-token commits, with no global layer scheduler or runtime reconfiguration;
+- migrated exporter, fixed-point contracts, capacity accounting, and integer reference from `eventspikeseg.fpga` to `eventspikeseg.asic`;
+- removed obsolete FPGA scheduler, ingress, sparse-bank, lane, accumulator, and VHDL simulation sources;
+- changed local RTL verification to Icarus Verilog + cocotb and the open PPA front end to native SystemVerilog + Yosys/OpenROAD;
+- all eight native RTL groups pass, including an integrated nine-tap-to-nine-membrane convolution/PLIF test;
+- full 25-actor channel fanout, SRAM macro wrappers, mechanism integration, graph equivalence, and routed PPA remain the next implementation stage.

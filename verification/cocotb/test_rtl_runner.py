@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Union
 
 import pytest
 from cocotb.runner import get_runner
@@ -8,91 +7,81 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize(
-    ("top", "source", "test_module"),
+    ("top", "sources", "test_module", "parameters"),
     [
-        ("lif_pe", "rtl/neuron/lif_pe.vhd", "test_lif_pe"),
-        ("plif_update", "rtl/neuron/plif_update.vhd", "test_plif_update"),
+        ("plif_update", ["asic/rtl/plif_update.sv"], "test_plif_update", {}),
         (
-            "winner_peer_selector",
-            "rtl/inhibition/winner_peer_selector.vhd",
-            "test_winner_peer_selector",
+            "presynaptic_tap_array",
+            ["asic/rtl/presynaptic_tap_array.sv"],
+            "test_presynaptic_tap_array",
+            {},
         ),
         (
-            "channel_rate_adaptation",
-            "rtl/adaptation/channel_rate_adaptation.vhd",
-            "test_rate_adaptation",
+            "asynchronous_plif_actor",
+            ["asic/rtl/plif_update.sv", "asic/rtl/asynchronous_plif_actor.sv"],
+            "test_asynchronous_plif_actor",
+            {},
         ),
         (
-            "event_conv_address",
-            "rtl/event_conv/event_conv_address.vhd",
-            "test_event_conv_address",
+            "convolution_plif_actor",
+            [
+                "asic/rtl/presynaptic_tap_array.sv",
+                "asic/rtl/plif_update.sv",
+                "asic/rtl/asynchronous_plif_actor.sv",
+                "asic/rtl/convolution_plif_actor.sv",
+            ],
+            "test_convolution_plif_actor",
+            {"KERNEL_WEIGHTS": sum(20 << (8 * tap) for tap in range(9))},
         ),
         (
-            "event_accumulator",
-            "rtl/event_conv/event_accumulator.vhd",
-            "test_event_accumulator",
+            "peer_membrane_inhibition",
+            ["asic/rtl/peer_membrane_inhibition.sv"],
+            "test_peer_membrane_inhibition",
+            {},
         ),
         (
-            "sparse_state_bank",
-            "rtl/state/sparse_state_bank.vhd",
-            "test_sparse_state_bank",
+            "triangular_threshold_adaptation",
+            ["asic/rtl/triangular_threshold_adaptation.sv"],
+            "test_triangular_threshold_adaptation",
+            {},
         ),
-        (
-            "streaming_bin_controller",
-            "rtl/control/streaming_bin_controller.vhd",
-            "test_streaming_bin_controller",
-        ),
-        ("class_argmax", "rtl/control/class_argmax.vhd", "test_class_argmax"),
+        ("class_argmax", ["asic/rtl/class_argmax.sv"], "test_class_argmax", {}),
         (
             "class_current_update",
-            "rtl/control/class_current_update.vhd",
+            ["asic/rtl/class_current_update.sv"],
             "test_class_current_update",
-        ),
-        (
-            "ping_pong_event_buffer",
-            "rtl/control/ping_pong_event_buffer.vhd",
-            "test_ping_pong_event_buffer",
-        ),
-        (
-            "touched_neuron_lane",
-            [
-                "rtl/state/sparse_state_bank.vhd",
-                "rtl/neuron/plif_update.vhd",
-                "rtl/neuron/touched_neuron_lane.vhd",
-            ],
-            "test_touched_neuron_lane",
+            {},
         ),
     ],
     ids=[
-        "lif",
         "plif_update",
-        "winner_peer",
-        "rate_adaptation",
-        "event_conv_address",
-        "event_accumulator",
-        "sparse_state_bank",
-        "streaming_bin_controller",
+        "presynaptic_tap_array",
+        "asynchronous_plif_actor",
+        "convolution_plif_actor",
+        "peer_membrane_inhibition",
+        "triangular_threshold_adaptation",
         "class_argmax",
         "class_current_update",
-        "ping_pong_event_buffer",
-        "touched_neuron_lane",
     ],
 )
-def test_rtl_unit(
-    top: str, source: Union[str, list[str]], test_module: str, tmp_path: Path
+def test_asic_rtl(
+    top: str,
+    sources: list[str],
+    test_module: str,
+    parameters: dict[str, int],
+    tmp_path: Path,
 ) -> None:
-    runner = get_runner("ghdl")
-    sources = [source] if isinstance(source, str) else source
+    runner = get_runner("icarus")
     runner.build(
-        vhdl_sources=[ROOT / item for item in sources],
+        verilog_sources=[ROOT / item for item in sources],
         hdl_toplevel=top,
         build_dir=tmp_path / top,
         always=True,
-        build_args=["--std=08"],
+        build_args=["-g2012"],
+        parameters=parameters,
     )
     runner.test(
         hdl_toplevel=top,
         test_module=test_module,
         test_dir=tmp_path / top,
-        test_args=["--std=08"],
     )
