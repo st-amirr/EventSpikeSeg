@@ -1,8 +1,8 @@
 document:
   title: Digital Neuromorphic FPGA Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-FPGA
-  version: 1.8.0
-  status: v8_spike_preserving_fusion_with_iteration_3_streaming_RTL
+  version: 1.9.0
+  status: v8_spike_preserving_fusion_with_iteration_4_streaming_integration_RTL
   created_date: '2026-08-06'
   supersedes:
   - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -809,7 +809,7 @@ quantization:
     - layerwise_equivalence_replay
 
 fpga_implementation:
-  status: iteration_3_streaming_5ms_lazy_state_controller_implemented
+  status: iteration_4_ingress_touched_state_and_class_current_lanes_implemented
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class
@@ -1021,6 +1021,21 @@ export_contract:
   - streaming_bin_controller_with_cycles_per_bin_deadline_and_prediction_window_outputs
   - utilization_U_and_headroom_H_contract_with_U_target_0_8
   - double_buffered_ingress_interface_contract
+  implemented_iteration_4:
+  - lossless_two_bank_ping_pong_event_ingress_RTL
+  - empty_5ms_bin_preservation_and_no_overwrite_before_end_to_end_release
+  - actor_local_sparse_lookup_to_lazy_PLIF_to_exact_writeback_transaction_lane
+  - canonical_inactive_adaptation_reset_value_in_sparse_state_bank
+  - signed_11_class_temporal_current_update_with_saturation_flush_and_first_tie_argmax
+  - streaming_controller_and_class_readout_added_to_executable_GHDL_cocotb_suite
+  - current_RTL_unit_groups_12_passing
+  remaining_after_iteration_4:
+  - instantiate_and_wire_the_exported_25_actor_graph
+  - actor_weight_ROM_and_destination_accumulator_integration
+  - exact_peer_membrane_inhibition_and_triangular_adaptation_inside_actor_lane
+  - sparse_per_pixel_class_current_bank_and_prediction_flush_enumerator
+  - full_sequence_occupancy_FIFO_and_cycles_per_bin_measurement
+  - Vivado_synthesis_place_route_timing_and_power
 validation_and_testing:
   required_fast_tests:
   - configuration_schema

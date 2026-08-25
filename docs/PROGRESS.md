@@ -245,3 +245,14 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - the old `fixed_record_controller` schedule is superseded;
 - v8 exact dense touched-state reference is 189.60 MiB including a dense 24-bit tag, while conservative sparse aligned entries remain budgeted at 12 bytes non-adaptive / 16 bytes adaptive;
 - full actor integration, ping-pong ingress storage, sparse class-current storage, and GHDL/Vivado verification remain open.
+
+## 2026-08-25 — FPGA iteration 4: streaming integration lanes
+
+- added a lossless two-bank event ingress that overlaps capture with processing, preserves empty 5 ms bins, and forbids reuse until end-to-end release;
+- added an actor-local touched-neuron lane sequencing sparse lookup, modular bin-tag distance, iterative learned-beta PLIF update, and exact live-state writeback/reclamation;
+- corrected the sparse missing-entry contract so adaptation age resets to the canonical inactive value `-1`;
+- added a weight-independent 11-class current-update lane with signed saturation, temporal prediction flush, sparse-state-live output, and first-index tie behavior;
+- updated superseded timestamp/retention cocotb tests to the active bin-tag/beta interfaces;
+- added executable coverage for the streaming controller, class argmax, ingress buffer, touched-neuron lane, and class-current update;
+- all 12 RTL unit groups pass with GHDL 6.0.0 and cocotb 1.9.2; the updated cocotb sources pass Ruff;
+- next integration is exported weight ROM + convolution destination accumulation into 25 instantiated actor lanes, followed by exact inhibition/adaptation, sparse per-pixel readout storage/flush, full-graph equivalence, and measured occupancy/cycles per bin.

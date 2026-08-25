@@ -587,7 +587,7 @@ by `model.eval()` and omitted from VHDL export.
 ## Active streaming FPGA runtime schedule
 
 The active controller is `rtl/control/streaming_bin_controller.vhd`. It accepts one sealed
-5 ms bin, walks actor indices 0..26 for that bin, measures cycles-to-completion, increments
+5 ms bin, walks actor indices 0..24 for that bin, measures cycles-to-completion, increments
 the 24-bit global bin tag, and raises `prediction_due` every configurable prediction
 window (default ten bins). `bin_ready` remains low while a bin is in flight. The ingress
 front end must therefore be ping-pong/double-buffered so the camera can collect the next
@@ -621,13 +621,21 @@ before claiming no-DDR real-time fit.
 
 ### Active RTL baseline blocks
 
+- `rtl/control/ping_pong_event_buffer.vhd`: lossless two-bank capture/seal/consume/release ingress, including empty-bin preservation;
 - `rtl/control/streaming_bin_controller.vhd`: bin-major 25-actor scheduling, prediction-window counter and cycles/bin deadline instrumentation;
 - `rtl/state/sparse_state_bank.vhd`: zero-default tagged state with a compact 24-bit `last_bin_tag`;
 - `rtl/neuron/plif_update.vhd`: externally state-backed learned-beta lazy PLIF with iterative `beta^Δk` semantics;
+- `rtl/neuron/touched_neuron_lane.vhd`: actor-local sparse read -> lazy PLIF -> lossless writeback transaction sequencing;
 - `rtl/neuron/lif_pe.vhd`: one-step locally resident helper only (`Δk=1` prerequisite);
 - `rtl/event_conv/event_conv_address.vhd`: sparse convolution destination generation;
 - `rtl/event_conv/event_accumulator.vhd`: saturating synaptic-current accumulation;
+- `rtl/control/class_current_update.vhd`: replaceable-ROM contribution accumulation, saturation, prediction flush and first-index-tie class selection;
 - `rtl/control/class_argmax.vhd`: first-index-tie signed argmax matching PyTorch behavior.
+
+These are verified components, not yet a complete 25-actor top level. Remaining integration
+must connect each exported actor's ROM/address generator/accumulator to a touched-neuron lane,
+add exact inhibition/adaptation mechanism logic, provide the sparse per-pixel class-current
+backing store and flush enumerator, and measure full-sequence occupancy and cycles/bin.
 
 The 16->11 readout is not a spiking layer. Final hidden spikes trigger signed readout
 weight additions at the same `(y,x)`. Class currents accumulate across the configured

@@ -149,7 +149,7 @@ Prediction cadence is configurable, with **10 bins = 50 ms = 20 Hz** as the star
 
 ## Active streaming RTL interfaces
 
-The sparse-state entry contains logical address/tag, int16 membrane, compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. `plif_update` receives `elapsed_bins` and iterates learned beta once per elapsed 5 ms bin before charging. `streaming_bin_controller` schedules actor 0..26 for one bin, counts cycles/bin, reports deadline/target misses, advances the global bin tag, and asserts prediction-due after the configurable window. `fixed_record_controller` is superseded. The final 16->11 readout remains non-spiking and accumulates signed class current until prediction-due.
+The sparse-state entry contains logical address/tag, int16 membrane, compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. `plif_update` receives `elapsed_bins` and iterates learned beta once per elapsed 5 ms bin before charging. `streaming_bin_controller` schedules actor 0..24 for one bin, counts cycles/bin, reports deadline/target misses, advances the global bin tag, and asserts prediction-due after the configurable window. `ping_pong_event_buffer` retains each sealed bin until end-to-end release, and `touched_neuron_lane` sequences sparse lookup, lazy PLIF update, and exact writeback for one accumulated destination. `fixed_record_controller` is superseded. The final 16->11 readout remains non-spiking; `class_current_update` implements signed saturating updates and prediction flush while its sparse per-pixel backing bank remains an integration task.
 
 ## Active fixed-step RTL interfaces
 

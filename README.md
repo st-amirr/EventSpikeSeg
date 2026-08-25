@@ -311,3 +311,10 @@ Only touched neurons are accessed. Each live sparse entry contains its logical a
 The prediction window is configurable; start with **10 bins = 50 ms = 20 Hz** to match training/readout. PLIF state persists across prediction boundaries; only signed class-current accumulation resets after prediction.
 
 Real-time feasibility is measured per bin. With `C_bin` cycles and routed clock `f_clk`, define `U=C_bin/(f_clk*0.005)` and `H=1/U`. Hard sustained operation requires `U<=1` (`H>=1`). The starting target is `U<=0.8` (`H>=1.25`). At 100 MHz that is 500,000 hard cycles/bin and 400,000 target cycles/bin; at 150 MHz 750,000/600,000; at 200 MHz 1,000,000/800,000.
+
+FPGA iteration 4 provides component-level RTL for lossless ping-pong ingress,
+actor-local sparse state lookup/lazy PLIF/writeback, and signed temporal class-current
+updates. These blocks are weight-independent: trained convolution and readout weights
+remain replaceable ROM contents. The complete exported 25-actor graph, exact
+inhibition/adaptation integration, sparse per-pixel readout store, and Vivado implementation
+remain subsequent milestones.

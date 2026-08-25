@@ -59,13 +59,13 @@ architecture rtl of plif_update is
   end function;
 
   function saturate_mem(value : integer) return integer is
-    constant MAXIMUM : integer := (2 ** (MEM_WIDTH - 1)) - 1;
-    constant MINIMUM : integer := -(2 ** (MEM_WIDTH - 1));
+    constant MAX_MEM : integer := (2 ** (MEM_WIDTH - 1)) - 1;
+    constant MIN_MEM : integer := -(2 ** (MEM_WIDTH - 1));
   begin
-    if value > MAXIMUM then
-      return MAXIMUM;
-    elsif value < MINIMUM then
-      return MINIMUM;
+    if value > MAX_MEM then
+      return MAX_MEM;
+    elsif value < MIN_MEM then
+      return MIN_MEM;
     end if;
     return value;
   end function;

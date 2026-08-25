@@ -66,7 +66,9 @@ architecture rtl of sparse_state_bank is
   signal found_reg          : std_logic := '0';
   signal overflow_reg       : std_logic := '0';
   signal membrane_reg       : signed(MEMBRANE_WIDTH - 1 downto 0) := (others => '0');
-  signal age_reg            : signed(ADAPTATION_WIDTH - 1 downto 0) := (others => '0');
+  -- -1 is the canonical inactive-adaptation reset value.  A missing sparse
+  -- entry must reproduce the software NeuronState reset exactly.
+  signal age_reg            : signed(ADAPTATION_WIDTH - 1 downto 0) := (others => '1');
   signal amplitude_reg      : signed(ADAPTATION_WIDTH - 1 downto 0) := (others => '0');
   signal last_bin_reg       : unsigned(BIN_TAG_WIDTH - 1 downto 0) := (others => '0');
   signal live_count_reg     : unsigned(COUNT_WIDTH - 1 downto 0) := (others => '0');
@@ -120,7 +122,7 @@ begin
         found_reg <= '0';
         overflow_reg <= '0';
         membrane_reg <= (others => '0');
-        age_reg <= (others => '0');
+        age_reg <= (others => '1');
         amplitude_reg <= (others => '0');
         last_bin_reg <= (others => '0');
 
