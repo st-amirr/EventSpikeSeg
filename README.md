@@ -106,7 +106,7 @@ with that one objective's output gradients. This releases each chunk graph witho
 applying the complete target to a partial history. The replay state snapshot is kept in
 host RAM so it does not duplicate the model's large persistent neuron state on the GPU.
 
-For the active DSEC path, PLIF time advances on the same fixed grid used by hardware: ten explicit 5 ms updates per 50 ms record. Each baseline update therefore uses the learned per-channel `beta` once; no per-neuron elapsed-time exponent or timestamp is required. Logits and activity rates remain normalized to the complete physical record. The final 1×1 class
+For the active DSEC path, PLIF time advances on the same fixed grid used by hardware: ten explicit 5 ms updates per 50 ms record. Training presents one accumulated synaptic current per PLIF per update. The sparse ASIC reaches the same result lazily: a touched state uses its 24-bit bin tag to apply learned `beta` once per elapsed 5 ms interval, while untouched states incur no access. No microsecond timestamp is required. Logits and activity rates remain normalized to the complete physical record. The final 1×1 class
 synapse accumulates continuous current over all ten updates rather than quantizing
 confidence to eleven possible output-spike counts.
 
@@ -304,6 +304,13 @@ DSEC training and hardware preserve the same 5 ms physical-time grid. Events mov
 the permanently wired actor graph without a global layer scheduler. A completion token
 follows the last event of each epoch; each actor drains its touched destinations, forwards
 resulting spikes, and only then forwards completion. Per-contribution thresholding is forbidden.
+
+The ASIC ingress does not load a dense 5 ms tensor or store a complete input bin. Rectified
+camera events arrive in timestamp order and immediately perform only their connected signed
+weight additions. At the 5 ms boundary, the ingress sends an epoch-completion token. Thus
+event ingestion and synaptic accumulation are sequential and sparse, while PLIF
+leak/threshold/reset remains one commit per touched destination per 5 ms epoch so it stays
+equivalent to the trained model.
 
 Only touched neurons are accessed. Each live sparse entry contains its logical address, int16 membrane, a compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. If a neuron is touched after `delta_bins` intervals, the baseline applies learned beta `delta_bins` times before adding the current bin's accumulated synaptic current. There is no microsecond timestamp and no dense idle-state sweep.
 

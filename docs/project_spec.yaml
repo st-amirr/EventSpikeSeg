@@ -47,7 +47,7 @@ document:
     - Attention-centroid tracking
     - MEVDT as the active training dataset
     - FE108 and DSEC-MOT as active milestones
-    historical_material_location: legacy_tracking_context
+    historical_material_location: [legacy_tracking_context, legacy_fpga_history]
 
 project_goal:
   primary_goal: >-
@@ -328,10 +328,11 @@ input_and_time:
     default_prediction_period_us: 50000
     default_prediction_rate_hz: 20
     schedule: autonomous_actor_dataflow_with_ordered_5ms_completion_tokens
-    ingress: two_pingpong_5ms_event_buffers_capture_next_bin_while_current_bin_computes
+    ingress: timestamp_ordered_raw_event_stream_plus_5ms_epoch_marker_no_dense_bin_load
     procedure:
-    - Seal one 5 ms raw-event bin and switch acquisition immediately to the alternate input buffer.
-    - Actor 0 consumes nonzero presynaptic events, followed by a completion token for that 5 ms epoch.
+    - Rectify and route each raw camera event in timestamp order as it arrives; do not materialize a dense input tensor or preload a complete 5 ms bin.
+    - Each input event immediately triggers only its connected static-weight additions in actor 0.
+    - At each 5 ms boundary, inject a completion token after the final raw event assigned to that semantic epoch.
     - Each actor independently scatters a spike through its valid nonzero kernel taps, accumulates signed contributions
       in one canonical current slot per postsynaptic channel/spatial destination, and commits touched PLIFs only after
       the upstream completion token proves that no more contributions can arrive for that epoch.
@@ -367,7 +368,7 @@ input_and_time:
           target_80pct: 800000
       deadline_measurement: cycles_from_bin_accept_until_final_readout_update_for_that_bin
     forbidden:
-    - raw_event_per_event_end_to_end_propagation_without_5ms_binning
+    - threshold_or_reset_after_each_individual_signed_raw_event_contribution
     - retiring_or_overwriting_a_bin_before_its_full_forward_pass_completes
     - record_major_layer0_t0_to_t9_then_layer1_t0_to_t9_hardware_schedule
     - collapsing_the_default_50ms_prediction_window_into_one_PLIF_step
@@ -377,9 +378,9 @@ input_and_time:
 
 runtime_batching_decision:
   decision: autonomous_actor_pipeline_with_ordered_5ms_completion_tokens
-  rationale: This preserves the fixed 5 ms training time grid and touched-neuron lazy state while allowing 
-    live camera acquisition to overlap computation through ping-pong input buffers. It avoids the superseded 
-    50 ms layer-major schedule.
+  rationale: This preserves the fixed 5 ms training time grid and touched-neuron lazy state while accepting
+    raw events sequentially without dense bin loading. The 5 ms marker is a semantic commit boundary, not an
+    instruction to preload or sweep a bin. It avoids the superseded 50 ms layer-major schedule.
   bin_structure:
     bin_us: 5000
     required_bin_rate_hz: 200
@@ -866,6 +867,33 @@ asic_implementation:
 legacy_fpga_history:
   status: implementation_removed_from_active_repository
   non_normative: true
+  article_reporting:
+    purpose: preserve_the_complete_FPGA_method_attempt_as_historical_article_evidence
+    active_hardware_backend: native_SystemVerilog_ASIC_only
+    explored_platforms:
+    - Xilinx_ZCU104
+    - AMD_Alveo_U55C_or_U280_with_HBM
+    - Artix7_XC7A200T_on_Digilent_Nexys_Video_without_DDR
+    implementation_iterations:
+    - fixed_point_export_integer_PLIF_sparse_state_and_basic_VHDL_lanes
+    - set_associative_zero_default_sparse_state_with_exact_reclamation_and_no_live_eviction
+    - fixed_ten_step_layer_major_schedule_matching_training_but_requiring_global_control_and_buffering
+    - end_to_end_5ms_epochs_with_pingpong_ingress_lazy_24bit_tags_actor_lanes_and_deadline_accounting
+    - presynaptic_tap_scatter_and_permanent_actor_local_PLIF_ownership_as_the_bridge_to_ASIC
+    principal_result: >-
+      Static int8 weights fit easily, but exact native-resolution writable PLIF state did not fit the selected
+      low-cost FPGA without external memory or a full-sequence-proven bounded sparse representation.
+    retirement_reasons:
+    - exact_writable_state_exceeded_low_cost_FPGA_on_chip_memory_by_about_two_orders_of_magnitude
+    - DDR_or_HBM_restored_capacity_but_added_state_transfer_latency_and_energy
+    - shared_compute_or_layer_reconfiguration_violated_permanently_resident_actor_ownership
+    - scheduler_pingpong_associative_state_and_BRAM_arbitration_added_control_and_routing_overhead
+    preservation:
+      executable_sources: removed_from_active_tree
+      detailed_chronology: [docs/DECISIONS.md, docs/PROGRESS.md]
+      machine_readable_record: this_legacy_fpga_history_section
+      source_recovery: Git_history
+      historical_model_name_retained: v10_fpga_hybrid_is_a_measured_search_identifier_not_the_backend
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_11_class

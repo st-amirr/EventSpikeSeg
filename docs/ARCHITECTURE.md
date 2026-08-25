@@ -392,17 +392,17 @@ The canonical deployment objective is:
 
 ## Exact streaming 5 ms sparse layer procedure
 
-Training remains unchanged. DSEC supplies fixed physical-time updates, and each PLIF stage
-uses touched-neuron lazy state. Live hardware therefore works **bin-major end-to-end**:
-one completed 5 ms camera bin must traverse the entire 25-PLIF deployed graph before that
-bin is retired. The next camera bin may be captured concurrently in the other ingress buffer.
+Training remains unchanged. DSEC training groups raw events into fixed physical-time
+updates, while ASIC ingress accepts those same rectified events sequentially in timestamp
+order. The ASIC does not load a dense bin or sweep the full feature map. The 5 ms boundary
+is represented by an ordered completion token and remains the PLIF semantic commit boundary.
 
 For input bin `k`:
 
-1. Seal the current 5 ms ON/OFF event buffer and immediately switch camera capture to the
-   alternate ping-pong buffer.
-2. Actor 0 consumes sparse nonzero input addresses/counts for bin `k` and generates only
-   valid convolution destinations from kernel, stride, padding, dilation and group rules.
+1. Rectify each raw event and send its polarity/spatial address directly to actor 0 in
+   timestamp order; no complete-bin input buffer or dense tensor is required.
+2. Actor 0 immediately generates only the connected convolution destinations from kernel,
+   stride, padding, dilation and group rules and adds their static signed weights.
 3. All synaptic contributions targeting the same logical neuron **within this bin** are
    accumulated before threshold/reset; the neuron is committed at most once for that layer/bin.
 4. Read the destination's sparse state. A missing entry is exact reset state. A live entry
@@ -414,24 +414,24 @@ For input bin `k`:
 6. Apply the trained threshold/adaptation/reset/inhibition order, write the new state with
    `last_bin_tag = current_bin_tag`, reclaim it only when quantized membrane is zero and
    adaptation is inactive, and emit only output spikes.
-7. Propagate those sparse spikes immediately through actor 1, then actor 2, ... through all
-   25 deployed PLIF actors and the stateless 16->11 signed class-current update.
-8. Only after the final actor/readout update completes is bin `k` retired and bin `k+1`
-   allowed to become the compute bin. PLIF/adaptation state persists across bins.
+7. After the input epoch marker arrives, actor 0 commits its touched neurons, emits sparse
+   spikes, and forwards completion. Each downstream actor repeats that autonomous process
+   through actor 24 and the stateless 16->11 class-current update.
+8. PLIF/adaptation state persists across epochs. Camera ingress may continue independently
+   if its event FIFO provides sufficient lossless backpressure capacity.
 9. Signed class current persists only across the configured prediction window. The default
    is ten bins, so a segmentation argmax is emitted every **50 ms / 20 Hz**, matching training.
    The prediction-window length is configurable for later latency/accuracy experiments.
 
-This is not raw-event asynchronous propagation: raw camera events are integrated for 5 ms.
-It is also not the superseded 50 ms layer-major schedule. The active ordering is:
+This is raw-event sequential synaptic processing, but not immediate per-contribution PLIF
+firing. Signed contributions within an epoch must be accumulated before threshold/reset;
+otherwise convolution order changes the trained model. The active ordering is:
 
 ```text
-capture bin k+1 in buffer B                 capture bin k+2 ...
-             ||
-compute bin k from buffer A:
-actor0 -> actor1 -> ... -> actor24 -> class-current update -> retire bin k
-             ||
-swap A/B, compute bin k+1
+raw events k arrive -> actor0 connected-weight accumulation only
+5 ms marker k       -> actor0 PLIF commits -> sparse spikes + marker
+                    -> actor1 commits -> ... -> actor24 -> class-current
+raw events k+1 may enter a lossless ingress FIFO concurrently
 ```
 
 ### Real-time utilization and throughput contract

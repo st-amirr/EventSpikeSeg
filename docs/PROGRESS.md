@@ -278,3 +278,5 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - changed local RTL verification to Icarus Verilog + cocotb and the open PPA front end to native SystemVerilog + Yosys/OpenROAD;
 - all eight native RTL groups pass, including an integrated nine-tap-to-nine-membrane convolution/PLIF test;
 - full 25-actor channel fanout, SRAM macro wrappers, mechanism integration, graph equivalence, and routed PPA remain the next implementation stage.
+- preserved the complete retired FPGA feasibility/scheduling history inside `project_spec.yaml` under `legacy_fpga_history`, with detailed chronology in the decision/progress logs and sources recoverable from Git history;
+- clarified ASIC ingress as timestamp-ordered raw-event synaptic accumulation with no dense bin preload, while retaining one touched-PLIF commit at each trained 5 ms completion boundary.

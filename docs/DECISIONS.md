@@ -646,3 +646,24 @@ membranes and 189.60 MiB of dense exact state under the current tag/adaptation c
 credible full-chip area/power requires characterized high-density SRAM macros and an
 accessible 22 nm-or-better foundry PDK. Flip-flop-expanded behavioral arrays are forbidden
 as a claimed full-model PPA result.
+
+## 2026-08-25 — Use native SystemVerilog and sequential raw-event ASIC ingress
+
+This supersedes the VHDL/GHDL portion and the ping-pong-bin ingress portion of the preceding
+ASIC decision. Implement the ASIC directly in synthesizable SystemVerilog and use
+Icarus/cocotb, Yosys, and OpenROAD. Preserve the FPGA attempt in the non-normative
+`legacy_fpga_history` section of `project_spec.yaml`, the chronological decision/progress
+logs, and Git history.
+
+The ASIC camera interface accepts rectified raw events sequentially in timestamp order.
+Each event immediately triggers only its connected static-weight additions; it does not
+load a dense 5 ms tensor and does not fetch or update unrelated neuron state. A completion
+token is inserted at each trained 5 ms boundary. That token causes each actor to commit
+only its touched PLIF destinations once, emit spikes, and forward completion.
+
+Do not threshold or reset a PLIF after every individual signed contribution. Training
+performs one PLIF update per 5 ms division after convolutional accumulation, and signed
+kernel contributions can cancel. Immediate per-event firing would therefore be a different
+event-time neuron model and would require explicit event-driven retraining and accuracy
+validation. The current ASIC is sparse and event-sequential in its synaptic work while
+retaining the trained 5 ms PLIF commit semantics.

@@ -87,7 +87,9 @@ still stored, not implemented as one physical register/neuron each.
 ### Exact autonomous actor execution order
 
 DSEC ASIC inference must match the trained fixed 5 ms time grid while streaming live input.
-Within a bin, actors run autonomously using ready/valid spike traffic. An ordered completion
+Raw rectified events enter sequentially in timestamp order and immediately cause only their
+connected signed-weight additions; no dense tensor or complete 5 ms bin is loaded. Within
+an epoch, actors run autonomously using ready/valid spike traffic. An ordered completion
 token follows the final presynaptic event; it causes the receiving actor to update each
 touched PLIF exactly once and then forward completion. This is logically asynchronous
 actor dataflow, but the current RTL is clocked and makes no electrically clockless/QDI claim.
