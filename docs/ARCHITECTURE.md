@@ -51,8 +51,9 @@ N_adapt = 320*110*160 + 1216*55*80
 With 16-bit membrane and two 16-bit adaptation fields, dense persistent state is
 100.98 MiB before lazy-update tags, queues, and alignment. This is lower than the old 241x351 graph's
 72.84 million membranes/192.44 MiB because the wide paths now begin at half resolution.
-It still cannot fit dense state in XC7A200T BRAM, so the lossless sparse-state feasibility
-gate remains mandatory.
+For ASIC deployment this is an SRAM-macro problem, not an FPGA BRAM limit. A dense
+standard-cell implementation is invalid; full-chip PPA requires characterized actor-local
+SRAM macros or a lossless sparse organization proven over complete DSEC sequences.
 
 
 ## Exact computational primitive
@@ -186,8 +187,9 @@ With a 28-bit logical address, int16 membrane and 24-bit bin tag, the raw non-ad
 payload is about 9 bytes/entry; adding two int16 adaptation fields gives about 13 bytes.
 The conservative profiler keeps **12-byte non-adaptive** and **16-byte adaptive** aligned
 entry budgets. This is why actor-local SRAM capacity and macro selection are hard full-chip gates.
-The XC7A200T has about 1.604 MiB BRAM; the board DDR3 exists but is forbidden by the
-active no-external-memory experiment.
+For the ASIC target, these values set the SRAM-macro requirement rather than an FPGA BRAM
+limit. Full-chip PPA is invalid until actor-local state is mapped to characterized SRAM
+macros instead of standard-cell register arrays.
 
 ### Why v8 is structurally cheaper than v6
 
@@ -329,6 +331,61 @@ late native fusion:
 Deployment omits the training-only `aux_head`, `boundary_head`, inherited `refine2`,
 surrogate-gradient logic, and every XL-only module.
 
+## ASIC actor graph topology: a DAG, not a 25-stage chain
+
+The **25 PLIF populations are permanent hardware actors, but they are not connected as
+`actor0 -> actor1 -> ... -> actor24`**.  The deployed v8 forward pass is a fixed directed
+acyclic graph (DAG).  Input events fork into the native detail and semantic paths; residual
+blocks contain binary-OR bypass joins; `x1` and `x2` fan out into both deeper encoder work
+and later decoder skips; decoder fanout/concatenation brings the branches back together
+before `final_fuse.standard`.
+
+The ASIC exporter therefore treats the actor tuple only as a deterministic **topological
+export order**. Runtime connectivity comes from explicit graph nodes/edges in
+`src/eventspikeseg/asic/topology.py` and `layer_graph.json`. The static interconnect is
+compiled for EventSpikeSeg140k; no generic programmable NoC or runtime layer scheduler is
+required.
+
+```text
+                         -> detail_stem -> detail1 --residual OR-------------------
+                        /                                                     \
+input events -----------                                                       final concat
+                        \                                                     /
+                         -> stem -> enc1 -> enc1_extra = x1 ------------------+
+                                      |                \                     |
+                                      v                 \ decoder skip       |
+                                    down2 -> enc2 -> enc2_extra = x2          |
+                                                       | \                  |
+                                                       v  \ decoder skip     |
+                                                     down3 -> enc3 -> context
+                                                                        |
+                                                                     project3
+                                                                        | 2x event fanout
+                                                                        v
+                                                          x2 --------> concat -> decoder2_fuse
+                                                                                   |
+                                                                                project2
+                                                                                   | 2x fanout
+                                               x1 ------------------------------> multiplicity sum
+                                                                                   | 2x fanout
+                                                                                   +----> final concat
+                                                                                              |
+                                                                                         final_fuse
+                                                                                              |
+                                                                                         class current
+```
+
+Completion tokens follow the **same DAG** as spikes. A fork copies the token to every
+outgoing branch. A join may forward its 5 ms completion token only after all required
+upstream branches have delivered the **same bin tag**; otherwise a fast branch could make a
+downstream PLIF commit before a slower skip branch has contributed. Residual joins and
+decoder joins therefore have different data rules but the same completion rendezvous rule:
+
+- residual joins: binary OR / deduplicate coincident spike addresses;
+- `decoder2` and final concatenations: preserve all events after fixed channel remapping;
+- `project2 + x1`: deliberately preserve coincident events as multiplicity two;
+- all joins: wait for all required upstream completion tokens for the bin.
+
 ## Inhibition and threshold-adaptation dynamics
 
 ### Peer-membrane inhibition
@@ -399,10 +456,11 @@ is represented by an ordered completion token and remains the PLIF semantic comm
 
 For input bin `k`:
 
-1. Rectify each raw event and send its polarity/spatial address directly to actor 0 in
-   timestamp order; no complete-bin input buffer or dense tensor is required.
-2. Actor 0 immediately generates only the connected convolution destinations from kernel,
-   stride, padding, dilation and group rules and adds their static signed weights.
+1. Rectify each raw event and multicast its polarity/spatial address to the two fixed
+   ingress actors required by the real graph: `detail_stem` and `stem`. No complete-bin
+   dense tensor is required.
+2. Each receiving actor immediately generates only its connected convolution destinations
+   from kernel, stride, padding, dilation and group rules and adds its static signed weights.
 3. All synaptic contributions targeting the same logical neuron **within this bin** are
    accumulated before threshold/reset; the neuron is committed at most once for that layer/bin.
 4. Read the destination's sparse state. A missing entry is exact reset state. A live entry
@@ -414,9 +472,12 @@ For input bin `k`:
 6. Apply the trained threshold/adaptation/reset/inhibition order, write the new state with
    `last_bin_tag = current_bin_tag`, reclaim it only when quantized membrane is zero and
    adaptation is inactive, and emit only output spikes.
-7. After the input epoch marker arrives, actor 0 commits its touched neurons, emits sparse
-   spikes, and forwards completion. Each downstream actor repeats that autonomous process
-   through actor 24 and the stateless 16->11 class-current update.
+7. After the input epoch marker arrives, both ingress branches commit their touched neurons.
+   Event/completion tokens then follow the fixed DAG. Fanout nodes multicast losslessly;
+   residual/concat/skip joins wait for all required upstream completion tokens carrying the
+   same bin tag before forwarding one downstream completion. The final completion emerges
+   only after `final_fuse.standard` and the stateless 16->11 class-current update have seen
+   all branches for that bin.
 8. PLIF/adaptation state persists across epochs. Camera ingress may continue independently
    if its event FIFO provides sufficient lossless backpressure capacity.
 9. Signed class current persists only across the configured prediction window. The default
@@ -428,9 +489,12 @@ firing. Signed contributions within an epoch must be accumulated before threshol
 otherwise convolution order changes the trained model. The active ordering is:
 
 ```text
-raw events k arrive -> actor0 connected-weight accumulation only
-5 ms marker k       -> actor0 PLIF commits -> sparse spikes + marker
-                    -> actor1 commits -> ... -> actor24 -> class-current
+raw events k arrive -> fork -> detail path + semantic path accumulate locally
+5 ms marker k       -> token forks with those paths
+                     -> residual/skip branches run independently
+                     -> each join waits for every required token tagged k
+                     -> final_fuse commits only after semantic + detail rendezvous
+                     -> class-current update -> bin k retired
 raw events k+1 may enter a lossless ingress FIFO concurrently
 ```
 
@@ -480,8 +544,9 @@ parallelism are therefore automatically reflected in `U`; a design that cannot s
 ## Static layer-actor ASIC execution
 
 There is no requirement for one hardware PLIF circuit per logical `[C,H,W]` neuron, but
-there is one permanent actor per executed layer. An actor can sequence local lanes over
-its own destinations; those arithmetic blocks are never reused by a different layer:
+there is one permanent actor per executed PLIF population. These actors are connected by
+the fixed v8 DAG rather than a linear pipeline. An actor can sequence local lanes over its
+own destinations; those arithmetic blocks are never reused by a different PLIF population:
 
 ```text
 event/spike FIFO -> shared-kernel weight lookup -> synaptic accumulator
@@ -636,12 +701,22 @@ before claiming no-DDR real-time fit.
 - `asic/rtl/peer_membrane_inhibition.sv`: retinotopic RMS-energy decrement for non-spiking peers;
 - `asic/rtl/triangular_threshold_adaptation.sv`: per-neuron learned-amplitude inverted-V threshold state;
 - `asic/rtl/class_current_update.sv`: signed class-current accumulation and prediction flush;
-- `asic/rtl/class_argmax.sv`: first-index-tie signed argmax matching PyTorch behavior.
+- `asic/rtl/class_argmax.sv`: first-index-tie signed argmax matching PyTorch behavior;
+- `asic/rtl/event_fork2.sv`: lossless two-way multicast for events and completion tokens;
+- `asic/rtl/event_join2.sv`: multiplicity-preserving two-input merge with same-bin completion rendezvous;
+- `asic/rtl/binary_event_union2.sv`: correctness-reference residual binary-OR/dedup merge with same-bin completion rendezvous.
+- `asic/rtl/event_channel_offset.sv`: fixed compile-time channel-ID remap for concatenation routes;
+- `asic/rtl/event_upsample2x.sv`: nearest-neighbor 2x event-address expansion with one completion-token forwarding;
+- `asic/rtl/channelized_convolution_scatter.sv`: standard/grouped/depthwise input-to-output-channel projection using PyTorch Conv2d weight order.
 
-These are component blocks, not yet a complete 25-actor top level. Remaining integration
-must connect tap outputs to channel fanout and exported actor ROMs, replace behavioral arrays
-with actor-local SRAM macros, add exact inhibition/adaptation logic, provide the class-current
-store/flush path, and measure full-sequence activity, latency, and energy.
+These are component blocks, not yet a complete 25-actor DAG top level. The exporter now
+defines the exact non-linear graph contract, and the RTL contains fork/join/residual-union
+control primitives, but remaining integration must instantiate every actor, implement the
+residual joins at model scale, connect the channelized scatter to channelized actor state and
+exported actor ROMs,
+replace behavioral arrays with actor-local SRAM macros, insert exact inhibition/adaptation
+logic, provide the class-current store/flush path, and measure full-sequence activity, latency,
+and energy.
 
 The 16->11 readout is not a spiking layer. Final hidden spikes trigger signed readout
 weight additions at the same `(y,x)`. Class currents accumulate across the configured

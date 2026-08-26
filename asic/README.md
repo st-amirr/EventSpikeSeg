@@ -24,12 +24,29 @@ full-chip memory implementation.
 
 ## Current synthesis boundary
 
-`convolution_plif_actor.sv` integrates the presynaptic convolution scatter with a local
+`convolution_plif_actor.sv` integrates the presynaptic convolution scatter with one local
 PLIF population. Static kernel weights are elaboration-time constants, and the actor's
-small default arrays make control/dataflow executable. The repository also contains
-standalone PLIF, inhibition, adaptation, and readout blocks. Before full-chip PPA, the
-behavioral state arrays must be replaced by actor-local SRAM macro wrappers with the same
-logical ownership and no inter-layer state fetch.
+small default arrays make control/dataflow executable. **This actor is a node prototype,
+not a model-level 25-stage pipeline.** EventSpikeSeg140k v8 contains 25 permanent PLIF
+actors connected as a fixed DAG with input/detail-semantic forks, residual binary-OR joins,
+`x1`/`x2` skip fanout, decoder upsample/concat, multiplicity-preserving `project2+x1`, and
+late semantic/detail concat.
+
+`src/eventspikeseg/asic/topology.py` is the connectivity source of truth. The exporter writes
+explicit DAG nodes/edges/join semantics to `layer_graph.json`; its actor tuple is only a
+deterministic topological export order. `event_fork2.sv` provides lossless two-way event and
+completion-token multicast, `event_join2.sv` provides multiplicity-preserving same-bin
+completion rendezvous, and `binary_event_union2.sv` is the correctness-reference residual
+OR/dedup join. A complete top level still has to instantiate these routes around all 25 actors.
+`event_channel_offset.sv` implements fixed concatenation channel remaps,
+`event_upsample2x.sv` expands a spike into four nearest-neighbor addresses, and
+`channelized_convolution_scatter.sv` expands one input spike across legal standard, grouped,
+or depthwise output-channel/tap projections using exported PyTorch Conv2d weight order.
+These blocks are independently executable but are not yet wired into a model-level top.
+
+Before full-chip PPA, behavioral actor state arrays and prototype residual-dedup storage must
+be replaced by actor-local SRAM/banked sparse macro structures with the same logical ownership
+and no inter-layer state fetch.
 
 Run native SystemVerilog compilation and the cocotb suite:
 
@@ -46,7 +63,9 @@ If an ORFS checkout or installation is available, set `ORFS_ROOT` to its root an
 ORFS_ROOT=/path/to/OpenROAD-flow-scripts bash asic/scripts/run_orfs.sh
 ```
 
-The ORFS configuration targets the integrated convolution/PLIF actor prototype on ASAP7.
-Its report is a representative actor result, not a 25-actor full-model estimate. Activity-based power
-requires a representative VCD/SAIF from the exported DSEC event stream; vectorless
-default-toggle power must be labeled preliminary.
+The ORFS configuration targets the integrated convolution/PLIF **actor prototype** on ASAP7.
+Its report is a representative node result, not a 25-actor-DAG full-model estimate. Full-chip
+PPA requires the exported DAG top level, characterized SRAM macros, all merge/fanout routes,
+and representative full-sequence activity. Activity-based power requires a representative
+VCD/SAIF from the exported DSEC event stream; vectorless default-toggle power must be labeled
+preliminary.

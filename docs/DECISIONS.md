@@ -667,3 +667,23 @@ kernel contributions can cancel. Immediate per-event firing would therefore be a
 event-time neuron model and would require explicit event-driven retraining and accuracy
 validation. The current ASIC is sparse and event-sequential in its synaptic work while
 retaining the trained 5 ms PLIF commit semantics.
+
+## 2026-08-25 — Treat the 25 ASIC actors as the exact v8 DAG, never as a linear pipeline
+
+`EventSpikeSeg140k` deploys 25 PLIF populations, but their enumeration is only a stable
+topological/export order. Runtime interconnect must reproduce the actual model DAG. Input
+events fork into `detail_stem` and `stem`; residual blocks binary-OR their bypass and main
+spikes; `x1` and `x2` fan out into deeper encoder and later decoder routes; `project3` and
+`project2` use 2x nearest-event fanout; decoder concatenations use fixed channel remapping;
+`project2 + x1` deliberately preserves coincident events as multiplicity two; semantic and
+detail routes converge before `final_fuse.standard`.
+
+Completion tokens follow the same directed routes. A fanout duplicates the tagged token to
+every required branch. A multi-input residual/skip/concat node may emit one downstream
+completion only after all required upstream tokens for the same 5 ms bin have arrived. This
+rendezvous rule is required for correctness: a fast branch must not close a downstream PLIF
+epoch before a slower skip/detail branch has contributed.
+
+Use compile-time dedicated routing rather than a programmable NoC unless later evidence
+shows programmability is worth its area/energy cost. Actor-local membrane/adaptation SRAM
+remains unchanged by this decision; only spikes and completion tokens traverse the graph.

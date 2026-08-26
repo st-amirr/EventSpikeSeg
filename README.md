@@ -137,13 +137,16 @@ Triangular threshold adaptation is enabled on **10,982,400** neurons and stores 
 - **persistent per-neuron:** membrane, compact 24-bit `last_bin_tag`, and enabled threshold-adaptation state;
 - **temporary:** touched-event synaptic current and sparse spike FIFOs.
 
-The ASIC instantiates a permanent actor for every executed layer. For a standard 3x3
-plane, nine parallel presynaptic tap cells emit signed contributions into one canonical
-postsynaptic current/membrane array. Actors accept sparse events autonomously; the ordered
-completion token for a 5 ms epoch triggers exactly one commit per touched destination and
-then propagates downstream. The SystemVerilog RTL uses clocked ready/valid channels and does not
-claim an electrically clockless/QDI implementation. See `docs/ARCHITECTURE.md` and
-`project_spec.yaml` for the full contract.
+The ASIC instantiates a permanent actor for every executed PLIF population, but the 25
+actors are **not a linear chain**. They form the fixed EventSpikeSeg140k v8 DAG: input forks
+into detail and semantic paths, residual blocks use binary-OR joins, `x1`/`x2` fan out into
+later decoder skips, and decoder/final concatenations bring those branches together. For a
+standard 3x3 plane, nine parallel presynaptic tap cells emit signed contributions into one
+canonical postsynaptic current/membrane array. Events and ordered 5 ms completion tokens
+follow the same fixed routes; every multi-input join waits for all required same-bin tokens
+before forwarding completion. The SystemVerilog RTL uses clocked ready/valid channels and
+does not claim an electrically clockless/QDI implementation. See `docs/ARCHITECTURE.md`,
+`src/eventspikeseg/asic/topology.py`, and `project_spec.yaml` for the full contract.
 
 ## Main commands
 
@@ -267,11 +270,15 @@ MLP. `ChannelAffine` can be folded into quantized weights/scales; concat is chan
 routing; nearest upsample is spike-address fan-out; residual clamp is event merge/OR;
 and temporal class-current accumulation/argmax uses signed accumulators and a comparator.
 
-The implementation uses **25 permanent PLIF layer actors plus one class-current readout**. Every actor owns convolution
+The implementation uses **25 permanent PLIF actors in a compile-time static DAG plus one
+class-current readout**. The actor tuple exported by software is a deterministic topological
+listing only, not runtime `actor0 -> ... -> actor24` order. Every actor owns convolution
 addressing, accumulator lanes, PLIF/mechanism logic, queues, local weight ROM, and local
-state SRAM; there is no cross-layer compute sharing or reconfiguration. Within an actor,
-event sparsity is fundamental: touched-address queues, active-neuron lists, fixed-step
-state advancement, and clock-enable suppress idle work.
+state SRAM; there is no cross-layer compute sharing or reconfiguration. Dedicated fixed
+routes implement fanout, residual OR/dedup, channel concatenation, upsample fanout, and the
+multiplicity-preserving `project2 + x1` skip. Within an actor, event sparsity is fundamental:
+touched-address queues, active-neuron lists, lazy fixed-step state advancement, and
+clock-enable suppress idle work.
 This trades processing-element count for latency and memory bandwidth without
 changing the trained SNN semantics.
 
@@ -294,16 +301,21 @@ Export a trained checkpoint with:
 python scripts/export_asic_model.py --checkpoint artifacts/EventSpikeSeg140k_seed17_best.pt --output artifacts/asic_export
 ```
 
-The exporter hard-rejects XL and emits the exact 25-PLIF-actor plus current-readout manifest, affine-folded int8
-ROMs, per-actor quantized neuron parameters, and the fixed-point contract.
+The exporter hard-rejects XL and emits the exact 25-PLIF-actor plus current-readout manifest,
+affine-folded int8 ROMs, per-actor quantized neuron parameters, the fixed-point contract,
+and an explicit `layer_graph.json` containing DAG nodes, directed edges, channel-remap/fanout
+operations, residual/skip join semantics, and same-bin completion-token rendezvous rules.
 
 
 ## ASIC runtime timing contract (autonomous actors, 5 ms semantic epochs)
 
 DSEC training and hardware preserve the same 5 ms physical-time grid. Events move through
-the permanently wired actor graph without a global layer scheduler. A completion token
-follows the last event of each epoch; each actor drains its touched destinations, forwards
-resulting spikes, and only then forwards completion. Per-contribution thresholding is forbidden.
+the permanently wired **non-linear actor DAG** without a global layer scheduler. A completion
+token follows the last event of each epoch and is multicast anywhere the spike stream forks.
+At residual/skip/concat joins, one downstream completion is released only after every
+required upstream branch has delivered the same bin tag. This prevents a fast path from
+closing a downstream PLIF before a slower skip/detail path has contributed. Per-contribution
+thresholding is forbidden.
 
 The ASIC ingress does not load a dense 5 ms tensor or store a complete input bin. Rectified
 camera events arrive in timestamp order and immediately perform only their connected signed
@@ -318,7 +330,11 @@ The prediction window is configurable; start with **10 bins = 50 ms = 20 Hz** to
 
 Real-time feasibility is measured per bin. With `C_bin` cycles and routed clock `f_clk`, define `U=C_bin/(f_clk*0.005)` and `H=1/U`. Hard sustained operation requires `U<=1` (`H>=1`). The starting target is `U<=0.8` (`H>=1.25`). At 100 MHz that is 500,000 hard cycles/bin and 400,000 target cycles/bin; at 150 MHz 750,000/600,000; at 200 MHz 1,000,000/800,000.
 
-The first native SystemVerilog ASIC iteration adds a synthesizable parallel presynaptic tap array and an autonomous
-completion-token PLIF actor with direct-indexed local current/membrane state. Trained
-weights remain replaceable ROM contents. The next milestones are local SRAM macro wrappers,
-channel fanout/weight ROM integration, exact inhibition/adaptation, and the complete 25-actor graph.
+The native SystemVerilog ASIC implementation now contains a synthesizable channel-aware
+standard/grouped/depthwise convolution scatter, autonomous completion-token PLIF actor,
+lossless two-way event/token fork, same-bin rendezvous join, fixed concat remap, 2x event
+upsample, and a correctness-reference residual binary-OR/dedup merge. Trained weights remain
+replaceable ROM contents. The next milestones are to connect channelized projections to
+per-output-channel actor state/parameters, instantiate the exported **25-actor DAG**, replace
+behavioral state/merge arrays with characterized SRAM/banked sparse structures, integrate
+inhibition/adaptation into actor commit lanes, and run full-DAG equivalence/PPA.

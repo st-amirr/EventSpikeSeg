@@ -16,6 +16,12 @@ tops=(
   triangular_threshold_adaptation
   class_argmax
   class_current_update
+  event_fork2
+  event_join2
+  binary_event_union2
+  event_channel_offset
+  event_upsample2x
+  channelized_convolution_scatter
 )
 
 for top in "${tops[@]}"; do

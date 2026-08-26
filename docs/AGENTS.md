@@ -77,12 +77,15 @@ The primary runtime is fully digital but must preserve neuromorphic/SNN executio
 
 ### Static actor execution rule
 
-Instantiate one permanent actor for each of the 25 executed PLIF populations. Each actor owns
-its convolution address generator, accumulator lanes, PLIF/mechanism unit, output FIFO,
-and initialized local weight ROM. Cross-layer compute sharing, layer reconfiguration,
-and partial reconfiguration are forbidden. Common clock/reset, fixed-slice input dispatch,
-on-chip state banks, and final readout may be shared infrastructure. Logical spatial states are
-still stored, not implemented as one physical register/neuron each.
+Instantiate one permanent actor for each of the 25 executed PLIF populations. **These actors
+form the exact EventSpikeSeg140k v8 DAG; the actor tuple is only a topological export order,
+not a linear actor0->actor24 pipeline.** Each actor owns its convolution address generator,
+accumulator lanes, PLIF/mechanism unit, output FIFO, and initialized local weight ROM.
+Cross-layer compute sharing, layer reconfiguration, and partial reconfiguration are forbidden.
+The interconnect is compile-time fixed: input/detail-semantic forks, residual binary-OR joins,
+`x1`/`x2` skip fanout, decoder upsample/concat, multiplicity-preserving `project2+x1`, and
+late semantic/detail concat. Common clock/reset and final readout may be shared infrastructure.
+Logical spatial states are still stored, not implemented as one physical register/neuron each.
 
 ### Exact autonomous actor execution order
 
@@ -90,10 +93,12 @@ DSEC ASIC inference must match the trained fixed 5 ms time grid while streaming 
 Raw rectified events enter sequentially in timestamp order and immediately cause only their
 connected signed-weight additions; no dense tensor or complete 5 ms bin is loaded. Within
 an epoch, actors run autonomously using ready/valid spike traffic. An ordered completion
-token follows the final presynaptic event; it causes the receiving actor to update each
-touched PLIF exactly once and then forward completion. This is logically asynchronous
-actor dataflow, but the current RTL is clocked and makes no electrically clockless/QDI claim.
-Never threshold after each signed tap contribution.
+token follows the final presynaptic event. Tokens follow the **same DAG as spikes**: fanout
+nodes duplicate them to every branch, and residual/skip/concat joins may forward one
+downstream token only after all required upstream tokens carry the same 24-bit bin tag.
+Only then may the downstream actor know that every contribution for that bin has arrived.
+This is logically asynchronous actor dataflow, but the current RTL is clocked and makes no
+electrically clockless/QDI claim. Never threshold after each signed tap contribution.
 
 For a 3x3 convolution, approximately nine parallel tap projection cells calculate valid
 postsynaptic destinations and signed weights. They all feed the same canonical destination
@@ -153,14 +158,14 @@ macros; standard-cell-expanded memory must never be reported as the implementati
 
 ## Autonomous 5 ms DSEC runtime rule
 
-Live DSEC input retains 5 ms semantic epochs. Events and an ordered completion token propagate through the complete permanent 25-PLIF graph without a global actor scheduler. PLIF/adaptation state persists across epochs and predictions. Each touched state stores a 24-bit last-bin tag; `delta_bins` controls the exact repeated learned-beta leak before current integration. All contributions to one destination for a layer/epoch must be accumulated before one threshold/reset commit.
+Live DSEC input retains 5 ms semantic epochs. Events and ordered completion tokens propagate through the complete permanent **25-PLIF DAG** without a global actor scheduler. The input stream forks to `detail_stem` and `stem`; `x1` and `x2` each fan out into deeper encoder and later decoder routes. Residual joins binary-OR/deduplicate coincident addresses, whereas the `project2+x1` decoder merge must preserve multiplicity. Every multi-input join waits for all same-bin completion tokens before forwarding completion. PLIF/adaptation state persists across epochs and predictions. Each touched state stores a 24-bit last-bin tag; `delta_bins` controls the exact repeated learned-beta leak before current integration. All contributions to one destination for a layer/epoch must be accumulated before one threshold/reset commit.
 
 Prediction cadence is configurable, with **10 bins = 50 ms = 20 Hz** as the starting point to match training. Measure cycles/bin after implementation. Define `U = C_bin/(f_clk*0.005)` and `H = 1/U`. Hard sustained real time requires `U<=1` / `H>=1`; the starting design target is `U<=0.8` / `H>=1.25`. At 100 MHz this means 500,000 hard cycles/bin and 400,000 target cycles/bin.
 
 ## Active autonomous RTL interfaces
 
-`presynaptic_tap_array` generates every valid nonzero kernel contribution in parallel for one channel plane. `convolution_plif_actor` serializes those contributions into the canonical actor-local destination array. `asynchronous_plif_actor` accumulates repeated destinations into one current entry, records first touches, and on completion walks only that queue through `plif_update`; spike and completion outputs are independently backpressured. The current behavioral state arrays are an equivalence prototype and must become actor-local SRAM macros. The final 16->11 readout remains non-spiking.
+`presynaptic_tap_array` generates every valid nonzero kernel contribution in parallel for one channel plane. `channelized_convolution_scatter` extends projection across legal standard/grouped/depthwise input/output channels in PyTorch Conv2d weight order. `convolution_plif_actor` serializes one-plane contributions into the canonical actor-local destination array. `asynchronous_plif_actor` accumulates repeated destinations into one current entry, records first touches, and on completion walks only that queue through `plif_update`; spike and completion outputs are independently backpressured. `event_fork2` provides lossless two-way event/token multicast, `event_join2` provides multiplicity-preserving same-bin rendezvous, `binary_event_union2` is the correctness-reference residual OR/dedup join, `event_channel_offset` performs concat remaps, and `event_upsample2x` performs nearest-neighbor address expansion. The current behavioral state/merge arrays are equivalence prototypes and must become actor-local SRAM/banked sparse structures. The final 16->11 readout remains non-spiking.
 
 ## Active fixed-step RTL interfaces
 
-The baseline sparse-state entry contains address/tag, membrane, and adaptation age/amplitude only where enabled. It must not contain `last_timestamp_us`. `plif_update` consumes the exported learned per-channel beta directly once per 5 ms step. Any fixed-record compatibility controller uses 25 layers x 10 steps. The final 16->11 readout is stateless between records and uses signed current accumulation plus first-index-tie argmax; do not recreate output PLIF neurons or class-spike counting.
+The baseline sparse-state entry contains address/tag, membrane, and adaptation age/amplitude only where enabled. It must not contain `last_timestamp_us`. `plif_update` consumes the exported learned per-channel beta and repeats the fixed-point leak once for each elapsed 5 ms bin indicated by `delta_bins`. Do not reintroduce a fixed-record 25-layer controller: runtime is the autonomous static DAG with ordered completion-token rendezvous. The final 16->11 readout uses signed current accumulation across the configured prediction window plus first-index-tie argmax; do not recreate output PLIF neurons or class-spike counting.

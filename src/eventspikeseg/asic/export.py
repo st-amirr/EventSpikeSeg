@@ -22,35 +22,17 @@ from .contracts import (
     state_capacity_contract,
 )
 from .fixed_point import ASIC_FORMATS
-
-EVENTSPIKESEG140K_INFERENCE_STAGES = (
-    "detail_stem",
-    "detail1.standard",
-    "stem",
-    "enc1.standard",
-    "enc1_extra.depthwise",
-    "enc1_extra.pointwise",
-    "down2.standard",
-    "enc2.depthwise",
-    "enc2.pointwise",
-    "enc2_extra.depthwise",
-    "enc2_extra.pointwise",
-    "down3.depthwise",
-    "down3.pointwise",
-    "enc3.depthwise",
-    "enc3.pointwise",
-    "enc3_extra.depthwise",
-    "enc3_extra.pointwise",
-    "context1.depthwise",
-    "context1.pointwise",
-    "context2.depthwise",
-    "context2.pointwise",
-    "project3",
-    "decoder2_fuse",
-    "project2",
-    "final_fuse.standard",
+from .topology import (
+    EVENTSPIKESEG140K_ACTORS,
+    EVENTSPIKESEG140K_CURRENT_READOUT,
+    eventspikeseg140k_graph_contract,
+    validate_eventspikeseg140k_topology,
 )
-EVENTSPIKESEG140K_CURRENT_READOUT = "head.synapse"
+
+# Compatibility name retained for existing exporters/tests.  This tuple is a
+# deterministic topological/export order only; it is NOT a runtime linear pipeline.
+EVENTSPIKESEG140K_INFERENCE_STAGES = EVENTSPIKESEG140K_ACTORS
+
 
 _SPATIAL_TIERS = {
     **{name: "native" for name in EVENTSPIKESEG140K_INFERENCE_STAGES},
@@ -363,8 +345,11 @@ def export_model(
         },
         {"after": "head.synapse", "operation": "temporal_current_accumulate_and_argmax"},
     ]
+    validate_eventspikeseg140k_topology()
+    graph_contract = eventspikeseg140k_graph_contract()
+
     manifest: dict[str, Any] = {
-        "schema_version": "2.0.0",
+        "schema_version": "2.1.0",
         "model": "EventSpikeSeg140k",
         "dataset": "DSEC-Semantic",
         "class_count": 11,
@@ -397,6 +382,10 @@ def export_model(
         ],
         "hardware_topology": {
             "layer_actors": "25_dedicated_PLIF_actors_plus_final_current_readout",
+            "graph_kind": "static_directed_acyclic_actor_graph",
+            "linear_pipeline": False,
+            "interconnect": "compile_time_dedicated_fanout_skip_merge_paths",
+            "completion_join_rule": "wait_for_all_required_upstream_tokens_of_same_5ms_bin",
             "cross_layer_compute_sharing": False,
             "partial_reconfiguration": False,
             "event_flow": "ready_valid_spikes_plus_ordered_completion_tokens",
@@ -412,12 +401,16 @@ def export_model(
         "manufacturable_target_gate": MANUFACTURABLE_TARGET_GATE,
         "state_capacity": state_capacity_contract(),
         "quantization": {name: fmt.to_dict() for name, fmt in ASIC_FORMATS.items()},
+        # Compatibility/export ordering only. Runtime connectivity is the DAG below.
         "layer_order": [
             *EVENTSPIKESEG140K_INFERENCE_STAGES,
             EVENTSPIKESEG140K_CURRENT_READOUT,
         ],
+        "layer_order_semantics": "deterministic_topological_export_order_not_runtime_chain",
         "layers": layers,
         "graph_operations": graph_operations,
+        "graph": graph_contract,
+        "graph_edges": graph_contract["edges"],
         "class_mapping_file": "class_mapping.json",
         "checkpoint": checkpoint_metadata or {},
     }
@@ -426,7 +419,16 @@ def export_model(
     _json_write(destination / "model_spec.yaml", manifest)
     _json_write(
         destination / "layer_graph.json",
-        {"layers": layers, "operations": graph_operations},
+        {
+            "graph_kind": graph_contract["graph_kind"],
+            "linear_pipeline": False,
+            "actors": list(EVENTSPIKESEG140K_INFERENCE_STAGES),
+            "nodes": graph_contract["nodes"],
+            "edges": graph_contract["edges"],
+            "join_nodes": graph_contract["join_nodes"],
+            "operations": graph_operations,
+            "layers": layers,
+        },
     )
     return manifest
 

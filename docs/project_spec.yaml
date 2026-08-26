@@ -1,8 +1,8 @@
 document:
   title: Digital Neuromorphic ASIC Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-ASIC
-  version: 2.0.0
-  status: native_SystemVerilog_ASIC_actor_integration
+  version: 2.1.0
+  status: native_SystemVerilog_ASIC_static_DAG_actor_integration
   created_date: '2026-08-06'
   supersedes:
   - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -106,10 +106,11 @@ framework:
     primary_type: custom_SystemVerilog_digital_neuromorphic_ASIC
     primary_target: technology_agnostic_actor_array_with_local_SRAM_macros
     primary_goal: >-
-      Instantiate all 25 trained PLIF populations permanently. A convolution actor uses parallel kernel-tap projection
-      cells and one canonical current/membrane state per postsynaptic channel and spatial address. Weighted spike events
-      accumulate locally; an upstream 5 ms completion token triggers one PLIF commit per touched destination and is then
-      forwarded. No layer is loaded or reconfigured at runtime.
+      Instantiate all 25 trained PLIF populations permanently as nodes in the fixed EventSpikeSeg140k v8 DAG, not as a
+      linear 25-stage pipeline. A convolution actor uses parallel kernel-tap projection cells and one canonical
+      current/membrane state per postsynaptic channel and spatial address. Weighted spike events accumulate locally.
+      Completion tokens fork with every fanout path and rendezvous at residual/skip/concat joins before downstream commit;
+      no layer is loaded or reconfigured at runtime.
     software_reference: SpikingJelly_float_plus_bit_exact_integer_reference
     implementation_flow: [integer_reference, SystemVerilog_RTL, Icarus_cocotb_simulation,
         Yosys_technology_mapping, OpenROAD_place_route_and_parasitics, activity_based_OpenSTA_power]
@@ -331,12 +332,12 @@ input_and_time:
     ingress: timestamp_ordered_raw_event_stream_plus_5ms_epoch_marker_no_dense_bin_load
     procedure:
     - Rectify and route each raw camera event in timestamp order as it arrives; do not materialize a dense input tensor or preload a complete 5 ms bin.
-    - Each input event immediately triggers only its connected static-weight additions in actor 0.
+    - Each input event is losslessly multicast to the fixed ingress actors `detail_stem` and `stem`; each branch immediately triggers only its connected static-weight additions.
     - At each 5 ms boundary, inject a completion token after the final raw event assigned to that semantic epoch.
     - Each actor independently scatters a spike through its valid nonzero kernel taps, accumulates signed contributions
       in one canonical current slot per postsynaptic channel/spatial destination, and commits touched PLIFs only after
       the upstream completion token proves that no more contributions can arrive for that epoch.
-    - Emit resulting spike addresses as soon as they are committed, then forward the same completion token downstream.
+    - Emit resulting spike addresses as soon as they are committed. Fanout nodes multicast both events and completion tokens; join nodes forward one completion only after all required upstream tokens carry the same bin tag.
     - Read touched sparse state including membrane, optional adaptation fields and compact last-bin tag.
     - Compute delta_bins from the current global bin tag and stored last-bin tag, then apply learned beta 
       exactly delta_bins times before adding current.
@@ -377,7 +378,7 @@ input_and_time:
 
 
 runtime_batching_decision:
-  decision: autonomous_actor_pipeline_with_ordered_5ms_completion_tokens
+  decision: autonomous_static_actor_DAG_with_ordered_5ms_completion_tokens
   rationale: This preserves the fixed 5 ms training time grid and touched-neuron lazy state while accepting
     raw events sequentially without dense bin loading. The 5 ms marker is a semantic commit boundary, not an
     instruction to preload or sweep a bin. It avoids the superseded 50 ms layer-major schedule.
@@ -389,11 +390,11 @@ runtime_batching_decision:
     default_us: 50000
     default_rate_hz: 20
     configurable: true
-  graph_order: events_and_completion_tokens_follow_the_static_actor0_to_actor24_graph
+  graph_order: events_and_completion_tokens_follow_explicit_static_DAG_edges; actor_list_is_topological_export_order_only
   state_rule: every_actor_owns_direct_indexed_current_membrane_and_tag_arrays; only_touched_destinations_commit
   lazy_decay: delta_bins=current_bin_tag-last_bin_tag_mod_2^24; apply learned_beta delta_bins times before 
     current
-  double_buffering: capture_bin_k_plus_1_while_compute_bin_k
+  double_buffering: optional_ingress_FIFO_or_pingpong_capture_may_overlap_bin_k_plus_1_with_graph_processing_of_bin_k
   realtime_utilization:
     U: C_bin/(f_clk*5ms)
     hard_max: 1.0
@@ -824,6 +825,13 @@ asic_implementation:
   status: native_SystemVerilog_convolution_PLIF_actor_reference_implemented
   topology:
     permanent_actors: 25_PLIF_populations_plus_stateless_readout
+    graph_kind: static_directed_acyclic_actor_graph
+    linear_pipeline: false
+    actor_list_semantics: deterministic_topological_export_order_only
+    interconnect: compile_time_dedicated_fanout_skip_residual_and_concat_paths
+    completion_token_rule: fork_with_every_fanout_and_wait_for_all_required_same_bin_tokens_at_every_join
+    residual_merge_rule: binary_OR_deduplicate_coincident_spike_addresses
+    decoder_skip_rule: project2_plus_x1_preserves_coincident_event_multiplicity
     runtime_reconfiguration: forbidden
     kernel_mapping:
       standard_3x3: nine_parallel_tap_projection_cells_per_active_input_output_channel_plane
@@ -847,6 +855,12 @@ asic_implementation:
     - asic/rtl/triangular_threshold_adaptation.sv
     - asic/rtl/class_current_update.sv
     - asic/rtl/class_argmax.sv
+    - asic/rtl/event_fork2.sv
+    - asic/rtl/event_join2.sv
+    - asic/rtl/binary_event_union2.sv
+    - asic/rtl/event_channel_offset.sv
+    - asic/rtl/event_upsample2x.sv
+    - asic/rtl/channelized_convolution_scatter.sv
     current_memory_model: small_direct_indexed_behavioral_arrays_for_control_and_equivalence_testing
     required_memory_replacement: actor_local_characterized_SRAM_macros_before_full_chip_PPA
   EDA:
@@ -905,24 +919,16 @@ legacy_fpga_history:
     final_current_readout: one_stateless_1x1_synaptic_accumulator
     omitted_from_RTL: [refine2_dead_block, auxiliary_head, boundary_head, surrogate_gradient]
   target:
-    target_name: Artix7_XC7A200T
-    family: AMD_Xilinx_Artix_7
-    primary_device: XC7A200T-1SBG484C
-    reference_board: Digilent_Nexys_Video
-    selection_reason: conventional_development_board_with_the_largest_Artix7_device
-    official_resources: {logic_cells: 215360, LUT: 134600, registers: 269200, DSP: 740, BRAM_Kib: 13140, 
-        max_distributed_RAM_Kib: 2888}
-    official_device_reference: https://docs.amd.com/api/khub/documents/2LByHkO~nSZXcei2D55fTg/content
-    official_board_reference: 
-      https://digilent.com/reference/_media/reference/programmable-logic/nexys-video/nexys-video_rm.pdf
-    fixed_device: true
-    RTL_language: VHDL_2008
-    initial_clock_target_mhz: 100
-    portability: vendor_neutral_ready_valid_interfaces_with_replaceable_RAM_and_FIFO_wrappers
-    external_or_onboard_DDR_allowed: false
-    onboard_DDR3_present_but_forbidden_by_requirement: 512_MiB
+    primary_research_PPA_platform: ASAP7
+    process_nm: 7
+    purpose: predictive_research_PPA_not_manufacturable_signoff
+    RTL_language: SystemVerilog_2012
+    nominal_clock_target_mhz: 200
+    manufacturable_full_model_gate: accessible_22nm_or_better_foundry_PDK_plus_characterized_high_density_actor_local_SRAM_macros
+    sky130ram_role: open_small_actor_tile_and_SRAM_macro_validation_only
+    external_runtime_DRAM_dependency: false_by_architecture_goal_actor_state_is_local_on_chip
   execution:
-    physical_topology: 25_permanent_PLIF_actors_plus_one_final_current_readout
+    physical_topology: 25_permanent_PLIF_actors_in_static_DAG_plus_one_final_current_readout
     cross_layer_compute_sharing: forbidden
     layer_reconfiguration: forbidden
     partial_reconfiguration: forbidden
@@ -931,7 +937,7 @@ legacy_fpga_history:
         mechanism_logic, output_FIFO]
     model_level: continuous_5ms_bins_with_configurable_prediction_window_default_10_bins
     RTL_level: synchronous_clocked_elastic_pipeline
-    global_neural_timestep_barrier: one_end_to_end_bin_must_finish_all_25_PLIF_actors_before_retirement
+    global_neural_timestep_barrier: a_bin_retires_only_when_the_final_readout_receives_completion_after_all_required_DAG_branches_rendezvous
     FPGA_input_bins: continuous_pingpong_5ms_runtime_bins
     event_address:
     - global_bin_tag_24bit
@@ -939,19 +945,20 @@ legacy_fpga_history:
     - y
     - x
     procedure:
-    - Seal a 5 ms input event bin and switch acquisition to the alternate ping-pong buffer.
-    - Process the sealed bin through all 25 deployed PLIF actors in graph order.
+    - Stream rectified raw events to both fixed ingress branches during the active 5 ms bin; no dense whole-bin tensor is required.
+    - Inject one tagged completion token at the 5 ms boundary. The token follows the same static DAG as spikes, forks on fanout, and rendezvous-waits at residual/skip/concat joins.
     - Within each actor, accumulate all synaptic contributions for one touched destination before exactly one 
       PLIF commit for that bin.
     - Read sparse state including last_bin_tag; apply learned beta once per elapsed bin before current 
       integration.
-    - Write state with the current bin tag and emit sparse output spikes to the next actor.
-    - After actor 24 update signed class-current state; every prediction_window_bins emit argmax and clear
-      only class-current state.
+    - Write state with the current bin tag and emit sparse output spikes to every statically connected downstream route.
+    - After `final_fuse.standard` and all required branches have completed, update signed class-current state; every prediction_window_bins emit argmax and clear only class-current state.
     quarter_skip_merge: concatenate_project3_and_encoder2_channels_then_standard_1x1_fusion_before_PLIF
     half_skip_merge: event_multiplicity_sum_without_OR_dedup
     concat: channel_address_remap_without_arithmetic
     nearest_upsample: event_address_fanout
+    completion_join: wait_for_all_required_upstream_tokens_with_identical_24bit_bin_tag
+    residual_OR: deduplicate_equal_binary_spike_addresses_before_downstream_synaptic_use
     frequency_encoding: repeated_events_cause_repeated_weight_additions
   memory:
     weights:
@@ -1054,6 +1061,7 @@ export_contract:
   artifacts:
   - model_spec.yaml
   - layer_graph.json
+  - explicit_static_DAG_connectivity_inside_layer_graph_json
   - quantized_weights.npz
   - weights/*.mem
   - parameters/*.json
@@ -1064,7 +1072,10 @@ export_contract:
   - golden_layer_spikes.npz
   - golden_semantic_outputs.npz
   model_spec_must_include:
-  - layer_order
+  - layer_order_as_topological_export_order_only
+  - explicit_graph_nodes
+  - explicit_graph_edges
+  - explicit_join_semantics
   - tensor_shapes
   - convolution_parameters
   - normalization_folding
@@ -1098,7 +1109,7 @@ export_contract:
   - stateless_signed_class_current_readout_and_first_index_tie_argmax_RTL
   implemented_iteration_3:
   - streaming_5ms_bin_runtime_reference
-  - bin_major_25_actor_end_to_end_schedule
+  - fixed_5ms_end_to_end_semantics_superseded_by_autonomous_static_DAG_completion_tokens
   - 24bit_last_bin_tag_sparse_state_record
   - lazy_learned_beta_delta_bin_integer_PLIF_reference
   - iterative_lazy_leak_PLIF_RTL_lane
@@ -1124,14 +1135,29 @@ export_contract:
   - native_SystemVerilog_compilation_with_Icarus_Verilog
   - all_8_Icarus_cocotb_RTL_groups_passing
   - ASAP7_OpenROAD_flow_configuration_for_representative_actor_PPA
-  remaining_after_native_iteration_1:
-  - instantiate_and_wire_the_exported_25_actor_graph
-  - expand_integrated_tap_actor_to_full_input_output_channel_fanout
+  implemented_native_SystemVerilog_iteration_2:
+  - explicit_non_linear_25_actor_DAG_contract_in_src_eventspikeseg_asic_topology_py
+  - exporter_layer_graph_json_contains_nodes_edges_join_semantics_and_topological_order_warning
+  - lossless_two_way_event_and_completion_token_fork_RTL
+  - same_bin_completion_rendezvous_join_RTL_for_concat_and_multiplicity_preserving_merges
+  - correctness_reference_binary_residual_OR_dedup_RTL_with_capacity_overflow_flag
+  implemented_native_SystemVerilog_iteration_3:
+  - executable_lossless_fork_same_bin_join_and_binary_union_cocotb_coverage
+  - mismatched_completion_tags_flag_error_and_fail_closed_at_joins
+  - fixed_compile_time_channel_ID_offset_for_concat_routes
+  - nearest_neighbor_2x_event_address_fanout_with_single_completion_forwarding
+  - channel_aware_standard_grouped_and_depthwise_convolution_scatter
+  - PyTorch_Conv2d_out_in_per_group_ky_kx_flattened_weight_order
+  - zero_weight_stride_padding_dilation_bounds_and_channel_group_filtering
+  - all_16_Icarus_cocotb_RTL_groups_passing
+  remaining_after_native_iteration_3:
+  - instantiate_and_wire_the_exported_25_actor_DAG_top_level
+  - connect_channelized_scatter_to_per_output_channel_actor_state_and_exported_parameter_ROMs
   - replace_behavioral_state_arrays_with_actor_local_SRAM_macro_wrappers
   - exact_peer_membrane_inhibition_and_triangular_adaptation_inside_actor_lane
   - sparse_per_pixel_class_current_bank_and_prediction_flush_enumerator
   - full_sequence_activity_FIFO_latency_and_energy_measurement
-  - full_graph_equivalence_and_open_PPA_tile_sweep
+  - full_DAG_equivalence_and_open_PPA_tile_sweep
   - select_accessible_manufacturable_22nm_or_better_PDK_and_SRAM_compiler
 validation_and_testing:
   required_fast_tests:

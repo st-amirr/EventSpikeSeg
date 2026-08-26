@@ -3,7 +3,7 @@
 ## Working now
 
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
-- `model.py` exposes the sole FPGA target `EventSpikeSeg140k` and optional XL software comparison
+- `model.py` exposes the sole ASIC target `EventSpikeSeg140k` and optional XL software comparison
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -280,3 +280,37 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - full 25-actor channel fanout, SRAM macro wrappers, mechanism integration, graph equivalence, and routed PPA remain the next implementation stage.
 - preserved the complete retired FPGA feasibility/scheduling history inside `project_spec.yaml` under `legacy_fpga_history`, with detailed chronology in the decision/progress logs and sources recoverable from Git history;
 - clarified ASIC ingress as timestamp-ordered raw-event synaptic accumulation with no dense bin preload, while retaining one touched-PLIF commit at each trained 5 ms completion boundary.
+
+## 2026-08-25 — Explicit non-linear ASIC DAG contract
+
+- re-fetched the current v8 `EventSpikeSeg140k` forward graph before editing;
+- corrected the ASIC interpretation: the 25 PLIF populations are permanent actors in a
+  directed acyclic graph, not a sequential `actor0 -> ... -> actor24` pipeline;
+- added `src/eventspikeseg/asic/topology.py` with the exact actor nodes, directed edges,
+  input/detail-semantic fork, residual bypass joins, `x1`/`x2` skip fanout, 2x event
+  upsample routes, decoder/final channel remaps, and multiplicity-preserving `project2+x1`;
+- changed export schema to 2.1.0 and made `layer_order` explicitly a deterministic
+  topological/export order only; `layer_graph.json` now carries nodes, edges, join semantics,
+  and graph kind;
+- added SystemVerilog `event_fork2`, `event_join2`, and correctness-reference
+  `binary_event_union2` primitives so completion tokens can fork and same-bin branches can
+  rendezvous without pretending the graph is linear;
+- residual joins are explicitly binary-OR/deduplicating, while decoder `project2+x1` keeps
+  coincident events as multiplicity two;
+- full 25-actor DAG instantiation, model-scale channel fanout/remap, scalable residual dedup,
+  SRAM macro replacement, full-DAG equivalence, and activity-based PPA remain open.
+
+## 2026-08-26 — Channel-aware sparse routing and convolution scatter
+
+- added executable cocotb coverage for the lossless fork, same-bin join, and residual
+  binary-OR/dedup blocks, including fail-closed mismatched completion tags;
+- added fixed channel-ID offset routing for concatenation and nearest-neighbor 2x event
+  expansion that forwards each completion token exactly once;
+- added channel-aware standard, grouped, and depthwise convolution scatter with static
+  weights flattened in PyTorch `[out][in/groups][ky][kx]` order;
+- retained stride, padding, dilation, bounds, channel-group, and zero-weight filtering without
+  a dense sliding scan;
+- all 16 native Icarus/cocotb RTL groups pass, including separate standard, grouped, and
+  depthwise channel-routing cases;
+- the next integration boundary is channelized actor-local state/parameter access followed by
+  physical instantiation and wiring of the exported 25-actor DAG.
