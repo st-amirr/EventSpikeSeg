@@ -79,6 +79,8 @@ module channelized_convolution_scatter #(
     scatter_x = '0;
     scatter_y = '0;
     scatter_weight = '0;
+    destination_x = 0;
+    destination_y = 0;
     local_input_channel = $unsigned(spike_channel_i) % INPUTS_PER_GROUP;
     input_group = $unsigned(spike_channel_i) / INPUTS_PER_GROUP;
 

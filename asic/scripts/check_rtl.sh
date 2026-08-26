@@ -22,11 +22,32 @@ tops=(
   event_channel_offset
   event_upsample2x
   channelized_convolution_scatter
+  channelized_convolution_plif_actor
+  streaming_channelized_plif_actor
+  temporal_class_readout
+  plif_leak_charge
+  retinotopic_mechanism_update
+  retinotopic_asynchronous_plif_actor
+  actor_local_state_sram
 )
 
 for top in "${tops[@]}"; do
-  iverilog -g2012 -s "${top}" -o "${BUILD_DIR}/${top}.vvp" \
-    "${PROJECT_DIR}"/asic/rtl/*.sv
+  if [[ "${top}" == "temporal_class_readout" ]]; then
+    iverilog -g2012 -s "${top}" \
+      -Ptemporal_class_readout.OUTPUT_WIDTH=2 \
+      -Ptemporal_class_readout.OUTPUT_HEIGHT=2 \
+      -Ptemporal_class_readout.INPUT_CHANNELS=2 \
+      -Ptemporal_class_readout.CLASS_COUNT=3 \
+      -o "${BUILD_DIR}/${top}.vvp" "${PROJECT_DIR}"/asic/rtl/*.sv
+  elif [[ "${top}" == "retinotopic_asynchronous_plif_actor" ]]; then
+    iverilog -g2012 -s "${top}" \
+      -Pretinotopic_asynchronous_plif_actor.CHANNEL_COUNT=2 \
+      -Pretinotopic_asynchronous_plif_actor.SPATIAL_DEST_COUNT=4 \
+      -o "${BUILD_DIR}/${top}.vvp" "${PROJECT_DIR}"/asic/rtl/*.sv
+  else
+    iverilog -g2012 -s "${top}" -o "${BUILD_DIR}/${top}.vvp" \
+      "${PROJECT_DIR}"/asic/rtl/*.sv
+  fi
 done
 
 printf 'Compiled %d SystemVerilog ASIC tops into %s\n' "${#tops[@]}" "${BUILD_DIR}"

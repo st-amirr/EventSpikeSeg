@@ -43,6 +43,23 @@ OR/dedup join. A complete top level still has to instantiate these routes around
 `channelized_convolution_scatter.sv` expands one input spike across legal standard, grouped,
 or depthwise output-channel/tap projections using exported PyTorch Conv2d weight order.
 These blocks are independently executable but are not yet wired into a model-level top.
+`channelized_convolution_plif_actor.sv` now joins that scatter to canonical local
+`(output_channel,y,x)` membrane/current/tag state and selects compile-time per-channel beta
+and threshold tables. The exporter emits matching 16-bit beta and threshold ROM images for
+each actor. Model-scale generated instantiation and wiring remain open.
+
+`scripts/generate_asic_top.py` now consumes an exported `model_spec.yaml` and emits the exact
+25-actor structural top with fixed ROM constants and all routing primitives. The generated
+miniature-state regression exercises the complete completion-token DAG. Mechanism-enabled
+actors use grouped retinotopic commits; the final readout accumulates signed class currents
+and enumerates a dense prediction after the configured bin window. `actor_local_state_sram`
+defines the compiler-macro interface, but the current actor arrays remain behavioral until a
+real SRAM compiler is selected and bound.
+
+The trained v4 export is retained under `artifacts/asic_export_v4`; its generated weighted top
+contains all 25 actors and exactly 143,904 int8 synaptic ROM words. This is the executable
+logical reference, not a full-chip PPA netlist: its large behavioral arrays must not be mapped
+to standard cells or reported as a physical implementation.
 
 Before full-chip PPA, behavioral actor state arrays and prototype residual-dedup storage must
 be replaced by actor-local SRAM/banked sparse macro structures with the same logical ownership

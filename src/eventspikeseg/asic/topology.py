@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import Any
 
-
 EVENTSPIKESEG140K_ACTORS = (
     "detail_stem",
     "detail1.standard",

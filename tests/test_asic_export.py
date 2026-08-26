@@ -11,8 +11,8 @@ from eventspikeseg.asic import (
     DENSE_EXACT_STATE_BYTES,
     EVENTSPIKESEG140K_ACTORS,
     EVENTSPIKESEG140K_EDGES,
-    EVENTSPIKESEG140K_JOIN_NODES,
     EVENTSPIKESEG140K_INFERENCE_STAGES,
+    EVENTSPIKESEG140K_JOIN_NODES,
     ActorLocalStateStore,
     IntegerPLIF,
     NeuronState,
@@ -40,7 +40,10 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
     assert manifest["hardware_topology"]["state_ownership"] == "actor_local_direct_indexed_SRAM"
     assert manifest["hardware_topology"]["graph_kind"] == "static_directed_acyclic_actor_graph"
     assert manifest["hardware_topology"]["linear_pipeline"] is False
-    assert manifest["layer_order_semantics"] == "deterministic_topological_export_order_not_runtime_chain"
+    assert (
+        manifest["layer_order_semantics"]
+        == "deterministic_topological_export_order_not_runtime_chain"
+    )
     assert manifest["graph"]["linear_pipeline"] is False
     assert manifest["timing_contract"]["schedule"] == "autonomous_static_actor_graph"
     assert manifest["timing_contract"]["global_actor_scheduler"] is False
@@ -59,6 +62,13 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
     assert model_spec["layers"][2]["output_hw"] == [220, 320]
     rom_lines = (tmp_path / model_spec["layers"][2]["weight_rom"]).read_text().splitlines()
     assert len(rom_lines) == model_spec["layers"][2]["weight_count"]
+    beta_lines = (tmp_path / model_spec["layers"][2]["beta_rom"]).read_text().splitlines()
+    threshold_lines = (
+        tmp_path / model_spec["layers"][2]["threshold_rom"]
+    ).read_text().splitlines()
+    assert len(beta_lines) == model_spec["layers"][2]["out_channels"]
+    assert len(threshold_lines) == model_spec["layers"][2]["out_channels"]
+    assert all(len(word) == 4 for word in beta_lines + threshold_lines)
 
 
 def test_export_rejects_xl() -> None:

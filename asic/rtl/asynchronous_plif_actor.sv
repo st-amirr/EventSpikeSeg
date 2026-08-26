@@ -8,7 +8,12 @@ module asynchronous_plif_actor #(
   parameter integer BETA_WIDTH      = 16,
   parameter integer BETA_FRAC_BITS  = 15,
   parameter integer EPOCH_TAG_WIDTH = 24,
-  parameter integer COUNT_WIDTH     = $clog2(DEST_COUNT + 1)
+  parameter integer COUNT_WIDTH     = $clog2(DEST_COUNT + 1),
+  parameter integer CHANNEL_COUNT   = 1,
+  parameter integer SPATIAL_DEST_COUNT = DEST_COUNT,
+  parameter integer USE_CHANNEL_PARAMETERS = 0,
+  parameter logic [CHANNEL_COUNT*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
+  parameter logic signed [CHANNEL_COUNT*MEM_WIDTH-1:0] CHANNEL_THRESHOLDS = '0
 ) (
   input  logic clk,
   input  logic reset,
@@ -58,7 +63,10 @@ module asynchronous_plif_actor #(
   logic signed [MEM_WIDTH-1:0] plif_candidate;
   logic signed [MEM_WIDTH-1:0] plif_membrane;
   logic plif_spike;
+  logic [BETA_WIDTH-1:0] selected_beta;
+  logic signed [MEM_WIDTH-1:0] selected_threshold;
   integer destination_index;
+  integer parameter_channel;
   integer signed sum_value;
   integer i;
 
@@ -71,13 +79,32 @@ module asynchronous_plif_actor #(
   assign plif_in_valid = (state_reg == PLIF_ISSUE);
   assign plif_out_ready = (state_reg == PLIF_WAIT);
 
+  initial begin
+    if (USE_CHANNEL_PARAMETERS && DEST_COUNT != CHANNEL_COUNT * SPATIAL_DEST_COUNT)
+      $error("channelized destination geometry does not match DEST_COUNT");
+  end
+
+  always_comb begin
+    parameter_channel = $unsigned(destination_reg) / SPATIAL_DEST_COUNT;
+    if (USE_CHANNEL_PARAMETERS) begin
+      selected_beta = CHANNEL_BETAS[parameter_channel*BETA_WIDTH +: BETA_WIDTH];
+      selected_threshold = CHANNEL_THRESHOLDS[
+        parameter_channel*MEM_WIDTH +: MEM_WIDTH
+      ];
+    end else begin
+      selected_beta = beta_i;
+      selected_threshold = threshold_i;
+    end
+  end
+
   plif_update #(
     .MEM_WIDTH(MEM_WIDTH), .CURRENT_WIDTH(CURRENT_WIDTH), .BETA_WIDTH(BETA_WIDTH),
     .BETA_FRAC_BITS(BETA_FRAC_BITS), .DELTA_WIDTH(EPOCH_TAG_WIDTH)
   ) updater (
     .clk, .reset, .in_valid(plif_in_valid), .in_ready(plif_in_ready),
-    .membrane_i(plif_membrane_in), .current_i(plif_current_in), .beta_i,
-    .threshold_i, .elapsed_bins_i(elapsed_reg), .out_valid(plif_out_valid),
+    .membrane_i(plif_membrane_in), .current_i(plif_current_in),
+    .beta_i(selected_beta), .threshold_i(selected_threshold),
+    .elapsed_bins_i(elapsed_reg), .out_valid(plif_out_valid),
     .out_ready(plif_out_ready), .candidate_o(plif_candidate),
     .membrane_o(plif_membrane), .spike_o(plif_spike)
   );

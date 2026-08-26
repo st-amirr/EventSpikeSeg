@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +99,15 @@ _BASE_SKELETON_STAGES = {
 
 def _json_write(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_word_rom(path: Path, values: Iterable[object], *, bits: int) -> None:
+    mask = (1 << bits) - 1
+    width = (bits + 3) // 4
+    path.write_text(
+        "".join(f"{int(value) & mask:0{width}x}\n" for value in values),
+        encoding="ascii",
+    )
 
 
 def _folded_weights(stage: SpikingStage) -> Tensor:
@@ -218,7 +228,16 @@ def export_model(
         )
         arrays[name] = weight_q
         parameters = _stage_parameters(stage)
-        _json_write(parameters_dir / f"{layer_id:02d}_{safe_name}.json", parameters)
+        parameter_name = f"{layer_id:02d}_{safe_name}.json"
+        beta_rom_name = f"{layer_id:02d}_{safe_name}_beta.mem"
+        threshold_rom_name = f"{layer_id:02d}_{safe_name}_threshold.mem"
+        _json_write(parameters_dir / parameter_name, parameters)
+        _write_word_rom(
+            parameters_dir / beta_rom_name, parameters["beta_q"], bits=16
+        )
+        _write_word_rom(
+            parameters_dir / threshold_rom_name, parameters["threshold_q"], bits=16
+        )
         tier = _SPATIAL_TIERS[name]
         input_tier = _INPUT_SPATIAL_TIER.get(name, tier)
         conv = stage.conv
@@ -250,7 +269,9 @@ def export_model(
                 "weight_count": conv.weight.numel(),
                 "parameter_count": layer_parameter_count,
                 "weight_rom": f"weights/{rom_name}",
-                "parameter_file": f"parameters/{layer_id:02d}_{safe_name}.json",
+                "parameter_file": f"parameters/{parameter_name}",
+                "beta_rom": f"parameters/{beta_rom_name}",
+                "threshold_rom": f"parameters/{threshold_rom_name}",
                 "normalization": "channel_affine_folded_into_weight",
             }
         )

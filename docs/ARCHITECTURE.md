@@ -708,15 +708,20 @@ before claiming no-DDR real-time fit.
 - `asic/rtl/event_channel_offset.sv`: fixed compile-time channel-ID remap for concatenation routes;
 - `asic/rtl/event_upsample2x.sv`: nearest-neighbor 2x event-address expansion with one completion-token forwarding;
 - `asic/rtl/channelized_convolution_scatter.sv`: standard/grouped/depthwise input-to-output-channel projection using PyTorch Conv2d weight order.
+- `asic/rtl/channelized_convolution_plif_actor.sv`: channel-aware scatter integrated with canonical `(channel,y,x)` local state and per-channel beta/threshold tables.
+- `asic/rtl/streaming_channelized_plif_actor.sv`: unified packed spike/completion-token interface used by generated graph wiring;
+- `asic/rtl/plif_leak_charge.sv`: lazy learned-beta leak/current phase for grouped mechanism commits;
+- `asic/rtl/retinotopic_mechanism_update.sv`: summed triangular-threshold and shared-RMS peer-inhibition commit across all channels at one location;
+- `asic/rtl/retinotopic_asynchronous_plif_actor.sv`: touched-location grouped state engine for mechanism-enabled actors;
+- `asic/rtl/temporal_class_readout.sv`: signed non-spiking 16-to-11 temporal current accumulation and dense prediction enumeration;
+- `asic/rtl/actor_local_state_sram.sv`: behavioral/compiled-macro 1R1W SRAM binding boundary.
 
-These are component blocks, not yet a complete 25-actor DAG top level. The exporter now
-defines the exact non-linear graph contract, and the RTL contains fork/join/residual-union
-control primitives, but remaining integration must instantiate every actor, implement the
-residual joins at model scale, connect the channelized scatter to channelized actor state and
-exported actor ROMs,
-replace behavioral arrays with actor-local SRAM macros, insert exact inhibition/adaptation
-logic, provide the class-current store/flush path, and measure full-sequence activity, latency,
-and energy.
+`scripts/generate_asic_top.py` now creates the complete structural 25-actor DAG directly from
+the exported graph and ROM images. A reduced-state generated instance compiles and propagates
+completion through every branch and join into the prediction boundary. Model-scale physical
+implementation still requires replacing behavioral actor/readout arrays with characterized
+SRAM macros, real-checkpoint full-DAG equivalence, and full-sequence activity, latency, and
+energy measurement.
 
 The 16->11 readout is not a spiking layer. Final hidden spikes trigger signed readout
 weight additions at the same `(y,x)`. Class currents accumulate across the configured

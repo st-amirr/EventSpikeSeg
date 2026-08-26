@@ -822,7 +822,7 @@ quantization:
     - layerwise_equivalence_replay
 
 asic_implementation:
-  status: native_SystemVerilog_convolution_PLIF_actor_reference_implemented
+  status: trained_v4_checkpoint_exported_and_exact_25_actor_SystemVerilog_DAG_generated
   topology:
     permanent_actors: 25_PLIF_populations_plus_stateless_readout
     graph_kind: static_directed_acyclic_actor_graph
@@ -861,6 +861,13 @@ asic_implementation:
     - asic/rtl/event_channel_offset.sv
     - asic/rtl/event_upsample2x.sv
     - asic/rtl/channelized_convolution_scatter.sv
+    - asic/rtl/channelized_convolution_plif_actor.sv
+    - asic/rtl/streaming_channelized_plif_actor.sv
+    - asic/rtl/plif_leak_charge.sv
+    - asic/rtl/retinotopic_mechanism_update.sv
+    - asic/rtl/retinotopic_asynchronous_plif_actor.sv
+    - asic/rtl/temporal_class_readout.sv
+    - asic/rtl/actor_local_state_sram.sv
     current_memory_model: small_direct_indexed_behavioral_arrays_for_control_and_equivalence_testing
     required_memory_replacement: actor_local_characterized_SRAM_macros_before_full_chip_PPA
   EDA:
@@ -1150,15 +1157,46 @@ export_contract:
   - PyTorch_Conv2d_out_in_per_group_ky_kx_flattened_weight_order
   - zero_weight_stride_padding_dilation_bounds_and_channel_group_filtering
   - all_16_Icarus_cocotb_RTL_groups_passing
-  remaining_after_native_iteration_3:
-  - instantiate_and_wire_the_exported_25_actor_DAG_top_level
-  - connect_channelized_scatter_to_per_output_channel_actor_state_and_exported_parameter_ROMs
-  - replace_behavioral_state_arrays_with_actor_local_SRAM_macro_wrappers
-  - exact_peer_membrane_inhibition_and_triangular_adaptation_inside_actor_lane
-  - sparse_per_pixel_class_current_bank_and_prediction_flush_enumerator
+  implemented_native_SystemVerilog_iteration_4:
+  - channelized_scatter_connected_to_one_canonical_state_per_output_channel_y_x
+  - compile_time_per_output_channel_beta_and_threshold_parameter_tables
+  - actor_spike_output_decoded_back_to_channel_y_x_event_coordinates
+  - independent_same_coordinate_cross_channel_membrane_persistence_verified_across_epochs
+  - exporter_emits_16bit_beta_and_threshold_ROM_images_per_actor
+  - all_17_Icarus_cocotb_RTL_groups_passing
+  implemented_native_SystemVerilog_iteration_5:
+  - unified_packed_spike_and_completion_stream_wrapper_for_every_PLIF_actor
+  - manifest_driven_exact_25_actor_DAG_SystemVerilog_generator
+  - generated_lossless_forks_residual_OR_joins_multiplicity_joins_concat_offsets_and_upsamples
+  - generated_completion_tokens_follow_the_same_non_linear_DAG_as_spikes
+  - atomic_all_channel_retinotopic_commit_for_mechanism_enabled_actors
+  - summed_triangular_threshold_processes_and_shared_RMS_peer_inhibition
+  - non_spiking_signed_temporal_class_current_readout_with_dense_prediction_flush
+  - technology_independent_1R1W_actor_local_SRAM_macro_boundary
+  - generated_25_actor_miniature_DAG_compiles_and_propagates_two_bins_to_prediction
+  - all_22_Icarus_cocotb_RTL_groups_plus_generated_DAG_test_passing
+  implemented_native_SystemVerilog_iteration_6:
+  - trained_artifacts_checkpointsV4_dsec_EventSpikeSeg140k_seed17_best_checkpoint_exported
+  - exported_counts_150245_registered_149503_executed_143904_synaptic_weights
+  - exported_25_actor_30976000_logical_membrane_state_contract_revalidated
+  - real_export_contains_1_inhibition_actor_and_15_triangular_adaptation_actors
+  - real_143904_word_int8_weight_ROM_set_and_per_actor_beta_threshold_ROMs_emitted
+  - real_370KiB_weighted_eventspikeseg140k_dag_top_SystemVerilog_generated
+  - model_spec_SHA256_680f8c52e909397d3f1e2dbf5cfbc21272d3519ddbbb20abad5f0bca8426ee15
+  - generated_top_SHA256_0fc202f1dbd75dc53eb514657fa2dee8f0cff29d8d346c79f4405f654f0d2d3a
+  - complete_container_regression_79_tests_passing_and_Ruff_clean
+  remaining_after_native_iteration_6:
+  - bind_actor_and_readout_behavioral_state_arrays_to_characterized_SRAM_macro_wrappers
+  - bit_exact_full_DAG_integer_reference_equivalence_on_exported_golden_streams
   - full_sequence_activity_FIFO_latency_and_energy_measurement
   - full_DAG_equivalence_and_open_PPA_tile_sweep
   - select_accessible_manufacturable_22nm_or_better_PDK_and_SRAM_compiler
+  generated_real_checkpoint_artifacts:
+    directory: artifacts/asic_export_v4
+    model_spec: artifacts/asic_export_v4/model_spec.yaml
+    layer_graph: artifacts/asic_export_v4/layer_graph.json
+    generated_top: artifacts/asic_export_v4/eventspikeseg140k_dag_top.sv
+    source_checkpoint: artifacts/checkpointsV4/dsec/EventSpikeSeg140k_seed17_best.pt
 validation_and_testing:
   required_fast_tests:
   - configuration_schema

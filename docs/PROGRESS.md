@@ -314,3 +314,49 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   depthwise channel-routing cases;
 - the next integration boundary is channelized actor-local state/parameter access followed by
   physical instantiation and wiring of the exported 25-actor DAG.
+
+## 2026-08-26 — Channelized convolution/PLIF actor integration
+
+- extended the autonomous PLIF state engine with compile-time per-output-channel beta and
+  threshold tables while retaining its scalar compatibility interface;
+- integrated channel-aware convolution projections into one canonical actor-local state index
+  for every `(output_channel,y,x)` destination and decoded spikes back to event coordinates;
+- verified independent membrane persistence and different thresholds for two channels at the
+  same spatial coordinate across consecutive completion-tagged epochs;
+- extended export with one 16-bit beta ROM image and one signed 16-bit threshold ROM image per
+  PLIF actor, alongside the existing JSON parameters and int8 weight ROM;
+- all 17 native Icarus/cocotb RTL groups pass;
+- next is the generated structural top that instantiates the 25 permanent actors and their
+  exact fork/join/concat/upsample DAG routes.
+
+## 2026-08-26 — Generated full DAG, mechanisms, and temporal readout
+
+- added one unified packed event/completion stream wrapper around permanent PLIF actors;
+- added a manifest-driven SystemVerilog generator that instantiates all 25 actors and inserts
+  every exact fork, residual OR, multiplicity join, concat offset, and 2x upsample route;
+- verified a generated reduced-state 25-actor graph compiles and carries two ordered bins
+  through the complete non-linear topology to a prediction frame completion;
+- added atomic retinotopic all-channel commits for mechanism-enabled actors, including summed
+  triangular threshold processes and shared-RMS peer-membrane inhibition;
+- added the non-spiking signed temporal class-current bank, configurable ten-bin window, dense
+  pixel argmax enumeration, and prediction reset;
+- added a technology-independent 1R1W state-memory boundary with behavioral simulation and a
+  compiled-SRAM black-box branch;
+- 22 cocotb RTL groups plus the generated-DAG compile/simulation test pass locally;
+- real-checkpoint export/equivalence and physical SRAM binding remain gated separately from the
+  completed structural RTL reference.
+
+## 2026-08-26 — Trained v4 checkpoint ASIC export
+
+- exported `artifacts/checkpointsV4/dsec/EventSpikeSeg140k_seed17_best.pt` in the pinned
+  PyTorch/SpikingJelly container;
+- revalidated 150,245 registered parameters, 149,503 executed parameters, 143,904 int8
+  synaptic weights, 25 PLIF actors, and 30,976,000 logical membrane states;
+- emitted exactly 143,904 weight-ROM words plus beta/threshold ROMs and mechanism parameters
+  for every actor; the export enables peer inhibition in one actor and triangular adaptation
+  in fifteen actors;
+- generated the real weighted 370 KiB `artifacts/asic_export_v4/eventspikeseg140k_dag_top.sv`;
+- the complete pinned-container regression passes 79 tests and Ruff reports no issues;
+- full-chip implementation is now bounded by characterized SRAM binding, scalable residual
+  capacity proof, golden-stream bit-exact replay, and an accessible manufacturable PDK—not by
+  missing graph, weight, or actor RTL generation.

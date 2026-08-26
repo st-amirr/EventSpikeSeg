@@ -334,7 +334,9 @@ The native SystemVerilog ASIC implementation now contains a synthesizable channe
 standard/grouped/depthwise convolution scatter, autonomous completion-token PLIF actor,
 lossless two-way event/token fork, same-bin rendezvous join, fixed concat remap, 2x event
 upsample, and a correctness-reference residual binary-OR/dedup merge. Trained weights remain
-replaceable ROM contents. The next milestones are to connect channelized projections to
-per-output-channel actor state/parameters, instantiate the exported **25-actor DAG**, replace
+replaceable ROM contents. Channelized projections now feed independent per-output-channel
+spatial PLIF state and per-channel beta/threshold tables. The trained v4 checkpoint has been
+exported and the manifest-driven generator emits the complete weighted **25-actor DAG**,
+including retinotopic mechanisms and the temporal readout. Remaining physical work is to replace
 behavioral state/merge arrays with characterized SRAM/banked sparse structures, integrate
-inhibition/adaptation into actor commit lanes, and run full-DAG equivalence/PPA.
+the real exported checkpoint in full-DAG equivalence, and run activity-based PPA.

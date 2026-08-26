@@ -1,0 +1,29 @@
+{
+  "adaptation_duration_q": null,
+  "adaptation_kind": "triangular_threshold",
+  "beta_q": [
+    31637,
+    31470,
+    31465,
+    31488,
+    31511,
+    31344,
+    31669,
+    31535
+  ],
+  "inhibition_enabled": false,
+  "inhibition_kind": "peer_membrane",
+  "inhibition_strength_q": null,
+  "threshold_adaptation_enabled": false,
+  "threshold_adaptation_strength_q": null,
+  "threshold_q": [
+    346,
+    347,
+    397,
+    357,
+    404,
+    417,
+    358,
+    369
+  ]
+}
