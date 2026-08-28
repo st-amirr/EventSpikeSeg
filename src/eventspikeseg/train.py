@@ -954,9 +954,14 @@ def evaluate_model(
     with torch.no_grad():
         for batch_index, batch in enumerate(loader):
             sequence, target, deltas_us = unpack_temporal_batch(batch)
-            sequence = sequence.to(device)
-            target = target.to(device)
-            deltas_us = deltas_us.to(device) if deltas_us is not None else None
+            non_blocking = device.type == "cuda"
+            sequence = sequence.to(device, non_blocking=non_blocking)
+            target = target.to(device, non_blocking=non_blocking)
+            deltas_us = (
+                deltas_us.to(device, non_blocking=non_blocking)
+                if deltas_us is not None
+                else None
+            )
             dataset = loader.dataset
             is_stream_start = getattr(dataset, "is_stream_start", None)
             if not stateful_stream or batch_index == 0 or (
@@ -1052,12 +1057,15 @@ def train_architecture(
     continuous_state: bool = True,
     dataset_name: str = "ddd17",
     dsec_class_count: int = 11,
+    data_workers: int = 0,
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
         raise ValueError("timestamp-stream training requires batch_size=1")
     if sequential_chunks < 1:
         raise ValueError("sequential_chunks must be >= 1")
+    if data_workers < 0:
+        raise ValueError("data_workers must be >= 0")
     if sequential_chunks > 1 and dataset_name != "dsec":
         raise ValueError(
             "sequential_chunks > 1 is supported only for DSEC raw-event inputs"
@@ -1082,20 +1090,28 @@ def train_architecture(
         dataset_name=dataset_name,
         dsec_class_count=dsec_class_count,
     )
-    collate = dsec_temporal_collate if dataset_name == "dsec" else temporal_collate
-    validation_loader = DataLoader(
-        validation_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0,
-        collate_fn=collate,
-    )
     if device == "auto":
         resolved_device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
     else:
         resolved_device = torch.device(device)
+    collate = dsec_temporal_collate if dataset_name == "dsec" else temporal_collate
+    loader_options: dict[str, object] = {
+        "num_workers": data_workers,
+        "pin_memory": resolved_device.type == "cuda",
+    }
+    if data_workers > 0:
+        # One queued native-resolution record per worker bounds host RAM while
+        # overlapping HDF5 decode, rectification, augmentation, and binning.
+        loader_options["prefetch_factor"] = 1
+    validation_loader = DataLoader(
+        validation_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate,
+        **loader_options,
+    )
     if amp and dataset_name == "dsec" and sequential_chunks > 1:
         raise ValueError(
             "AMP FP16 is not supported for memory-bounded DSEC temporal replay: "
@@ -1267,6 +1283,9 @@ def train_architecture(
                 "neuron_dynamics_trainable": current_neuron_dynamics_trainable,
                 "amp": amp_enabled,
                 "sequential_chunks": sequential_chunks,
+                "data_workers": data_workers,
+                "pin_memory": resolved_device.type == "cuda",
+                "prefetch_factor": 1 if data_workers > 0 else None,
                 "training_sampling_strategy": (
                     "sequential-circular-v1"
                     if isinstance(train_pool, DSECRawEventDataset) and train_samples > 0
@@ -1479,6 +1498,12 @@ def train_architecture(
             "per epoch-record | validation=off",
             flush=True,
         )
+        print(
+            f"DSEC input pipeline | cpu_workers={data_workers} | "
+            f"prefetch_per_worker={1 if data_workers > 0 else 0} | "
+            f"pinned_host_memory={'on' if resolved_device.type == 'cuda' else 'off'}",
+            flush=True,
+        )
     class_balancing = (
         "0.5 pixel mean + 0.5 target-present class macro"
         if is_final_run
@@ -1515,8 +1540,8 @@ def train_architecture(
             epoch_train_dataset,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=0,
             collate_fn=collate,
+            **loader_options,
         )
         training_phase, semantic_backbone_trainable = refinement_phase_for_epoch(
             epoch, epochs, refinement_schedule
@@ -1577,10 +1602,13 @@ def train_architecture(
         optimizer.zero_grad(set_to_none=True)
         for batch_index, batch in enumerate(progress, start=1):
             sequence, target, deltas_us = unpack_temporal_batch(batch)
-            sequence = sequence.to(resolved_device)
-            target = target.to(resolved_device)
+            non_blocking = resolved_device.type == "cuda"
+            sequence = sequence.to(resolved_device, non_blocking=non_blocking)
+            target = target.to(resolved_device, non_blocking=non_blocking)
             deltas_us = (
-                deltas_us.to(resolved_device) if deltas_us is not None else None
+                deltas_us.to(resolved_device, non_blocking=non_blocking)
+                if deltas_us is not None
+                else None
             )
             if not continuous_state or epoch_train_dataset.is_stream_start(batch_index - 1):
                 model.reset()
@@ -1890,6 +1918,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             continuous_state=args.continuous_state,
             dataset_name=args.dataset,
             dsec_class_count=args.dsec_classes,
+            data_workers=args.data_workers,
             load=None,
         )
         for name in presets
@@ -2036,6 +2065,15 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--device", default="auto")
     parser.add_argument(
+        "--data-workers",
+        type=int,
+        default=4,
+        help=(
+            "CPU worker processes for dataset reading, rectification, augmentation, "
+            "and temporal binning; each worker prefetches one record"
+        ),
+    )
+    parser.add_argument(
         "--checkpoint-every",
         type=int,
         default=5,
@@ -2167,6 +2205,7 @@ def main() -> None:
             continuous_state=args.continuous_state,
             dataset_name=args.dataset,
             dsec_class_count=args.dsec_classes,
+            data_workers=args.data_workers,
             load=args.load,
         )
     elif args.command == "benchmark":

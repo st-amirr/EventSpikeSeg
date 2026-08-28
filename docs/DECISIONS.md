@@ -554,6 +554,15 @@ complete run. Event dropout may vary deterministically by epoch and record witho
 moving surviving events. Fill translated mask borders with ignore index 255, preserve
 event timestamps, polarities, multiplicities, and order, and leave validation untouched.
 
+Move DSEC HDF5 reading, rectification, augmentation, mask loading, and temporal binning
+off the main training process into two CPU DataLoader workers. Prefetch only one complete
+record per worker into pinned host RAM and use non-blocking CUDA transfer. This overlaps
+CPU preparation with GPU training without increasing the model's active-record VRAM
+requirement or changing chronological delivery. Set the DSEC Docker shared-memory ceiling
+to 256 MiB because the 64 MiB default cannot hold two native-resolution records plus
+PyTorch multiprocessing queue overhead; this ceiling is consumed on demand and is not
+reserved VRAM or an immediate host-RAM allocation.
+
 
 ## 2026-08-23 — Replace static class weights with macro per-class loss in every suite
 

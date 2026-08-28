@@ -37,6 +37,9 @@ x-ddd17: &ddd17
 
 x-dsec: &dsec
   <<: *app
+  # PyTorch workers exchange native 440x640 records through /dev/shm. Docker's
+  # 64 MiB default cannot hold two prefetched ~24 MiB records plus queue overhead.
+  shm_size: "256mb"
   volumes:
     - type: bind
       source: .
@@ -116,6 +119,7 @@ services:
        "--device", "auto",
        "--height", "440", "--width", "640", #  "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2",
+       "--data-workers", "4",
        "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",

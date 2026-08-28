@@ -230,6 +230,7 @@ def test_dsec_memory_bounded_replay_trains_one_complete_record(tmp_path: Path) -
         continuous_state=True,
         dataset_name="dsec",
         dsec_class_count=6,
+        data_workers=4,
     )
     assert result.epochs == 1
     assert len(result.per_class_iou) == 6

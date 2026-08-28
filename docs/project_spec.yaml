@@ -624,6 +624,16 @@ training:
     temporal_rule: identical_spatial_transform_for_all_ten_5ms_updates_and_target_mask
     exposed_mask_pixels: ignore_index_255
     validation: disabled
+  dsec_input_pipeline:
+    preprocessing_device: CPU
+    worker_processes_default: 4
+    prefetch_records_per_worker: 1
+    prefetched_storage: pinned_host_RAM_when_CUDA_is_active
+    gpu_transfer: non_blocking
+    chronological_delivery: preserved
+    docker_shared_memory_limit_mib: 256
+    shared_memory_reason: two_native_records_plus_PyTorch_multiprocessing_queue_overhead_exceed_Docker_64MiB_default
+    note: preprocessing_prefetch_does_not_allocate_additional_VRAM_beyond_the_active_GPU_record
   optimizer:
     name: AdamW
     default_learning_rate: 0.001
