@@ -6,6 +6,9 @@ import torch
 from PIL import Image
 
 from eventspikeseg.data import (
+    DSEC_6_CLASS_COUNT,
+    DSEC_6_CLASS_NAMES,
+    DSEC_6_PROTOCOL_VERSION,
     DSEC_CLASS_COUNT,
     DSECRawEventDataset,
     DSECRecord,
@@ -82,6 +85,27 @@ def test_raw_dsec_events_are_rectified_and_scheduled_once(tmp_path: Path) -> Non
     assert sequence.shape == (10, 1, 2, 44, 64)
     assert targets.shape == (1, 44, 64)
     assert torch.equal(batch_deltas, deltas_us)
+    dataset.close()
+
+
+def test_dsec_six_class_profile_remaps_masks_and_survives_subset(tmp_path: Path) -> None:
+    _write_dsec_sequence(tmp_path, "zurich_city_00_a")
+    dataset = DSECRawEventDataset(
+        tmp_path,
+        split="train",
+        output_size=(44, 64),
+        internal_updates=10,
+        class_count=DSEC_6_CLASS_COUNT,
+    )
+    assert dataset.class_count == 6
+    assert dataset.class_names == DSEC_6_CLASS_NAMES
+    assert dataset.protocol_version == DSEC_6_PROTOCOL_VERSION
+    assert torch.unique(dataset.target_mask(0)).tolist() == [1]  # wall -> construction+sky
+    assert torch.unique(dataset.target_mask(1)).tolist() == [2]  # traffic-sign -> object
+    subset = dataset.subset([1])
+    assert subset.class_count == 6
+    assert torch.unique(subset.target_mask(0)).tolist() == [2]
+    subset.close()
     dataset.close()
 
 
@@ -162,9 +186,15 @@ def test_dsec_memory_bounded_replay_trains_one_complete_record(tmp_path: Path) -
         sequential_chunks=5,
         continuous_state=True,
         dataset_name="dsec",
+        dsec_class_count=6,
     )
     assert result.epochs == 1
+    assert len(result.per_class_iou) == 6
     assert Path(result.checkpoint).is_file()
+    checkpoint = torch.load(result.checkpoint, map_location="cpu", weights_only=False)
+    assert tuple(checkpoint["class_names"]) == DSEC_6_CLASS_NAMES
+    assert checkpoint["architecture_config"]["name"] == "EventSpikeSeg140k"
+    assert checkpoint["temporal_protocol_version"] == DSEC_6_PROTOCOL_VERSION
     preview_paths = sorted((tmp_path / "checkpoints" / "images").glob("*.png"))
     assert len(preview_paths) == 2
     with Image.open(preview_paths[0]) as preview:

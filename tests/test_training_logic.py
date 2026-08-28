@@ -63,6 +63,7 @@ def test_dsec_preview_colours_polarity_by_complete_window_count() -> None:
 
 def test_save_dsec_preview_is_event_target_prediction_panel(tmp_path: Path) -> None:
     dataset = SimpleNamespace(
+        class_count=11,
         records=[SimpleNamespace(sequence_id="zurich_city_02_a", frame_index=12)]
     )
     previews = {
@@ -351,12 +352,13 @@ def test_loss_profiles_remain_explicit() -> None:
     for suite in ("top-ten", "top-five", "top-three"):
         assert loss_profile_for_suite(suite).cross_entropy == 0.5
     assert loss_profile_for_suite("final") == LossProfile(
-        cross_entropy=1.0,
+        cross_entropy=0.5,
+        pixel_cross_entropy=0.5,
         focal=0.0,
-        dice=0.20,
+        dice=0.30,
         auxiliary_ce=0.10,
         auxiliary_focal=0.0,
-        boundary=0.10,
+        boundary=0.05,
     )
 
 
@@ -430,23 +432,26 @@ def test_final_objective_keeps_ce_dice_activity_and_auxiliary_supervision() -> N
         target,
         class_count=2,
         loss_profile=LossProfile(
-            cross_entropy=1.0,
+            cross_entropy=0.5,
+            pixel_cross_entropy=0.5,
             focal=100.0,
-            dice=0.20,
+            dice=0.30,
             auxiliary_ce=0.10,
             auxiliary_focal=100.0,
         ),
         is_final_run=True,
         training_phase="decoder_detail_refinement",
     )
-    auxiliary_ce = macro_class_cross_entropy(outputs["auxiliary_logits"], target, 2)
-    deep_auxiliary_ce = macro_class_cross_entropy(
-        outputs["deep_auxiliary_logits"], target, 2
+    pixel_ce = torch.nn.functional.cross_entropy(logits, target)
+    auxiliary_ce = torch.nn.functional.cross_entropy(outputs["auxiliary_logits"], target)
+    deep_auxiliary_ce = torch.nn.functional.cross_entropy(
+        outputs["deep_auxiliary_logits"], target
     )
     activity_regularizer = torch.tensor(0.0055)
     expected = (
-        macro_class_cross_entropy(logits, target, 2)
-        + 0.20 * dice_losses.mean()
+        0.5 * macro_class_cross_entropy(logits, target, 2)
+        + 0.5 * pixel_ce
+        + 0.30 * dice_losses.mean()
         + 0.10 * auxiliary_ce
         + 0.05 * deep_auxiliary_ce
         + activity_regularizer

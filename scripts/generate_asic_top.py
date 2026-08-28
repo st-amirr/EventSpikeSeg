@@ -10,7 +10,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-
 STREAM_FIELDS = ("valid", "ready", "payload", "completion", "bin_tag")
 
 
@@ -147,6 +146,8 @@ def generate_top(
     readout_name = str(graph["current_readout"])
     if readout_name not in layers:
         raise ValueError("model specification is missing the temporal current readout")
+    readout_class_count = int(layers[readout_name]["out_channels"])
+    readout_class_width = max(1, (readout_class_count - 1).bit_length())
 
     all_edges = [dict(edge) for edge in graph["edges"]]
     edges = [edge for edge in all_edges if str(edge["destination"]) != "prediction"]
@@ -177,7 +178,7 @@ def generate_top(
         "  input logic [TAG_WIDTH-1:0] input_bin_tag,",
         "  output logic prediction_valid, input logic prediction_ready,",
         "  output logic [9:0] prediction_x_o, output logic [8:0] prediction_y_o,",
-        "  output logic [3:0] prediction_class_o,",
+        f"  output logic [{readout_class_width - 1}:0] prediction_class_o,",
         "  output logic frame_done_valid, input logic frame_done_ready,",
         "  output logic [TAG_WIDTH-1:0] frame_bin_tag_o,",
         "  output logic fault_o",
@@ -195,7 +196,10 @@ def generate_top(
         _declare_stream(lines, f"e_{index}")
 
     fault_signals: list[str] = []
-    source_base = lambda name: "input" if name == "input" else f"n_{_identifier(name)}"
+
+    def source_base(name: str) -> str:
+        return "input" if name == "input" else f"n_{_identifier(name)}"
+
     for source, source_edges in outgoing.items():
         base = source_base(source)
         if len(source_edges) == 1:

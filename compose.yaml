@@ -103,7 +103,7 @@ services:
        "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch006.pt",
        "--checkpoint-dir", "artifacts/checkpoints"]
 
-  # Canonical EventSpikeSeg140k with an 11-class head and exact DSEC raw-event clocks.
+  # Canonical EventSpikeSeg140k with six broad classes and exact DSEC raw-event clocks.
   train-dsec:
     <<: *dsec
     gpus: all
@@ -112,6 +112,7 @@ services:
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
        "--input-mode", "raw-events",
+       "--dsec-classes", "6",
        "--device", "auto",
        "--height", "440", "--width", "640",
       #  "--height", "185", "--width", "320",
@@ -119,8 +120,8 @@ services:
        "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load","artifacts/checkpointsV4/dsec/EventSpikeSeg140k_seed17_epoch006.pt",
-       "--checkpoint-dir", "artifacts/checkpointsV4/dsec"]
+       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch011.pt",
+       "--checkpoint-dir", "artifacts/checkpointsV4/dsec_6class"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.
   train-dsec-xl:
@@ -131,6 +132,7 @@ services:
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSegXL", "--suite", "final",
        "--input-mode", "raw-events",
+       "--dsec-classes", "11",
        # Keep the replayed surrogate-gradient graph in FP32 (see train-dsec).
        "--device", "auto",
       #  "--height", "275", "--width", "400", ## Original size is 640 × 440

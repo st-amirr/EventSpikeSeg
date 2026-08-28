@@ -213,7 +213,16 @@ future_datasets:
     required_fields: [timestamp, x, y, polarity, semantic_label_alignment]
     role: final_algorithm_and_hardware_validation
     dsec_contract:
-      classes: 11
+      source_label_classes: 11
+      active_output_classes: 6
+      active_class_mapping:
+        0: {name: flat, source: [road, sidewalk]}
+        1: {name: construction+sky, source: [sky, building, fence, wall]}
+        2: {name: object, source: [pole, traffic-sign]}
+        3: {name: nature, source: [vegetation]}
+        4: {name: human, source: [person]}
+        5: {name: vehicle, source: [vehicle]}
+      legacy_11_class_profile: selectable_with_dsec_classes_11_not_active_ASIC_target
       label_frequency_hz: 20
       interval_us: 50000
       spatial_alignment: rectify_map_then_bottom_40_row_crop
@@ -485,7 +494,7 @@ architecture_family:
   detail_channels: 8
   attention: none
   output:
-    class_current_shape_dsec: [N, 11, 440, 640]
+    class_current_shape_dsec: [N, 6, 440, 640]
     accumulated_activity: continuous_weighted_current_mean_over_T
     decoded_semantic_map: argmax_over_class_current
     ignore_index: 255
@@ -611,13 +620,15 @@ training:
     default_weight_decay: 0.0001
   scheduler: cosine_annealing
   loss:
-    primary: equal_mean_cross_entropy_per_target_present_class_on_temporally_accumulated_class_current
+    primary: half_pixel_mean_cross_entropy_plus_half_target_present_class_macro_cross_entropy
     ignore_index: 255
-    class_balancing: macro_average_over_target_present_classes_without_static_class_weights_for_all_suites
+    class_balancing: blended_pixel_and_macro_cross_entropy_without_static_class_weights_for_final_suite
     focal_balancing: macro_average_over_target_present_classes_where_focal_is_enabled
-    final_dice_weight: 0.2
-    final_auxiliary_macro_ce_weight: 0.1
-    final_boundary_weight: 0.1
+    final_pixel_cross_entropy_weight: 0.5
+    final_macro_cross_entropy_weight: 0.5
+    final_dice_weight: 0.3
+    final_auxiliary_pixel_ce_weight: 0.1
+    final_boundary_weight: 0.05
     absent_class_behavior: no_positive_class_term_but_logits_remain_in_every_present_class_softmax_denominator
     optional_future_regularizers:
       spike_rate: 0.001
@@ -799,7 +810,7 @@ quantization:
     base_threshold: signed_int16_Q5_10
     adaptive_threshold: signed_int16_Q5_10
     spike: 1_bit
-    pixel_class: unsigned_4_bit_for_11_classes
+    pixel_class: unsigned_3_bit_for_6_classes
     coordinate_x: unsigned_width_dependent
     coordinate_y: unsigned_height_dependent
     timestamp_us: unsigned_int32
@@ -917,11 +928,11 @@ legacy_fpga_history:
       historical_model_name_retained: v10_fpga_hybrid_is_a_measured_search_identifier_not_the_backend
   model:
     public_name: EventSpikeSeg140k
-    dataset: DSEC_Semantic_11_class
-    registered_parameters: 150245
-    executed_training_parameters: 150245
-    executed_inference_parameters: 149503
-    executed_synaptic_weights: 143904
+    dataset: DSEC_Semantic_6_class_merged_from_11_source_labels
+    registered_parameters: 149835
+    executed_training_parameters: 149835
+    executed_inference_parameters: 149423
+    executed_synaptic_weights: 143824
     inference_PLIF_populations: 25
     final_current_readout: one_stateless_1x1_synaptic_accumulator
     omitted_from_RTL: [refine2_dead_block, auxiliary_head, boundary_head, surrogate_gradient]
@@ -1128,7 +1139,7 @@ export_contract:
   - empty_5ms_bin_preservation_and_no_overwrite_before_end_to_end_release
   - actor_local_sparse_lookup_to_lazy_PLIF_to_exact_writeback_transaction_lane
   - canonical_inactive_adaptation_reset_value_in_sparse_state_bank
-  - signed_11_class_temporal_current_update_with_saturation_flush_and_first_tie_argmax
+  - signed_6_class_temporal_current_update_with_saturation_flush_and_first_tie_argmax
   - streaming_controller_and_class_readout_added_to_executable_GHDL_cocotb_suite
   - current_RTL_unit_groups_12_passing
   implemented_native_SystemVerilog_iteration_1:
@@ -1175,7 +1186,7 @@ export_contract:
   - technology_independent_1R1W_actor_local_SRAM_macro_boundary
   - generated_25_actor_miniature_DAG_compiles_and_propagates_two_bins_to_prediction
   - all_22_Icarus_cocotb_RTL_groups_plus_generated_DAG_test_passing
-  implemented_native_SystemVerilog_iteration_6:
+  legacy_11_class_native_SystemVerilog_iteration_6:
   - trained_artifacts_checkpointsV4_dsec_EventSpikeSeg140k_seed17_best_checkpoint_exported
   - exported_counts_150245_registered_149503_executed_143904_synaptic_weights
   - exported_25_actor_30976000_logical_membrane_state_contract_revalidated

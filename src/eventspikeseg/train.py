@@ -23,6 +23,7 @@ from .data import (
     DEFAULT_DDD17_ROOT,
     DEFAULT_DSEC_ROOT,
     DEFAULT_INTERNAL_UPDATES,
+    DSEC_6_CLASS_COUNT,
     DSEC_EVENT_VALUE_ENCODING,
     DSEC_INPUT_MODE,
     IGNORE_INDEX,
@@ -214,6 +215,7 @@ class LossProfile:
     """Frozen objective weights for reproducible suites."""
 
     cross_entropy: float
+    pixel_cross_entropy: float = 0.0
     focal: float = 0.5
     dice: float = 0.75
     auxiliary_ce: float = 0.15
@@ -222,20 +224,21 @@ class LossProfile:
 
 
 HISTORICAL_LOSS_PROFILE = LossProfile(cross_entropy=0.5)
-# The final objective gives every target-present semantic class one equal CE term.
-# Dice, deep supervision, and boundary supervision remain complementary signals;
-# focal is intentionally absent from the final suite; static class weights are
-# absent from every suite because all semantic terms use macro class reduction.
+# Blend pixel-mean and target-present-class macro CE in the final objective. The
+# pixel term stabilizes dominant-region learning and suppresses false positives,
+# while the macro term retains useful pressure on rare classes. Dice, deep
+# supervision, boundary supervision, and activity remain complementary signals.
 FINAL_LOSS_PROFILE = LossProfile(
-    cross_entropy=1.0,
+    cross_entropy=0.5,
+    pixel_cross_entropy=0.5,
     focal=0.0,
-    dice=0.20,
+    dice=0.30,
     auxiliary_ce=0.10,
     auxiliary_focal=0.0,
-    boundary=0.10,
+    boundary=0.05,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-spike-preserving-fusion-macro-class-v9"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-spike-preserving-fusion-blended-ce-v10"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -368,6 +371,14 @@ def macro_class_cross_entropy(
     return class_means[present].mean()
 
 
+def pixel_cross_entropy(logits: Tensor, target: Tensor) -> Tensor:
+    """Mean CE over valid pixels, with a finite zero for an all-ignore target."""
+    valid = target != IGNORE_INDEX
+    if not valid.any():
+        return logits.sum() * 0.0
+    return F.cross_entropy(logits, target, ignore_index=IGNORE_INDEX)
+
+
 def focal_cross_entropy(
     logits: Tensor,
     target: Tensor,
@@ -496,7 +507,8 @@ def _training_objective(
 ) -> tuple[Tensor, Tensor, Tensor]:
     """Build one complete temporal record's objective and reporting spike rate."""
     logits = outputs["segmentation_logits"]
-    ce = macro_class_cross_entropy(logits, target, class_count)
+    macro_ce = macro_class_cross_entropy(logits, target, class_count)
+    pixel_ce = pixel_cross_entropy(logits, target)
     dice_losses = soft_dice_loss(logits, target, class_count)
     valid_target = target[target != IGNORE_INDEX]
     present_classes = (
@@ -511,14 +523,16 @@ def _training_objective(
     )
     if is_final_run:
         loss = (
-            loss_profile.cross_entropy * ce
+            loss_profile.cross_entropy * macro_ce
+            + loss_profile.pixel_cross_entropy * pixel_ce
             + loss_profile.dice * present_dice_loss
             + _activity_regularizer(outputs)
         )
     else:
         focal = focal_cross_entropy(logits, target, class_count)
         loss = (
-            loss_profile.cross_entropy * ce
+            loss_profile.cross_entropy * macro_ce
+            + loss_profile.pixel_cross_entropy * pixel_ce
             + loss_profile.focal * focal
             + loss_profile.dice * present_dice_loss
             + _activity_regularizer(outputs)
@@ -527,7 +541,11 @@ def _training_objective(
         auxiliary = F.interpolate(
             outputs["auxiliary_logits"], size=target.shape[-2:], mode="nearest"
         )
-        auxiliary_ce = macro_class_cross_entropy(auxiliary, target, class_count)
+        auxiliary_ce = (
+            pixel_cross_entropy(auxiliary, target)
+            if is_final_run
+            else macro_class_cross_entropy(auxiliary, target, class_count)
+        )
         loss = loss + loss_profile.auxiliary_ce * auxiliary_ce
         if not is_final_run:
             auxiliary_focal = focal_cross_entropy(auxiliary, target, class_count)
@@ -536,8 +554,10 @@ def _training_objective(
         deep_auxiliary = F.interpolate(
             outputs["deep_auxiliary_logits"], size=target.shape[-2:], mode="nearest"
         )
-        deep_auxiliary_ce = macro_class_cross_entropy(
-            deep_auxiliary, target, class_count
+        deep_auxiliary_ce = (
+            pixel_cross_entropy(deep_auxiliary, target)
+            if is_final_run
+            else macro_class_cross_entropy(deep_auxiliary, target, class_count)
         )
         if is_final_run:
             loss = loss + 0.5 * loss_profile.auxiliary_ce * deep_auxiliary_ce
@@ -681,6 +701,7 @@ def _prepare_datasets(
     internal_updates: int = DEFAULT_INTERNAL_UPDATES,
     stateful_stream: bool = True,
     dataset_name: str = "ddd17",
+    dsec_class_count: int = 11,
 ) -> tuple[TemporalDataset, TemporalDataset, dict[str, object], str]:
     """Build sequence-disjoint train/validation datasets and freeze their protocol."""
     if dataset_name == "dsec":
@@ -699,6 +720,7 @@ def _prepare_datasets(
             split="train",
             output_size=output_size,
             internal_updates=internal_updates,
+            class_count=dsec_class_count,
             records=training_records,
         )
         validation_dataset = DSECRawEventDataset(
@@ -706,6 +728,7 @@ def _prepare_datasets(
             split="train",
             output_size=output_size,
             internal_updates=internal_updates,
+            class_count=dsec_class_count,
             records=validation_records,
         )
         protocol = make_dsec_protocol(
@@ -715,6 +738,7 @@ def _prepare_datasets(
             validation_records=validation_records,
             internal_updates=internal_updates,
             stateful_stream=stateful_stream,
+            class_count=dsec_class_count,
         )
         return (
             train_pool,
@@ -811,6 +835,17 @@ _DSEC_VISUAL_PALETTE = np.array(
     ],
     dtype=np.uint8,
 )
+_DSEC_6_VISUAL_PALETTE = np.array(
+    [
+        [128, 64, 128],  # flat
+        [70, 70, 70],    # construction+sky
+        [220, 220, 0],   # object
+        [107, 142, 35],  # nature
+        [220, 20, 60],   # human
+        [0, 0, 142],     # vehicle
+    ],
+    dtype=np.uint8,
+)
 
 
 def fixed_validation_preview_indices(
@@ -838,12 +873,18 @@ def dsec_event_count_image(event_counts: Tensor) -> np.ndarray:
     return image
 
 
-def dsec_colour_mask(mask: Tensor) -> np.ndarray:
+def dsec_colour_mask(mask: Tensor, class_count: int = 11) -> np.ndarray:
     """Map DSEC class indices to a stable, high-contrast RGB palette."""
+    if class_count == DSEC_6_CLASS_COUNT:
+        palette = _DSEC_6_VISUAL_PALETTE
+    elif class_count == len(_DSEC_VISUAL_PALETTE):
+        palette = _DSEC_VISUAL_PALETTE
+    else:
+        raise ValueError("DSEC class_count must be 6 or 11")
     values = mask.detach().cpu().numpy()
     image = np.zeros((*values.shape, 3), dtype=np.uint8)
-    valid = (values >= 0) & (values < len(_DSEC_VISUAL_PALETTE))
-    image[valid] = _DSEC_VISUAL_PALETTE[values[valid]]
+    valid = (values >= 0) & (values < len(palette))
+    image[valid] = palette[values[valid]]
     return image
 
 
@@ -865,8 +906,8 @@ def save_dsec_validation_previews(
         panel = np.concatenate(
             (
                 dsec_event_count_image(event_counts),
-                dsec_colour_mask(target),
-                dsec_colour_mask(prediction),
+                dsec_colour_mask(target, dataset.class_count),
+                dsec_colour_mask(prediction, dataset.class_count),
             ),
             axis=1,
         )
@@ -1006,6 +1047,7 @@ def train_architecture(
     sequential_chunks: int = 1,
     continuous_state: bool = True,
     dataset_name: str = "ddd17",
+    dsec_class_count: int = 11,
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
@@ -1034,6 +1076,7 @@ def train_architecture(
         internal_updates=internal_updates,
         stateful_stream=continuous_state,
         dataset_name=dataset_name,
+        dsec_class_count=dsec_class_count,
     )
     collate = dsec_temporal_collate if dataset_name == "dsec" else temporal_collate
     validation_loader = DataLoader(
@@ -1193,12 +1236,16 @@ def train_architecture(
                 "training_phase": training_phase_name,
                 "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
                 "training_objective": (
-                    "full-window-present-class-macro-ce-plus-0.2-dice-plus-0.1-aux-ce-plus-0.1-boundary"
+                    "full-window-0.5-pixel-ce-plus-0.5-macro-ce-plus-0.3-dice-plus-0.1-aux-ce-plus-0.05-boundary"
                     if is_final_run
                     else "macro-present-class-historical-compound"
                 ),
                 "class_weights": None,
-                "class_balancing": "equal-mean-loss-over-target-present-classes",
+                "class_balancing": (
+                    "half-pixel-mean-half-target-present-class-macro"
+                    if is_final_run
+                    else "equal-mean-loss-over-target-present-classes"
+                ),
                 "mechanism_scale": current_mechanism_scale,
                 "competition_enabled": current_competition_enabled,
                 "hidden_inhibition_enabled": current_hidden_inhibition_enabled,
@@ -1380,7 +1427,8 @@ def train_architecture(
         epoch=1,
     )
     print(
-        f"Training {architecture} | dataset={dataset_name} | {resolved_device} | {precision} | "
+        f"Training {architecture} | dataset={dataset_name} classes={class_count} | "
+        f"{resolved_device} | {precision} | "
         f"epochs={epochs} batch={batch_size} accumulate={accumulate_steps} "
         f"effective_batch={batch_size * accumulate_steps} "
         f"mode={input_mode} internal_updates={internal_updates} "
@@ -1410,15 +1458,16 @@ def train_architecture(
             "one objective per complete 50 ms record",
             flush=True,
         )
-    print(
-        "Class balancing | equal mean loss over every target-present class; "
-        "static class weights=off",
-        flush=True,
+    class_balancing = (
+        "0.5 pixel mean + 0.5 target-present class macro"
+        if is_final_run
+        else "equal mean loss over every target-present class"
     )
+    print(f"Class balancing | {class_balancing}; static class weights=off", flush=True)
     if is_final_run:
         print(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
-            "objective=macro-class-CE+0.2-Dice+0.1-macro-aux-CE+0.1-boundary | "
+            "objective=0.5-pixel-CE+0.5-macro-CE+0.3-Dice+0.1-aux-CE+0.05-boundary | "
             "focal=off activity=on | "
             f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "
@@ -1817,6 +1866,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             sequential_chunks=args.sequential_chunks,
             continuous_state=args.continuous_state,
             dataset_name=args.dataset,
+            dsec_class_count=args.dsec_classes,
             load=None,
         )
         for name in presets
@@ -1899,6 +1949,16 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         choices=(*INPUT_MODES, DSEC_INPUT_MODE),
         default="timestamp-events",
         help="DDD17 timestamp statistics or rectified raw DSEC polarity events",
+    )
+    parser.add_argument(
+        "--dsec-classes",
+        type=int,
+        choices=(6, 11),
+        default=6,
+        help=(
+            "DSEC target taxonomy: six broad classes (default) or the original "
+            "eleven classes; ignored for DDD17"
+        ),
     )
     parser.add_argument(
         "--internal-updates",
@@ -2083,6 +2143,7 @@ def main() -> None:
             sequential_chunks=args.sequential_chunks,
             continuous_state=args.continuous_state,
             dataset_name=args.dataset,
+            dsec_class_count=args.dsec_classes,
             load=args.load,
         )
     elif args.command == "benchmark":

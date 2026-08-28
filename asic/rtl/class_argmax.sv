@@ -1,8 +1,8 @@
 `timescale 1ns/1ps
 module class_argmax #(
-  parameter integer CLASS_COUNT = 11,
+  parameter integer CLASS_COUNT = 6,
   parameter integer SCORE_WIDTH = 24,
-  parameter integer CLASS_WIDTH = 4
+  parameter integer CLASS_WIDTH = 3
 ) (
   input  logic signed [CLASS_COUNT*SCORE_WIDTH-1:0] scores_i,
   output logic [CLASS_WIDTH-1:0] class_o

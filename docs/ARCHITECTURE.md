@@ -2,9 +2,9 @@
 
 ## Active implementation model
 
-`EventSpikeSeg140k` is the only 11-class DSEC/ASIC implementation target. Revision v8
-uses the native **440x640** semantic plane and has **150,245 registered parameters**,
-**149,503 executed inference parameters**, **143,904 executed synaptic weights**, and
+`EventSpikeSeg140k` is the only six-class DSEC/ASIC implementation target. Revision v8
+uses the native **440x640** semantic plane and has **149,835 registered parameters**,
+**149,423 executed inference parameters**, **143,824 executed synaptic weights**, and
 **25 executed PLIF populations plus one stateless temporal class-current readout**.
 `EventSpikeSegXL` remains a software comparison and hardware export rejects it.
 
@@ -22,7 +22,7 @@ encoder-2 / decoder-2         10xNx64x110x160
 encoder-3 / context           10xNx128x55x80
 native semantic/detail merge  10xNx40x440x640
 final PLIF fusion             10xNx16x440x640
-class-current readout         Nx11x440x640
+class-current readout         Nx6x440x640
 ```
 
 The native detail block, semantic stem/first block, and 32->64 transition use standard
@@ -33,10 +33,10 @@ instead of being binary-OR deduplicated. Native semantic32 and detail8 spikes ar
 concatenated and fused by one standard 3x3 40->16 PLIF stage, so cross-channel and spatial
 evidence combines before thresholding.
 
-The final 16->11 1x1 synapse consumes binary spikes but does not threshold them into
+The final 16->6 1x1 synapse consumes binary spikes but does not threshold them into
 class spikes. It accumulates signed current over all ten updates and exposes continuous
 logits only after the complete record. This removes the old eleven-level (0..10)
-confidence bottleneck. The training-only 64->11 auxiliary head and 16->1 boundary head
+confidence bottleneck. The training-only 64->6 auxiliary head and 16->1 boundary head
 are omitted from deployment.
 
 At 440x640 the exact deployed persistent state is:
@@ -255,7 +255,7 @@ Actual synaptic additions still depend on spike activity and must be reported fr
 | project2 | 32x110x160 | 563,200 | |
 | final_fuse.standard | 16x440x640 | 4,505,600 | |
 
-The `16->11` class readout has **zero PLIF membrane state**. For each native pixel it sums
+The `16->6` class readout has **zero PLIF membrane state**. For each native pixel it sums
 signed 1x1 synaptic current caused by the final hidden spikes over `t0..t9`. The common
 positive `output_rate_scale / 10` factor does not change class argmax, so the ASIC may
 perform argmax directly on the unscaled signed accumulators while retaining a scaled
@@ -324,7 +324,7 @@ decoder:
 late native fusion:
   concat semantic32 + detail8 = 40 channels
   -> standard 3x3 40->16 PLIF
-  -> 1x1 16->11 signed temporal-current readout (no PLIF)
+  -> 1x1 16->6 signed temporal-current readout (no PLIF)
   -> accumulate over t0..t9 -> per-pixel argmax
 ```
 
@@ -476,7 +476,7 @@ For input bin `k`:
    Event/completion tokens then follow the fixed DAG. Fanout nodes multicast losslessly;
    residual/concat/skip joins wait for all required upstream completion tokens carrying the
    same bin tag before forwarding one downstream completion. The final completion emerges
-   only after `final_fuse.standard` and the stateless 16->11 class-current update have seen
+   only after `final_fuse.standard` and the stateless 16->6 class-current update have seen
    all branches for that bin.
 8. PLIF/adaptation state persists across epochs. Camera ingress may continue independently
    if its event FIFO provides sufficient lossless backpressure capacity.
@@ -713,7 +713,7 @@ before claiming no-DDR real-time fit.
 - `asic/rtl/plif_leak_charge.sv`: lazy learned-beta leak/current phase for grouped mechanism commits;
 - `asic/rtl/retinotopic_mechanism_update.sv`: summed triangular-threshold and shared-RMS peer-inhibition commit across all channels at one location;
 - `asic/rtl/retinotopic_asynchronous_plif_actor.sv`: touched-location grouped state engine for mechanism-enabled actors;
-- `asic/rtl/temporal_class_readout.sv`: signed non-spiking 16-to-11 temporal current accumulation and dense prediction enumeration;
+- `asic/rtl/temporal_class_readout.sv`: signed non-spiking 16-to-6 temporal current accumulation and dense prediction enumeration;
 - `asic/rtl/actor_local_state_sram.sv`: behavioral/compiled-macro 1R1W SRAM binding boundary.
 
 `scripts/generate_asic_top.py` now creates the complete structural 25-actor DAG directly from
@@ -723,7 +723,7 @@ implementation still requires replacing behavioral actor/readout arrays with cha
 SRAM macros, real-checkpoint full-DAG equivalence, and full-sequence activity, latency, and
 energy measurement.
 
-The 16->11 readout is not a spiking layer. Final hidden spikes trigger signed readout
+The 16->6 readout is not a spiking layer. Final hidden spikes trigger signed readout
 weight additions at the same `(y,x)`. Class currents accumulate across the configured
 prediction window (default ten 5 ms bins) and reset after each prediction; PLIF/adaptation
 state continues across predictions until a sequence/gap reset.
@@ -736,7 +736,7 @@ state continues across predictions until a sequence/gap reset.
   then fanned out again to native resolution. Coincident events are not deduplicated.
 - Late concatenation is only a channel-ID remap: semantic channels 0..31 plus detail 32..39.
 - There is no v8 selector, attention rendezvous, projected bridge, or class-spike counter.
-- The readout requires signed current accumulation and per-pixel 11-way argmax; common
+- The readout requires signed current accumulation and per-pixel 6-way argmax; common
   positive readout scaling may be skipped for class selection.
 - Persistent state is actor-local SRAM. Full-scale implementation requires characterized
   SRAM macros; behavioral arrays are used only for RTL control/equivalence checks.
@@ -745,7 +745,7 @@ state continues across predictions until a sequence/gap reset.
 
 ## Canonical naming
 
-- `EventSpikeSeg140k`: only 11-class DSEC/ASIC implementation target.
+- `EventSpikeSeg140k`: only six-class DSEC/ASIC implementation target.
 - `EventSpikeSegXL`: software-only capacity comparison; rejected by ASIC export.
 
 Historical top-ten/top-five/top-three architecture-search results retain their original

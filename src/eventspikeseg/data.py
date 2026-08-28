@@ -628,8 +628,14 @@ DSEC_CLASS_NAMES = (
     "traffic-sign",
 )
 DSEC_CLASS_COUNT = len(DSEC_CLASS_NAMES)
+DSEC_6_CLASS_NAMES = DDD17_CLASS_NAMES
+DSEC_6_CLASS_COUNT = len(DSEC_6_CLASS_NAMES)
+# DSEC 11-class index -> broad six-class semantic index:
+# flat, construction+sky, object, nature, human, vehicle.
+DSEC_11_TO_6 = (1, 1, 1, 4, 2, 0, 0, 3, 5, 1, 2)
 DSEC_INPUT_MODE = "raw-events"
 DSEC_PROTOCOL_VERSION = "dsec-fixed-time-counts-async-fpga-v4"
+DSEC_6_PROTOCOL_VERSION = "dsec-six-class-fixed-time-counts-async-v1"
 DSEC_EVENT_VALUE_ENCODING = "linear-event-multiplicity"
 DSEC_SENSOR_HEIGHT = 480
 DSEC_SENSOR_WIDTH = 640
@@ -841,12 +847,22 @@ def discover_dsec_records(
     return records
 
 
-def _canonical_dsec_mask(path: Path, output_size: tuple[int, int] | None) -> Tensor:
+def _canonical_dsec_mask(
+    path: Path,
+    output_size: tuple[int, int] | None,
+    class_count: int = DSEC_CLASS_COUNT,
+) -> Tensor:
     with Image.open(path) as image:
         mask = torch.as_tensor(np.array(image, copy=True)).long().squeeze()
     if mask.ndim != 2:
         raise ValueError(f"unsupported DSEC semantic mask shape: {tuple(mask.shape)}")
     mask[(mask < 0) | (mask >= DSEC_CLASS_COUNT)] = IGNORE_INDEX
+    if class_count == DSEC_6_CLASS_COUNT:
+        valid = mask != IGNORE_INDEX
+        mapping = torch.tensor(DSEC_11_TO_6, dtype=torch.long)
+        mask[valid] = mapping[mask[valid]]
+    elif class_count != DSEC_CLASS_COUNT:
+        raise ValueError("DSEC class_count must be 6 or 11")
     if output_size is not None:
         mask = F.interpolate(
             mask[None, None].float(), size=output_size, mode="nearest"
@@ -875,6 +891,7 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
         split: str,
         output_size: tuple[int, int] | None = None,
         internal_updates: int = DEFAULT_INTERNAL_UPDATES,
+        class_count: int = DSEC_CLASS_COUNT,
         records: Sequence[DSECRecord] | None = None,
     ) -> None:
         if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
@@ -883,6 +900,17 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
         self.split = split
         self.output_size = output_size
         self.internal_updates = internal_updates
+        if class_count not in (DSEC_6_CLASS_COUNT, DSEC_CLASS_COUNT):
+            raise ValueError("DSEC class_count must be 6 or 11")
+        self.class_count = class_count
+        self.class_names = (
+            DSEC_6_CLASS_NAMES if class_count == DSEC_6_CLASS_COUNT else DSEC_CLASS_NAMES
+        )
+        self.protocol_version = (
+            DSEC_6_PROTOCOL_VERSION
+            if class_count == DSEC_6_CLASS_COUNT
+            else DSEC_PROTOCOL_VERSION
+        )
         self.records = list(records) if records is not None else discover_dsec_records(
             self.root, split
         )
@@ -1001,12 +1029,14 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
         events, deltas_us = self._schedule_events(record)
         return (
             events,
-            _canonical_dsec_mask(record.label_path, self.output_size),
+            _canonical_dsec_mask(record.label_path, self.output_size, self.class_count),
             deltas_us,
         )
 
     def target_mask(self, index: int) -> Tensor:
-        return _canonical_dsec_mask(self.records[index].label_path, self.output_size)
+        return _canonical_dsec_mask(
+            self.records[index].label_path, self.output_size, self.class_count
+        )
 
     def is_stream_start(self, index: int) -> bool:
         if index == 0:
@@ -1024,6 +1054,7 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
             split=self.split,
             output_size=self.output_size,
             internal_updates=self.internal_updates,
+            class_count=self.class_count,
             records=[self.records[index] for index in indices],
         )
 
@@ -1066,13 +1097,20 @@ def make_dsec_protocol(
     validation_records: Sequence[DSECRecord],
     internal_updates: int,
     stateful_stream: bool,
+    class_count: int = DSEC_CLASS_COUNT,
 ) -> TemporalProtocol:
     root = resolve_dsec_root(root)
     if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
         raise ValueError("internal_updates must divide the 50,000 us DSEC interval")
     all_records = [*training_records, *validation_records]
+    if class_count not in (DSEC_6_CLASS_COUNT, DSEC_CLASS_COUNT):
+        raise ValueError("DSEC class_count must be 6 or 11")
     return TemporalProtocol(
-        version=DSEC_PROTOCOL_VERSION,
+        version=(
+            DSEC_6_PROTOCOL_VERSION
+            if class_count == DSEC_6_CLASS_COUNT
+            else DSEC_PROTOCOL_VERSION
+        ),
         input_mode=DSEC_INPUT_MODE,
         input_channels=2,
         integration_window_us=EVSEG_INTEGRATION_WINDOW_US,

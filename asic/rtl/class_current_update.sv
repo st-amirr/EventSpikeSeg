@@ -1,9 +1,9 @@
 `timescale 1ns/1ps
 module class_current_update #(
-  parameter integer CLASS_COUNT = 11,
+  parameter integer CLASS_COUNT = 6,
   parameter integer SCORE_WIDTH = 24,
   parameter integer CONTRIBUTION_WIDTH = 8,
-  parameter integer CLASS_WIDTH = 4
+  parameter integer CLASS_WIDTH = 3
 ) (
   input  logic clk,
   input  logic reset,

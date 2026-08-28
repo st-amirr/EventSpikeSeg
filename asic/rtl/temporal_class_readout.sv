@@ -12,7 +12,7 @@ module temporal_class_readout #(
   parameter integer CHANNEL_LSB = 19,
   parameter integer CHANNEL_WIDTH = 7,
   parameter integer INPUT_CHANNELS = 16,
-  parameter integer CLASS_COUNT = 11,
+  parameter integer CLASS_COUNT = 6,
   parameter integer CLASS_WIDTH = (CLASS_COUNT <= 1) ? 1 : $clog2(CLASS_COUNT),
   parameter integer OUTPUT_WIDTH = 640,
   parameter integer OUTPUT_HEIGHT = 440,

@@ -26,14 +26,15 @@ from eventspikeseg.model import EventSpikeSeg140k, EventSpikeSegXL
 
 
 def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
-    model = EventSpikeSeg140k(class_count=11, input_channels=2)
+    model = EventSpikeSeg140k(class_count=6, input_channels=2)
     manifest = export_model(model, tmp_path)
 
     assert len(EVENTSPIKESEG140K_INFERENCE_STAGES) == 25
     assert manifest["schema_version"] == "2.1.0"
-    assert manifest["registered_parameters"] == 150_245
-    assert manifest["executed_inference_parameters"] == 149_503
-    assert manifest["executed_convolution_weights"] == 143_904
+    assert manifest["class_count"] == 6
+    assert manifest["registered_parameters"] == 149_835
+    assert manifest["executed_inference_parameters"] == 149_423
+    assert manifest["executed_convolution_weights"] == 143_824
     assert manifest["logical_membrane_states"] == 30_976_000
     assert manifest["hardware_topology"]["cross_layer_compute_sharing"] is False
     assert manifest["hardware_topology"]["runtime_layer_reconfiguration"] is False
@@ -74,6 +75,11 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
 def test_export_rejects_xl() -> None:
     with pytest.raises(TypeError, match="frozen to EventSpikeSeg140k"):
         export_model(EventSpikeSegXL(class_count=11, input_channels=2), "unused")
+
+
+def test_export_rejects_legacy_eleven_class_140k() -> None:
+    with pytest.raises(ValueError, match="2 inputs and 6 classes"):
+        export_model(EventSpikeSeg140k(class_count=11, input_channels=2), "unused")
 
 
 def test_checkpoint_export_rejects_non_140k_before_loading_weights(tmp_path) -> None:
@@ -117,7 +123,7 @@ def test_triangular_adaptation_age_advances_by_elapsed_bins() -> None:
 
 def test_state_capacity_is_model_scale_not_parameter_scale() -> None:
     capacity = state_capacity_contract()
-    assert capacity["weight_bytes_int8"] == 143_904
+    assert capacity["weight_bytes_int8"] == 143_824
     assert capacity["logical_membranes"] == 30_976_000
     assert capacity["dense_exact_state_mib"] == pytest.approx(189.599609375)
     assert capacity["full_chip_PPA_gate"] == "characterized_actor_local_SRAM_macros_required"

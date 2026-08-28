@@ -2,6 +2,7 @@
 
 ## Working now
 
+- active DSEC target merged from eleven source labels into six broad semantic classes
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
 - `model.py` exposes the sole ASIC target `EventSpikeSeg140k` and optional XL software comparison
 - frozen completed ten-model structural benchmark in `top_ten_models.py`

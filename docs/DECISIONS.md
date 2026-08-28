@@ -1,5 +1,19 @@
 # Decisions
 
+## 2026-08-27 — Make six broad DSEC classes the active 140k training and ASIC target
+
+Replace the active eleven-output semantic head with six outputs while retaining the exact
+v8 spike-preserving backbone and native 440x640 input. Remap source labels as follows:
+`road|sidewalk -> flat`, `sky|building|fence|wall -> construction+sky`,
+`pole|traffic-sign -> object`, `vegetation -> nature`, `person -> human`, and
+`vehicle -> vehicle`. The active readout is therefore 16->6, with 149,835 registered
+parameters, 149,423 executed inference parameters, and 143,824 executed synaptic weights.
+The 25 PLIF populations and their 30,976,000 logical membrane states do not change.
+
+Give the six-class data contract its own protocol version and checkpoint directory so an
+eleven-class checkpoint cannot be partially resumed. Preserve `--dsec-classes 11` only
+for reproducibility; the active Docker training service and ASIC exporter require six.
+
 ## 2026-08-05 — Reset from MEVDT tracking to DDD17 segmentation
 
 Tracking, box decoding, alpha-beta tracking, global classification, and MEVDT metrics are inactive. The task is six-class semantic segmentation using the Ev-SegNet DDD17 representation.
@@ -517,6 +531,17 @@ so it cannot leak one sequence into another.
 This one-off forensic snapshot was removed on 2026-08-23. Best, periodic, last, and
 canonical checkpoints now contain ordinary trainable model/optimizer/protocol state only;
 they do not serialize data-dependent membrane, adaptation, or elapsed-time tensors.
+
+## 2026-08-28 — Stabilize class learning with blended pixel and macro CE
+
+Replace the final suite's pure per-record macro CE with 0.5 pixel-mean CE plus
+0.5 target-present-class macro CE. Retain rare-class pressure without allowing a
+very small person or traffic-sign region to determine the full record's CE gradient.
+Increase present-class Dice from 0.2 to 0.3, use pixel-mean CE for the training-only
+semantic auxiliary heads at weight 0.1, and reduce weighted edge-head BCE from 0.1
+to 0.05. Keep focal and static class weights disabled, retain activity regularisation,
+and continue evaluating exactly one objective after each complete 50 ms record.
+
 
 ## 2026-08-23 — Replace static class weights with macro per-class loss in every suite
 

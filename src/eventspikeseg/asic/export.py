@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from torch import Tensor, nn
 
-from ..data import DSEC_CLASS_NAMES
+from ..data import DSEC_6_CLASS_NAMES
 from ..model import EventSpikeSeg140k
 from ..model_components import ChannelAffine, ParametricLIF, SpikingStage
 from .contracts import (
@@ -173,8 +173,8 @@ def _spatial_shapes(height: int, width: int) -> dict[str, list[int]]:
 def _validate_model(model: nn.Module) -> EventSpikeSeg140k:
     if type(model) is not EventSpikeSeg140k:
         raise TypeError("ASIC export is frozen to EventSpikeSeg140k; XL is not accepted")
-    if model.class_count != 11 or model.source_input_channels != 2:
-        raise ValueError("ASIC target requires DSEC EventSpikeSeg140k with 2 inputs and 11 classes")
+    if model.class_count != 6 or model.source_input_channels != 2:
+        raise ValueError("ASIC target requires DSEC EventSpikeSeg140k with 2 inputs and 6 classes")
     named = dict(model.named_modules())
     missing = [name for name in EVENTSPIKESEG140K_INFERENCE_STAGES if name not in named]
     if missing:
@@ -316,14 +316,14 @@ def export_model(
     )
 
     registered_parameters = sum(parameter.numel() for parameter in model.parameters())
-    if len(layers) != 26 or convolution_weights != 143_904:
+    if len(layers) != 26 or convolution_weights != 143_824:
         raise ValueError(
             "140k inference graph contract changed: expected 25 PLIF stages plus readout "
-            "and 143904 synaptic weights"
+            "and 143824 synaptic weights"
         )
-    if registered_parameters != 150_245 or executed_parameters != 149_503:
+    if registered_parameters != 149_835 or executed_parameters != 149_423:
         raise ValueError(
-            "140k parameter contract changed: expected registered/executed 150245/149503, "
+            "140k parameter contract changed: expected registered/executed 149835/149423, "
             f"got {registered_parameters}/{executed_parameters}"
         )
     total_membrane_states = sum(
@@ -341,7 +341,7 @@ def export_model(
     )
 
     np.savez_compressed(destination / "quantized_weights.npz", **arrays)
-    class_mapping = {str(index): name for index, name in enumerate(DSEC_CLASS_NAMES)}
+    class_mapping = {str(index): name for index, name in enumerate(DSEC_6_CLASS_NAMES)}
     _json_write(destination / "class_mapping.json", class_mapping)
     graph_operations = [
         {"after": "stem", "operation": "learned_stride2_downsample", "target": "half"},
@@ -373,7 +373,7 @@ def export_model(
         "schema_version": "2.1.0",
         "model": "EventSpikeSeg140k",
         "dataset": "DSEC-Semantic",
-        "class_count": 11,
+        "class_count": 6,
         "input_channels": 2,
         "input_event": ["timestamp_us", "polarity", "y", "x"],
         "input_size": [height, width],
@@ -464,11 +464,11 @@ def export_checkpoint(
     checkpoint = torch.load(Path(checkpoint_path), map_location="cpu")
     if checkpoint.get("architecture") != "EventSpikeSeg140k":
         raise ValueError("checkpoint architecture must be EventSpikeSeg140k")
-    class_names = checkpoint.get("class_names", DSEC_CLASS_NAMES)
-    if tuple(class_names) != tuple(DSEC_CLASS_NAMES):
-        raise ValueError("checkpoint must contain the canonical 11-class DSEC mapping")
+    class_names = checkpoint.get("class_names", DSEC_6_CLASS_NAMES)
+    if tuple(class_names) != tuple(DSEC_6_CLASS_NAMES):
+        raise ValueError("checkpoint must contain the canonical six-class DSEC mapping")
     input_channels = int(checkpoint.get("input_channels", 2))
-    model = EventSpikeSeg140k(class_count=11, input_channels=input_channels)
+    model = EventSpikeSeg140k(class_count=6, input_channels=input_channels)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     metadata = {
         key: checkpoint.get(key)

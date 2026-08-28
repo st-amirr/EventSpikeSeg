@@ -86,10 +86,11 @@ logarithm, event-count limit, or count cap. Hidden activations remain binary.
 Training and ASIC inference both preserve ten chronological 5 ms updates per 50 ms
 record. The deployed input accepts camera events directly, routes them into the active
 5 ms slice, adds shared-kernel contributions, and propagates only generated hidden spikes.
-DSEC uses eleven continuous class-current outputs after the binary-spiking feature path:
-`sky`, `building`, `fence`,
-`person`, `pole`, `road`, `sidewalk`, `vegetation`, `vehicle`, `wall`, and
-`traffic-sign`.
+DSEC source masks contain eleven labels, which the active profile merges into six
+continuous class-current outputs after the binary-spiking feature path: `flat`
+(road + sidewalk), `construction+sky` (sky + building + fence + wall), `object`
+(pole + traffic-sign), `nature` (vegetation), `human` (person), and `vehicle`.
+Pass `--dsec-classes 11` only to reproduce the superseded fine-label experiment.
 
 After every final-model validation pass, training saves the same three seed-selected
 validation records under `<checkpoint-dir>/images`. Each PNG contains the complete 50 ms
@@ -108,7 +109,7 @@ host RAM so it does not duplicate the model's large persistent neuron state on t
 
 For the active DSEC path, PLIF time advances on the same fixed grid used by hardware: ten explicit 5 ms updates per 50 ms record. Training presents one accumulated synaptic current per PLIF per update. The sparse ASIC reaches the same result lazily: a touched state uses its 24-bit bin tag to apply learned `beta` once per elapsed 5 ms interval, while untouched states incur no access. No microsecond timestamp is required. Logits and activity rates remain normalized to the complete physical record. The final 1×1 class
 synapse accumulates continuous current over all ten updates rather than quantizing
-confidence to eleven possible output-spike counts.
+confidence to a small number of possible output-spike counts.
 
 The DSEC stability profile uses a base learning rate of `5e-4` for both synaptic
 weights and learnable PLIF beta/threshold parameters; neuron parameters receive no
@@ -121,7 +122,7 @@ zero on every record where it has no labelled pixels.
 
 The sole hardware implementation target is a custom actor-local-memory ASIC.
 
-Parameter count is **not** runtime neuron count. For the active 11-class
+Parameter count is **not** runtime neuron count. For the active six-class
 `EventSpikeSeg140k` DSEC implementation at native 440x640, the 25 executed PLIF populations
 require
 
@@ -163,7 +164,7 @@ docker compose run --rm train-dsec-xl
 
 `inspect-ddd17` validates the DDD17 manifest. `inspect-dsec` verifies sequence event,
 rectification, timestamp, and label alignment. `train-dsec` is the active native 440x640,
-11-class 140k run; `train-dsec-xl` is an optional software capacity comparison.
+six-class 140k run; `train-dsec-xl` is an optional 11-class software capacity comparison.
 Both DSEC replay services deliberately train in FP32. Do not add `--amp`: FP16
 autocast is incompatible with the memory-bounded temporal surrogate-gradient
 replay and can reject every optimizer update while leaving the scalar loss finite.
@@ -187,8 +188,8 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 ## EventSpikeSeg models
 
 `EventSpikeSeg140k` is the only DSEC/ASIC implementation target. With two raw-event
-inputs and 11 classes it has 150,245 registered parameters, 149,503 executed inference
-parameters, 143,904 executed synaptic weights, and 25 executed PLIF populations plus
+inputs and six classes it has 149,835 registered parameters, 149,423 executed inference
+parameters, 143,824 executed synaptic weights, and 25 executed PLIF populations plus
 one stateless temporal class-current readout.
 `EventSpikeSegXL` remains a software-only capacity comparison and is rejected by the
 ASIC exporter.
@@ -208,7 +209,7 @@ native 440x640 two-polarity activity
 → project 64→32 PLIF + upsample + multiplicity-preserving sum with the half-scale 32-ch skip
 → nearest event fan-out to native resolution
 → semantic32 + detail8 concatenation → standard 3×3 40→16 PLIF fusion
-→ 16→11 class synapse → temporal continuous-current accumulation → argmax
+→ 16→6 class synapse → temporal continuous-current accumulation → argmax
 ```
 
 Neuron dynamics remain PLIF with learnable per-channel beta/base thresholds, stem-only peer-membrane inhibition, and encoder/context triangular threshold adaptation. PyTorch provides tensors/autograd/optimization; SpikingJelly supplies compatible spiking convolution/PLIF/surrogate infrastructure while project-specific dynamics stay explicit.

@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build and validate only `EventSpikeSeg140k` for 11-class DSEC at native `440x640`, then map its
+Build and validate only `EventSpikeSeg140k` for six-class DSEC at native `440x640`, then map its
 spike-native PLIF inference graph to a custom static digital-neuromorphic accelerator.
 Training remains PyTorch + SpikingJelly; deployment is a custom ASIC described directly in
 synthesizable SystemVerilog, with Icarus/cocotb and Yosys/OpenROAD as the open verification
@@ -20,10 +20,10 @@ Python constructors/forward methods remain authoritative if older diagrams disag
 
 ## Canonical naming and frozen graph
 
-- `EventSpikeSeg140k`: the only ASIC target; 150,245 registered parameters for
-  11-class, two-polarity DSEC.
+- `EventSpikeSeg140k`: the only ASIC target; 149,835 registered parameters for
+  six-class, two-polarity DSEC.
 - `EventSpikeSegXL`: software-only comparison; ASIC export must reject it.
-- Deployable 140k inference: 149,503 executed parameters, 143,904 synaptic weights,
+- Deployable 140k inference: 149,423 executed parameters, 143,824 synaptic weights,
   25 Conv/ChannelAffine/PLIF populations, and one temporal class-current readout.
 - Omit dead `refine2`, training-only `aux_head`/`boundary_head`, surrogate gradients,
   and all XL modules.
@@ -124,7 +124,7 @@ dense sliding scan.
 
 - stem peer-membrane inhibition uses retinotopic cross-channel membrane energy;
 - encoder/context triangular threshold adaptation uses age/amplitude and a dynamic threshold;
-- final readout is a 16->11 signed current accumulator over all ten updates;
+- final readout is a 16->6 signed current accumulator over all ten updates;
 - DSEC PLIF decay advances in fixed 5 ms steps, with 5 ms as the
   learned-beta reference interval;
 - no microsecond timestamp is stored; every live sparse state carries a compact 24-bit `last_bin_tag`, and lazy `beta^delta_bins` is baseline behavior because training already uses touched-neuron updates.
@@ -164,8 +164,8 @@ Prediction cadence is configurable, with **10 bins = 50 ms = 20 Hz** as the star
 
 ## Active autonomous RTL interfaces
 
-`presynaptic_tap_array` generates every valid nonzero kernel contribution in parallel for one channel plane. `channelized_convolution_scatter` extends projection across legal standard/grouped/depthwise input/output channels in PyTorch Conv2d weight order. `channelized_convolution_plif_actor` connects those projections to canonical `(output_channel,y,x)` state and compile-time per-channel beta/threshold tables. `convolution_plif_actor` remains the one-plane reference. `asynchronous_plif_actor` accumulates repeated destinations into one current entry, records first touches, and on completion walks only that queue through `plif_update`; spike and completion outputs are independently backpressured. `event_fork2` provides lossless two-way event/token multicast, `event_join2` provides multiplicity-preserving same-bin rendezvous, `binary_event_union2` is the correctness-reference residual OR/dedup join, `event_channel_offset` performs concat remaps, and `event_upsample2x` performs nearest-neighbor address expansion. The current behavioral state/merge arrays are equivalence prototypes and must become actor-local SRAM/banked sparse structures. The final 16->11 readout remains non-spiking.
+`presynaptic_tap_array` generates every valid nonzero kernel contribution in parallel for one channel plane. `channelized_convolution_scatter` extends projection across legal standard/grouped/depthwise input/output channels in PyTorch Conv2d weight order. `channelized_convolution_plif_actor` connects those projections to canonical `(output_channel,y,x)` state and compile-time per-channel beta/threshold tables. `convolution_plif_actor` remains the one-plane reference. `asynchronous_plif_actor` accumulates repeated destinations into one current entry, records first touches, and on completion walks only that queue through `plif_update`; spike and completion outputs are independently backpressured. `event_fork2` provides lossless two-way event/token multicast, `event_join2` provides multiplicity-preserving same-bin rendezvous, `binary_event_union2` is the correctness-reference residual OR/dedup join, `event_channel_offset` performs concat remaps, and `event_upsample2x` performs nearest-neighbor address expansion. The current behavioral state/merge arrays are equivalence prototypes and must become actor-local SRAM/banked sparse structures. The final 16->6 readout remains non-spiking.
 
 ## Active fixed-step RTL interfaces
 
-The baseline sparse-state entry contains address/tag, membrane, and adaptation age/amplitude only where enabled. It must not contain `last_timestamp_us`. `plif_update` consumes the exported learned per-channel beta and repeats the fixed-point leak once for each elapsed 5 ms bin indicated by `delta_bins`. Do not reintroduce a fixed-record 25-layer controller: runtime is the autonomous static DAG with ordered completion-token rendezvous. The final 16->11 readout uses signed current accumulation across the configured prediction window plus first-index-tie argmax; do not recreate output PLIF neurons or class-spike counting.
+The baseline sparse-state entry contains address/tag, membrane, and adaptation age/amplitude only where enabled. It must not contain `last_timestamp_us`. `plif_update` consumes the exported learned per-channel beta and repeats the fixed-point leak once for each elapsed 5 ms bin indicated by `delta_bins`. Do not reintroduce a fixed-record 25-layer controller: runtime is the autonomous static DAG with ordered completion-token rendezvous. The final 16->6 readout uses signed current accumulation across the configured prediction window plus first-index-tie argmax; do not recreate output PLIF neurons or class-spike counting.
