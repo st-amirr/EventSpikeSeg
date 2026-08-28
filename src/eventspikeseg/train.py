@@ -25,7 +25,10 @@ from .data import (
     DEFAULT_INTERNAL_UPDATES,
     DSEC_6_CLASS_COUNT,
     DSEC_EVENT_VALUE_ENCODING,
+    DSEC_HORIZONTAL_FLIP_PROBABILITY,
     DSEC_INPUT_MODE,
+    DSEC_MAX_EVENT_DROPOUT,
+    DSEC_MAX_TRANSLATION_PIXELS,
     IGNORE_INDEX,
     INPUT_MODES,
     DSECRawEventDataset,
@@ -722,6 +725,7 @@ def _prepare_datasets(
             internal_updates=internal_updates,
             class_count=dsec_class_count,
             records=training_records,
+            augmentation_seed=seed,
         )
         validation_dataset = DSECRawEventDataset(
             root,
@@ -1241,6 +1245,17 @@ def train_architecture(
                     else "macro-present-class-historical-compound"
                 ),
                 "class_weights": None,
+                "training_augmentation": (
+                    {
+                        "horizontal_flip_probability": DSEC_HORIZONTAL_FLIP_PROBABILITY,
+                        "translation_pixels": DSEC_MAX_TRANSLATION_PIXELS,
+                        "maximum_event_dropout": DSEC_MAX_EVENT_DROPOUT,
+                        "spatial_scope": "fixed-per-recording-sequence",
+                        "dropout_scope": "deterministic-per-epoch-record",
+                    }
+                    if dataset_name == "dsec"
+                    else None
+                ),
                 "class_balancing": (
                     "half-pixel-mean-half-target-present-class-macro"
                     if is_final_run
@@ -1458,6 +1473,12 @@ def train_architecture(
             "one objective per complete 50 ms record",
             flush=True,
         )
+        print(
+            "DSEC training augmentation | horizontal_flip=0.5 | "
+            "translation=+/-6px fixed per sequence | event_dropout=0-5% "
+            "per epoch-record | validation=off",
+            flush=True,
+        )
     class_balancing = (
         "0.5 pixel mean + 0.5 target-present class macro"
         if is_final_run
@@ -1488,6 +1509,8 @@ def train_architecture(
             seed=seed,
             epoch=epoch,
         )
+        if isinstance(epoch_train_dataset, DSECRawEventDataset):
+            epoch_train_dataset.set_augmentation_epoch(epoch)
         train_loader = DataLoader(
             epoch_train_dataset,
             batch_size=batch_size,

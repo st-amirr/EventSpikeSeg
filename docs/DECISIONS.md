@@ -543,6 +543,18 @@ to 0.05. Keep focal and static class weights disabled, retain activity regularis
 and continue evaluating exactly one objective after each complete 50 ms record.
 
 
+## 2026-08-28 — Add state-safe raw-event augmentation
+
+Enable training-only DSEC horizontal flip at probability 0.5, integer translation
+within plus or minus six output pixels, and zero-to-five-percent event dropout. Apply
+one spatial transform to the raw rectified event coordinates and aligned target mask;
+all ten 5 ms updates in the 50 ms record share it. Because membrane state persists
+across records, keep the spatial transform fixed for each recording sequence for the
+complete run. Event dropout may vary deterministically by epoch and record without
+moving surviving events. Fill translated mask borders with ignore index 255, preserve
+event timestamps, polarities, multiplicities, and order, and leave validation untouched.
+
+
 ## 2026-08-23 — Replace static class weights with macro per-class loss in every suite
 
 DSEC person pixels occupy about 0.078% of the installed training masks and traffic-sign

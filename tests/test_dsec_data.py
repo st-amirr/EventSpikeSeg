@@ -10,8 +10,10 @@ from eventspikeseg.data import (
     DSEC_6_CLASS_NAMES,
     DSEC_6_PROTOCOL_VERSION,
     DSEC_CLASS_COUNT,
+    IGNORE_INDEX,
     DSECRawEventDataset,
     DSECRecord,
+    _translate_dsec_mask,
     discover_dsec_records,
     dsec_temporal_collate,
     split_dsec_records_by_sequence,
@@ -146,6 +148,47 @@ def test_raw_dsec_events_preserve_repeated_event_density(tmp_path: Path) -> None
     assert torch.isclose(events[0, 0, 4, 10], torch.tensor(3.0))
     assert torch.isclose(events.sum(), torch.tensor(6.0))
     dataset.close()
+
+
+def test_dsec_mask_translation_does_not_wrap() -> None:
+    mask = torch.arange(12).reshape(3, 4)
+    translated = _translate_dsec_mask(mask, dx=1, dy=-1)
+    assert torch.equal(translated[:2, 1:], mask[1:, :3])
+    assert torch.all(translated[:, 0] == IGNORE_INDEX)
+    assert torch.all(translated[2] == IGNORE_INDEX)
+
+
+def test_dsec_augmentation_is_record_aligned_and_validation_can_disable_it(
+    tmp_path: Path,
+) -> None:
+    _write_dsec_sequence(tmp_path, "zurich_city_00_a")
+    records = discover_dsec_records(tmp_path, "train")
+    training = DSECRawEventDataset(
+        tmp_path,
+        split="train",
+        output_size=(44, 64),
+        internal_updates=10,
+        records=records,
+        augmentation_seed=17,
+    )
+    validation = DSECRawEventDataset(
+        tmp_path,
+        split="train",
+        output_size=(44, 64),
+        internal_updates=10,
+        records=records,
+    )
+    assert training._spatial_augmentation(records[0]) == training._spatial_augmentation(
+        records[1]
+    )
+    assert validation._spatial_augmentation(records[0]) == (False, 0, 0)
+    augmented_events, augmented_mask, _ = training[0]
+    plain_events, plain_mask, _ = validation[0]
+    assert augmented_events.shape == plain_events.shape
+    assert augmented_mask.shape == plain_mask.shape
+    assert not torch.equal(augmented_mask, plain_mask)
+    training.close()
+    validation.close()
 
 
 def test_140k_accepts_pre_scheduled_raw_event_clocks() -> None:

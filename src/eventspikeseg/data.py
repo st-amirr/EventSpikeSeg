@@ -644,6 +644,9 @@ DSEC_LABEL_WIDTH = 640
 DEFAULT_DSEC_ROOT = Path(r"C:\Users\stamir\Desktop\Dataset\DSEC")
 DSEC_SPLIT_SEED = 17
 DSEC_VALIDATION_SEQUENCE_COUNT = 2
+DSEC_HORIZONTAL_FLIP_PROBABILITY = 0.4
+DSEC_MAX_TRANSLATION_PIXELS = 6
+DSEC_MAX_EVENT_DROPOUT = 0.05
 
 
 @dataclass(frozen=True)
@@ -870,6 +873,24 @@ def _canonical_dsec_mask(
     return mask
 
 
+def _translate_dsec_mask(mask: Tensor, dx: int, dy: int) -> Tensor:
+    """Translate a semantic mask without wrapping, filling exposed pixels as ignore."""
+    if dx == 0 and dy == 0:
+        return mask
+    height, width = mask.shape
+    translated = torch.full_like(mask, IGNORE_INDEX)
+    source_x0 = max(0, -dx)
+    source_x1 = min(width, width - dx)
+    source_y0 = max(0, -dy)
+    source_y1 = min(height, height - dy)
+    if source_x0 < source_x1 and source_y0 < source_y1:
+        translated[
+            source_y0 + dy : source_y1 + dy,
+            source_x0 + dx : source_x1 + dx,
+        ] = mask[source_y0:source_y1, source_x0:source_x1]
+    return translated
+
+
 class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
     """One fixed-time 50 ms event stream and its aligned mask.
 
@@ -893,6 +914,8 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
         internal_updates: int = DEFAULT_INTERNAL_UPDATES,
         class_count: int = DSEC_CLASS_COUNT,
         records: Sequence[DSECRecord] | None = None,
+        augmentation_seed: int | None = None,
+        augmentation_epoch: int = 1,
     ) -> None:
         if internal_updates < 1 or EVSEG_INTEGRATION_WINDOW_US % internal_updates != 0:
             raise ValueError("internal_updates must divide the 50,000 us DSEC interval")
@@ -900,6 +923,8 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
         self.split = split
         self.output_size = output_size
         self.internal_updates = internal_updates
+        self.augmentation_seed = augmentation_seed
+        self.augmentation_epoch = augmentation_epoch
         if class_count not in (DSEC_6_CLASS_COUNT, DSEC_CLASS_COUNT):
             raise ValueError("DSEC class_count must be 6 or 11")
         self.class_count = class_count
@@ -918,6 +943,30 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
             raise TemporalMetadataError(f"no DSEC records available for split {split}")
         self._event_handles: dict[Path, h5py.File] = {}
         self._rectify_maps: dict[Path, np.ndarray] = {}
+
+    def _augmentation_rng(self, record: DSECRecord, scope: str) -> np.random.Generator:
+        epoch = self.augmentation_epoch if scope == "dropout" else 0
+        payload = (
+            f"{self.augmentation_seed}:{record.sequence_id}:"
+            f"{record.frame_index if scope == 'dropout' else 0}:{epoch}:{scope}"
+        ).encode()
+        seed = int.from_bytes(hashlib.sha256(payload).digest()[:8], "little")
+        return np.random.default_rng(seed)
+
+    def _spatial_augmentation(self, record: DSECRecord) -> tuple[bool, int, int]:
+        """Return one run-stable transform for an entire recording sequence."""
+        if self.augmentation_seed is None:
+            return False, 0, 0
+        generator = self._augmentation_rng(record, "spatial")
+        flip = bool(generator.random() < DSEC_HORIZONTAL_FLIP_PROBABILITY)
+        maximum = DSEC_MAX_TRANSLATION_PIXELS
+        dx = int(generator.integers(-maximum, maximum + 1))
+        dy = int(generator.integers(-maximum, maximum + 1))
+        return flip, dx, dy
+
+    def set_augmentation_epoch(self, epoch: int) -> None:
+        """Select reproducible per-record dropout while preserving spatial continuity."""
+        self.augmentation_epoch = epoch
 
     def __len__(self) -> int:
         return len(self.records)
@@ -1021,15 +1070,39 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
         )
         relative_t = absolute_t - (record.timestamp_us - EVSEG_INTEGRATION_WINDOW_US)
         clock = np.floor_divide(relative_t, step_us).clip(0, self.internal_updates - 1)
+        flip, dx, dy = self._spatial_augmentation(record)
+        if flip:
+            x_out = (output_width - 1) - x_out
+        x_out = x_out + dx
+        y_out = y_out + dy
+        in_bounds = (
+            (x_out >= 0)
+            & (x_out < output_width)
+            & (y_out >= 0)
+            & (y_out < output_height)
+        )
+        if self.augmentation_seed is not None and np.any(in_bounds):
+            dropout_rng = self._augmentation_rng(record, "dropout")
+            dropout_rate = dropout_rng.uniform(0.0, DSEC_MAX_EVENT_DROPOUT)
+            in_bounds &= dropout_rng.random(len(in_bounds)) >= dropout_rate
+        x_out = x_out[in_bounds]
+        y_out = y_out[in_bounds]
+        p_out = p_out[in_bounds]
+        clock = clock[in_bounds]
         np.add.at(scheduled, (clock, p_out, y_out, x_out), 1.0)
         return torch.from_numpy(scheduled), deltas
 
     def __getitem__(self, index: int) -> tuple[Tensor, Tensor, Tensor]:
         record = self.records[index]
         events, deltas_us = self._schedule_events(record)
+        mask = _canonical_dsec_mask(record.label_path, self.output_size, self.class_count)
+        flip, dx, dy = self._spatial_augmentation(record)
+        if flip:
+            mask = torch.flip(mask, dims=(1,))
+        mask = _translate_dsec_mask(mask, dx, dy)
         return (
             events,
-            _canonical_dsec_mask(record.label_path, self.output_size, self.class_count),
+            mask,
             deltas_us,
         )
 
@@ -1056,6 +1129,8 @@ class DSECRawEventDataset(Dataset[tuple[Tensor, Tensor, Tensor]]):
             internal_updates=self.internal_updates,
             class_count=self.class_count,
             records=[self.records[index] for index in indices],
+            augmentation_seed=self.augmentation_seed,
+            augmentation_epoch=self.augmentation_epoch,
         )
 
     def close(self) -> None:

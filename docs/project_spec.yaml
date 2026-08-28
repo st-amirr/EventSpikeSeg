@@ -614,6 +614,16 @@ architecture_search:
 
 training:
   task: supervised_semantic_segmentation
+  dsec_augmentation:
+    scope: training_only
+    horizontal_flip_probability: 0.5
+    translation_pixels_xy: [-6, 6]
+    event_dropout_fraction: [0.0, 0.05]
+    spatial_transform_sampling: fixed_per_recording_sequence_for_the_complete_run
+    dropout_sampling: deterministic_per_epoch_and_50ms_record
+    temporal_rule: identical_spatial_transform_for_all_ten_5ms_updates_and_target_mask
+    exposed_mask_pixels: ignore_index_255
+    validation: disabled
   optimizer:
     name: AdamW
     default_learning_rate: 0.001
