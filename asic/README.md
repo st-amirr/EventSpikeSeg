@@ -16,7 +16,7 @@ timing, and power analysis.
   foundry PDK plus characterized high-density SRAM macros. That target cannot be called
   selected or power-signoff-ready until those libraries are available.
 
-The distinction matters because 143,904 int8 synaptic weights consume only about
+The distinction matters because 143,824 int8 synaptic weights consume only about
 0.137 MiB, while the frozen 440x640 graph has 30,976,000 logical membranes. The current
 exact dense reference is 189.60 MiB when int16 membrane, adaptation fields, and 24-bit
 lazy-update tags are all included. Standard-cell flip-flops are not an acceptable
@@ -24,29 +24,26 @@ full-chip memory implementation.
 
 ## Current synthesis boundary
 
-`convolution_plif_actor.sv` integrates the presynaptic convolution scatter with one local
-PLIF population. Static kernel weights are elaboration-time constants, and the actor's
-small default arrays make control/dataflow executable. **This actor is a node prototype,
-not a model-level 25-stage pipeline.** EventSpikeSeg140k v8 contains 25 permanent PLIF
-actors connected as a fixed DAG with input/detail-semantic forks, residual binary-OR joins,
-`x1`/`x2` skip fanout, decoder upsample/concat, multiplicity-preserving `project2+x1`, and
-late semantic/detail concat.
+`convolution_plif_actor.sv` is the one-plane reference actor. The channelized and streaming
+actors extend it to exported per-channel parameters and packed ready/valid traffic.
+EventSpikeSeg140k v8 contains 25 permanent PLIF actors connected as a fixed DAG with
+input/detail-semantic forks, residual binary-OR joins, `x1`/`x2` skip fanout, decoder
+upsample/concat, multiplicity-preserving `project2+x1`, and late semantic/detail concat.
 
 `src/eventspikeseg/asic/topology.py` is the connectivity source of truth. The exporter writes
 explicit DAG nodes/edges/join semantics to `layer_graph.json`; its actor tuple is only a
 deterministic topological export order. `event_fork2.sv` provides lossless two-way event and
 completion-token multicast, `event_join2.sv` provides multiplicity-preserving same-bin
 completion rendezvous, and `binary_event_union2.sv` is the correctness-reference residual
-OR/dedup join. A complete top level still has to instantiate these routes around all 25 actors.
+OR/dedup join. The generated top instantiates these routes around all 25 actors.
 `event_channel_offset.sv` implements fixed concatenation channel remaps,
 `event_upsample2x.sv` expands a spike into four nearest-neighbor addresses, and
 `channelized_convolution_scatter.sv` expands one input spike across legal standard, grouped,
 or depthwise output-channel/tap projections using exported PyTorch Conv2d weight order.
-These blocks are independently executable but are not yet wired into a model-level top.
 `channelized_convolution_plif_actor.sv` now joins that scatter to canonical local
 `(output_channel,y,x)` membrane/current/tag state and selects compile-time per-channel beta
 and threshold tables. The exporter emits matching 16-bit beta and threshold ROM images for
-each actor. Model-scale generated instantiation and wiring remain open.
+each actor. `scripts/generate_asic_top.py` performs model-scale instantiation and wiring.
 
 `scripts/generate_asic_top.py` now consumes an exported `model_spec.yaml` and emits the exact
 25-actor structural top with fixed ROM constants and all routing primitives. The generated
@@ -56,10 +53,12 @@ and enumerates a dense prediction after the configured bin window. `actor_local_
 defines the compiler-macro interface, but the current actor arrays remain behavioral until a
 real SRAM compiler is selected and bound.
 
-The trained v4 export is retained under `artifacts/asic_export_v4`; its generated weighted top
-contains all 25 actors and exactly 143,904 int8 synaptic ROM words. This is the executable
-logical reference, not a full-chip PPA netlist: its large behavioral arrays must not be mapped
-to standard cells or reported as a physical implementation.
+The active trained six-class v4 export is retained under
+`artifacts/asic_export_v4_6class`; its generated weighted top contains all 25 actors and
+exactly 143,824 int8 synaptic ROM words. The prior 11-class export under
+`artifacts/asic_export_v4` is historical. The active top is the executable logical reference,
+not a full-chip PPA netlist: its large behavioral arrays must not be mapped to standard cells
+or reported as a physical implementation.
 
 Before full-chip PPA, behavioral actor state arrays and prototype residual-dedup storage must
 be replaced by actor-local SRAM/banked sparse macro structures with the same logical ownership
@@ -73,6 +72,17 @@ python scripts/run_rtl_tests.py
 ```
 
 Set `ASIC_BUILD_DIR` to redirect generated netlists outside the repository when needed.
+
+The isolated CPU-only implementation container pins CPU PyTorch and Icarus 12 and also
+contains Yosys. It is independent of the CUDA training image:
+
+```sh
+docker compose -f compose_ASIC.yaml build
+docker compose -f compose_ASIC.yaml run --rm test
+docker compose -f compose_ASIC.yaml run --rm rtl
+docker compose -f compose_ASIC.yaml run --rm synthesis
+docker compose -f compose_ASIC.yaml run --rm lint
+```
 
 If an ORFS checkout or installation is available, set `ORFS_ROOT` to its root and run:
 

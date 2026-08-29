@@ -347,7 +347,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - real-checkpoint export/equivalence and physical SRAM binding remain gated separately from the
   completed structural RTL reference.
 
-## 2026-08-26 — Trained v4 checkpoint ASIC export
+## 2026-08-26 — Legacy 11-class trained v4 checkpoint ASIC export
 
 - exported `artifacts/checkpointsV4/dsec/EventSpikeSeg140k_seed17_best.pt` in the pinned
   PyTorch/SpikingJelly container;
@@ -361,3 +361,21 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - full-chip implementation is now bounded by characterized SRAM binding, scalable residual
   capacity proof, golden-stream bit-exact replay, and an accessible manufacturable PDK—not by
   missing graph, weight, or actor RTL generation.
+
+## 2026-08-29 — Active six-class export and CPU-only implementation verification
+
+- added `compose_ASIC.yaml` and `docker/app/dockerfile_ASIC`, independent of the
+  CUDA training image;
+- pinned CPU PyTorch 2.2.2, CPU torchvision 0.17.2, upstream Icarus Verilog 12, cocotb,
+  and Yosys in the implementation image;
+- exported the trained six-class v4 checkpoint to `artifacts/asic_export_v4_6class` with
+  149,835 registered parameters, 149,423 executed parameters, 143,824 weight words,
+  25 PLIF actors, one inhibition actor, and fifteen adaptation actors;
+- generated the active 378,396-byte weighted 25-actor SystemVerilog DAG top;
+- removed an unpacked combinational effective-age temporary that crashed Icarus and replaced
+  it with equivalent per-channel scalar recomputation;
+- the CPU implementation image passes 83 Python/structural tests, 22 cocotb RTL groups,
+  Ruff, and the representative Yosys synthesis gate;
+- the prior 11-class `artifacts/asic_export_v4` result is retained as historical evidence;
+- full-chip physical completion still requires a characterized SRAM compiler/library,
+  a selected manufacturable PDK, real golden event streams, and routed activity data.

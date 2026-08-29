@@ -1,0 +1,2665 @@
+{
+  "base_skeleton_membrane_states": 10700800,
+  "canonical_addition_membrane_states": 20275200,
+  "checkpoint": {
+    "architecture": "EventSpikeSeg140k",
+    "dataset": "dsec",
+    "epoch": 19,
+    "seed": 17,
+    "temporal_protocol_version": "dsec-six-class-fixed-time-counts-async-v1",
+    "training_strategy_version": "dsec-spike-preserving-fusion-blended-ce-v10"
+  },
+  "class_count": 6,
+  "class_mapping_file": "class_mapping.json",
+  "dataset": "DSEC-Semantic",
+  "deployment_excludes": [
+    "refine2",
+    "aux_head",
+    "boundary_head",
+    "surrogate_gradient",
+    "XL_modules"
+  ],
+  "executed_convolution_weights": 143824,
+  "executed_inference_parameters": 149423,
+  "graph": {
+    "actor_count": 25,
+    "actor_topological_order": [
+      "detail_stem",
+      "detail1.standard",
+      "stem",
+      "enc1.standard",
+      "enc1_extra.depthwise",
+      "enc1_extra.pointwise",
+      "down2.standard",
+      "enc2.depthwise",
+      "enc2.pointwise",
+      "enc2_extra.depthwise",
+      "enc2_extra.pointwise",
+      "down3.depthwise",
+      "down3.pointwise",
+      "enc3.depthwise",
+      "enc3.pointwise",
+      "enc3_extra.depthwise",
+      "enc3_extra.pointwise",
+      "context1.depthwise",
+      "context1.pointwise",
+      "context2.depthwise",
+      "context2.pointwise",
+      "project3",
+      "decoder2_fuse",
+      "project2",
+      "final_fuse.standard"
+    ],
+    "completion_token_policy": "fork_on_fanout; joins_wait_for_all_required_upstream_tokens_of_same_5ms_bin",
+    "current_readout": "head.synapse",
+    "decoder_skip_policy": "project2_plus_x1_preserves_event_multiplicity",
+    "edges": [
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "detail_stem",
+        "source": "input",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "stem",
+        "source": "input",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "detail1.standard",
+        "source": "detail_stem",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "detail1.residual_or",
+        "source": "detail_stem",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "detail1.residual_or",
+        "source": "detail1.standard",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc1.standard",
+        "source": "stem",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc1.residual_or",
+        "source": "stem",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc1.residual_or",
+        "source": "enc1.standard",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc1_extra.depthwise",
+        "source": "enc1.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc1_extra.residual_or",
+        "source": "enc1.residual_or",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc1_extra.pointwise",
+        "source": "enc1_extra.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc1_extra.residual_or",
+        "source": "enc1_extra.pointwise",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "down2.standard",
+        "source": "enc1_extra.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "semantic_half.multiplicity_sum",
+        "note": "x1 decoder skip; preserve coincident events rather than binary dedup",
+        "source": "enc1_extra.residual_or",
+        "transform": "skip_fanout"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2.depthwise",
+        "source": "down2.standard",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2.residual_or",
+        "source": "down2.standard",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2.pointwise",
+        "source": "enc2.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2.residual_or",
+        "source": "enc2.pointwise",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2_extra.depthwise",
+        "source": "enc2.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2_extra.residual_or",
+        "source": "enc2.residual_or",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2_extra.pointwise",
+        "source": "enc2_extra.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc2_extra.residual_or",
+        "source": "enc2_extra.pointwise",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "down3.depthwise",
+        "source": "enc2_extra.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "channel_offset": 64,
+        "destination": "decoder2.concat",
+        "note": "x2 occupies decoder2 input channels 64..127",
+        "source": "enc2_extra.residual_or",
+        "transform": "channel_concat"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "down3.pointwise",
+        "source": "down3.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3.depthwise",
+        "source": "down3.pointwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3.residual_or",
+        "source": "down3.pointwise",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3.pointwise",
+        "source": "enc3.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3.residual_or",
+        "source": "enc3.pointwise",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3_extra.depthwise",
+        "source": "enc3.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3_extra.residual_or",
+        "source": "enc3.residual_or",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3_extra.pointwise",
+        "source": "enc3_extra.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "enc3_extra.residual_or",
+        "source": "enc3_extra.pointwise",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context1.depthwise",
+        "source": "enc3_extra.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context1.residual_or",
+        "source": "enc3_extra.residual_or",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context1.pointwise",
+        "source": "context1.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context1.residual_or",
+        "source": "context1.pointwise",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context2.depthwise",
+        "source": "context1.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context2.residual_or",
+        "source": "context1.residual_or",
+        "transform": "residual_bypass"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context2.pointwise",
+        "source": "context2.depthwise",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "context2.residual_or",
+        "source": "context2.pointwise",
+        "transform": "residual_main"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "project3",
+        "source": "context2.residual_or",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "project3.upsample2x",
+        "source": "project3",
+        "transform": "nearest_event_fanout_2x"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "channel_offset": 0,
+        "destination": "decoder2.concat",
+        "note": "upsampled project3 occupies decoder2 input channels 0..63",
+        "source": "project3.upsample2x",
+        "transform": "channel_concat"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "decoder2_fuse",
+        "source": "decoder2.concat",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "project2",
+        "source": "decoder2_fuse",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "project2.upsample2x",
+        "source": "project2",
+        "transform": "nearest_event_fanout_2x"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "semantic_half.multiplicity_sum",
+        "source": "project2.upsample2x",
+        "transform": "multiplicity_preserving_merge"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "semantic_native.upsample2x",
+        "source": "semantic_half.multiplicity_sum",
+        "transform": "nearest_event_fanout_2x"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "channel_offset": 0,
+        "destination": "final.concat",
+        "note": "semantic channels 0..31",
+        "source": "semantic_native.upsample2x",
+        "transform": "channel_concat"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "channel_offset": 32,
+        "destination": "final.concat",
+        "note": "detail channels 32..39",
+        "source": "detail1.residual_or",
+        "transform": "channel_concat"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "final_fuse.standard",
+        "source": "final.concat",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "head.synapse",
+        "source": "final_fuse.standard",
+        "transform": "identity"
+      },
+      {
+        "carries": [
+          "spike_event",
+          "ordered_5ms_completion_token"
+        ],
+        "destination": "prediction",
+        "note": "default prediction window is ten 5 ms bins",
+        "source": "head.synapse",
+        "transform": "temporal_current_accumulate_and_argmax"
+      }
+    ],
+    "fanout_policy": "ready_valid_multicast_with_lossless_backpressure",
+    "graph_kind": "static_directed_acyclic_actor_graph",
+    "join_nodes": {
+      "context1.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "context2.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "decoder2.concat": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "preserve_all_events_after_channel_offset_remap",
+        "kind": "channel_concat"
+      },
+      "detail1.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "enc1.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "enc1_extra.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "enc2.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "enc2_extra.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "enc3.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "enc3_extra.residual_or": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "deduplicate_equal_binary_spike_addresses",
+        "kind": "binary_residual_or"
+      },
+      "final.concat": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "preserve_all_events_after_channel_offset_remap",
+        "kind": "channel_concat"
+      },
+      "semantic_half.multiplicity_sum": {
+        "completion_rule": "wait_for_all_inputs_same_bin",
+        "data_rule": "forward_coincident_events_without_deduplication",
+        "kind": "multiplicity_preserving_sum"
+      }
+    },
+    "linear_pipeline": false,
+    "node_topological_order": [
+      "input",
+      "detail_stem",
+      "stem",
+      "detail1.standard",
+      "enc1.standard",
+      "detail1.residual_or",
+      "enc1.residual_or",
+      "enc1_extra.depthwise",
+      "enc1_extra.pointwise",
+      "enc1_extra.residual_or",
+      "down2.standard",
+      "enc2.depthwise",
+      "enc2.pointwise",
+      "enc2.residual_or",
+      "enc2_extra.depthwise",
+      "enc2_extra.pointwise",
+      "enc2_extra.residual_or",
+      "down3.depthwise",
+      "down3.pointwise",
+      "enc3.depthwise",
+      "enc3.pointwise",
+      "enc3.residual_or",
+      "enc3_extra.depthwise",
+      "enc3_extra.pointwise",
+      "enc3_extra.residual_or",
+      "context1.depthwise",
+      "context1.pointwise",
+      "context1.residual_or",
+      "context2.depthwise",
+      "context2.pointwise",
+      "context2.residual_or",
+      "project3",
+      "project3.upsample2x",
+      "decoder2.concat",
+      "decoder2_fuse",
+      "project2",
+      "project2.upsample2x",
+      "semantic_half.multiplicity_sum",
+      "semantic_native.upsample2x",
+      "final.concat",
+      "final_fuse.standard",
+      "head.synapse",
+      "prediction"
+    ],
+    "nodes": [
+      {
+        "kind": "event_input",
+        "name": "input"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "detail_stem"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "detail1.standard"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "stem"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc1.standard"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc1_extra.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc1_extra.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "down2.standard"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc2.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc2.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc2_extra.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc2_extra.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "down3.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "down3.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc3.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc3.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc3_extra.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "enc3_extra.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "context1.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "context1.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "context2.depthwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "context2.pointwise"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "project3"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "decoder2_fuse"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "project2"
+      },
+      {
+        "kind": "plif_actor",
+        "name": "final_fuse.standard"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "detail1.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "enc1.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "enc1_extra.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "enc2.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "enc2_extra.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "enc3.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "enc3_extra.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "context1.residual_or"
+      },
+      {
+        "kind": "binary_residual_or",
+        "name": "context2.residual_or"
+      },
+      {
+        "kind": "nearest_event_fanout_2x",
+        "name": "project3.upsample2x"
+      },
+      {
+        "kind": "channel_concat",
+        "name": "decoder2.concat"
+      },
+      {
+        "kind": "nearest_event_fanout_2x",
+        "name": "project2.upsample2x"
+      },
+      {
+        "kind": "multiplicity_preserving_sum",
+        "name": "semantic_half.multiplicity_sum"
+      },
+      {
+        "kind": "nearest_event_fanout_2x",
+        "name": "semantic_native.upsample2x"
+      },
+      {
+        "kind": "channel_concat",
+        "name": "final.concat"
+      },
+      {
+        "kind": "current_readout",
+        "name": "head.synapse"
+      },
+      {
+        "kind": "semantic_output",
+        "name": "prediction"
+      }
+    ],
+    "residual_policy": "binary_OR_deduplicate_before_downstream_synaptic_use",
+    "routing_policy": "compile_time_dedicated_paths_not_programmable_NoC"
+  },
+  "graph_edges": [
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "detail_stem",
+      "source": "input",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "stem",
+      "source": "input",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "detail1.standard",
+      "source": "detail_stem",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "detail1.residual_or",
+      "source": "detail_stem",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "detail1.residual_or",
+      "source": "detail1.standard",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc1.standard",
+      "source": "stem",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc1.residual_or",
+      "source": "stem",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc1.residual_or",
+      "source": "enc1.standard",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc1_extra.depthwise",
+      "source": "enc1.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc1_extra.residual_or",
+      "source": "enc1.residual_or",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc1_extra.pointwise",
+      "source": "enc1_extra.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc1_extra.residual_or",
+      "source": "enc1_extra.pointwise",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "down2.standard",
+      "source": "enc1_extra.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "semantic_half.multiplicity_sum",
+      "note": "x1 decoder skip; preserve coincident events rather than binary dedup",
+      "source": "enc1_extra.residual_or",
+      "transform": "skip_fanout"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2.depthwise",
+      "source": "down2.standard",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2.residual_or",
+      "source": "down2.standard",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2.pointwise",
+      "source": "enc2.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2.residual_or",
+      "source": "enc2.pointwise",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2_extra.depthwise",
+      "source": "enc2.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2_extra.residual_or",
+      "source": "enc2.residual_or",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2_extra.pointwise",
+      "source": "enc2_extra.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc2_extra.residual_or",
+      "source": "enc2_extra.pointwise",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "down3.depthwise",
+      "source": "enc2_extra.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "channel_offset": 64,
+      "destination": "decoder2.concat",
+      "note": "x2 occupies decoder2 input channels 64..127",
+      "source": "enc2_extra.residual_or",
+      "transform": "channel_concat"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "down3.pointwise",
+      "source": "down3.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3.depthwise",
+      "source": "down3.pointwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3.residual_or",
+      "source": "down3.pointwise",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3.pointwise",
+      "source": "enc3.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3.residual_or",
+      "source": "enc3.pointwise",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3_extra.depthwise",
+      "source": "enc3.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3_extra.residual_or",
+      "source": "enc3.residual_or",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3_extra.pointwise",
+      "source": "enc3_extra.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "enc3_extra.residual_or",
+      "source": "enc3_extra.pointwise",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context1.depthwise",
+      "source": "enc3_extra.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context1.residual_or",
+      "source": "enc3_extra.residual_or",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context1.pointwise",
+      "source": "context1.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context1.residual_or",
+      "source": "context1.pointwise",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context2.depthwise",
+      "source": "context1.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context2.residual_or",
+      "source": "context1.residual_or",
+      "transform": "residual_bypass"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context2.pointwise",
+      "source": "context2.depthwise",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "context2.residual_or",
+      "source": "context2.pointwise",
+      "transform": "residual_main"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "project3",
+      "source": "context2.residual_or",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "project3.upsample2x",
+      "source": "project3",
+      "transform": "nearest_event_fanout_2x"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "channel_offset": 0,
+      "destination": "decoder2.concat",
+      "note": "upsampled project3 occupies decoder2 input channels 0..63",
+      "source": "project3.upsample2x",
+      "transform": "channel_concat"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "decoder2_fuse",
+      "source": "decoder2.concat",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "project2",
+      "source": "decoder2_fuse",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "project2.upsample2x",
+      "source": "project2",
+      "transform": "nearest_event_fanout_2x"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "semantic_half.multiplicity_sum",
+      "source": "project2.upsample2x",
+      "transform": "multiplicity_preserving_merge"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "semantic_native.upsample2x",
+      "source": "semantic_half.multiplicity_sum",
+      "transform": "nearest_event_fanout_2x"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "channel_offset": 0,
+      "destination": "final.concat",
+      "note": "semantic channels 0..31",
+      "source": "semantic_native.upsample2x",
+      "transform": "channel_concat"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "channel_offset": 32,
+      "destination": "final.concat",
+      "note": "detail channels 32..39",
+      "source": "detail1.residual_or",
+      "transform": "channel_concat"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "final_fuse.standard",
+      "source": "final.concat",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "head.synapse",
+      "source": "final_fuse.standard",
+      "transform": "identity"
+    },
+    {
+      "carries": [
+        "spike_event",
+        "ordered_5ms_completion_token"
+      ],
+      "destination": "prediction",
+      "note": "default prediction window is ten 5 ms bins",
+      "source": "head.synapse",
+      "transform": "temporal_current_accumulate_and_argmax"
+    }
+  ],
+  "graph_operations": [
+    {
+      "after": "stem",
+      "operation": "learned_stride2_downsample",
+      "target": "half"
+    },
+    {
+      "after": "project3",
+      "operation": "nearest_event_fanout",
+      "target": "quarter"
+    },
+    {
+      "before": "decoder2_fuse",
+      "operation": "channel_concat_remap",
+      "sources": [
+        "project3_upsampled",
+        "enc2"
+      ]
+    },
+    {
+      "after": "project2",
+      "operation": "nearest_event_fanout",
+      "target": "half"
+    },
+    {
+      "after": "project2_upsampled",
+      "operation": "event_multiplicity_sum",
+      "output_values": [
+        0,
+        1,
+        2
+      ],
+      "with": "enc1"
+    },
+    {
+      "after": "semantic_half",
+      "operation": "nearest_event_fanout",
+      "target": "native"
+    },
+    {
+      "before": "final_fuse.standard",
+      "operation": "channel_concat_remap",
+      "sources": [
+        "semantic_half_upsampled",
+        "detail1"
+      ]
+    },
+    {
+      "after": "head.synapse",
+      "operation": "temporal_current_accumulate_and_argmax"
+    }
+  ],
+  "hardware_topology": {
+    "completion_join_rule": "wait_for_all_required_upstream_tokens_of_same_5ms_bin",
+    "cross_layer_compute_sharing": false,
+    "event_flow": "ready_valid_spikes_plus_ordered_completion_tokens",
+    "graph_kind": "static_directed_acyclic_actor_graph",
+    "interconnect": "compile_time_dedicated_fanout_skip_merge_paths",
+    "kernel_mapping": "parallel_presynaptic_taps_to_one_canonical_destination_state",
+    "layer_actors": "25_dedicated_PLIF_actors_plus_final_current_readout",
+    "linear_pipeline": false,
+    "partial_reconfiguration": false,
+    "runtime_layer_reconfiguration": false,
+    "state_memory": "characterized_actor_local_SRAM_macro_required",
+    "state_ownership": "actor_local_direct_indexed_SRAM",
+    "state_record_last_bin_tag_bits": 24,
+    "state_record_timestamp_field": false,
+    "weight_memory": "actor_local_mask_ROM_or_compiled_ROM"
+  },
+  "inference_PLIF_populations": 25,
+  "input_channels": 2,
+  "input_event": [
+    "timestamp_us",
+    "polarity",
+    "y",
+    "x"
+  ],
+  "input_size": [
+    440,
+    640
+  ],
+  "layer_order": [
+    "detail_stem",
+    "detail1.standard",
+    "stem",
+    "enc1.standard",
+    "enc1_extra.depthwise",
+    "enc1_extra.pointwise",
+    "down2.standard",
+    "enc2.depthwise",
+    "enc2.pointwise",
+    "enc2_extra.depthwise",
+    "enc2_extra.pointwise",
+    "down3.depthwise",
+    "down3.pointwise",
+    "enc3.depthwise",
+    "enc3.pointwise",
+    "enc3_extra.depthwise",
+    "enc3_extra.pointwise",
+    "context1.depthwise",
+    "context1.pointwise",
+    "context2.depthwise",
+    "context2.pointwise",
+    "project3",
+    "decoder2_fuse",
+    "project2",
+    "final_fuse.standard",
+    "head.synapse"
+  ],
+  "layer_order_semantics": "deterministic_topological_export_order_not_runtime_chain",
+  "layers": [
+    {
+      "actor": "actor_00_detail_stem",
+      "beta_rom": "parameters/00_detail_stem_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 0,
+      "in_channels": 2,
+      "input_hw": [
+        440,
+        640
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 2252800,
+      "name": "detail_stem",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 8,
+      "output_hw": [
+        440,
+        640
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 168,
+      "parameter_file": "parameters/00_detail_stem.json",
+      "spatial_tier": "native",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/00_detail_stem_threshold.mem",
+      "weight_count": 144,
+      "weight_rom": "weights/00_detail_stem.mem"
+    },
+    {
+      "actor": "actor_01_detail1_standard",
+      "beta_rom": "parameters/01_detail1_standard_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 1,
+      "in_channels": 8,
+      "input_hw": [
+        440,
+        640
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 2252800,
+      "name": "detail1.standard",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 8,
+      "output_hw": [
+        440,
+        640
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 600,
+      "parameter_file": "parameters/01_detail1_standard.json",
+      "spatial_tier": "native",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/01_detail1_standard_threshold.mem",
+      "weight_count": 576,
+      "weight_rom": "weights/01_detail1_standard.mem"
+    },
+    {
+      "actor": "actor_02_stem",
+      "beta_rom": "parameters/02_stem_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 2,
+      "in_channels": 2,
+      "input_hw": [
+        440,
+        640
+      ],
+      "kernel": [
+        5,
+        5
+      ],
+      "logical_membrane_states": 2252800,
+      "name": "stem",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 32,
+      "output_hw": [
+        220,
+        320
+      ],
+      "padding": [
+        2,
+        2
+      ],
+      "parameter_count": 1697,
+      "parameter_file": "parameters/02_stem.json",
+      "spatial_tier": "half",
+      "stride": [
+        2,
+        2
+      ],
+      "threshold_rom": "parameters/02_stem_threshold.mem",
+      "weight_count": 1600,
+      "weight_rom": "weights/02_stem.mem"
+    },
+    {
+      "actor": "actor_03_enc1_standard",
+      "beta_rom": "parameters/03_enc1_standard_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 3,
+      "in_channels": 32,
+      "input_hw": [
+        220,
+        320
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 2252800,
+      "name": "enc1.standard",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 32,
+      "output_hw": [
+        220,
+        320
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 9312,
+      "parameter_file": "parameters/03_enc1_standard.json",
+      "spatial_tier": "half",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/03_enc1_standard_threshold.mem",
+      "weight_count": 9216,
+      "weight_rom": "weights/03_enc1_standard.mem"
+    },
+    {
+      "actor": "actor_04_enc1_extra_depthwise",
+      "beta_rom": "parameters/04_enc1_extra_depthwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 32,
+      "id": 4,
+      "in_channels": 32,
+      "input_hw": [
+        220,
+        320
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 2252800,
+      "name": "enc1_extra.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 32,
+      "output_hw": [
+        220,
+        320
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 384,
+      "parameter_file": "parameters/04_enc1_extra_depthwise.json",
+      "spatial_tier": "half",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/04_enc1_extra_depthwise_threshold.mem",
+      "weight_count": 288,
+      "weight_rom": "weights/04_enc1_extra_depthwise.mem"
+    },
+    {
+      "actor": "actor_05_enc1_extra_pointwise",
+      "beta_rom": "parameters/05_enc1_extra_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 5,
+      "in_channels": 32,
+      "input_hw": [
+        220,
+        320
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 2252800,
+      "name": "enc1_extra.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 32,
+      "output_hw": [
+        220,
+        320
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 1120,
+      "parameter_file": "parameters/05_enc1_extra_pointwise.json",
+      "spatial_tier": "half",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/05_enc1_extra_pointwise_threshold.mem",
+      "weight_count": 1024,
+      "weight_rom": "weights/05_enc1_extra_pointwise.mem"
+    },
+    {
+      "actor": "actor_06_down2_standard",
+      "beta_rom": "parameters/06_down2_standard_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 6,
+      "in_channels": 32,
+      "input_hw": [
+        220,
+        320
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 1126400,
+      "name": "down2.standard",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 64,
+      "output_hw": [
+        110,
+        160
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 18626,
+      "parameter_file": "parameters/06_down2_standard.json",
+      "spatial_tier": "quarter",
+      "stride": [
+        2,
+        2
+      ],
+      "threshold_rom": "parameters/06_down2_standard_threshold.mem",
+      "weight_count": 18432,
+      "weight_rom": "weights/06_down2_standard.mem"
+    },
+    {
+      "actor": "actor_07_enc2_depthwise",
+      "beta_rom": "parameters/07_enc2_depthwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 64,
+      "id": 7,
+      "in_channels": 64,
+      "input_hw": [
+        110,
+        160
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 1126400,
+      "name": "enc2.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 64,
+      "output_hw": [
+        110,
+        160
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 770,
+      "parameter_file": "parameters/07_enc2_depthwise.json",
+      "spatial_tier": "quarter",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/07_enc2_depthwise_threshold.mem",
+      "weight_count": 576,
+      "weight_rom": "weights/07_enc2_depthwise.mem"
+    },
+    {
+      "actor": "actor_08_enc2_pointwise",
+      "beta_rom": "parameters/08_enc2_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 8,
+      "in_channels": 64,
+      "input_hw": [
+        110,
+        160
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 1126400,
+      "name": "enc2.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 64,
+      "output_hw": [
+        110,
+        160
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 4290,
+      "parameter_file": "parameters/08_enc2_pointwise.json",
+      "spatial_tier": "quarter",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/08_enc2_pointwise_threshold.mem",
+      "weight_count": 4096,
+      "weight_rom": "weights/08_enc2_pointwise.mem"
+    },
+    {
+      "actor": "actor_09_enc2_extra_depthwise",
+      "beta_rom": "parameters/09_enc2_extra_depthwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 64,
+      "id": 9,
+      "in_channels": 64,
+      "input_hw": [
+        110,
+        160
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 1126400,
+      "name": "enc2_extra.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 64,
+      "output_hw": [
+        110,
+        160
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 770,
+      "parameter_file": "parameters/09_enc2_extra_depthwise.json",
+      "spatial_tier": "quarter",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/09_enc2_extra_depthwise_threshold.mem",
+      "weight_count": 576,
+      "weight_rom": "weights/09_enc2_extra_depthwise.mem"
+    },
+    {
+      "actor": "actor_10_enc2_extra_pointwise",
+      "beta_rom": "parameters/10_enc2_extra_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 10,
+      "in_channels": 64,
+      "input_hw": [
+        110,
+        160
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 1126400,
+      "name": "enc2_extra.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 64,
+      "output_hw": [
+        110,
+        160
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 4290,
+      "parameter_file": "parameters/10_enc2_extra_pointwise.json",
+      "spatial_tier": "quarter",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/10_enc2_extra_pointwise_threshold.mem",
+      "weight_count": 4096,
+      "weight_rom": "weights/10_enc2_extra_pointwise.mem"
+    },
+    {
+      "actor": "actor_11_down3_depthwise",
+      "beta_rom": "parameters/11_down3_depthwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 64,
+      "id": 11,
+      "in_channels": 64,
+      "input_hw": [
+        110,
+        160
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 281600,
+      "name": "down3.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 64,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 770,
+      "parameter_file": "parameters/11_down3_depthwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        2,
+        2
+      ],
+      "threshold_rom": "parameters/11_down3_depthwise_threshold.mem",
+      "weight_count": 576,
+      "weight_rom": "weights/11_down3_depthwise.mem"
+    },
+    {
+      "actor": "actor_12_down3_pointwise",
+      "beta_rom": "parameters/12_down3_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 12,
+      "in_channels": 64,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 563200,
+      "name": "down3.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 8578,
+      "parameter_file": "parameters/12_down3_pointwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/12_down3_pointwise_threshold.mem",
+      "weight_count": 8192,
+      "weight_rom": "weights/12_down3_pointwise.mem"
+    },
+    {
+      "actor": "actor_13_enc3_depthwise",
+      "beta_rom": "parameters/13_enc3_depthwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 128,
+      "id": 13,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 563200,
+      "name": "enc3.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 1538,
+      "parameter_file": "parameters/13_enc3_depthwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/13_enc3_depthwise_threshold.mem",
+      "weight_count": 1152,
+      "weight_rom": "weights/13_enc3_depthwise.mem"
+    },
+    {
+      "actor": "actor_14_enc3_pointwise",
+      "beta_rom": "parameters/14_enc3_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 14,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 563200,
+      "name": "enc3.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 16770,
+      "parameter_file": "parameters/14_enc3_pointwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/14_enc3_pointwise_threshold.mem",
+      "weight_count": 16384,
+      "weight_rom": "weights/14_enc3_pointwise.mem"
+    },
+    {
+      "actor": "actor_15_enc3_extra_depthwise",
+      "beta_rom": "parameters/15_enc3_extra_depthwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 128,
+      "id": 15,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 563200,
+      "name": "enc3_extra.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 1538,
+      "parameter_file": "parameters/15_enc3_extra_depthwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/15_enc3_extra_depthwise_threshold.mem",
+      "weight_count": 1152,
+      "weight_rom": "weights/15_enc3_extra_depthwise.mem"
+    },
+    {
+      "actor": "actor_16_enc3_extra_pointwise",
+      "beta_rom": "parameters/16_enc3_extra_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 16,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 563200,
+      "name": "enc3_extra.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 16770,
+      "parameter_file": "parameters/16_enc3_extra_pointwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/16_enc3_extra_pointwise_threshold.mem",
+      "weight_count": 16384,
+      "weight_rom": "weights/16_enc3_extra_pointwise.mem"
+    },
+    {
+      "actor": "actor_17_context1_depthwise",
+      "beta_rom": "parameters/17_context1_depthwise_beta.mem",
+      "dilation": [
+        2,
+        2
+      ],
+      "groups": 128,
+      "id": 17,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 563200,
+      "name": "context1.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        2,
+        2
+      ],
+      "parameter_count": 1538,
+      "parameter_file": "parameters/17_context1_depthwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/17_context1_depthwise_threshold.mem",
+      "weight_count": 1152,
+      "weight_rom": "weights/17_context1_depthwise.mem"
+    },
+    {
+      "actor": "actor_18_context1_pointwise",
+      "beta_rom": "parameters/18_context1_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 18,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 563200,
+      "name": "context1.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 16770,
+      "parameter_file": "parameters/18_context1_pointwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/18_context1_pointwise_threshold.mem",
+      "weight_count": 16384,
+      "weight_rom": "weights/18_context1_pointwise.mem"
+    },
+    {
+      "actor": "actor_19_context2_depthwise",
+      "beta_rom": "parameters/19_context2_depthwise_beta.mem",
+      "dilation": [
+        2,
+        2
+      ],
+      "groups": 128,
+      "id": 19,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 563200,
+      "name": "context2.depthwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        2,
+        2
+      ],
+      "parameter_count": 1538,
+      "parameter_file": "parameters/19_context2_depthwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/19_context2_depthwise_threshold.mem",
+      "weight_count": 1152,
+      "weight_rom": "weights/19_context2_depthwise.mem"
+    },
+    {
+      "actor": "actor_20_context2_pointwise",
+      "beta_rom": "parameters/20_context2_pointwise_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 20,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 563200,
+      "name": "context2.pointwise",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 128,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 16770,
+      "parameter_file": "parameters/20_context2_pointwise.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/20_context2_pointwise_threshold.mem",
+      "weight_count": 16384,
+      "weight_rom": "weights/20_context2_pointwise.mem"
+    },
+    {
+      "actor": "actor_21_project3",
+      "beta_rom": "parameters/21_project3_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 21,
+      "in_channels": 128,
+      "input_hw": [
+        55,
+        80
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 281600,
+      "name": "project3",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 64,
+      "output_hw": [
+        55,
+        80
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 8384,
+      "parameter_file": "parameters/21_project3.json",
+      "spatial_tier": "eighth",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/21_project3_threshold.mem",
+      "weight_count": 8192,
+      "weight_rom": "weights/21_project3.mem"
+    },
+    {
+      "actor": "actor_22_decoder2_fuse",
+      "beta_rom": "parameters/22_decoder2_fuse_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 22,
+      "in_channels": 128,
+      "input_hw": [
+        110,
+        160
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 1126400,
+      "name": "decoder2_fuse",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 64,
+      "output_hw": [
+        110,
+        160
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 8384,
+      "parameter_file": "parameters/22_decoder2_fuse.json",
+      "spatial_tier": "quarter",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/22_decoder2_fuse_threshold.mem",
+      "weight_count": 8192,
+      "weight_rom": "weights/22_decoder2_fuse.mem"
+    },
+    {
+      "actor": "actor_23_project2",
+      "beta_rom": "parameters/23_project2_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 23,
+      "in_channels": 64,
+      "input_hw": [
+        110,
+        160
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "logical_membrane_states": 563200,
+      "name": "project2",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "base_encoder_decoder_skeleton",
+      "out_channels": 32,
+      "output_hw": [
+        110,
+        160
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 2144,
+      "parameter_file": "parameters/23_project2.json",
+      "spatial_tier": "quarter",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/23_project2_threshold.mem",
+      "weight_count": 2048,
+      "weight_rom": "weights/23_project2.mem"
+    },
+    {
+      "actor": "actor_24_final_fuse_standard",
+      "beta_rom": "parameters/24_final_fuse_standard_beta.mem",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 24,
+      "in_channels": 40,
+      "input_hw": [
+        440,
+        640
+      ],
+      "kernel": [
+        3,
+        3
+      ],
+      "logical_membrane_states": 4505600,
+      "name": "final_fuse.standard",
+      "normalization": "channel_affine_folded_into_weight",
+      "origin": "canonical_140k_architecture_addition",
+      "out_channels": 16,
+      "output_hw": [
+        440,
+        640
+      ],
+      "padding": [
+        1,
+        1
+      ],
+      "parameter_count": 5808,
+      "parameter_file": "parameters/24_final_fuse_standard.json",
+      "spatial_tier": "native",
+      "stride": [
+        1,
+        1
+      ],
+      "threshold_rom": "parameters/24_final_fuse_standard_threshold.mem",
+      "weight_count": 5760,
+      "weight_rom": "weights/24_final_fuse_standard.mem"
+    },
+    {
+      "actor": "temporal_class_current_readout",
+      "dilation": [
+        1,
+        1
+      ],
+      "groups": 1,
+      "id": 25,
+      "in_channels": 16,
+      "input_hw": [
+        440,
+        640
+      ],
+      "kernel": [
+        1,
+        1
+      ],
+      "kind": "stateless_temporal_current_accumulator",
+      "logical_membrane_states": 0,
+      "name": "head.synapse",
+      "normalization": "none",
+      "out_channels": 6,
+      "output_hw": [
+        440,
+        640
+      ],
+      "padding": [
+        0,
+        0
+      ],
+      "parameter_count": 96,
+      "spatial_tier": "native",
+      "stride": [
+        1,
+        1
+      ],
+      "weight_count": 96,
+      "weight_rom": "weights/25_head_synapse.mem"
+    }
+  ],
+  "logical_membrane_states": 30976000,
+  "manufacturable_target_gate": {
+    "maximum_process_nm": 28,
+    "requires": [
+      "foundry_PDK",
+      "characterized_high_density_actor_local_SRAM_macros",
+      "standard_cell_liberty_LEF_GDS"
+    ],
+    "status": "pending_library_access"
+  },
+  "model": "EventSpikeSeg140k",
+  "open_PPA_target": {
+    "flow": "Yosys_OpenROAD_Flow_Scripts",
+    "manufacturable": false,
+    "platform": "ASAP7",
+    "process_nm": 7,
+    "purpose": "predictive_research_PPA",
+    "signoff": false
+  },
+  "quantization": {
+    "adaptation": {
+      "bits": 16,
+      "fractional_bits": 10,
+      "maximum_integer": 32767,
+      "minimum_integer": -32768,
+      "name": "adaptation_q5_10",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": true
+    },
+    "beta": {
+      "bits": 16,
+      "fractional_bits": 15,
+      "maximum_integer": 65535,
+      "minimum_integer": 0,
+      "name": "beta_uq1_15",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": false
+    },
+    "current": {
+      "bits": 24,
+      "fractional_bits": 10,
+      "maximum_integer": 8388607,
+      "minimum_integer": -8388608,
+      "name": "current_q13_10",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": true
+    },
+    "membrane": {
+      "bits": 16,
+      "fractional_bits": 10,
+      "maximum_integer": 32767,
+      "minimum_integer": -32768,
+      "name": "membrane_q5_10",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": true
+    },
+    "threshold": {
+      "bits": 16,
+      "fractional_bits": 10,
+      "maximum_integer": 32767,
+      "minimum_integer": -32768,
+      "name": "threshold_q5_10",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": true
+    },
+    "weight": {
+      "bits": 8,
+      "fractional_bits": 6,
+      "maximum_integer": 127,
+      "minimum_integer": -128,
+      "name": "weight_q1_6",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": true
+    }
+  },
+  "registered_parameters": 149835,
+  "schema_version": "2.1.0",
+  "spatial_shapes": {
+    "eighth": [
+      55,
+      80
+    ],
+    "half": [
+      220,
+      320
+    ],
+    "native": [
+      440,
+      640
+    ],
+    "quarter": [
+      110,
+      160
+    ]
+  },
+  "state_capacity": {
+    "adaptation_bytes_two_int16": 43929600,
+    "adaptation_enabled_neurons": 10982400,
+    "dense_exact_state_bytes": 198809600,
+    "dense_exact_state_mib": 189.599609375,
+    "full_chip_PPA_gate": "characterized_actor_local_SRAM_macros_required",
+    "last_bin_tag_bytes_24": 92928000,
+    "logical_membranes": 30976000,
+    "membrane_bytes_int16": 61952000,
+    "weight_bytes_int8": 143824
+  },
+  "timing_contract": {
+    "bin_us": 5000,
+    "commit_rule": "one_PLIF_update_per_touched_destination_after_completion",
+    "epoch_boundary": "ordered_completion_token",
+    "global_actor_scheduler": false,
+    "last_bin_tag_width_bits": 24,
+    "per_neuron_last_bin_tag_required": true,
+    "per_neuron_timestamp_required": false,
+    "prediction_bins_default": 10,
+    "prediction_period_us_default": 50000,
+    "schedule": "autonomous_static_actor_graph"
+  },
+  "timing_model": "autonomous_actor_events_with_ordered_5ms_completion_tokens"
+}

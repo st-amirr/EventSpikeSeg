@@ -853,7 +853,7 @@ quantization:
     - layerwise_equivalence_replay
 
 asic_implementation:
-  status: trained_v4_checkpoint_exported_and_exact_25_actor_SystemVerilog_DAG_generated
+  status: six_class_trained_v4_exact_25_actor_SystemVerilog_DAG_CPU_verified
   topology:
     permanent_actors: 25_PLIF_populations_plus_stateless_readout
     graph_kind: static_directed_acyclic_actor_graph
@@ -1216,18 +1216,36 @@ export_contract:
   - model_spec_SHA256_680f8c52e909397d3f1e2dbf5cfbc21272d3519ddbbb20abad5f0bca8426ee15
   - generated_top_SHA256_0fc202f1dbd75dc53eb514657fa2dee8f0cff29d8d346c79f4405f654f0d2d3a
   - complete_container_regression_79_tests_passing_and_Ruff_clean
-  remaining_after_native_iteration_6:
+  implemented_six_class_native_SystemVerilog_iteration_7:
+  - trained_artifacts_checkpointsV4_dsec_6class_EventSpikeSeg140k_seed17_best_checkpoint_exported
+  - exported_counts_149835_registered_149423_executed_143824_synaptic_weights
+  - exported_25_actor_30976000_logical_membrane_state_contract_revalidated
+  - active_export_contains_1_inhibition_actor_and_15_triangular_adaptation_actors
+  - active_143824_word_int8_weight_ROM_set_and_per_actor_beta_threshold_ROMs_emitted
+  - active_378396_byte_weighted_eventspikeseg140k_dag_top_SystemVerilog_generated
+  - model_spec_SHA256_949c0721310799b709e0e9fb774b46c998cd486d20fd9cdf618f8f3d3ba53826
+  - generated_top_SHA256_4b789fbf279acc2760f7fc82c6749dba29c2f6f77d14481c7835ba397612a2aa
+  - separate_compose_implementation_yaml_CPU_only_verification_flow
+  - CPU_PyTorch_2_2_2_torchvision_0_17_2_Icarus_12_cocotb_and_Yosys
+  - CPU_regression_83_Python_tests_22_cocotb_RTL_groups_Ruff_and_representative_Yosys_gate_passing
+  remaining_after_active_six_class_iteration_7:
   - bind_actor_and_readout_behavioral_state_arrays_to_characterized_SRAM_macro_wrappers
   - bit_exact_full_DAG_integer_reference_equivalence_on_exported_golden_streams
   - full_sequence_activity_FIFO_latency_and_energy_measurement
   - full_DAG_equivalence_and_open_PPA_tile_sweep
   - select_accessible_manufacturable_22nm_or_better_PDK_and_SRAM_compiler
-  generated_real_checkpoint_artifacts:
+  legacy_11_class_generated_checkpoint_artifacts:
     directory: artifacts/asic_export_v4
     model_spec: artifacts/asic_export_v4/model_spec.yaml
     layer_graph: artifacts/asic_export_v4/layer_graph.json
     generated_top: artifacts/asic_export_v4/eventspikeseg140k_dag_top.sv
     source_checkpoint: artifacts/checkpointsV4/dsec/EventSpikeSeg140k_seed17_best.pt
+  active_six_class_generated_checkpoint_artifacts:
+    directory: artifacts/asic_export_v4_6class
+    model_spec: artifacts/asic_export_v4_6class/model_spec.yaml
+    layer_graph: artifacts/asic_export_v4_6class/layer_graph.json
+    generated_top: artifacts/asic_export_v4_6class/eventspikeseg140k_dag_top.sv
+    source_checkpoint: artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_best.pt
 validation_and_testing:
   required_fast_tests:
   - configuration_schema

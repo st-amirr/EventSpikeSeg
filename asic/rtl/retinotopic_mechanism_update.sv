@@ -37,7 +37,7 @@ module retinotopic_mechanism_update #(
   integer signed membrane;
   integer signed adjusted;
   integer signed inhibited;
-  longint unsigned effective_age [0:CHANNELS-1];
+  longint unsigned effective_age_value;
   longint unsigned phase;
   longint unsigned penalty;
   longint unsigned penalty_sum;
@@ -51,12 +51,16 @@ module retinotopic_mechanism_update #(
   integer root_bit;
   logic any_spike;
 
-  always_comb begin
+  // Use an explicit combinational process instead of always_comb here. Icarus
+  // 11 incorrectly adds this block's temporary variables to its any-edge
+  // sensitivity set and can enter a zero-time assertion loop.
+  always @* begin
     candidate = 0;
     threshold = 0;
     membrane = 0;
     adjusted = 0;
     inhibited = 0;
+    effective_age_value = 0;
     phase = 0;
     penalty = 0;
     penalty_sum = 0;
@@ -69,19 +73,19 @@ module retinotopic_mechanism_update #(
     amplitude_value = 0;
     any_spike = 1'b0;
     for (channel = 0; channel < CHANNELS; channel = channel + 1) begin
-      effective_age[channel] = $unsigned(ages_i[channel*AGE_WIDTH +: AGE_WIDTH]);
+      effective_age_value = $unsigned(ages_i[channel*AGE_WIDTH +: AGE_WIDTH]);
       if (ages_i[channel*AGE_WIDTH +: AGE_WIDTH] != INACTIVE && update_mask_i[channel])
-        effective_age[channel] = effective_age[channel] +
+        effective_age_value = effective_age_value +
           ($unsigned(elapsed_bins_i[channel*ELAPSED_WIDTH +: ELAPSED_WIDTH]) <<
            FRAC_BITS);
       phase = 0;
       if (adaptation_enabled_i &&
           ages_i[channel*AGE_WIDTH +: AGE_WIDTH] != INACTIVE &&
           adaptation_duration_i != 0) begin
-        if (effective_age[channel] <= $unsigned(adaptation_duration_i))
-          phase = effective_age[channel];
-        else if (effective_age[channel] < 2*$unsigned(adaptation_duration_i))
-          phase = 2*$unsigned(adaptation_duration_i) - effective_age[channel];
+        if (effective_age_value <= $unsigned(adaptation_duration_i))
+          phase = effective_age_value;
+        else if (effective_age_value < 2*$unsigned(adaptation_duration_i))
+          phase = 2*$unsigned(adaptation_duration_i) - effective_age_value;
       end
       penalty = (adaptation_duration_i == 0) ? 0 :
         ($unsigned(amplitudes_i[channel*MEM_WIDTH +: MEM_WIDTH]) * phase) /
@@ -125,6 +129,9 @@ module retinotopic_mechanism_update #(
       membranes_o[channel*MEM_WIDTH +: MEM_WIDTH] = membrane[MEM_WIDTH-1:0];
 
       if (adaptation_enabled_i && update_mask_i[channel]) begin
+        effective_age_value = $unsigned(ages_i[channel*AGE_WIDTH +: AGE_WIDTH]) +
+          ($unsigned(elapsed_bins_i[channel*ELAPSED_WIDTH +: ELAPSED_WIDTH]) <<
+           FRAC_BITS);
         if (spikes_o[channel]) begin
           ages_o[channel*AGE_WIDTH +: AGE_WIDTH] = '0;
           amplitude_value =
@@ -135,11 +142,11 @@ module retinotopic_mechanism_update #(
           else amplitudes_o[channel*MEM_WIDTH +: MEM_WIDTH] =
             amplitude_value[MEM_WIDTH-1:0];
         end else if (ages_i[channel*AGE_WIDTH +: AGE_WIDTH] != INACTIVE) begin
-          if (effective_age[channel] >= 2*$unsigned(adaptation_duration_i)) begin
+          if (effective_age_value >= 2*$unsigned(adaptation_duration_i)) begin
             ages_o[channel*AGE_WIDTH +: AGE_WIDTH] = INACTIVE;
             amplitudes_o[channel*MEM_WIDTH +: MEM_WIDTH] = '0;
           end else ages_o[channel*AGE_WIDTH +: AGE_WIDTH] =
-            effective_age[channel][AGE_WIDTH-1:0];
+            effective_age_value[AGE_WIDTH-1:0];
         end
       end
     end

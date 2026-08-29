@@ -162,6 +162,6 @@ Exact two-channel parameter counts are:
 | canonical `EventSpikeSeg140k` | 140,089 |
 | `EventSpikeSegXL` | 236,445 |
 
-Historical repeated-static experiments do not show a positive correlation between parameter count and mIoU: the 21,491-parameter structural model beat the 77,751- and 107,131-parameter alternatives, and the 24,211-parameter dual-path model beat the 63,147- and 108,781-parameter alternatives. This is evidence that parameter count alone was not the plateau cause, but it is not a ranking under the current temporal protocol. The current FPGA target is the 150,245-parameter, 11-class `EventSpikeSeg140k` v8 model at native 440x640 resolution; this implementation choice is not a new accuracy result.
+Historical repeated-static experiments do not show a positive correlation between parameter count and mIoU: the 21,491-parameter structural model beat the 77,751- and 107,131-parameter alternatives, and the 24,211-parameter dual-path model beat the 63,147- and 108,781-parameter alternatives. This is evidence that parameter count alone was not the plateau cause, but it is not a ranking under the current temporal protocol. The current ASIC target is the 149,835-parameter, six-class `EventSpikeSeg140k` v8 model at native 440x640 resolution; this implementation choice is not a new accuracy result.
 
 No new mIoU, pixel accuracy, spike-rate, latency, power, or FPGA-resource result is claimed for temporal-v2 yet.

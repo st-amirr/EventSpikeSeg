@@ -1,0 +1,42 @@
+FROM python:3.11-slim-bookworm AS iverilog-builder
+
+ARG IVERILOG_VERSION=12_0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      autoconf bison build-essential ca-certificates curl flex gperf \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL \
+      "https://github.com/steveicarus/iverilog/archive/refs/tags/v${IVERILOG_VERSION}.tar.gz" \
+      | tar -xz -C /tmp \
+    && cd "/tmp/iverilog-${IVERILOG_VERSION}" \
+    && sh autoconf.sh \
+    && ./configure --prefix=/opt/iverilog \
+    && make -j2 \
+    && make install
+
+FROM python:3.11-slim-bookworm
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends yosys \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=iverilog-builder /opt/iverilog /usr/local
+
+WORKDIR /opt/eventspikeseg
+COPY pyproject.toml README.md ./
+COPY src ./src
+
+# Install the official CPU wheel before the project so dependency resolution
+# cannot pull a CUDA runtime into this verification-only image.
+RUN python -m pip install --no-cache-dir \
+      --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.2.2 torchvision==0.17.2 \
+    && python -m pip install --no-cache-dir '.[dev,rtl]' \
+    && python -c "import torch, torchvision; assert torch.version.cuda is None"
+
+WORKDIR /workspace

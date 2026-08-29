@@ -151,6 +151,19 @@ does not claim an electrically clockless/QDI implementation. See `docs/ARCHITECT
 
 ## Main commands
 
+CPU-only ASIC implementation verification uses its own Compose file and does not
+pull the CUDA training image:
+
+```powershell
+docker compose -f compose_ASIC.yaml build
+docker compose -f compose_ASIC.yaml run --rm test
+docker compose -f compose_ASIC.yaml run --rm rtl
+docker compose -f compose_ASIC.yaml run --rm synthesis
+docker compose -f compose_ASIC.yaml run --rm lint
+```
+
+Dataset inspection and training continue to use the CUDA-capable main Compose file:
+
 ```powershell
 docker compose run --rm inspect-ddd17
 docker compose run --rm inspect-dsec

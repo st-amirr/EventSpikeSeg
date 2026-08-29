@@ -1,0 +1,39 @@
+name: eventspikeseg-implementation
+
+x-cpu-verification: &cpu-verification
+  build:
+    context: .
+    dockerfile: docker/app/dockerfile_ASIC
+  image: eventspikeseg:torch2.2.2-cpu-verification
+  platform: linux/amd64
+  working_dir: /workspace
+  environment:
+    PYTHONPATH: /workspace/src
+    PYTEST_ADDOPTS: -p no:cacheprovider
+    RUFF_CACHE_DIR: /tmp/ruff-cache
+    PYTHONUNBUFFERED: "1"
+  volumes:
+    - type: bind
+      source: .
+      target: /workspace
+      read_only: true
+    - type: bind
+      source: ./artifacts
+      target: /workspace/artifacts
+
+services:
+  test:
+    <<: *cpu-verification
+    command: ["python", "-m", "pytest", "-q"]
+
+  lint:
+    <<: *cpu-verification
+    command: ["python", "-m", "ruff", "check", "src", "tests"]
+
+  rtl:
+    <<: *cpu-verification
+    command: ["python", "scripts/run_rtl_tests.py"]
+
+  synthesis:
+    <<: *cpu-verification
+    command: ["bash", "asic/scripts/check_synthesis.sh"]

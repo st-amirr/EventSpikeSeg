@@ -1,7 +1,6 @@
 import cocotb
 from cocotb.triggers import Timer
 
-
 COORD_WIDTH = 10
 WEIGHT_WIDTH = 8
 TAP_COUNT = 9

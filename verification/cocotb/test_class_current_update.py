@@ -4,6 +4,7 @@ from cocotb.triggers import RisingEdge, Timer
 
 SCORE_WIDTH = 24
 CONTRIBUTION_WIDTH = 8
+CLASS_COUNT = 6
 
 
 def pack_signed(values: list[int], width: int) -> int:
@@ -38,7 +39,7 @@ async def update(
     dut.in_valid.value = 0
     assert int(dut.out_valid.value) == 1
     result = (
-        unpack_signed(int(dut.scores_o.value), 11, SCORE_WIDTH),
+        unpack_signed(int(dut.scores_o.value), CLASS_COUNT, SCORE_WIDTH),
         int(dut.state_live_o.value),
         int(dut.prediction_valid_o.value),
         int(dut.class_o.value),
@@ -58,20 +59,20 @@ async def accumulates_signed_weights_then_flushes_prediction(dut) -> None:
 
     first, live, prediction, winner = await update(
         dut,
-        [0] * 11,
-        [5, -2, 7, 0, 1, 3, -4, 2, 6, 0, -1],
+        [0] * CLASS_COUNT,
+        [5, -2, 7, 0, 1, 3],
         False,
     )
-    assert first == [5, -2, 7, 0, 1, 3, -4, 2, 6, 0, -1]
+    assert first == [5, -2, 7, 0, 1, 3]
     assert (live, prediction, winner) == (1, 0, 2)
 
     cleared, live, prediction, winner = await update(
         dut,
         first,
-        [2, 10, -1, 0, 0, 0, 0, 0, 0, 0, 0],
+        [2, 10, -1, 0, 0, 0],
         True,
     )
-    assert cleared == [0] * 11
+    assert cleared == [0] * CLASS_COUNT
     assert (live, prediction, winner) == (0, 1, 1)
 
 
@@ -85,10 +86,10 @@ async def saturates_and_preserves_first_index_on_tie(dut) -> None:
     dut.reset.value = 0
 
     maximum = (1 << 23) - 1
-    scores = [maximum, maximum, -10] + [0] * 8
+    scores = [maximum, maximum, -10] + [0] * 3
     updated, _, prediction, winner = await update(
-        dut, scores, [127, 127, -128] + [0] * 8, True
+        dut, scores, [127, 127, -128] + [0] * 3, True
     )
-    assert updated == [0] * 11
+    assert updated == [0] * CLASS_COUNT
     assert prediction == 1
     assert winner == 0
