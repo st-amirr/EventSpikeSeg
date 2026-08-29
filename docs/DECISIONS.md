@@ -1,5 +1,14 @@
 # Decisions
 
+## 2026-08-29 — Size Docker shared memory for eight DSEC workers
+
+Keep the user-selected eight CPU preprocessing workers with one prefetched record per
+worker and raise the DSEC container `/dev/shm` ceiling from 256 MiB to 512 MiB. Eight
+native 440x640 records occupy about 190 MiB before PyTorch multiprocessing queue,
+in-flight transfer, and pinned-host-copy overhead, which caused the observed bus error
+and `No space left on device` at 256 MiB. The ceiling is backed on demand and does not
+reserve VRAM.
+
 ## 2026-08-29 — Train connected semantic regions without inference post-processing
 
 Keep final Dice at 0.3 and add a 0.05 target-aware four-neighbor consistency term

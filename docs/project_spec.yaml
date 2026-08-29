@@ -631,8 +631,9 @@ training:
     prefetched_storage: pinned_host_RAM_when_CUDA_is_active
     gpu_transfer: non_blocking
     chronological_delivery: preserved
-    docker_shared_memory_limit_mib: 256
-    shared_memory_reason: two_native_records_plus_PyTorch_multiprocessing_queue_overhead_exceed_Docker_64MiB_default
+    compose_worker_processes: 8
+    docker_shared_memory_limit_mib: 512
+    shared_memory_reason: eight_native_records_are_about_190MiB_before_PyTorch_queue_inflight_and_pinned_copy_overhead
     note: preprocessing_prefetch_does_not_allocate_additional_VRAM_beyond_the_active_GPU_record
   optimizer:
     name: AdamW

@@ -1539,9 +1539,11 @@ def train_architecture(
             flush=True,
         )
         print(
-            "DSEC training augmentation | horizontal_flip=0.5 | "
-            "translation=+/-6px fixed per sequence | event_dropout=0-5% "
-            "per epoch-record | validation=off",
+            "DSEC training augmentation | "
+            f"horizontal_flip={DSEC_HORIZONTAL_FLIP_PROBABILITY:g} | "
+            f"translation=+/-{DSEC_MAX_TRANSLATION_PIXELS}px fixed per sequence | "
+            f"event_dropout=0-{100 * DSEC_MAX_EVENT_DROPOUT:g}% per epoch-record | "
+            "validation=off",
             flush=True,
         )
         print(
