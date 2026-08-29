@@ -221,6 +221,7 @@ class LossProfile:
     pixel_cross_entropy: float = 0.0
     focal: float = 0.5
     dice: float = 0.75
+    region_consistency: float = 0.0
     auxiliary_ce: float = 0.15
     auxiliary_focal: float = 0.15
     boundary: float = 0.0
@@ -236,12 +237,13 @@ FINAL_LOSS_PROFILE = LossProfile(
     pixel_cross_entropy=0.5,
     focal=0.0,
     dice=0.30,
+    region_consistency=0.05,
     auxiliary_ce=0.10,
     auxiliary_focal=0.0,
-    boundary=0.05,
+    boundary=0.02,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-spike-preserving-fusion-blended-ce-v10"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-spike-preserving-region-consistency-v11"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -332,18 +334,58 @@ def seed_everything(seed: int) -> None:
     torch.use_deterministic_algorithms(True, warn_only=True)
 
 
+def _soft_dice_from_probabilities(
+    probabilities: Tensor, target: Tensor, class_count: int
+) -> Tensor:
+    """Memory-conscious per-class Dice from a shared softmax tensor."""
+    valid = target != IGNORE_INDEX
+    losses = []
+    for class_index in range(class_count):
+        class_probability = probabilities[:, class_index]
+        class_target = (target == class_index) & valid
+        numerator = 2.0 * class_probability[class_target].sum() + 1.0
+        denominator = (
+            class_probability[valid].sum()
+            + class_target.sum().to(class_probability.dtype)
+            + 1.0
+        )
+        losses.append(1.0 - numerator / denominator)
+    return torch.stack(losses)
+
+
 def soft_dice_loss(logits: Tensor, target: Tensor, class_count: int) -> Tensor:
     """Differentiable Dice loss for each semantic class in the current batch."""
-    probabilities = logits.softmax(dim=1)
+    return _soft_dice_from_probabilities(logits.softmax(dim=1), target, class_count)
+
+
+def same_class_neighbor_consistency_loss(
+    probabilities: Tensor, target: Tensor
+) -> Tensor:
+    """Penalize probability discontinuities inside ground-truth semantic regions."""
     valid = target != IGNORE_INDEX
-    safe_target = target.masked_fill(~valid, 0)
-    one_hot = F.one_hot(safe_target, class_count).permute(0, 3, 1, 2).float()
-    valid_mask = valid.unsqueeze(1).float()
-    probabilities = probabilities * valid_mask
-    one_hot = one_hot * valid_mask
-    numerator = 2.0 * (probabilities * one_hot).sum(dim=(0, 2, 3)) + 1.0
-    denominator = probabilities.sum(dim=(0, 2, 3)) + one_hot.sum(dim=(0, 2, 3)) + 1.0
-    return 1.0 - numerator / denominator
+    horizontal_pairs = (
+        valid[:, :, 1:]
+        & valid[:, :, :-1]
+        & (target[:, :, 1:] == target[:, :, :-1])
+    )
+    vertical_pairs = (
+        valid[:, 1:, :]
+        & valid[:, :-1, :]
+        & (target[:, 1:, :] == target[:, :-1, :])
+    )
+    pair_count = horizontal_pairs.sum() + vertical_pairs.sum()
+    if not pair_count:
+        return probabilities.sum() * 0.0
+    horizontal_distance = 0.5 * (
+        probabilities[:, :, :, 1:] - probabilities[:, :, :, :-1]
+    ).abs().sum(dim=1)
+    horizontal_loss = horizontal_distance[horizontal_pairs].sum()
+    del horizontal_distance
+    vertical_distance = 0.5 * (
+        probabilities[:, :, 1:, :] - probabilities[:, :, :-1, :]
+    ).abs().sum(dim=1)
+    vertical_loss = vertical_distance[vertical_pairs].sum()
+    return (horizontal_loss + vertical_loss) / pair_count.to(probabilities.dtype)
 
 
 def macro_class_cross_entropy(
@@ -512,7 +554,9 @@ def _training_objective(
     logits = outputs["segmentation_logits"]
     macro_ce = macro_class_cross_entropy(logits, target, class_count)
     pixel_ce = pixel_cross_entropy(logits, target)
-    dice_losses = soft_dice_loss(logits, target, class_count)
+    probabilities = logits.softmax(dim=1)
+    dice_losses = _soft_dice_from_probabilities(probabilities, target, class_count)
+    region_consistency = same_class_neighbor_consistency_loss(probabilities, target)
     valid_target = target[target != IGNORE_INDEX]
     present_classes = (
         torch.bincount(valid_target, minlength=class_count) > 0
@@ -529,6 +573,7 @@ def _training_objective(
             loss_profile.cross_entropy * macro_ce
             + loss_profile.pixel_cross_entropy * pixel_ce
             + loss_profile.dice * present_dice_loss
+            + loss_profile.region_consistency * region_consistency
             + _activity_regularizer(outputs)
         )
     else:
@@ -538,6 +583,7 @@ def _training_objective(
             + loss_profile.pixel_cross_entropy * pixel_ce
             + loss_profile.focal * focal
             + loss_profile.dice * present_dice_loss
+            + loss_profile.region_consistency * region_consistency
             + _activity_regularizer(outputs)
         )
     if "auxiliary_logits" in outputs:
@@ -1256,7 +1302,7 @@ def train_architecture(
                 "training_phase": training_phase_name,
                 "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
                 "training_objective": (
-                    "full-window-0.5-pixel-ce-plus-0.5-macro-ce-plus-0.3-dice-plus-0.1-aux-ce-plus-0.05-boundary"
+                    "full-window-0.5-pixel-ce-plus-0.5-macro-ce-plus-0.3-dice-plus-0.05-region-plus-0.1-aux-ce-plus-0.02-boundary"
                     if is_final_run
                     else "macro-present-class-historical-compound"
                 ),
@@ -1513,7 +1559,7 @@ def train_architecture(
     if is_final_run:
         print(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
-            "objective=0.5-pixel-CE+0.5-macro-CE+0.3-Dice+0.1-aux-CE+0.05-boundary | "
+            "objective=0.5-pixel-CE+0.5-macro-CE+0.3-Dice+0.05-region+0.1-aux-CE+0.02-boundary | "
             "focal=off activity=on | "
             f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "

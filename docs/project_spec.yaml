@@ -647,8 +647,10 @@ training:
     final_pixel_cross_entropy_weight: 0.5
     final_macro_cross_entropy_weight: 0.5
     final_dice_weight: 0.3
+    final_same_class_neighbor_consistency_weight: 0.05
+    region_consistency: four_neighbor_probability_total_variation_only_where_adjacent_valid_targets_match
     final_auxiliary_pixel_ce_weight: 0.1
-    final_boundary_weight: 0.05
+    final_boundary_weight: 0.02
     absent_class_behavior: no_positive_class_term_but_logits_remain_in_every_present_class_softmax_denominator
     optional_future_regularizers:
       spike_rate: 0.001

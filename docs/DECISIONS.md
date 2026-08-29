@@ -1,5 +1,16 @@
 # Decisions
 
+## 2026-08-29 — Train connected semantic regions without inference post-processing
+
+Keep final Dice at 0.3 and add a 0.05 target-aware four-neighbor consistency term
+over the final softmax probabilities. Penalize class-distribution discontinuity only
+between adjacent valid pixels whose ground-truth classes match; do not smooth across
+true class boundaries or ignore-index borders. Reduce the training-only boundary-head
+BCE from 0.05 to 0.02 because validation predictions remain excessively aligned to
+sparse event edges. Reuse the Dice softmax and compute Dice per class without a dense
+one-hot target to contain training memory. The new loss adds no inference parameters,
+post-processing, latency, or FPGA hardware.
+
 ## 2026-08-27 — Make six broad DSEC classes the active 140k training and ASIC target
 
 Replace the active eleven-output semantic head with six outputs while retaining the exact

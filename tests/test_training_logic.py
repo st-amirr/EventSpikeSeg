@@ -29,6 +29,7 @@ from eventspikeseg.train import (
     macro_class_cross_entropy,
     refinement_phase_for_epoch,
     restored_resume_learning_rates,
+    same_class_neighbor_consistency_loss,
     save_dsec_validation_previews,
     scale_learning_rates,
     select_winner,
@@ -356,9 +357,10 @@ def test_loss_profiles_remain_explicit() -> None:
         pixel_cross_entropy=0.5,
         focal=0.0,
         dice=0.30,
+        region_consistency=0.05,
         auxiliary_ce=0.10,
         auxiliary_focal=0.0,
-        boundary=0.05,
+        boundary=0.02,
     )
 
 
@@ -379,6 +381,58 @@ def test_macro_class_ce_gives_present_classes_equal_weight() -> None:
     expected = 0.5 * (pixel_nll[target == 0].mean() + pixel_nll[target == 1].mean())
     assert torch.allclose(macro_class_cross_entropy(logits, target, 2), expected)
     assert not torch.allclose(expected, pixel_nll.mean())
+
+
+def test_region_consistency_penalizes_only_same_target_class_discontinuities() -> None:
+    probabilities = torch.tensor(
+        [[[[0.9, 0.1], [0.9, 0.1]], [[0.1, 0.9], [0.1, 0.9]]]]
+    )
+    uniform_target = torch.zeros((1, 2, 2), dtype=torch.long)
+    split_target = torch.tensor([[[0, 1], [0, 1]]])
+    uniform_loss = same_class_neighbor_consistency_loss(
+        probabilities, uniform_target
+    )
+    boundary_aware_loss = same_class_neighbor_consistency_loss(
+        probabilities, split_target
+    )
+    assert uniform_loss > 0
+    assert torch.allclose(boundary_aware_loss, torch.tensor(0.0))
+
+
+def test_final_objective_applies_region_consistency_weight() -> None:
+    logits = torch.tensor(
+        [[[[3.0, -3.0], [3.0, -3.0]], [[-3.0, 3.0], [-3.0, 3.0]]]]
+    )
+    target = torch.zeros((1, 2, 2), dtype=torch.long)
+    outputs = {
+        "segmentation_logits": logits,
+        "segmentation_rate": torch.tensor(0.05),
+        "enc1_rate": torch.tensor(0.05),
+        "enc2_rate": torch.tensor(0.05),
+        "enc3_rate": torch.tensor(0.05),
+        "enc4_rate": torch.tensor(0.05),
+        "decoder_rate": torch.tensor(0.05),
+    }
+    loss, _, _ = _training_objective(
+        outputs,
+        target,
+        class_count=2,
+        loss_profile=LossProfile(
+            cross_entropy=0.0,
+            pixel_cross_entropy=0.0,
+            focal=0.0,
+            dice=0.0,
+            region_consistency=0.05,
+            auxiliary_ce=0.0,
+            auxiliary_focal=0.0,
+        ),
+        is_final_run=True,
+        training_phase="joint",
+    )
+    expected = 0.05 * same_class_neighbor_consistency_loss(
+        logits.softmax(dim=1), target
+    )
+    assert torch.allclose(loss, expected)
 
 
 def test_historical_suite_objective_also_uses_macro_class_ce() -> None:
