@@ -181,6 +181,11 @@ def generate_top(
         f"  output logic [{readout_class_width - 1}:0] prediction_class_o,",
         "  output logic frame_done_valid, input logic frame_done_ready,",
         "  output logic [TAG_WIDTH-1:0] frame_bin_tag_o,",
+        "  output logic [24:0] actor_trace_valid_o,",
+        "  output logic [24:0] actor_trace_ready_o,",
+        "  output logic [24:0] actor_trace_completion_o,",
+        "  output logic [25*PAYLOAD_WIDTH-1:0] actor_trace_payload_o,",
+        "  output logic [25*TAG_WIDTH-1:0] actor_trace_bin_tag_o,",
         "  output logic fault_o",
         ");",
     ]
@@ -219,11 +224,12 @@ def generate_top(
         output_base = f"n_{_identifier(actor_name)}"
         layer = layers[actor_name]
         weight_count = int(layer["weight_count"])
-        weights = _packed_literal(
-            export_dir / str(layer["weight_rom"]),
-            word_bits=8,
-            expected_words=weight_count,
-        )
+        weight_rom = export_dir / str(layer["weight_rom"])
+        # Validate the ROM now, but keep it as a memory file in generated RTL.
+        # A model-scale packed literal exceeds common Verilog lexer limits and
+        # does not reflect the intended actor-local compiled-ROM boundary.
+        _packed_literal(weight_rom, word_bits=8, expected_words=weight_count)
+        weight_file = str(layer["weight_rom"]).replace("\\", "/")
         betas = _parameter_literal(
             export_dir, layer, key="beta_q", rom_key="beta_rom", word_bits=16
         )
@@ -252,7 +258,7 @@ def generate_top(
             f".DILATION_X({dilation_x})", f".DILATION_Y({dilation_y})",
             f".PAD_X({pad_x})", f".PAD_Y({pad_y})",
             f".OUTPUT_WIDTH({output_w})", f".OUTPUT_HEIGHT({output_h})",
-            f".KERNEL_WEIGHTS({weights})", f".CHANNEL_BETAS({betas})",
+            f'.KERNEL_WEIGHT_FILE("{weight_file}")', f".CHANNEL_BETAS({betas})",
             f".CHANNEL_THRESHOLDS({thresholds})",
             f".ENABLE_INHIBITION({mechanisms['inhibition_enabled']})",
             f".ENABLE_ADAPTATION({mechanisms['adaptation_enabled']})",
@@ -267,6 +273,24 @@ def generate_top(
             "streaming_channelized_plif_actor #(\n    " + ",\n    ".join(params) +
             f"\n  ) actor_{_identifier(actor_name)}",
             ports,
+        )
+
+    # Passive observability only: these buses never participate in backpressure.
+    # A replay monitor samples one actor transfer when valid && ready. Keeping
+    # every actor on an independent packed lane preserves simultaneous activity.
+    for actor_index, actor_name in enumerate(actors):
+        actor_base = f"n_{_identifier(actor_name)}"
+        lines.extend(
+            [
+                f"  assign actor_trace_valid_o[{actor_index}] = {actor_base}_valid;",
+                f"  assign actor_trace_ready_o[{actor_index}] = {actor_base}_ready;",
+                f"  assign actor_trace_completion_o[{actor_index}] = "
+                f"{actor_base}_completion;",
+                f"  assign actor_trace_payload_o[{actor_index}*PAYLOAD_WIDTH +: "
+                f"PAYLOAD_WIDTH] = {actor_base}_payload;",
+                f"  assign actor_trace_bin_tag_o[{actor_index}*TAG_WIDTH +: TAG_WIDTH] = "
+                f"{actor_base}_bin_tag;",
+            ]
         )
 
     for node_name, kind in node_kinds.items():

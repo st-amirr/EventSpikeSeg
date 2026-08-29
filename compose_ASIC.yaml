@@ -28,7 +28,7 @@ services:
 
   lint:
     <<: *cpu-verification
-    command: ["python", "-m", "ruff", "check", "src", "tests"]
+    command: ["python", "-m", "ruff", "check", "src", "tests", "scripts", "verification"]
 
   rtl:
     <<: *cpu-verification

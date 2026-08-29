@@ -379,3 +379,18 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - the prior 11-class `artifacts/asic_export_v4` result is retained as historical evidence;
 - full-chip physical completion still requires a characterized SRAM compiler/library,
   a selected manufacturable PDK, real golden event streams, and routed activity data.
+
+## 2026-08-29 — Whole-DAG integer oracle and active golden artifacts
+
+- added a manifest-driven sparse integer executor for all 25 actors, explicit route nodes,
+  lazy learned-beta PLIF state, residual deduplication, multiplicity joins, retinotopic
+  inhibition/adaptation, and the signed temporal readout;
+- added `scripts/generate_asic_golden.py` and pickle-free compact NPZ tables matching all five
+  golden artifact names in the export contract;
+- executed the trained six-class checkpoint for ten 5 ms bins with 1,280 deterministic
+  synthetic ingress events, producing 267,305 current/membrane rows, 26,554 hidden spikes,
+  one native 440x640 semantic output, and 40,663 final live sparse state entries;
+- the golden stream is an arithmetic/graph stress fixture, not a DSEC accuracy or worst-case
+  capacity trace; full-sequence dataset replay and matching RTL trace comparison remain open.
+- the expanded CPU implementation regression passes 89 Python tests and Ruff checks source,
+  tests, scripts, and cocotb verification code.

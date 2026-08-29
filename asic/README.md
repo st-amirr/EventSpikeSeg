@@ -53,6 +53,17 @@ and enumerates a dense prediction after the configured bin window. `actor_local_
 defines the compiler-macro interface, but the current actor arrays remain behavioral until a
 real SRAM compiler is selected and bound.
 
+`src/eventspikeseg/asic/dag_reference.py` is the sparse bit-exact whole-graph oracle. It
+executes exported convolution scatter, joins, lazy PLIF state, retinotopic mechanisms, and
+the temporal readout. Generate the five required compact NPZ golden artifacts with:
+
+```sh
+docker compose -f compose_ASIC.yaml run --rm test python scripts/generate_asic_golden.py artifacts/asic_export_v4_6class/model_spec.yaml
+```
+
+The checked-in active artifacts use deterministic synthetic stress traffic. Dataset-derived
+full-sequence traffic is still required for occupancy, latency, accuracy, and power claims.
+
 The active trained six-class v4 export is retained under
 `artifacts/asic_export_v4_6class`; its generated weighted top contains all 25 actors and
 exactly 143,824 int8 synaptic ROM words. The prior 11-class export under

@@ -1,0 +1,10 @@
+{
+  "bins": 10,
+  "current_rows": 8935,
+  "final_live_state_entries": 3004,
+  "input_events": 40,
+  "logical_membrane_states": 7040,
+  "membrane_rows": 8962,
+  "predictions": 1,
+  "spike_rows": 16
+}

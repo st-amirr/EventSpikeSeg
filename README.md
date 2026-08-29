@@ -162,6 +162,12 @@ docker compose -f compose_ASIC.yaml run --rm synthesis
 docker compose -f compose_ASIC.yaml run --rm lint
 ```
 
+Generate the deterministic ten-bin integer golden stream for an exported ASIC model with:
+
+```powershell
+docker compose -f compose_ASIC.yaml run --rm test python scripts/generate_asic_golden.py artifacts/asic_export_v4_6class/model_spec.yaml
+```
+
 Dataset inspection and training continue to use the CUDA-capable main Compose file:
 
 ```powershell
@@ -353,4 +359,4 @@ spatial PLIF state and per-channel beta/threshold tables. The trained v4 checkpo
 exported and the manifest-driven generator emits the complete weighted **25-actor DAG**,
 including retinotopic mechanisms and the temporal readout. Remaining physical work is to replace
 behavioral state/merge arrays with characterized SRAM/banked sparse structures, integrate
-the real exported checkpoint in full-DAG equivalence, and run activity-based PPA.
+the emitted model-scale integer traces into full-DAG RTL replay, and run activity-based PPA.

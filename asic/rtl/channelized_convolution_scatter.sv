@@ -27,7 +27,8 @@ module channelized_convolution_scatter #(
   parameter integer OUTPUTS_PER_GROUP = OUTPUT_CHANNELS / GROUPS,
   parameter integer PROJECTION_COUNT = OUTPUT_CHANNELS * TAP_COUNT,
   parameter integer WEIGHT_COUNT = OUTPUT_CHANNELS * INPUTS_PER_GROUP * TAP_COUNT,
-  parameter logic signed [WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0
+  parameter logic signed [WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
+  parameter KERNEL_WEIGHT_FILE = ""
 ) (
   input  logic clk,
   input  logic reset,
@@ -68,10 +69,20 @@ module channelized_convolution_scatter #(
   integer destination_y;
   integer selected_projection;
   logic signed [WEIGHT_WIDTH-1:0] selected_weight;
+  logic signed [WEIGHT_WIDTH-1:0] kernel_weight_mem [0:WEIGHT_COUNT-1];
+  integer initialize_weight;
 
   initial begin
     if (INPUT_CHANNELS % GROUPS != 0 || OUTPUT_CHANNELS % GROUPS != 0)
       $error("channel counts must be divisible by GROUPS");
+    if (KERNEL_WEIGHT_FILE != "")
+      $readmemh(KERNEL_WEIGHT_FILE, kernel_weight_mem);
+    else
+      for (initialize_weight = 0; initialize_weight < WEIGHT_COUNT;
+           initialize_weight = initialize_weight + 1)
+        kernel_weight_mem[initialize_weight] = KERNEL_WEIGHTS[
+          initialize_weight*WEIGHT_WIDTH +: WEIGHT_WIDTH
+        ];
   end
 
   always_comb begin
@@ -93,9 +104,7 @@ module channelized_convolution_scatter #(
           projection_index = output_channel * TAP_COUNT + tap_index;
           weight_index = (output_channel * INPUTS_PER_GROUP + local_input_channel) *
                          TAP_COUNT + tap_index;
-          selected_weight = KERNEL_WEIGHTS[
-            weight_index*WEIGHT_WIDTH +: WEIGHT_WIDTH
-          ];
+          selected_weight = kernel_weight_mem[weight_index];
           scatter_weight[projection_index*WEIGHT_WIDTH +: WEIGHT_WIDTH] =
             selected_weight;
           numerator_x = $unsigned(spike_x_i) + PAD_X - kernel_x * DILATION_X;

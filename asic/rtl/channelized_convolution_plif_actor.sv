@@ -35,6 +35,7 @@ module channelized_convolution_plif_actor #(
   parameter integer ENABLE_INHIBITION = 0,
   parameter integer ENABLE_ADAPTATION = 0,
   parameter logic signed [WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
+  parameter KERNEL_WEIGHT_FILE = "",
   parameter logic [OUTPUT_CHANNELS*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
   parameter logic signed [OUTPUT_CHANNELS*MEM_WIDTH-1:0] CHANNEL_THRESHOLDS = '0,
   parameter logic [MEM_WIDTH-1:0] INHIBITION_STRENGTH = '0,
@@ -88,7 +89,7 @@ module channelized_convolution_plif_actor #(
     .KERNEL_HEIGHT(KERNEL_HEIGHT), .STRIDE_X(STRIDE_X), .STRIDE_Y(STRIDE_Y),
     .DILATION_X(DILATION_X), .DILATION_Y(DILATION_Y), .PAD_X(PAD_X),
     .PAD_Y(PAD_Y), .OUTPUT_WIDTH(OUTPUT_WIDTH), .OUTPUT_HEIGHT(OUTPUT_HEIGHT),
-    .KERNEL_WEIGHTS(KERNEL_WEIGHTS)
+    .KERNEL_WEIGHTS(KERNEL_WEIGHTS), .KERNEL_WEIGHT_FILE(KERNEL_WEIGHT_FILE)
   ) scatter (
     .clk, .reset,
     .spike_valid(presynaptic_valid && presynaptic_ready),

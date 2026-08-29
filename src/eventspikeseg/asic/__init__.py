@@ -10,6 +10,12 @@ from .contracts import (
     OPEN_PPA_TARGET,
     state_capacity_contract,
 )
+from .dag_reference import (
+    IntegerDAGReference,
+    Prediction,
+    SpikeEvent,
+    write_golden_artifacts,
+)
 from .export import EVENTSPIKESEG140K_INFERENCE_STAGES, export_checkpoint, export_model
 from .fixed_point import ASIC_FORMATS, FixedFormat
 from .integer_reference import ActorLocalStateStore, IntegerPLIF, NeuronState
@@ -38,14 +44,18 @@ __all__ = [
     "EVENTSPIKESEG140K_JOIN_NODES",
     "FixedFormat",
     "IntegerPLIF",
+    "IntegerDAGReference",
     "MANUFACTURABLE_TARGET_GATE",
     "NeuronState",
     "OPEN_PPA_TARGET",
+    "Prediction",
+    "SpikeEvent",
     "export_checkpoint",
     "export_model",
     "eventspikeseg140k_graph_contract",
     "state_capacity_contract",
     "validate_eventspikeseg140k_topology",
+    "write_golden_artifacts",
 ]
 
 # Descriptive alias for downstream tooling; ASIC_FORMATS remains the canonical name.

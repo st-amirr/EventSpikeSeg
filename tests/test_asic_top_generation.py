@@ -101,6 +101,8 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
     assert text.count("binary_event_union2 #(") == 9
     assert text.count("event_upsample2x ") == 3
     assert "temporal_class_readout #(\n" in text
+    assert text.count("assign actor_trace_valid_o[") == 25
+    assert "output logic [25*PAYLOAD_WIDTH-1:0] actor_trace_payload_o" in text
 
     testbench = tmp_path / "generated_mini_dag_tb.sv"
     testbench.write_text(
@@ -170,6 +172,6 @@ endmodule
     if "Icarus Verilog version 11." in version.stdout + version.stderr:
         return
     result = subprocess.run(
-        ["vvp", str(executable)], check=True, capture_output=True, text=True, cwd=ROOT
+        ["vvp", str(executable)], check=True, capture_output=True, text=True, cwd=tmp_path
     )
     assert "FULL_DAG_COMPLETION_PASS" in result.stdout
