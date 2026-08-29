@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections import Counter
 from pathlib import Path
@@ -27,9 +28,11 @@ async def _transfer(dut, *, payload: int, completion: bool, bin_tag: int) -> Non
     dut.input_completion.value = 0
 
 
-async def _drive_golden_input(dut, rows: np.ndarray) -> None:
-    tags = list(dict.fromkeys(int(row[0]) for row in rows))
-    for tag in tags:
+async def _drive_golden_input(
+    dut, rows: np.ndarray, bin_count: int, first_bin_tag: int
+) -> None:
+    for index in range(bin_count):
+        tag = (first_bin_tag + index) & 0xFFFFFF
         for _, channel, y, x in rows[rows[:, 0] == tag]:
             payload = int(x) | (int(y) << 10) | (int(channel) << 19)
             await _transfer(dut, payload=payload, completion=False, bin_tag=tag)
@@ -39,6 +42,9 @@ async def _drive_golden_input(dut, rows: np.ndarray) -> None:
 @cocotb.test()
 async def replay_integer_golden_through_generated_dag(dut) -> None:
     replay_dir = Path(os.environ["ASIC_REPLAY_DIR"])
+    profile = json.loads((replay_dir / "replay_profile.json").read_text())
+    bin_count = int(profile["bins"])
+    first_bin_tag = int(profile["first_bin_tag"])
     with np.load(replay_dir / "golden_input_samples.npz", allow_pickle=False) as archive:
         input_rows = archive["events"]
     with np.load(replay_dir / "golden_layer_spikes.npz", allow_pickle=False) as archive:
@@ -60,14 +66,26 @@ async def replay_integer_golden_through_generated_dag(dut) -> None:
         await RisingEdge(dut.clk)
     dut.reset.value = 0
 
-    driver = cocotb.start_soon(_drive_golden_input(dut, input_rows))
+    driver = cocotb.start_soon(
+        _drive_golden_input(dut, input_rows, bin_count, first_bin_tag)
+    )
     observed_spikes: Counter[tuple[int, ...]] = Counter()
     completion_counts = Counter()
     observed_classes: dict[tuple[int, int], int] = {}
     frame_tag = None
     timeout_cycles = int(os.environ.get("ASIC_REPLAY_TIMEOUT_CYCLES", "2000000"))
-    for _ in range(timeout_cycles):
+    for cycle in range(timeout_cycles):
         await RisingEdge(dut.clk)
+        if cycle and cycle % 1000 == 0:
+            dut._log.info(
+                "replay progress cycle=%d input_ready=%d trace_transfers=%d "
+                "actor_completions=%d predictions=%d",
+                cycle,
+                _integer(dut.input_ready),
+                sum(observed_spikes.values()),
+                sum(completion_counts.values()),
+                len(observed_classes),
+            )
         assert not _integer(dut.fault_o), "generated DAG asserted a routing/state fault"
         valid = _integer(dut.actor_trace_valid_o)
         ready = _integer(dut.actor_trace_ready_o)
@@ -101,7 +119,7 @@ async def replay_integer_golden_through_generated_dag(dut) -> None:
     assert observed_spikes == expected_spikes
     expected_completions = Counter(
         (tag, actor_id)
-        for tag in dict.fromkeys(int(row[0]) for row in input_rows)
+        for tag in ((first_bin_tag + index) & 0xFFFFFF for index in range(bin_count))
         for actor_id in range(actor_count)
     )
     assert completion_counts == expected_completions

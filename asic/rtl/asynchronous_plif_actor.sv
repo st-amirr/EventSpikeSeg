@@ -121,10 +121,10 @@ module asynchronous_plif_actor #(
       address_error_reg <= 1'b0;
       spike_destination_o <= '0;
       for (i = 0; i < DEST_COUNT; i = i + 1) begin
-        current_mem[i] <= '0;
-        membrane_mem[i] <= '0;
-        last_tag_mem[i] <= '0;
-        touched_queue[i] <= '0;
+        current_mem[i] = '0;
+        membrane_mem[i] = '0;
+        last_tag_mem[i] = '0;
+        touched_queue[i] = '0;
       end
     end else begin
       case (state_reg)

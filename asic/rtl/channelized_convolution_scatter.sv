@@ -27,7 +27,11 @@ module channelized_convolution_scatter #(
   parameter integer OUTPUTS_PER_GROUP = OUTPUT_CHANNELS / GROUPS,
   parameter integer PROJECTION_COUNT = OUTPUT_CHANNELS * TAP_COUNT,
   parameter integer WEIGHT_COUNT = OUTPUT_CHANNELS * INPUTS_PER_GROUP * TAP_COUNT,
-  parameter logic signed [WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
+  // Production instances set PACKED_WEIGHT_COUNT=1 and load the real table
+  // from KERNEL_WEIGHT_FILE.  Keeping the packed fallback independently sized
+  // avoids elaborating a second, otherwise-unused copy of every model weight.
+  parameter integer PACKED_WEIGHT_COUNT = WEIGHT_COUNT,
+  parameter logic signed [PACKED_WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
   parameter KERNEL_WEIGHT_FILE = ""
 ) (
   input  logic clk,

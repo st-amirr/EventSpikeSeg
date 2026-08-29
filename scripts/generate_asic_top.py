@@ -258,6 +258,7 @@ def generate_top(
             f".DILATION_X({dilation_x})", f".DILATION_Y({dilation_y})",
             f".PAD_X({pad_x})", f".PAD_Y({pad_y})",
             f".OUTPUT_WIDTH({output_w})", f".OUTPUT_HEIGHT({output_h})",
+            ".PACKED_WEIGHT_COUNT(1)",
             f'.KERNEL_WEIGHT_FILE("{weight_file}")', f".CHANNEL_BETAS({betas})",
             f".CHANNEL_THRESHOLDS({thresholds})",
             f".ENABLE_INHIBITION({mechanisms['inhibition_enabled']})",

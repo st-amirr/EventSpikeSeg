@@ -27,6 +27,8 @@ def prepare_replay(
     width: int = 8,
     bins: int = 10,
     events_per_bin: int = 128,
+    active_bins: int | None = None,
+    stimulus: str = "distributed",
 ) -> dict[str, int]:
     if height < 8 or width < 8 or height % 8 or width % 8:
         raise ValueError("replay height and width must be multiples of eight and at least eight")
@@ -82,6 +84,18 @@ def prepare_replay(
         bin_count=bins,
         events_per_bin=events_per_bin,
     )
+    if stimulus == "center_burst":
+        event = ingress[0][0] if ingress[0] else None
+        ingress = [
+            ([event] * events_per_bin if index == 0 and event else [])
+            for index in range(bins)
+        ]
+    elif stimulus != "distributed":
+        raise ValueError("stimulus must be 'distributed' or 'center_burst'")
+    if active_bins is not None:
+        if not 0 <= active_bins <= bins:
+            raise ValueError("active_bins must be between zero and bins")
+        ingress = [events if index < active_bins else [] for index, events in enumerate(ingress)]
     profile = write_golden_artifacts(replay_spec, ingress, destination)
     profile["logical_membrane_states"] = logical_states
     (destination / "replay_profile.json").write_text(
@@ -98,6 +112,10 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=8)
     parser.add_argument("--bins", type=int, default=10)
     parser.add_argument("--events-per-bin", type=int, default=128)
+    parser.add_argument("--active-bins", type=int)
+    parser.add_argument(
+        "--stimulus", choices=("distributed", "center_burst"), default="distributed"
+    )
     args = parser.parse_args()
     profile = prepare_replay(
         args.source,
@@ -106,6 +124,8 @@ def main() -> None:
         width=args.width,
         bins=args.bins,
         events_per_bin=args.events_per_bin,
+        active_bins=args.active_bins,
+        stimulus=args.stimulus,
     )
     print(json.dumps(profile, indent=2, sort_keys=True))
 

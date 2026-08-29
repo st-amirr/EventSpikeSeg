@@ -64,6 +64,19 @@ docker compose -f compose_ASIC.yaml run --rm test python scripts/generate_asic_g
 The checked-in active artifacts use deterministic synthetic stress traffic. Dataset-derived
 full-sequence traffic is still required for occupancy, latency, accuracy, and power claims.
 
+For executable whole-DAG RTL equivalence, build the reduced-spatial fixture with unchanged
+real weights, channels, mechanisms, and topology, then run Verilator:
+
+```sh
+docker compose -f compose_ASIC.yaml run --rm rtl python scripts/prepare_asic_rtl_replay.py artifacts/asic_export_v4_6class artifacts/asic_rtl_replay_smoke_v4_6class --height 8 --width 8 --bins 10 --events-per-bin 4 --stimulus center_burst
+docker compose -f compose_ASIC.yaml run --rm rtl python scripts/run_asic_golden_rtl_replay.py artifacts/asic_rtl_replay_smoke_v4_6class --simulator verilator --residual-capacity 512 --timeout-cycles 50000
+```
+
+The generated actors load static int8 kernels from per-actor ROM files; the packed parameter
+fallback remains only for small unit fixtures. Passive generated-top trace buses expose every
+actor transfer without changing ready/valid backpressure. The replay is logical equivalence
+evidence, not native 440x640 capacity, latency, or physical PPA evidence.
+
 The active trained six-class v4 export is retained under
 `artifacts/asic_export_v4_6class`; its generated weighted top contains all 25 actors and
 exactly 143,824 int8 synaptic ROM words. The prior 11-class export under
@@ -84,8 +97,8 @@ python scripts/run_rtl_tests.py
 
 Set `ASIC_BUILD_DIR` to redirect generated netlists outside the repository when needed.
 
-The isolated CPU-only implementation container pins CPU PyTorch and Icarus 12 and also
-contains Yosys. It is independent of the CUDA training image:
+The isolated CPU-only implementation container pins CPU PyTorch, Icarus 12, Verilator, and
+Yosys. It is independent of the CUDA training image:
 
 ```sh
 docker compose -f compose_ASIC.yaml build

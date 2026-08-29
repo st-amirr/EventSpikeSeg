@@ -162,14 +162,14 @@ module retinotopic_asynchronous_plif_actor #(
       address_error_reg <= 1'b0;
       spike_pending_reg <= '0;
       for (i = 0; i < DEST_COUNT; i = i+1) begin
-        current_mem[i] <= '0;
-        membrane_mem[i] <= '0;
-        last_tag_mem[i] <= '0;
-        age_mem[i] <= INACTIVE_AGE;
-        amplitude_mem[i] <= '0;
+        current_mem[i] = '0;
+        membrane_mem[i] = '0;
+        last_tag_mem[i] = '0;
+        age_mem[i] = INACTIVE_AGE;
+        amplitude_mem[i] = '0;
       end
       for (i = 0; i < SPATIAL_DEST_COUNT; i = i+1)
-        touched_spatial_queue[i] <= '0;
+        touched_spatial_queue[i] = '0;
     end else case (state_reg)
       COLLECT: begin
         if (epoch_end_valid) begin
@@ -202,14 +202,14 @@ module retinotopic_asynchronous_plif_actor #(
         for (channel = 0; channel < CHANNEL_COUNT; channel = channel+1) begin
           destination_index = channel*SPATIAL_DEST_COUNT + $unsigned(spatial_reg);
           if (update_mask[channel]) begin
-            membrane_mem[destination_index] <=
+            membrane_mem[destination_index] =
               mechanism_membranes[channel*MEM_WIDTH +: MEM_WIDTH];
-            last_tag_mem[destination_index] <= epoch_tag_reg;
-            age_mem[destination_index] <= mechanism_ages[channel*AGE_WIDTH +: AGE_WIDTH];
-            amplitude_mem[destination_index] <=
+            last_tag_mem[destination_index] = epoch_tag_reg;
+            age_mem[destination_index] = mechanism_ages[channel*AGE_WIDTH +: AGE_WIDTH];
+            amplitude_mem[destination_index] =
               mechanism_amplitudes[channel*MEM_WIDTH +: MEM_WIDTH];
           end
-          current_mem[destination_index] <= '0;
+          current_mem[destination_index] = '0;
           touched_channel_mem[destination_index] <= 1'b0;
         end
         touched_spatial_mem[spatial_reg] <= 1'b0;

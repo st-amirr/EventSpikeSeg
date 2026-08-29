@@ -394,3 +394,20 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   capacity trace; full-sequence dataset replay and matching RTL trace comparison remain open.
 - the expanded CPU implementation regression passes 89 Python tests and Ruff checks source,
   tests, scripts, and cocotb verification code.
+
+## 2026-08-29 — Full generated-DAG RTL golden replay
+
+- changed production convolution actors from enormous packed weight literals to per-actor
+  `$readmemh` ROM files while retaining the packed fallback for small RTL unit fixtures;
+- added passive trace buses for all 25 generated actors and a cocotb comparator covering
+  spike multiplicity, coordinates, channels, bin tags, one completion per actor per bin,
+  every semantic pixel, the frame tag, and the aggregate fault output;
+- added a reduced-spatial real-checkpoint replay builder: the 8x8 fixture preserves all
+  exported weights, channel counts, mechanisms, graph routes, and 25 permanent actors while
+  reducing logical state from 30,976,000 to 7,040 entries for tractable simulation;
+- corrected replay handling of empty 5 ms bins and explicit 24-bit first-bin tags;
+- the ten-bin/four-event smoke replay passes in Verilator in 7,385 cycles, matching 64 hidden
+  spikes and the complete 8x8 six-class prediction with no RTL fault;
+- added persistent Verilator build reuse, progress diagnostics, and nonzero failure status;
+- all 22 cocotb RTL unit groups continue to pass. Native-resolution/full-sequence traffic,
+  SRAM macro binding, routed timing, and activity-based power remain physical signoff work.

@@ -359,4 +359,6 @@ spatial PLIF state and per-channel beta/threshold tables. The trained v4 checkpo
 exported and the manifest-driven generator emits the complete weighted **25-actor DAG**,
 including retinotopic mechanisms and the temporal readout. Remaining physical work is to replace
 behavioral state/merge arrays with characterized SRAM/banked sparse structures, integrate
-the emitted model-scale integer traces into full-DAG RTL replay, and run activity-based PPA.
+the native-resolution traces and dataset traffic into capacity measurements, and run
+activity-based PPA. A reduced-spatial replay of the complete real-checkpoint DAG now matches
+every actor spike/completion boundary and the final semantic output exactly in Verilator.
