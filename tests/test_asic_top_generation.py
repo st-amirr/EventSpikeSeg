@@ -89,6 +89,8 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
             {
                 "graph": graph,
                 "layers": layers,
+                "input_size": [1, 1],
+                "input_channels": 1,
                 "timing_contract": {"prediction_bins_default": 2},
             }
         ),
@@ -98,9 +100,11 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
     generator.generate_top(model_spec, generated, module_name="generated_mini_dag")
     text = generated.read_text(encoding="utf-8")
     assert text.count("streaming_channelized_plif_actor #(") == 25
-    assert text.count("binary_event_union2 #(") == 9
+    assert text.count("binary_event_union2_sram #(") == 9
     assert text.count("event_upsample2x ") == 3
-    assert "temporal_class_readout #(\n" in text
+    assert "temporal_class_readout_sram #(\n" in text
+    assert ".USE_SCORE_SRAM_MACRO(USE_SCORE_SRAM_MACRO)" in text
+    assert text.count(".USE_SRAM_MACRO(USE_RESIDUAL_SRAM_MACRO)") == 9
     assert text.count("assign actor_trace_valid_o[") == 25
     assert "output logic [25*PAYLOAD_WIDTH-1:0] actor_trace_payload_o" in text
 

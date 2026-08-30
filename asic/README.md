@@ -77,6 +77,15 @@ fallback remains only for small unit fixtures. Passive generated-top trace buses
 actor transfer without changing ready/valid backpressure. The replay is logical equivalence
 evidence, not native 440x640 capacity, latency, or physical PPA evidence.
 
+The generated top uses `temporal_class_readout_sram`. At native 440x640 and six classes its
+score bank is 281,600 x 144 bits = 4.834 MiB. A synchronous 1R1W transaction accepts at most
+one final hidden event every two clocks. Power-on reset scrubs 281,600 words; prediction flush
+uses three clocks per pixel (844,800 clocks/frame) and backpressures the final actor. At
+100 MHz these fixed costs are 2.816 ms once after reset and 8.448 ms per output frame. Input
+FIFO sizing must cover this backpressure before a real-time claim. Set the generated-top
+`USE_SCORE_SRAM_MACRO=1` parameter only when the black-box boundary is bound to a compatible
+characterized macro.
+
 The active trained six-class v4 export is retained under
 `artifacts/asic_export_v4_6class`; its generated weighted top contains all 25 actors and
 exactly 143,824 int8 synaptic ROM words. The prior 11-class export under
@@ -84,9 +93,64 @@ exactly 143,824 int8 synaptic ROM words. The prior 11-class export under
 not a full-chip PPA netlist: its large behavioral arrays must not be mapped to standard cells
 or reported as a physical implementation.
 
-Before full-chip PPA, behavioral actor state arrays and prototype residual-dedup storage must
-be replaced by actor-local SRAM/banked sparse macro structures with the same logical ownership
-and no inter-layer state fetch.
+All nine production residual joins use a direct-indexed one-bit seen-map SRAM and compact
+linear-address queue SRAM. With full logical-address capacity, their combined worst-case native
+allocation is 252,313,600 bits (30.078 MiB). The replay command's capacity 512 is a bounded 8x8
+fixture only; a smaller native capacity requires complete-sequence occupancy proof and must never
+drop or evict events. Before full-chip PPA, every generic actor-state, touch-queue, residual, and
+readout SRAM boundary must be bound to characterized macros; no production actor relies on
+inter-layer state fetch or a behavioral state array.
+
+The nine actors without retinotopic mechanisms now select `asynchronous_plif_actor_sram`.
+Each neuron owns one packed 66-bit current/membrane/tag/live/touched word and each actor owns a
+narrow first-touch address queue. At native geometry these banks conservatively total 186.276 MiB
+when queues can hold every logical address. This guarantees losslessness but is not an optimized
+physical allocation; complete DSEC occupancy measurements are required before reducing queue
+depth. The sixteen mechanism-enabled actors use `retinotopic_asynchronous_plif_actor_sram`:
+one 65-bit PLIF state lane per channel is addressed by spatial location, allowing all channels at
+a location to be read and committed atomically for inhibition/adaptation. A separate 32-bit
+adaptation lane is generated only for the fifteen actors that enable adaptation; the inhibition-only
+stem omits it. These conservative native banks total 144.841 MiB. All production actor state now crosses generic SRAM boundaries; real
+compiler macros and occupancy-derived queue depths are still required for physical claims.
+
+Generate the exact logical compiler request manifest with:
+
+```sh
+python scripts/generate_asic_sram_manifest.py \
+  artifacts/asic_export_v4_6class/model_spec.yaml \
+  artifacts/asic_export_v4_6class/sram_manifest.json
+```
+
+The conservative active manifest contains 100 bank records, 3,173 lane instances, and
+3,070,478,400 bits (366.030 MiB). A physical binding must split these logical requests into
+available compiler depths/widths and preserve synchronous 1R1W behavior.
+
+After replacing the schema-only example with an actual compiler catalog, create a banking plan:
+
+```sh
+python scripts/plan_asic_sram_banking.py \
+  artifacts/asic_export_v4_6class/sram_manifest.json \
+  path/to/characterized_macro_catalog.json \
+  artifacts/asic_export_v4_6class/sram_banking_plan.json
+```
+
+`asic/sram_macro_catalog.example.json` documents the required schema but is deliberately marked
+uncharacterized and therefore cannot make a plan PPA-eligible.
+
+Profile first-touch queues from an exact integer current trace with:
+
+```sh
+python scripts/profile_asic_touch_occupancy.py MODEL_SPEC CURRENT_TRACE OUTPUT_JSON
+```
+
+The active synthetic report peaks at 11,135 entries but does not touch every deep actor, so it
+cannot justify reducing any production queue. Only complete native DSEC coverage can establish a
+candidate bound, and the design must remain lossless.
+
+`profile_asic_residual_occupancy.py` replays golden ingress through the exact integer DAG and
+reports all nine binary-OR queue occupancies. The active synthetic maximum is 507, but four deep
+joins receive no events, so the report explains only the 512-entry verification fixture and does
+not change native production capacity.
 
 Run native SystemVerilog compilation and the cocotb suite:
 

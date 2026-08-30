@@ -1,0 +1,1017 @@
+{
+  "format": "eventspikeseg-sram-manifest-v1",
+  "model_spec": "model_spec.yaml",
+  "assumptions": {
+    "residual_queue_capacity": "full_logical_address_space",
+    "actor_touch_queue_capacity": "full_logical_address_space",
+    "physical_binding": "required_before_PPA"
+  },
+  "banks": [
+    {
+      "owner": "detail_stem",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 148684800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "detail_stem",
+      "kind": "destination_touch_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "detail1.standard",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 148684800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "detail1.standard",
+      "kind": "destination_touch_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "stem",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 70400,
+      "instances": 32,
+      "total_bits": 146432000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "stem",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 70400,
+      "instances": 1,
+      "total_bits": 70400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "stem",
+      "kind": "spatial_touch_queue",
+      "word_bits": 17,
+      "depth": 70400,
+      "instances": 1,
+      "total_bits": 1196800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1.standard",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 148684800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1.standard",
+      "kind": "destination_touch_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1_extra.depthwise",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 148684800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1_extra.depthwise",
+      "kind": "destination_touch_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1_extra.pointwise",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 148684800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1_extra.pointwise",
+      "kind": "destination_touch_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down2.standard",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 73216000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down2.standard",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 36044800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down2.standard",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 17600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down2.standard",
+      "kind": "spatial_touch_queue",
+      "word_bits": 15,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.depthwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 73216000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.depthwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 36044800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.depthwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 17600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.depthwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 15,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.pointwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 73216000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.pointwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 36044800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.pointwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 17600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.pointwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 15,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.depthwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 73216000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.depthwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 36044800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.depthwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 17600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.depthwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 15,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.pointwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 73216000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.pointwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 17600,
+      "instances": 64,
+      "total_bits": 36044800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.pointwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 17600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.pointwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 15,
+      "depth": 17600,
+      "instances": 1,
+      "total_bits": 264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.depthwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 64,
+      "total_bits": 18304000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.depthwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 64,
+      "total_bits": 9011200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.depthwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.depthwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.pointwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.pointwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.pointwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "down3.pointwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.depthwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.depthwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.depthwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.depthwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.pointwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.pointwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.pointwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.pointwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.depthwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.depthwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.depthwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.depthwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.pointwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.pointwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.pointwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.pointwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.depthwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.depthwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.depthwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.depthwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.pointwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.pointwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.pointwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.pointwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.depthwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.depthwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.depthwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.depthwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.pointwise",
+      "kind": "mechanism_channel_state",
+      "word_bits": 65,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 36608000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.pointwise",
+      "kind": "adaptation_channel_state",
+      "word_bits": 32,
+      "depth": 4400,
+      "instances": 128,
+      "total_bits": 18022400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.pointwise",
+      "kind": "spatial_seen",
+      "word_bits": 1,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 4400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.pointwise",
+      "kind": "spatial_touch_queue",
+      "word_bits": 13,
+      "depth": 4400,
+      "instances": 1,
+      "total_bits": 57200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "project3",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 281600,
+      "instances": 1,
+      "total_bits": 18585600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "project3",
+      "kind": "destination_touch_queue",
+      "word_bits": 19,
+      "depth": 281600,
+      "instances": 1,
+      "total_bits": 5350400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "decoder2_fuse",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 1126400,
+      "instances": 1,
+      "total_bits": 74342400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "decoder2_fuse",
+      "kind": "destination_touch_queue",
+      "word_bits": 21,
+      "depth": 1126400,
+      "instances": 1,
+      "total_bits": 23654400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "project2",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 37171200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "project2",
+      "kind": "destination_touch_queue",
+      "word_bits": 20,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 11264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "final_fuse.standard",
+      "kind": "simple_neuron_state",
+      "word_bits": 66,
+      "depth": 4505600,
+      "instances": 1,
+      "total_bits": 297369600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "final_fuse.standard",
+      "kind": "destination_touch_queue",
+      "word_bits": 23,
+      "depth": 4505600,
+      "instances": 1,
+      "total_bits": 103628800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "detail1.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 2252800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "detail1.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 2252800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1_extra.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 2252800,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc1_extra.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 22,
+      "depth": 2252800,
+      "instances": 1,
+      "total_bits": 49561600,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 1126400,
+      "instances": 1,
+      "total_bits": 1126400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 21,
+      "depth": 1126400,
+      "instances": 1,
+      "total_bits": 23654400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 1126400,
+      "instances": 1,
+      "total_bits": 1126400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc2_extra.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 21,
+      "depth": 1126400,
+      "instances": 1,
+      "total_bits": 23654400,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 563200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 20,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 11264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 563200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "enc3_extra.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 20,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 11264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 563200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context1.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 20,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 11264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.residual_or",
+      "kind": "residual_seen",
+      "word_bits": 1,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 563200,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "context2.residual_or",
+      "kind": "residual_address_queue",
+      "word_bits": 20,
+      "depth": 563200,
+      "instances": 1,
+      "total_bits": 11264000,
+      "ports": "1R1W",
+      "macro_required": true
+    },
+    {
+      "owner": "head.synapse",
+      "kind": "temporal_score",
+      "word_bits": 144,
+      "depth": 281600,
+      "instances": 1,
+      "total_bits": 40550400,
+      "ports": "1R1W",
+      "macro_required": true
+    }
+  ],
+  "totals": {
+    "bank_entries": 100,
+    "macro_instances": 3173,
+    "total_bits": 3070478400,
+    "total_MiB": 366.02954864501953
+  }
+}

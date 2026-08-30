@@ -93,6 +93,7 @@ class IntegerDAGReference:
         )
         self.plif = IntegerPLIF()
         self.last_trace: dict[str, dict[str, list[tuple[int, ...]]]] = {}
+        self.last_route_counts: dict[str, int] = {}
 
     def reset(self) -> None:
         """Clear sequence state, including the temporal class-current window."""
@@ -102,6 +103,7 @@ class IntegerDAGReference:
         self.class_scores.clear()
         self.prediction_bin_count = 0
         self.last_trace = {}
+        self.last_route_counts = {}
 
     @staticmethod
     def _edge_events(
@@ -421,6 +423,7 @@ class IntegerDAGReference:
 
         streams: dict[str, list[SpikeEvent]] = {"input": list(events)}
         self.last_trace = {}
+        self.last_route_counts = {}
         readout_name = str(self.graph["current_readout"])
         for name in self.graph["node_topological_order"]:
             if name in {"input", "prediction"}:
@@ -437,6 +440,8 @@ class IntegerDAGReference:
                 streams[name] = readout_events
             else:
                 streams[name] = self._route_node(name, streams)
+                if self.node_kinds[name] == "binary_residual_or":
+                    self.last_route_counts[name] = len(streams[name])
         return self._readout(streams[readout_name], int(bin_tag))
 
     def state_profile(self) -> dict[str, int]:

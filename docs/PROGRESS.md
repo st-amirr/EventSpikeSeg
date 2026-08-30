@@ -411,3 +411,138 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - added persistent Verilator build reuse, progress diagnostics, and nonzero failure status;
 - all 22 cocotb RTL unit groups continue to pass. Native-resolution/full-sequence traffic,
   SRAM macro binding, routed timing, and activity-based power remain physical signoff work.
+
+## 2026-08-29 — SRAM-backed temporal readout integration
+
+- added `temporal_class_readout_sram` as the generated-top production readout while retaining
+  the original behavioral readout as an independent small-fixture equivalence reference;
+- packed six signed 24-bit class accumulators into one 144-bit word per output pixel behind
+  the technology-independent synchronous 1R1W SRAM boundary;
+- added deterministic reset scrubbing, two-cycle read/modify/write event backpressure,
+  three-cycle-per-pixel argmax/clear flush, saturation, and first-index tie behavior;
+- exposed `USE_SCORE_SRAM_MACRO` at the generated top so physical builds can select a bound
+  characterized macro without changing the logical top or training export;
+- native capacity is 40,550,400 bits (4.834 MiB), with 281,600 reset-scrub clocks and 844,800
+  dense prediction-flush clocks; the flush backpressure/FIFO requirement remains measurable;
+- the updated real-checkpoint 25-actor replay passes exactly in 7,513 cycles at 8x8, including
+  all actor traces, ten completion bins, frame tag, semantic pixels, and `fault_o=0`;
+- 89 Python tests, 22 cocotb RTL groups, Ruff, and the expanded Yosys synthesis gate pass.
+
+## 2026-08-29 — SRAM-backed lossless residual joins
+
+- added a production `binary_event_union2_sram` implementation while retaining the original
+  behavioral module as a small-fixture equivalence reference;
+- replaced the linear event-content scan with a direct one-bit `(channel,y,x)` seen map and
+  a compact SRAM queue containing only linear addresses;
+- propagated exact stream geometry through the generated DAG and selected the SRAM-backed
+  implementation for all nine residual joins;
+- made the generated default lossless for every possible logical address; an explicit smaller
+  `RESIDUAL_MAX_EVENTS` is permitted only for a bounded verification fixture or after a complete
+  native traffic occupancy proof;
+- the native worst-case allocation is 252,313,600 bits (30.078 MiB): 11,264,000 seen bits plus
+  241,049,600 address-queue bits, with all nine reset scrubs operating in parallel;
+- maximum one-time reset scrub is 2,252,800 clocks (22.528 ms at 100 MHz); native queue sizing
+  remains deliberately conservative until complete DSEC sequence occupancy is measured;
+- the reduced real-checkpoint replay uses a fixture-proven capacity of 512 and passes exactly in
+  7,554 cycles with 64 hidden spikes, all completions and pixels matching, and `fault_o=0`;
+- 89 Python tests, 23 cocotb RTL groups, Ruff, and the expanded Yosys synthesis gate pass.
+
+## 2026-08-30 — SRAM-backed non-mechanism PLIF actors
+
+- added `asynchronous_plif_actor_sram` while retaining the original behavioral actor as an
+  independent small-fixture reference;
+- packed current, membrane, last-bin tag, live, and touched state into one 66-bit word per
+  logical neuron behind the synchronous 1R1W SRAM boundary;
+- moved first-touch ordering into a second narrow address SRAM, preserving sparse epoch commit
+  without any dense runtime membrane sweep;
+- selected the transactional actor for all nine populations without inhibition/adaptation and
+  exposed `USE_ACTOR_STATE_SRAM_MACRO` at the generated top;
+- the nine native populations own 17,740,800 state words; full logical-address touch queues make
+  the conservative allocation 1,562,598,400 bits (186.276 MiB), pending measured occupancy bounds;
+- all actor reset scrubs operate in parallel; the largest is 4,505,600 clocks (45.056 ms at
+  100 MHz) once after reset;
+- the reduced real-checkpoint whole-DAG replay remains exact and fault-free in 14,035 cycles;
+  the increase from 7,554 cycles exposes the real synchronous SRAM transaction cost;
+- 89 Python/structural tests pass; the actor was subsequently covered by the complete expanded
+  RTL, lint, and synthesis validation.
+
+## 2026-08-30 — SRAM-backed retinotopic mechanism actors
+
+- added `retinotopic_asynchronous_plif_actor_sram` and selected it for all sixteen
+  inhibition/adaptation populations while retaining the behavioral actor as a reference;
+- initially organized state as one actor-owned 97-bit SRAM lane per channel, addressed by spatial
+  location, so an atomic mechanism commit reads every channel at that location in parallel;
+- retained a direct one-bit spatial seen bank and compact first-touch spatial-address queue;
+- before the Iteration 19 specialization, native mechanism banks covered 13,235,200 neurons and
+  conservatively totaled 1,287,105,600 bits (153.435 MiB); the maximum parallel reset scrub is
+  70,400 clocks;
+- the complete reduced real-checkpoint replay passes exactly in 14,034 cycles with all 64
+  spikes, 250 completions, semantic pixels, frame tag, and `fault_o=0` matching the oracle;
+- every production actor state path is now transactional at the generic SRAM boundary; physical
+  PPA remains gated on real macro binding and native occupancy-based queue sizing.
+- 89 Python tests, 25 cocotb RTL groups, Ruff, and the expanded Yosys synthesis gate pass.
+
+## 2026-08-30 — Compile-time mechanism-state specialization
+
+- split each mechanism actor's universal channel state into a 65-bit PLIF lane and an optional
+  32-bit adaptation lane;
+- generated adaptation SRAM only for the fifteen actors with adaptation enabled, so the
+  inhibition-only stem no longer stores unused age/amplitude state;
+- reduced mechanism storage by 72,089,600 bits (8.594 MiB), from 153.435 MiB to 144.841 MiB;
+- reduced the exact conservative full-DAG manifest to 3,070,478,400 bits (366.030 MiB), represented
+  by 100 logical bank records and 3,173 lane instances before compiler tiling;
+- the clean complete reduced real-checkpoint Verilator replay remains exact in 14,034 cycles with
+  64 spike transfers, 250 completions, 54 prediction pixels, and `fault_o=0`;
+- 94 Python tests, 25 cocotb RTL groups, Ruff, and the expanded Yosys synthesis gate pass.
+
+## 2026-08-30 — Exact SRAM compiler manifest
+
+- added a deterministic generator for actor state/queues, residual seen/queues, and temporal
+  score-bank requirements from the frozen model specification;
+- emitted `artifacts/asic_export_v4_6class/sram_manifest.json` with 100 logical bank records,
+  3,173 lane instances, and explicit 1R1W width/depth/multiplicity ownership;
+- conservative full-address capacity is 3,070,478,400 bits (366.030 MiB), including 331.117 MiB
+  actor banks, 30.078 MiB residual banks, and 4.834 MiB temporal scores;
+- this manifest is the input contract for compiler-specific banking; it is not evidence that a
+  suitable macro set, floorplan, timing result, or PPA result exists.
+
+## 2026-08-30 — SRAM compiler-catalog banking planner
+
+- added a deterministic planner that tiles every logical request across a supplied catalog's
+  1R1W macro widths and depths;
+- selects minimum allocated bits with deterministic instance-count/name tie breaks and reports
+  physical macro count, waste, and utilization per bank and globally;
+- rejects catalogs without a compatible 1R1W entry and gates `PPA_eligible` on an explicit
+  characterized-catalog declaration;
+- added a schema-only, explicitly uncharacterized example catalog; no fabricated macro timing,
+  area, leakage, or energy values enter the implementation record.
+
+## 2026-08-30 — Actor touch-queue occupancy instrumentation
+
+- added per-bin queue profiling from exact integer current traces, using destination addressing
+  for simple actors and spatial addressing for mechanism actors;
+- the active synthetic stress trace observes a maximum 11,135-entry queue at
+  `final_fuse.standard`, but leaves multiple deep actors untouched;
+- emitted `touch_occupancy.json` with per-actor capacity, observed maximum, fraction, and bin
+  coverage; it is explicitly marked non-bounding;
+- no queue depth was reduced: complete native DSEC sequences must exercise every actor and include
+  a justified safety policy before a smaller lossless capacity can replace full-address sizing.
+
+## 2026-08-30 — Exact residual-join occupancy instrumentation
+
+- instrumented the integer DAG oracle to expose each binary residual-OR output count per bin;
+- added deterministic ingress replay profiling for all nine residual joins;
+- the active synthetic trace peaks at 507 unique events in the `enc1` joins, consistent with the
+  512-entry verification override, but four deep joins observe zero events;
+- emitted `residual_occupancy.json` as explicitly non-bounding evidence and retained full logical
+  address capacity for production.
+
+## 2026-08-30 — Physical-input availability gate
+
+- repository inspection found no characterized SRAM catalog/library and no complete native DSEC
+  event corpus; only the explicitly uncharacterized schema example and generated synthetic/reduced
+  NPZ fixtures are present;
+- functional ASIC implementation and capacity instrumentation are complete at the generic memory
+  boundary, but compiler binding, safe capacity reduction, native latency/activity, and routed PPA
+  cannot proceed without those external inputs;
+- conservative 366.030 MiB storage remains authoritative and prevents a low-cost-die claim.

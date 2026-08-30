@@ -82,4 +82,37 @@ The installed `events/train` folder has 2,887 NumPy tensors while `labels/train`
 
 Native SystemVerilog now covers channel-aware standard/grouped/depthwise kernel scatter, actor-local current/membrane/tag storage, exact PLIF commit, completion/spike backpressure, inhibition, adaptation, class-current/argmax primitives, lossless two-way event/token fanout, fixed concat channel remap, nearest-neighbor 2x event expansion, same-bin completion rendezvous, and a correctness-reference residual binary-OR/dedup join. The Python exporter now owns an explicit v8 **non-linear DAG** contract; the 25-actor list is only a deterministic topological/export order.
 
-The active six-class trained-v4 generated channelized convolution/PLIF graph now includes all 25 actors, exact static routes, grouped retinotopic mechanism commits, 143,824 exported synaptic weights, and the temporal readout. A manifest-driven sparse integer oracle emits model-scale golden currents, membranes, spikes, and semantic output. The reduced 8x8 real-checkpoint RTL replay now matches all actor spikes/completions and the final output, but this is functional evidence only. Native 440x640 dataset-derived full-sequence traffic, model-scale SRAM macro substitution, scalable residual dedup capacity, and routed activity-based PPA remain open. Do not report real-time or power results until those paths are measured.
+The active six-class trained-v4 generated channelized convolution/PLIF graph now includes all 25 actors, exact static routes, grouped retinotopic mechanism commits, 143,824 exported synaptic weights, and the temporal readout. A manifest-driven sparse integer oracle emits model-scale golden currents, membranes, spikes, and semantic output. The reduced 8x8 real-checkpoint RTL replay now matches all actor spikes/completions and the final output, but this is functional evidence only. Native 440x640 dataset-derived full-sequence traffic, characterized SRAM macro substitution, native residual occupancy measurement, and routed activity-based PPA remain open. Do not report real-time or power results until those paths are measured.
+
+The production temporal readout now crosses a 281,600 x 144-bit 1R1W SRAM boundary and is
+bit-exact in full-DAG replay. Its single-bank dense flush blocks final-actor traffic for
+844,800 clocks per frame (8.448 ms at 100 MHz), so a native traffic study must prove upstream
+FIFO capacity or justify a later ping-pong score-bank variant. This cost is explicit and is
+not included in a power or real-time claim yet.
+
+All nine generated residual joins now use direct-indexed seen-map SRAM plus compact linear-address
+queue SRAM. The statically lossless native default occupies 30.078 MiB in the worst case and has
+a 2,252,800-clock parallel reset scrub. The reduced replay's `RESIDUAL_MAX_EVENTS=512` override is
+only a verified fixture bound. Reducing native storage requires maximum per-bin occupancy data from
+complete DSEC sequences; overflow, eviction, or probabilistic deduplication remains prohibited.
+
+Nine non-mechanism PLIF populations now use packed actor-owned 1R1W state SRAM plus first-touch
+address-queue SRAM and are whole-DAG bit-exact. Their conservative full-address queues contribute
+to a 186.276 MiB allocation and the largest parallel reset scrub takes 4,505,600 clocks. This is
+correctness-first sizing, not a final area claim. The sixteen inhibition/adaptation populations
+now also use actor-owned channel-lane SRAM transactions and are whole-DAG bit-exact. Their 65-bit
+PLIF state lanes are universal, while 32-bit adaptation lanes exist only in the fifteen actors
+that enable adaptation. Their current conservative banks total 144.841 MiB; characterized banking
+remains physical optimization work.
+
+Yosys 0.23 crashes internally when identical explicit `plif_leak_charge` parameter overrides are
+derived repeatedly inside a generated channel-lane loop. The production widths already equal the
+module defaults, so the redundant overrides were removed; two-lane synthesis and RTL behavior pass.
+This is an EDA frontend workaround, not an arithmetic or model change.
+
+The exact conservative SRAM manifest totals 366.030 MiB before compiler tiling overhead. This is
+far larger than the 0.137 MiB int8 weight ROM because the frozen native-resolution DAG owns
+30,976,000 logical neuron states plus lossless first-touch and residual queues. A cheap single-die
+implementation is not currently substantiated. Reducing capacity requires complete native DSEC
+occupancy evidence and a lossless safety policy; changing resolution/state precision or allowing
+external state memory is a model/hardware contract change requiring explicit approval.

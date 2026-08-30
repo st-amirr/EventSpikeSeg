@@ -35,6 +35,7 @@ module channelized_convolution_plif_actor #(
   parameter integer PACKED_WEIGHT_COUNT = WEIGHT_COUNT,
   parameter integer ENABLE_INHIBITION = 0,
   parameter integer ENABLE_ADAPTATION = 0,
+  parameter integer USE_STATE_SRAM_MACRO = 0,
   parameter logic signed [PACKED_WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
   parameter KERNEL_WEIGHT_FILE = "",
   parameter logic [OUTPUT_CHANNELS*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
@@ -125,12 +126,13 @@ module channelized_convolution_plif_actor #(
   assign routing_error_o = scatter_channel_error || actor_address_error;
 
   generate if (ENABLE_INHIBITION || ENABLE_ADAPTATION) begin : mechanism_state
-  retinotopic_asynchronous_plif_actor #(
+  retinotopic_asynchronous_plif_actor_sram #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH), .CHANNEL_COUNT(OUTPUT_CHANNELS),
     .SPATIAL_DEST_COUNT(SPATIAL_DEST_COUNT), .DEST_COUNT(DEST_COUNT),
     .MEM_WIDTH(MEM_WIDTH), .WEIGHT_WIDTH(WEIGHT_WIDTH), .BETA_WIDTH(BETA_WIDTH),
     .BETA_FRAC_BITS(BETA_FRAC_BITS), .EPOCH_TAG_WIDTH(EPOCH_TAG_WIDTH),
     .ENABLE_INHIBITION(ENABLE_INHIBITION), .ENABLE_ADAPTATION(ENABLE_ADAPTATION),
+    .USE_SRAM_MACRO(USE_STATE_SRAM_MACRO),
     .CHANNEL_BETAS(CHANNEL_BETAS), .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS),
     .INHIBITION_STRENGTH(INHIBITION_STRENGTH),
     .ADAPTATION_STRENGTH(ADAPTATION_STRENGTH),
@@ -144,12 +146,13 @@ module channelized_convolution_plif_actor #(
     .epoch_done_ready, .epoch_tag_o, .address_error_o(actor_address_error)
   );
   end else begin : simple_state
-  asynchronous_plif_actor #(
+  asynchronous_plif_actor_sram #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH), .DEST_COUNT(DEST_COUNT),
     .MEM_WIDTH(MEM_WIDTH), .WEIGHT_WIDTH(WEIGHT_WIDTH),
     .BETA_WIDTH(BETA_WIDTH), .BETA_FRAC_BITS(BETA_FRAC_BITS),
     .EPOCH_TAG_WIDTH(EPOCH_TAG_WIDTH), .CHANNEL_COUNT(OUTPUT_CHANNELS),
     .SPATIAL_DEST_COUNT(SPATIAL_DEST_COUNT), .USE_CHANNEL_PARAMETERS(1),
+    .USE_SRAM_MACRO(USE_STATE_SRAM_MACRO),
     .CHANNEL_BETAS(CHANNEL_BETAS), .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS)
   ) neuron_array (
     .clk, .reset, .contribution_valid, .contribution_ready,

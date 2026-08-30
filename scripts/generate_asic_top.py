@@ -163,13 +163,59 @@ def generate_top(
 
     node_kinds = {str(node["name"]): str(node["kind"]) for node in graph["nodes"]}
     join_contracts = graph["join_nodes"]
+    input_h, input_w = (int(value) for value in spec["input_size"])
+    stream_geometry: dict[str, tuple[int, int, int]] = {
+        "input": (input_h, input_w, int(spec["input_channels"]))
+    }
+    for node_name in graph["node_topological_order"]:
+        node_name = str(node_name)
+        if node_name == "input":
+            continue
+        if node_name in actors:
+            layer = layers[node_name]
+            height, width = (int(value) for value in layer["output_hw"])
+            stream_geometry[node_name] = (height, width, int(layer["out_channels"]))
+            continue
+        node_inputs = incoming.get(node_name, [])
+        if node_name == readout_name or node_name == "prediction":
+            continue
+        if not node_inputs:
+            raise ValueError(f"stream node {node_name} has no input geometry")
+        input_geometries = [
+            stream_geometry[str(edge["source"])] for _index, edge in node_inputs
+        ]
+        kind = node_kinds[node_name]
+        if kind == "nearest_event_fanout_2x":
+            height, width, channels = input_geometries[0]
+            stream_geometry[node_name] = (height * 2, width * 2, channels)
+        elif kind == "channel_concat":
+            channel_extent = max(
+                int(edge.get("channel_offset", 0)) + geometry[2]
+                for geometry, (_index, edge) in zip(input_geometries, node_inputs)
+            )
+            stream_geometry[node_name] = (
+                max(geometry[0] for geometry in input_geometries),
+                max(geometry[1] for geometry in input_geometries),
+                channel_extent,
+            )
+        else:
+            if kind == "binary_residual_or" and len(set(input_geometries)) != 1:
+                raise ValueError(f"join {node_name} has mismatched stream geometry")
+            stream_geometry[node_name] = (
+                max(geometry[0] for geometry in input_geometries),
+                max(geometry[1] for geometry in input_geometries),
+                max(geometry[2] for geometry in input_geometries),
+            )
     lines = [
         "`timescale 1ns/1ps",
         "// Generated file: do not hand edit. Source is model_spec.yaml graph + ROM images.",
         f"module {module_name} #(",
         "  parameter integer PAYLOAD_WIDTH = 32,",
         "  parameter integer TAG_WIDTH = 24,",
-        "  parameter integer RESIDUAL_MAX_EVENTS = 64",
+        "  parameter integer RESIDUAL_MAX_EVENTS = 0,",
+        "  parameter integer USE_SCORE_SRAM_MACRO = 0,",
+        "  parameter integer USE_RESIDUAL_SRAM_MACRO = 0,",
+        "  parameter integer USE_ACTOR_STATE_SRAM_MACRO = 0",
         ") (",
         "  input logic clk, input logic reset,",
         "  input logic input_valid, output logic input_ready,",
@@ -263,6 +309,7 @@ def generate_top(
             f".CHANNEL_THRESHOLDS({thresholds})",
             f".ENABLE_INHIBITION({mechanisms['inhibition_enabled']})",
             f".ENABLE_ADAPTATION({mechanisms['adaptation_enabled']})",
+            ".USE_STATE_SRAM_MACRO(USE_ACTOR_STATE_SRAM_MACRO)",
             f".INHIBITION_STRENGTH(16'h{mechanisms['inhibition_strength'] & 0xFFFF:04x})",
             f".ADAPTATION_STRENGTH(16'h{mechanisms['adaptation_strength'] & 0xFFFF:04x})",
             f".ADAPTATION_DURATION(16'h{mechanisms['adaptation_duration'] & 0xFFFF:04x})",
@@ -342,9 +389,15 @@ def generate_top(
             lines.append(f"  logic {overflow};")
             fault_signals.append(overflow)
             common_ports.extend([f".overflow_o({overflow})", f".tag_mismatch_o({mismatch})"])
+            residual_h, residual_w, residual_channels = stream_geometry[node_name]
+            residual_address_count = residual_h * residual_w * residual_channels
             _instance(
                 lines,
-                "binary_event_union2 #(.MAX_EVENTS(RESIDUAL_MAX_EVENTS)) "
+                "binary_event_union2_sram #(.MAX_EVENTS((RESIDUAL_MAX_EVENTS == 0) ? "
+                f"{residual_address_count} : RESIDUAL_MAX_EVENTS), "
+                f".OUTPUT_WIDTH({residual_w}), .OUTPUT_HEIGHT({residual_h}), "
+                f".CHANNEL_COUNT({residual_channels}), "
+                ".USE_SRAM_MACRO(USE_RESIDUAL_SRAM_MACRO)) "
                 f"union_{_identifier(node_name)}",
                 common_ports,
             )
@@ -370,11 +423,12 @@ def generate_top(
         f".CLASS_COUNT({int(readout['out_channels'])})",
         f".OUTPUT_WIDTH({readout_w})", f".OUTPUT_HEIGHT({readout_h})",
         f".PREDICTION_BINS({int(spec['timing_contract']['prediction_bins_default'])})",
+        ".USE_SCORE_SRAM_MACRO(USE_SCORE_SRAM_MACRO)",
         f".READOUT_WEIGHTS({readout_weights})",
     ]
     _instance(
         lines,
-        "temporal_class_readout #(\n    " + ",\n    ".join(readout_params) +
+        "temporal_class_readout_sram #(\n    " + ",\n    ".join(readout_params) +
         "\n  ) temporal_readout",
         [".clk", ".reset", *_ports(f"e_{readout_inputs[0][0]}", "in"),
          ".prediction_valid", ".prediction_ready", ".prediction_x_o",

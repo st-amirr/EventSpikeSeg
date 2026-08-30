@@ -40,7 +40,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.jobs < 1:
         raise ValueError("jobs must be positive")
-    os.environ["MAKEFLAGS"] = f"-j{args.jobs}"
+    # The replay executable is a verification artifact, so C++ optimization
+    # only inflates build time. Command-line make assignments override the
+    # Verilator makefile's default -Os for both fast and slow translation units.
+    os.environ["MAKEFLAGS"] = f"-j{args.jobs} OPT_FAST=-O0 OPT_SLOW=-O0"
     replay_dir = args.replay_dir.resolve()
     generated_top = replay_dir / "eventspikeseg140k_replay_top.sv"
     if not generated_top.is_file():

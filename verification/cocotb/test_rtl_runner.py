@@ -23,6 +23,16 @@ ROOT = Path(__file__).resolve().parents[2]
             {},
         ),
         (
+            "asynchronous_plif_actor_sram",
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/plif_update.sv",
+                "asic/rtl/asynchronous_plif_actor_sram.sv",
+            ],
+            "test_asynchronous_plif_actor_sram",
+            {},
+        ),
+        (
             "convolution_plif_actor",
             [
                 "asic/rtl/presynaptic_tap_array.sv",
@@ -61,6 +71,20 @@ ROOT = Path(__file__).resolve().parents[2]
             {"MAX_EVENTS": 8},
         ),
         (
+            "binary_event_union2_sram",
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/binary_event_union2_sram.sv",
+            ],
+            "test_binary_event_union2",
+            {
+                "OUTPUT_WIDTH": 16,
+                "OUTPUT_HEIGHT": 1,
+                "CHANNEL_COUNT": 1,
+                "MAX_EVENTS": 8,
+            },
+        ),
+        (
             "event_channel_offset",
             ["asic/rtl/event_channel_offset.sv"],
             "test_event_channel_offset",
@@ -85,9 +109,10 @@ ROOT = Path(__file__).resolve().parents[2]
         (
             "channelized_convolution_plif_actor",
             [
+                "asic/rtl/actor_local_state_sram.sv",
                 "asic/rtl/channelized_convolution_scatter.sv",
                 "asic/rtl/plif_update.sv",
-                "asic/rtl/asynchronous_plif_actor.sv",
+                "asic/rtl/asynchronous_plif_actor_sram.sv",
                 "asic/rtl/channelized_convolution_plif_actor.sv",
             ],
             "test_channelized_convolution_plif_actor",
@@ -109,9 +134,10 @@ ROOT = Path(__file__).resolve().parents[2]
         (
             "streaming_channelized_plif_actor",
             [
+                "asic/rtl/actor_local_state_sram.sv",
                 "asic/rtl/channelized_convolution_scatter.sv",
                 "asic/rtl/plif_update.sv",
-                "asic/rtl/asynchronous_plif_actor.sv",
+                "asic/rtl/asynchronous_plif_actor_sram.sv",
                 "asic/rtl/channelized_convolution_plif_actor.sv",
                 "asic/rtl/streaming_channelized_plif_actor.sv",
             ],
@@ -132,8 +158,11 @@ ROOT = Path(__file__).resolve().parents[2]
             },
         ),
         (
-            "temporal_class_readout",
-            ["asic/rtl/temporal_class_readout.sv"],
+            "temporal_class_readout_sram",
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/temporal_class_readout_sram.sv",
+            ],
             "test_temporal_class_readout",
             {
                 "INPUT_CHANNELS": 2,
@@ -156,6 +185,24 @@ ROOT = Path(__file__).resolve().parents[2]
                 "asic/rtl/plif_leak_charge.sv",
                 "asic/rtl/retinotopic_mechanism_update.sv",
                 "asic/rtl/retinotopic_asynchronous_plif_actor.sv",
+            ],
+            "test_retinotopic_asynchronous_plif_actor",
+            {
+                "CHANNEL_COUNT": 2,
+                "SPATIAL_DEST_COUNT": 4,
+                "ENABLE_INHIBITION": 1,
+                "CHANNEL_BETAS": 0x7FFF7FFF,
+                "CHANNEL_THRESHOLDS": 0x000A000A,
+                "INHIBITION_STRENGTH": 1 << 10,
+            },
+        ),
+        (
+            "retinotopic_asynchronous_plif_actor_sram",
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/plif_leak_charge.sv",
+                "asic/rtl/retinotopic_mechanism_update.sv",
+                "asic/rtl/retinotopic_asynchronous_plif_actor_sram.sv",
             ],
             "test_retinotopic_asynchronous_plif_actor",
             {
@@ -208,6 +255,7 @@ ROOT = Path(__file__).resolve().parents[2]
         "plif_update",
         "presynaptic_tap_array",
         "asynchronous_plif_actor",
+        "asynchronous_plif_actor_sram",
         "convolution_plif_actor",
         "peer_membrane_inhibition",
         "triangular_threshold_adaptation",
@@ -216,6 +264,7 @@ ROOT = Path(__file__).resolve().parents[2]
         "event_fork2",
         "event_join2",
         "binary_event_union2",
+        "binary_event_union2_sram",
         "event_channel_offset",
         "event_upsample2x",
         "channelized_standard_scatter",
@@ -224,6 +273,7 @@ ROOT = Path(__file__).resolve().parents[2]
         "temporal_class_readout",
         "retinotopic_mechanism_update",
         "retinotopic_asynchronous_plif_actor",
+        "retinotopic_asynchronous_plif_actor_sram",
         "actor_local_state_sram",
         "channelized_grouped_scatter",
         "channelized_depthwise_scatter",

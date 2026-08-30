@@ -2,7 +2,7 @@ document:
   title: Digital Neuromorphic ASIC Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-ASIC
   version: 2.1.0
-  status: native_SystemVerilog_ASIC_static_DAG_with_integer_golden_oracle
+  status: native_SystemVerilog_ASIC_static_DAG_golden_replay_with_SRAM_readout_boundary
   created_date: '2026-08-06'
   supersedes:
   - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -856,7 +856,7 @@ quantization:
     - layerwise_equivalence_replay
 
 asic_implementation:
-  status: six_class_trained_v4_exact_25_actor_SystemVerilog_DAG_CPU_verified
+  status: six_class_exact_25_actor_DAG_RTL_golden_verified_with_SRAM_temporal_readout
   topology:
     permanent_actors: 25_PLIF_populations_plus_stateless_readout
     graph_kind: static_directed_acyclic_actor_graph
@@ -884,6 +884,7 @@ asic_implementation:
     - asic/rtl/presynaptic_tap_array.sv
     - asic/rtl/plif_update.sv
     - asic/rtl/asynchronous_plif_actor.sv
+    - asic/rtl/asynchronous_plif_actor_sram.sv
     - asic/rtl/convolution_plif_actor.sv
     - asic/rtl/peer_membrane_inhibition.sv
     - asic/rtl/triangular_threshold_adaptation.sv
@@ -892,6 +893,7 @@ asic_implementation:
     - asic/rtl/event_fork2.sv
     - asic/rtl/event_join2.sv
     - asic/rtl/binary_event_union2.sv
+    - asic/rtl/binary_event_union2_sram.sv
     - asic/rtl/event_channel_offset.sv
     - asic/rtl/event_upsample2x.sv
     - asic/rtl/channelized_convolution_scatter.sv
@@ -900,10 +902,25 @@ asic_implementation:
     - asic/rtl/plif_leak_charge.sv
     - asic/rtl/retinotopic_mechanism_update.sv
     - asic/rtl/retinotopic_asynchronous_plif_actor.sv
+    - asic/rtl/retinotopic_asynchronous_plif_actor_sram.sv
     - asic/rtl/temporal_class_readout.sv
+    - asic/rtl/temporal_class_readout_sram.sv
     - asic/rtl/actor_local_state_sram.sv
-    current_memory_model: small_direct_indexed_behavioral_arrays_for_control_and_equivalence_testing
-    required_memory_replacement: actor_local_characterized_SRAM_macros_before_full_chip_PPA
+    current_memory_model: all_25_actor_state_and_touch_queues_all_9_residual_banks_and_temporal_score_bank_use_explicit_actor_owned_1R1W_boundaries
+    residual_native_lossless_storage_bits: 252313600
+    residual_native_lossless_storage_MiB: 30.078125
+    residual_max_parallel_reset_scrub_cycles: 2252800
+    simple_actor_count_on_SRAM_boundary: 9
+    simple_actor_native_state_words: 17740800
+    simple_actor_native_conservative_storage_bits: 1562598400
+    simple_actor_native_conservative_storage_MiB: 186.2762451171875
+    simple_actor_max_parallel_reset_scrub_cycles: 4505600
+    mechanism_actor_count_on_SRAM_boundary: 16
+    mechanism_actor_native_state_words: 13235200
+    mechanism_actor_native_conservative_storage_bits: 1215016000
+    mechanism_actor_native_conservative_storage_MiB: 144.84119415283203
+    mechanism_actor_max_parallel_reset_scrub_cycles: 70400
+    required_memory_replacement: bind_all_generic_boundaries_to_characterized_banked_SRAM_macros_before_full_chip_PPA
   EDA:
     front_end: native_SystemVerilog
     synthesis: Yosys
@@ -1272,6 +1289,128 @@ export_contract:
   - measure_full_sequence_FIFO_occupancy_cycles_per_bin_latency_activity_and_energy
   - run_routed_full_DAG_timing_and_activity_based_power_on_scale_suitable_platform
   - select_accessible_manufacturable_22nm_or_better_PDK_and_SRAM_compiler
+  implemented_SRAM_temporal_readout_iteration_10:
+  - generated_production_top_selects_temporal_class_readout_sram
+  - six_signed_24bit_class_scores_packed_as_one_144bit_word_per_pixel
+  - native_score_bank_281600_words_40550400_bits_4_834_MiB
+  - synchronous_1R1W_actor_local_state_sram_boundary_with_optional_compiled_macro_binding
+  - generated_top_parameter_USE_SCORE_SRAM_MACRO
+  - deterministic_281600_cycle_power_on_scrub_for_unknown_compiled_SRAM_contents
+  - one_hidden_readout_event_accepted_per_two_clocks_with_parallel_six_class_update
+  - first_index_tie_argmax_and_clear_flush_three_clocks_per_pixel_844800_clocks_per_frame
+  - reduced_real_checkpoint_full_DAG_replay_passed_in_7513_cycles_with_fault_o_low
+  - active_generated_top_102052_bytes_SHA256_9689e97d3dd2b6e0dc6bce606200b1f5ab7f04cd69e620a696fbaa58404283f6
+  - Python_89_RTL_22_Ruff_and_expanded_Yosys_gates_passing
+  remaining_after_SRAM_temporal_readout_iteration_10:
+  - bind_the_generic_144bit_score_bank_to_a_real_characterized_banked_SRAM_configuration
+  - prove_native_FIFO_capacity_during_the_844800_cycle_prediction_flush_or_add_ping_pong_banks
+  - replace_actor_membrane_current_tag_adaptation_arrays_with_characterized_local_SRAM_transactions
+  - replace_residual_dedup_queue_behavioral_arrays_with_bounded_banked_storage
+  - run_native_complete_DSEC_sequence_equivalence_latency_activity_and_power
+  implemented_SRAM_residual_join_iteration_11:
+  - generated_production_top_selects_binary_event_union2_sram_for_all_9_residual_joins
+  - exact_channel_y_x_geometry_propagated_through_every_generated_actor_and_route
+  - direct_indexed_one_bit_seen_map_replaces_linear_event_content_scan
+  - compact_queue_stores_only_linear_addresses_and_reconstructs_event_payloads_on_drain
+  - default_RESIDUAL_MAX_EVENTS_0_means_lossless_full_logical_address_capacity_per_join
+  - smaller_capacity_override_allowed_only_for_proven_fixture_or_complete_native_occupancy_bound
+  - native_seen_maps_11264000_bits_and_address_queues_241049600_bits
+  - native_total_residual_storage_252313600_bits_30_078125_MiB
+  - maximum_parallel_power_on_reset_scrub_2252800_clocks_22_528ms_at_100MHz
+  - reduced_8x8_fixture_RESIDUAL_MAX_EVENTS_512_replay_passed_in_7554_cycles_with_fault_o_low
+  - active_generated_top_103414_bytes_SHA256_e4d9ccb8f04b1b627a57296b11d26eb63305449a968deda32b696897c8dbef9b
+  - Python_89_RTL_23_Ruff_and_expanded_Yosys_gates_passing
+  remaining_after_SRAM_residual_join_iteration_11:
+  - bind_generic_readout_and_residual_banks_to_real_characterized_banked_SRAM_configurations
+  - replace_actor_membrane_current_tag_touch_queue_and_adaptation_arrays_with_local_SRAM_transactions
+  - measure_complete_native_DSEC_per_bin_residual_occupancy_and_safely_reduce_queue_capacity_if_possible
+  - prove_native_FIFO_capacity_during_prediction_flush_or_add_ping_pong_score_banks
+  - run_native_complete_DSEC_sequence_equivalence_latency_activity_and_routed_power
+  implemented_SRAM_non_mechanism_actor_iteration_12:
+  - asynchronous_plif_actor_sram_retains_behavioral_actor_as_equivalence_reference
+  - current_membrane_last_tag_live_and_touched_packed_into_one_66bit_word_per_neuron
+  - narrow_first_touch_address_queue_preserves_sparse_epoch_commit_without_dense_runtime_sweep
+  - generated_top_selects_transactional_engine_for_all_9_non_mechanism_PLIF_populations
+  - generated_top_parameter_USE_ACTOR_STATE_SRAM_MACRO
+  - native_17740800_simple_actor_state_words
+  - conservative_full_address_touch_queues_total_1562598400_bits_186_276_MiB
+  - maximum_parallel_power_on_reset_scrub_4505600_clocks_45_056ms_at_100MHz
+  - synchronous_contribution_read_modify_write_accepts_at_most_one_weight_every_two_clocks
+  - reduced_real_checkpoint_full_DAG_replay_passed_in_14035_cycles_with_fault_o_low
+  - active_generated_top_104841_bytes_SHA256_877eeae027f860645e4c13495da9c217283e0003ee7cd53875f10ee4f29326cb
+  - Python_89_and_targeted_SRAM_actor_channelized_streaming_tests_passing
+  remaining_after_SRAM_non_mechanism_actor_iteration_12:
+  - convert_all_16_retinotopic_inhibition_or_adaptation_actor_state_banks_to_SRAM_transactions
+  - bind_all_generic_state_queue_residual_and_readout_boundaries_to_characterized_banked_macros
+  - measure_native_touch_and_residual_occupancy_to_reduce_conservative_full_address_queues_losslessly
+  - run_complete_DSEC_sequence_equivalence_FIFO_latency_activity_and_routed_power
+  implemented_SRAM_retinotopic_mechanism_actor_iteration_13:
+  - retinotopic_asynchronous_plif_actor_sram_retains_behavioral_actor_as_reference
+  - one_65bit_actor_owned_PLIF_state_SRAM_lane_per_channel_addressed_by_spatial_location
+  - separate_32bit_adaptation_lane_only_for_the_15_adaptation_enabled_actors
+  - atomic_parallel_all_channel_read_commit_preserves_peer_inhibition_and_adaptation_semantics
+  - direct_one_bit_spatial_seen_bank_and_compact_first_touch_spatial_address_queue
+  - generated_actor_wrapper_selects_transactional_engine_for_all_16_mechanism_populations
+  - native_13235200_mechanism_actor_state_words
+  - conservative_mechanism_banks_total_1215016000_bits_144_841_MiB
+  - maximum_parallel_mechanism_reset_scrub_70400_clocks
+  - reduced_real_checkpoint_full_DAG_replay_passed_in_14034_cycles_with_fault_o_low
+  - all_25_production_actor_state_paths_now_cross_generic_SRAM_boundaries
+  - Python_89_RTL_25_Ruff_and_expanded_Yosys_gates_passing
+  remaining_after_SRAM_retinotopic_mechanism_actor_iteration_13:
+  - bind_all_generic_state_queue_residual_and_readout_boundaries_to_characterized_banked_macros
+  - measure_native_touch_and_residual_occupancy_to_reduce_conservative_queues_losslessly
+  - run_complete_DSEC_sequence_equivalence_FIFO_latency_activity_and_routed_power
+  implemented_exact_SRAM_manifest_iteration_14:
+  - deterministic_scripts_generate_asic_sram_manifest_py
+  - covers_all_actor_state_touch_queues_residual_seen_address_queues_and_temporal_scores
+  - active_manifest_100_logical_bank_records_3173_lane_instances
+  - active_conservative_total_3070478400_bits_366_030_MiB
+  - every_record_contains_owner_kind_word_bits_depth_instances_ports_and_macro_gate
+  - manifest_is_compiler_input_contract_not_physical_PPA_evidence
+  implemented_SRAM_catalog_banking_planner_iteration_15:
+  - deterministic_scripts_plan_asic_sram_banking_py
+  - requires_supplied_1R1W_macro_catalog_width_depth_name_and_characterization_status
+  - minimum_allocated_bit_tiling_with_deterministic_instance_and_name_tie_breaks
+  - reports_width_tiles_depth_tiles_physical_instances_waste_and_utilization
+  - rejects_incompatible_port_catalogs
+  - PPA_eligible_only_when_catalog_explicitly_declares_characterized_true
+  - schema_example_is_explicitly_uncharacterized_and_contains_no_fabricated_PPA_values
+  implemented_actor_touch_occupancy_instrumentation_iteration_16:
+  - profiles_unique_per_bin_destination_addresses_for_simple_actors
+  - profiles_unique_per_bin_spatial_addresses_for_mechanism_actors
+  - active_synthetic_trace_global_max_observed_11135_at_final_fuse_standard
+  - several_deep_actors_unexercised_so_report_is_explicitly_non_bounding
+  - no_queue_capacity_reduction_without_complete_native_DSEC_coverage_and_safety_policy
+  implemented_residual_join_occupancy_instrumentation_iteration_17:
+  - integer_DAG_oracle_records_all_9_binary_residual_OR_output_counts_per_bin
+  - deterministic_golden_ingress_replay_profile
+  - active_synthetic_trace_global_max_507_at_enc1_residual_joins
+  - explains_512_entry_verification_override_but_does_not_bound_native_production
+  - four_deep_residual_joins_unexercised_so_full_logical_capacity_remains
+  physical_input_availability_gate_iteration_18:
+    characterized_SRAM_catalog_or_library_present: false
+    complete_native_DSEC_event_corpus_present: false
+    available_only:
+    - explicitly_uncharacterized_SRAM_catalog_schema_example
+    - synthetic_model_scale_integer_golden_NPZ
+    - reduced_8x8_whole_DAG_RTL_replay_fixture
+    blocked_claims:
+    - safe_lossless_queue_capacity_reduction
+    - compiler_macro_binding
+    - native_complete_sequence_latency_and_activity
+    - routed_area_timing_and_power
+    conservative_storage_MiB_remains: 366.02954864501953
+  implemented_compile_time_mechanism_state_specialization_iteration_19:
+  - universal_mechanism_PLIF_lane_is_65_bits_current_membrane_bin_tag_and_touched
+  - optional_adaptation_lane_is_32_bits_age_and_amplitude
+  - adaptation_lane_generated_only_for_15_adaptation_enabled_actors
+  - inhibition_only_stem_omits_72089600_unused_bits_8_59375_MiB
+  - mechanism_storage_reduced_to_1215016000_bits_144_841_MiB
+  - actor_storage_reduced_to_2777614400_bits_331_117_MiB
+  - full_conservative_manifest_reduced_to_3070478400_bits_366_030_MiB
+  - clean_full_DAG_Verilator_replay_exact_in_14034_cycles_fault_o_low
+  - Python_94_RTL_25_Ruff_and_expanded_Yosys_gates_passing
   legacy_11_class_generated_checkpoint_artifacts:
     directory: artifacts/asic_export_v4
     model_spec: artifacts/asic_export_v4/model_spec.yaml
@@ -1283,6 +1422,9 @@ export_contract:
     model_spec: artifacts/asic_export_v4_6class/model_spec.yaml
     layer_graph: artifacts/asic_export_v4_6class/layer_graph.json
     generated_top: artifacts/asic_export_v4_6class/eventspikeseg140k_dag_top.sv
+    SRAM_manifest: artifacts/asic_export_v4_6class/sram_manifest.json
+    touch_occupancy: artifacts/asic_export_v4_6class/touch_occupancy.json
+    residual_occupancy: artifacts/asic_export_v4_6class/residual_occupancy.json
     source_checkpoint: artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_best.pt
     golden_input: artifacts/asic_export_v4_6class/golden_input_samples.npz
     golden_currents: artifacts/asic_export_v4_6class/golden_layer_currents.npz

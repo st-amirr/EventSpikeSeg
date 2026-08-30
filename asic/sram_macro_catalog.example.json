@@ -1,0 +1,12 @@
+{
+  "catalog": "schema-example-only-not-characterized",
+  "characterized": false,
+  "macros": [
+    {
+      "name": "replace_with_real_compiler_macro",
+      "ports": "1R1W",
+      "word_bits": 32,
+      "depth": 1024
+    }
+  ]
+}

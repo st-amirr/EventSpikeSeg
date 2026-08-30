@@ -353,12 +353,22 @@ Real-time feasibility is measured per bin. With `C_bin` cycles and routed clock 
 The native SystemVerilog ASIC implementation now contains a synthesizable channel-aware
 standard/grouped/depthwise convolution scatter, autonomous completion-token PLIF actor,
 lossless two-way event/token fork, same-bin rendezvous join, fixed concat remap, 2x event
-upsample, and a correctness-reference residual binary-OR/dedup merge. Trained weights remain
+upsample, and an SRAM-backed residual binary-OR/dedup merge. Trained weights remain
 replaceable ROM contents. Channelized projections now feed independent per-output-channel
 spatial PLIF state and per-channel beta/threshold tables. The trained v4 checkpoint has been
 exported and the manifest-driven generator emits the complete weighted **25-actor DAG**,
-including retinotopic mechanisms and the temporal readout. Remaining physical work is to replace
-behavioral state/merge arrays with characterized SRAM/banked sparse structures, integrate
-the native-resolution traces and dataset traffic into capacity measurements, and run
-activity-based PPA. A reduced-spatial replay of the complete real-checkpoint DAG now matches
+including retinotopic mechanisms and the temporal readout. All nine residual joins now use
+direct-indexed seen-map SRAM plus compact linear-address queue SRAM; their statically lossless
+native worst case is 30.078 MiB, pending complete-sequence occupancy measurement. Remaining
+physical work is to bind every generic memory boundary to characterized SRAM macros. The nine
+simple PLIF actors use packed 66-bit state SRAM; the sixteen mechanism actors use 65-bit
+channel-lane PLIF state SRAM for parallel retinotopic commits, with separate 32-bit adaptation
+lanes instantiated only for the fifteen actors that enable adaptation. Both paths use first-touch
+address queues and are whole-DAG bit-exact. The exact conservative logical SRAM manifest totals
+3,070,478,400 bits (366.030 MiB) before compiler tiling. Complete native-resolution dataset traces
+must still drive capacity measurements and activity-based PPA. A reduced-spatial replay of the
+complete real-checkpoint DAG now matches
 every actor spike/completion boundary and the final semantic output exactly in Verilator.
+The generated production top selects an SRAM-transactional temporal readout: all six signed
+scores for one pixel form one 144-bit word behind the compiler-macro boundary instead of a
+standard-cell-expanded 2D array.
