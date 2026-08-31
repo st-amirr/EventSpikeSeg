@@ -10,7 +10,6 @@ sim_build/
 data/**
 !data/README.md
 artifacts/
-desktop.ini
 *.pt
 kaggle/
 Icon
@@ -24,4 +23,5 @@ Icon
 Thumbs.db
 ehthumbs.db
 $RECYCLE.BIN/
+artifacts/Icon
 *.png
