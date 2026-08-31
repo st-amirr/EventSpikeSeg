@@ -165,3 +165,21 @@ Exact two-channel parameter counts are:
 Historical repeated-static experiments do not show a positive correlation between parameter count and mIoU: the 21,491-parameter structural model beat the 77,751- and 107,131-parameter alternatives, and the 24,211-parameter dual-path model beat the 63,147- and 108,781-parameter alternatives. This is evidence that parameter count alone was not the plateau cause, but it is not a ranking under the current temporal protocol. The current ASIC target is the 149,835-parameter, six-class `EventSpikeSeg140k` v8 model at native 440x640 resolution; this implementation choice is not a new accuracy result.
 
 No new mIoU, pixel accuracy, spike-rate, latency, power, or FPGA-resource result is claimed for temporal-v2 yet.
+
+## 2026-08-31 — ASIC/RTL verification results
+
+The active epoch-35 six-class checkpoint exports 143,824 int8 convolution weights and 25
+permanent PLIF actors. Derived persistent state is 189.60 MiB. Direct-index 24-bit same-bin
+current plus touched flags raise the exact logical memory to 281.92 MiB before touched-address
+queues; this is a capacity result, not a characterized SRAM area or power result.
+
+The reduced 8×8, ten-bin RTL smoke replay used four deterministic input events. Icarus 12
+completed the full 25-actor DAG in 191.66 seconds of host simulation and matched the integer
+reference for all 64 semantic output pixels and the bin-10 completion tag. The larger integer
+profile used 160 events and produced 37,065 current rows, 37,068 membrane rows, and 3,707
+spikes. These reduced-geometry results verify behavior only; they do not establish native
+latency, throughput, energy, power, or chip area.
+
+Current regressions: 87 Python tests, 23 cocotb RTL component groups, Ruff, and representative
+Yosys synthesis pass in the CPU-only implementation image. Routed PPA remains unreported
+until characterized SRAM macros and representative native DSEC activity are available.

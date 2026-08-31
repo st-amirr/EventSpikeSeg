@@ -17,10 +17,13 @@ timing, and power analysis.
   selected or power-signoff-ready until those libraries are available.
 
 The distinction matters because 143,824 int8 synaptic weights consume only about
-0.137 MiB, while the frozen 440x640 graph has 30,976,000 logical membranes. The current
-exact dense reference is 189.60 MiB when int16 membrane, adaptation fields, and 24-bit
-lazy-update tags are all included. Standard-cell flip-flops are not an acceptable
-full-chip memory implementation.
+0.137 MiB, while the frozen 440x640 graph has 30,976,000 logical membranes. Persistent
+int16 membrane, adaptation fields, and 24-bit lazy-update tags require 189.60 MiB. Exact
+same-bin collection additionally requires 88.62 MiB of 24-bit current and 3.69 MiB of
+touched flags when implemented as direct-index storage, for 281.92 MiB excluding the
+touched-address queues. Standard-cell flip-flops are not an acceptable full-chip memory
+implementation. A smaller profiled sparse collection FIFO is valid only with an explicit
+capacity, overflow behavior, and representative event-stream occupancy evidence.
 
 ## Current synthesis boundary
 
@@ -44,25 +47,37 @@ or depthwise output-channel/tap projections using exported PyTorch Conv2d weight
 `(output_channel,y,x)` membrane/current/tag state and selects compile-time per-channel beta
 and threshold tables. The exporter emits matching 16-bit beta and threshold ROM images for
 each actor. `scripts/generate_asic_top.py` performs model-scale instantiation and wiring.
+`scripts/generate_sram_manifest.py` derives every actor depth, record width, logical bank
+count, persistent/transient total, and worst-case touched-queue bound from that same export.
 
 `scripts/generate_asic_top.py` now consumes an exported `model_spec.yaml` and emits the exact
 25-actor structural top with fixed ROM constants and all routing primitives. The generated
 miniature-state regression exercises the complete completion-token DAG. Mechanism-enabled
 actors use grouped retinotopic commits; the final readout accumulates signed class currents
-and enumerates a dense prediction after the configured bin window. `actor_local_state_sram`
-defines the compiler-macro interface, but the current actor arrays remain behavioral until a
-real SRAM compiler is selected and bound.
+and enumerates a dense prediction after the configured bin window. Large ROM constants are
+emitted as bounded concatenation chunks so Icarus can lex the trained top without changing
+word order. `actor_local_state_sram` defines the compiler-macro interface, and
+`initialized_actor_state_bank` adds parallel per-bank sequence-start zeroization plus
+single-port request arbitration. The current actor arrays remain behavioral until those
+banks are integrated into every actor and a real SRAM compiler is selected and bound.
 
 The active trained six-class v4 export is retained under
-`artifacts/asic_export_v4_6class`; its generated weighted top contains all 25 actors and
-exactly 143,824 int8 synaptic ROM words. The prior 11-class export under
-`artifacts/asic_export_v4` is historical. The active top is the executable logical reference,
+`artifacts/ASIC`; its generated weighted top contains all 25 actors and
+exactly 143,824 int8 synaptic ROM words. The prior 11-class export is documented as
+historical and is not kept in the active artifacts tree. The active top is the executable logical reference,
 not a full-chip PPA netlist: its large behavioral arrays must not be mapped to standard cells
 or reported as a physical implementation.
 
 Before full-chip PPA, behavioral actor state arrays and prototype residual-dedup storage must
 be replaced by actor-local SRAM/banked sparse macro structures with the same logical ownership
 and no inter-layer state fetch.
+
+Generate the technology-independent memory manifest from the active checkpoint export:
+
+```sh
+PYTHONPATH=src python scripts/generate_sram_manifest.py \
+  --export artifacts/ASIC
+```
 
 Run native SystemVerilog compilation and the cocotb suite:
 
@@ -80,6 +95,7 @@ contains Yosys. It is independent of the CUDA training image:
 docker compose -f compose_ASIC.yaml build
 docker compose -f compose_ASIC.yaml run --rm test
 docker compose -f compose_ASIC.yaml run --rm rtl
+docker compose -f compose_ASIC.yaml run --rm replay
 docker compose -f compose_ASIC.yaml run --rm synthesis
 docker compose -f compose_ASIC.yaml run --rm lint
 ```

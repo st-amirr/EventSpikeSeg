@@ -13,6 +13,7 @@ from .contracts import (
 from .export import EVENTSPIKESEG140K_INFERENCE_STAGES, export_checkpoint, export_model
 from .fixed_point import ASIC_FORMATS, FixedFormat
 from .integer_reference import ActorLocalStateStore, IntegerPLIF, NeuronState
+from .sram_manifest import build_sram_manifest, write_sram_manifest
 from .topology import (
     EVENTSPIKESEG140K_ACTORS,
     EVENTSPIKESEG140K_CURRENT_READOUT,
@@ -41,11 +42,13 @@ __all__ = [
     "MANUFACTURABLE_TARGET_GATE",
     "NeuronState",
     "OPEN_PPA_TARGET",
+    "build_sram_manifest",
     "export_checkpoint",
     "export_model",
     "eventspikeseg140k_graph_contract",
     "state_capacity_contract",
     "validate_eventspikeseg140k_topology",
+    "write_sram_manifest",
 ]
 
 # Descriptive alias for downstream tooling; ASIC_FORMATS remains the canonical name.

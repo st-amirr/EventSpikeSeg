@@ -341,7 +341,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   triangular threshold processes and shared-RMS peer-membrane inhibition;
 - added the non-spiking signed temporal class-current bank, configurable ten-bin window, dense
   pixel argmax enumeration, and prediction reset;
-- added a technology-independent 1R1W state-memory boundary with behavioral simulation and a
+- added a technology-independent synchronous single-port 1RW state-memory boundary with behavioral simulation and a
   compiled-SRAM black-box branch;
 - 22 cocotb RTL groups plus the generated-DAG compile/simulation test pass locally;
 - real-checkpoint export/equivalence and physical SRAM binding remain gated separately from the
@@ -356,7 +356,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - emitted exactly 143,904 weight-ROM words plus beta/threshold ROMs and mechanism parameters
   for every actor; the export enables peer inhibition in one actor and triangular adaptation
   in fifteen actors;
-- generated the real weighted 370 KiB `artifacts/asic_export_v4/eventspikeseg140k_dag_top.sv`;
+- generated the historical real weighted 370 KiB 11-class SystemVerilog DAG top;
 - the complete pinned-container regression passes 79 tests and Ruff reports no issues;
 - full-chip implementation is now bounded by characterized SRAM binding, scalable residual
   capacity proof, golden-stream bit-exact replay, and an accessible manufacturable PDK—not by
@@ -368,14 +368,37 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   CUDA training image;
 - pinned CPU PyTorch 2.2.2, CPU torchvision 0.17.2, upstream Icarus Verilog 12, cocotb,
   and Yosys in the implementation image;
-- exported the trained six-class v4 checkpoint to `artifacts/asic_export_v4_6class` with
+- exported the trained six-class v4 checkpoint to `artifacts/ASIC` with
   149,835 registered parameters, 149,423 executed parameters, 143,824 weight words,
   25 PLIF actors, one inhibition actor, and fifteen adaptation actors;
-- generated the active 378,396-byte weighted 25-actor SystemVerilog DAG top;
+- generated the active weighted 25-actor SystemVerilog DAG top;
 - removed an unpacked combinational effective-age temporary that crashed Icarus and replaced
   it with equivalent per-channel scalar recomputation;
-- the CPU implementation image passes 83 Python/structural tests, 22 cocotb RTL groups,
+- the CPU implementation image passes 87 Python/structural tests, 23 cocotb RTL groups,
   Ruff, and the representative Yosys synthesis gate;
-- the prior 11-class `artifacts/asic_export_v4` result is retained as historical evidence;
+- the prior 11-class result remains documented as historical evidence but is not retained in
+  the active artifacts tree;
 - full-chip physical completion still requires a characterized SRAM compiler/library,
   a selected manufacturable PDK, real golden event streams, and routed activity data.
+
+## 2026-08-31 — Epoch-35 provenance, memory contract, and full-DAG replay
+
+- verified that the active checkpoint is epoch 35/seed 17 and exactly matches the epoch-35
+  tensor state, then regenerated all weights, neuron parameters, and the structural top;
+- quarantined the two remaining epoch-19 replay directories so they cannot be reported as
+  evidence for the current checkpoint;
+- derived 487 logical actor-local banks at a maximum 65,536 rows: persistent state is
+  189.60 MiB, exact direct-index current plus touched flags add 92.32 MiB, and a worst-case
+  full-depth touched queue is reported separately rather than hidden;
+- added a synthesizable initialized single-port bank that zeroizes all banks in parallel at
+  sequence start, blocks events until completion, and takes at most 65,536 cycles (327.68 us
+  at the current 200 MHz research target);
+- changed generated weight constants to bounded SystemVerilog concatenation chunks while
+  preserving exact ROM word order, eliminating Icarus scanner overflow on trained weights;
+- regenerated an epoch-35 160-event integer-oracle profile and a four-event RTL smoke replay;
+  the full 25-actor smoke top matched all 64 final semantic pixels and bin-10 completion in
+  Icarus 12 (191.66 s host simulation time);
+- 87 Python tests, all 23 component cocotb groups, Ruff, representative Yosys synthesis, and
+  the dedicated full-DAG replay pass in the CPU-only implementation image;
+- per-actor RTL trace comparison, native DSEC occupancy/activity measurement, characterized
+  SRAM binding, and routed PPA remain open and must not be inferred from the smoke replay.

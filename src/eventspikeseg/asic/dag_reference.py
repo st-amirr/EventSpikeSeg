@@ -58,8 +58,10 @@ class IntegerDAGReference:
 
     def __init__(self, model_spec: str | Path) -> None:
         self.model_spec_path = Path(model_spec)
-        self.export_dir = self.model_spec_path.parent
         self.spec = json.loads(self.model_spec_path.read_text(encoding="utf-8"))
+        self.export_dir = (
+            self.model_spec_path.parent / str(self.spec.get("artifact_root", "."))
+        ).resolve()
         self.graph = self.spec["graph"]
         if self.graph.get("actor_count") != 25 or self.graph.get("linear_pipeline") is not False:
             raise ValueError("integer DAG reference requires the exact 25-actor graph")
@@ -259,7 +261,10 @@ class IntegerDAGReference:
         membranes: list[tuple[int, ...]] = []
         for (y, x), touched_channels in touched_by_spatial.items():
             update_channels = set(range(channels)) if inhibition else touched_channels
-            previous = [states.get(SpikeEvent(channel, y, x), NeuronState()) for channel in range(channels)]
+            previous = [
+                states.get(SpikeEvent(channel, y, x), NeuronState())
+                for channel in range(channels)
+            ]
             elapsed = [
                 self.plif.elapsed_bins(bin_tag, state.last_bin_tag)
                 if channel in update_channels

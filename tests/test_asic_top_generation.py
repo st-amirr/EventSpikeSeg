@@ -173,3 +173,24 @@ endmodule
         ["vvp", str(executable)], check=True, capture_output=True, text=True, cwd=ROOT
     )
     assert "FULL_DAG_COMPLETION_PASS" in result.stdout
+
+
+def test_packed_literal_chunks_large_rom_without_changing_word_order(tmp_path: Path) -> None:
+    generator = _load_module(
+        ROOT / "scripts/generate_asic_top.py", "eventspikeseg_asic_top_chunk_test"
+    )
+    rom = tmp_path / "large.mem"
+    words = [index & 0xFF for index in range(600)]
+    rom.write_text("".join(f"{word:02x}\n" for word in words), encoding="ascii")
+
+    literal = generator._packed_literal(rom, word_bits=8, expected_words=len(words))
+
+    assert literal.startswith("{\n")
+    assert max(len(line) for line in literal.splitlines()) < 1100
+    chunks = [line.strip().rstrip(",") for line in literal.splitlines()[1:-1]]
+    recovered_hex = "".join(chunk.split("'h", 1)[1] for chunk in chunks)
+    recovered = [
+        int(recovered_hex[index : index + 2], 16)
+        for index in range(0, len(recovered_hex), 2)
+    ]
+    assert recovered == list(reversed(words))

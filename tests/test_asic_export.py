@@ -16,6 +16,7 @@ from eventspikeseg.asic import (
     ActorLocalStateStore,
     IntegerPLIF,
     NeuronState,
+    build_sram_manifest,
     eventspikeseg140k_graph_contract,
     export_checkpoint,
     export_model,
@@ -127,6 +128,27 @@ def test_state_capacity_is_model_scale_not_parameter_scale() -> None:
     assert capacity["logical_membranes"] == 30_976_000
     assert capacity["dense_exact_state_mib"] == pytest.approx(189.599609375)
     assert capacity["full_chip_PPA_gate"] == "characterized_actor_local_SRAM_macros_required"
+
+
+def test_sram_manifest_derives_exact_actor_local_storage(tmp_path) -> None:
+    export_model(EventSpikeSeg140k(class_count=6, input_channels=2), tmp_path)
+    manifest = build_sram_manifest(tmp_path, maximum_bank_depth=65_536)
+
+    assert manifest["memory_contract"]["port"] == "synchronous_single_port_1RW"
+    assert manifest["memory_contract"]["runtime_reconfiguration"] is False
+    assert manifest["memory_contract"]["events_accepted_during_initialization"] is False
+    assert manifest["totals"]["actor_count"] == 25
+    assert manifest["totals"]["logical_neurons"] == 30_976_000
+    assert manifest["totals"]["persistent_state_bytes"] == 198_809_600
+    assert manifest["totals"]["collection_current_bytes"] == 92_928_000
+    assert manifest["totals"]["touched_bitmap_bytes"] == 3_872_000
+    assert manifest["totals"]["direct_index_exact_bytes_excluding_queue"] == 295_609_600
+    assert manifest["totals"]["weight_rom_bytes"] == 143_824
+    assert manifest["totals"]["parallel_bank_scrub_cycles"] == 65_536
+    assert manifest["totals"]["parallel_bank_scrub_time_us_at_200MHz"] == pytest.approx(327.68)
+    assert sum(actor["adaptation_enabled"] for actor in manifest["actors"]) == 15
+    assert all(actor["banking"]["maximum_bank_depth"] == 65_536 for actor in manifest["actors"])
+    assert manifest["physical_status"]["area_power_latency_available"] is False
 
 
 def test_140k_asic_topology_is_real_dag_not_linear_chain() -> None:

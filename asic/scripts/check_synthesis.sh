@@ -34,8 +34,8 @@ yosys -q -p '
 
 printf 'Synthesizing actor-local SRAM boundary...\n'
 yosys -q -p '
-  read_verilog -sv asic/rtl/actor_local_state_sram.sv;
-  hierarchy -top actor_local_state_sram;
+  read_verilog -sv asic/rtl/actor_local_state_sram.sv asic/rtl/initialized_actor_state_bank.sv;
+  hierarchy -top initialized_actor_state_bank;
   proc; memory; opt; check
 '
 

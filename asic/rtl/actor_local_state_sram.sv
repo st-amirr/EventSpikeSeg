@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
-// Technology-independent 1R1W actor-local SRAM boundary. RTL simulation uses
+// Technology-independent synchronous single-port 1RW actor-local SRAM boundary.
+// RTL simulation uses
 // the behavioral branch; physical full-chip builds must bind the black-box
 // branch to a characterized compiler macro with matching latency and polarity.
 module actor_local_state_sram #(
@@ -25,16 +26,23 @@ module actor_local_state_sram #(
       if (write_enable_i) memory[write_address_i] <= write_data_i;
     end
   end else begin : compiled_macro
-    eventspikeseg_1r1w_sram_macro #(
+    eventspikeseg_1rw_sram_macro #(
       .DATA_WIDTH(DATA_WIDTH), .DEPTH(DEPTH), .ADDRESS_WIDTH(ADDRESS_WIDTH)
     ) macro (
       .clk, .read_enable_i, .read_address_i, .read_valid_o, .read_data_o,
       .write_enable_i, .write_address_i, .write_data_i
     );
   end endgenerate
+
+`ifndef SYNTHESIS
+  always_ff @(posedge clk)
+    if (read_enable_i && write_enable_i)
+      $fatal(1, "actor_local_state_sram received simultaneous read and write");
+`endif
 endmodule
 
-(* blackbox *) module eventspikeseg_1r1w_sram_macro #(
+`ifndef EVENTSPIKESEG_EXTERNAL_SRAM_MACRO
+(* blackbox *) module eventspikeseg_1rw_sram_macro #(
   parameter integer DATA_WIDTH = 64,
   parameter integer DEPTH = 256,
   parameter integer ADDRESS_WIDTH = (DEPTH <= 1) ? 1 : $clog2(DEPTH)
@@ -49,3 +57,4 @@ endmodule
   input logic [DATA_WIDTH-1:0] write_data_i
 );
 endmodule
+`endif

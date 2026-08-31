@@ -311,8 +311,10 @@ accessible 22/28 nm-or-better PDK and characterized SRAM macros.
 
 Export a trained checkpoint with:
 
-```powershell
-python scripts/export_asic_model.py --checkpoint artifacts/EventSpikeSeg140k_seed17_best.pt --output artifacts/asic_export
+```sh
+python scripts/export_asic_model.py \
+  --checkpoint artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_best.pt \
+  --output artifacts/ASIC
 ```
 
 The exporter hard-rejects XL and emits the exact 25-PLIF-actor plus current-readout manifest,

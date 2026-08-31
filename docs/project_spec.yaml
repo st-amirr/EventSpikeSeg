@@ -856,7 +856,7 @@ quantization:
     - layerwise_equivalence_replay
 
 asic_implementation:
-  status: six_class_trained_v4_exact_25_actor_SystemVerilog_DAG_CPU_verified
+  target: six_class_25_actor_SystemVerilog_DAG
   topology:
     permanent_actors: 25_PLIF_populations_plus_stateless_readout
     graph_kind: static_directed_acyclic_actor_graph
@@ -880,7 +880,7 @@ asic_implementation:
     language: SystemVerilog_2012
     logical_asynchrony: clocked_ready_valid_events_and_completion_tokens
     electrically_clockless_QDI: false
-    implemented_blocks:
+    required_blocks:
     - asic/rtl/presynaptic_tap_array.sv
     - asic/rtl/plif_update.sv
     - asic/rtl/asynchronous_plif_actor.sv
@@ -902,6 +902,7 @@ asic_implementation:
     - asic/rtl/retinotopic_asynchronous_plif_actor.sv
     - asic/rtl/temporal_class_readout.sv
     - asic/rtl/actor_local_state_sram.sv
+    - asic/rtl/initialized_actor_state_bank.sv
     current_memory_model: small_direct_indexed_behavioral_arrays_for_control_and_equivalence_testing
     required_memory_replacement: actor_local_characterized_SRAM_macros_before_full_chip_PPA
   EDA:
@@ -935,20 +936,11 @@ legacy_fpga_history:
     - fixed_ten_step_layer_major_schedule_matching_training_but_requiring_global_control_and_buffering
     - end_to_end_5ms_epochs_with_pingpong_ingress_lazy_24bit_tags_actor_lanes_and_deadline_accounting
     - presynaptic_tap_scatter_and_permanent_actor_local_PLIF_ownership_as_the_bridge_to_ASIC
-    principal_result: >-
-      Static int8 weights fit easily, but exact native-resolution writable PLIF state did not fit the selected
-      low-cost FPGA without external memory or a full-sequence-proven bounded sparse representation.
-    retirement_reasons:
-    - exact_writable_state_exceeded_low_cost_FPGA_on_chip_memory_by_about_two_orders_of_magnitude
-    - DDR_or_HBM_restored_capacity_but_added_state_transfer_latency_and_energy
-    - shared_compute_or_layer_reconfiguration_violated_permanently_resident_actor_ownership
-    - scheduler_pingpong_associative_state_and_BRAM_arbitration_added_control_and_routing_overhead
     preservation:
       executable_sources: removed_from_active_tree
       detailed_chronology: [docs/DECISIONS.md, docs/PROGRESS.md]
       machine_readable_record: this_legacy_fpga_history_section
       source_recovery: Git_history
-      historical_model_name_retained: v10_fpga_hybrid_is_a_measured_search_identifier_not_the_backend
   model:
     public_name: EventSpikeSeg140k
     dataset: DSEC_Semantic_6_class_merged_from_11_source_labels
@@ -1099,156 +1091,45 @@ legacy_fpga_history:
     float_training_reference_to_lazy_integer_reference_to_streaming_RTL_must_match_under_exported_fixed_point_and_5ms_bin_contract
 
 export_contract:
-  artifacts:
+  artifact_roots:
+    ASIC: artifacts/ASIC
+    RTL: artifacts/RTL
+  active_checkpoint:
+    path: artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_best.pt
+    architecture: EventSpikeSeg140k
+    dataset: DSEC_Semantic
+    classes: 6
+  ASIC_artifacts:
   - model_spec.yaml
   - layer_graph.json
-  - explicit_static_DAG_connectivity_inside_layer_graph_json
   - quantized_weights.npz
   - weights/*.mem
   - parameters/*.json
   - class_mapping.json
-  - golden_input_samples.npz
-  - golden_layer_currents.npz
-  - golden_layer_membranes.npz
-  - golden_layer_spikes.npz
-  - golden_semantic_outputs.npz
+  - eventspikeseg140k_dag_top.sv
+  - sram_manifest.json
+  RTL_artifacts:
+    profile: artifacts/RTL/profile
+    smoke: artifacts/RTL/smoke
+    required_files:
+    - model_spec.yaml
+    - eventspikeseg140k_replay_top.sv
+    - replay_profile.json
+    - golden_input_samples.npz
+    - golden_layer_currents.npz
+    - golden_layer_membranes.npz
+    - golden_layer_spikes.npz
+    - golden_semantic_outputs.npz
   model_spec_must_include:
   - layer_order_as_topological_export_order_only
-  - explicit_graph_nodes
-  - explicit_graph_edges
-  - explicit_join_semantics
-  - tensor_shapes
-  - convolution_parameters
+  - explicit_graph_nodes_edges_and_join_semantics
+  - tensor_shapes_and_convolution_parameters
   - normalization_folding
-  - LIF_parameters
-  - peer_inhibition_parameters
-  - threshold_adaptation_parameters
-  - quantization_formats
-  - saturation_and_rounding
-  - timestep_count
-  - class_mapping
-  equivalence_requirement: All exported golden tests must match exactly in the integer reference and RTL 
-    simulation.
-  implemented_iteration_0:
-  - XL_hard_rejection
-  - exact_25_PLIF_actor_plus_current_readout_manifest
-  - affine_folded_int8_weight_ROMs
-  - quantized_beta_threshold_and_mechanism_parameters
-  - fixed_point_saturation_and_rounding_contract
-  - integer_PLIF_and_sparse_state_store_primitives
-  - backpressured_external_state_PLIF_RTL_lane
-  implemented_iteration_1:
-  - set_associative_zero_default_sparse_state_bank_prototype
-  - historical_timestamped_state_record_superseded_by_fixed_step_iteration_2
-  - exact_dead_state_reclamation
-  - no_eviction_full_set_overflow
-  - ready_valid_backpressure
-  - cocotb_collision_update_reclamation_and_overflow_equivalence
-  implemented_iteration_2:
-  - superseded_50ms_record_major_controller_retained_only_in_history
-  - Artix7_XC7A200T_target_alias_and_manifest_contract
-  - stateless_signed_class_current_readout_and_first_index_tie_argmax_RTL
-  implemented_iteration_3:
-  - streaming_5ms_bin_runtime_reference
-  - fixed_5ms_end_to_end_semantics_superseded_by_autonomous_static_DAG_completion_tokens
-  - 24bit_last_bin_tag_sparse_state_record
-  - lazy_learned_beta_delta_bin_integer_PLIF_reference
-  - iterative_lazy_leak_PLIF_RTL_lane
-  - streaming_bin_controller_with_cycles_per_bin_deadline_and_prediction_window_outputs
-  - utilization_U_and_headroom_H_contract_with_U_target_0_8
-  - double_buffered_ingress_interface_contract
-  implemented_iteration_4:
-  - lossless_two_bank_ping_pong_event_ingress_RTL
-  - empty_5ms_bin_preservation_and_no_overwrite_before_end_to_end_release
-  - actor_local_sparse_lookup_to_lazy_PLIF_to_exact_writeback_transaction_lane
-  - canonical_inactive_adaptation_reset_value_in_sparse_state_bank
-  - signed_6_class_temporal_current_update_with_saturation_flush_and_first_tie_argmax
-  - streaming_controller_and_class_readout_added_to_executable_GHDL_cocotb_suite
-  - current_RTL_unit_groups_12_passing
-  implemented_native_SystemVerilog_iteration_1:
-  - parallel_presynaptic_kernel_tap_scatter_with_stride_dilation_padding_and_zero_weight_suppression
-  - direct_indexed_actor_local_current_membrane_and_epoch_tag_arrays
-  - first_touch_destination_queue_avoiding_dense_epoch_end_state_sweeps
-  - duplicate_contribution_accumulation_into_one_canonical_destination
-  - upstream_completion_token_triggered_single_PLIF_commit_and_downstream_completion
-  - ready_valid_spike_and_completion_backpressure
-  - static_kernel_convolution_scatter_integrated_with_actor_local_PLIF_population
-  - native_SystemVerilog_compilation_with_Icarus_Verilog
-  - all_8_Icarus_cocotb_RTL_groups_passing
-  - ASAP7_OpenROAD_flow_configuration_for_representative_actor_PPA
-  implemented_native_SystemVerilog_iteration_2:
-  - explicit_non_linear_25_actor_DAG_contract_in_src_eventspikeseg_asic_topology_py
-  - exporter_layer_graph_json_contains_nodes_edges_join_semantics_and_topological_order_warning
-  - lossless_two_way_event_and_completion_token_fork_RTL
-  - same_bin_completion_rendezvous_join_RTL_for_concat_and_multiplicity_preserving_merges
-  - correctness_reference_binary_residual_OR_dedup_RTL_with_capacity_overflow_flag
-  implemented_native_SystemVerilog_iteration_3:
-  - executable_lossless_fork_same_bin_join_and_binary_union_cocotb_coverage
-  - mismatched_completion_tags_flag_error_and_fail_closed_at_joins
-  - fixed_compile_time_channel_ID_offset_for_concat_routes
-  - nearest_neighbor_2x_event_address_fanout_with_single_completion_forwarding
-  - channel_aware_standard_grouped_and_depthwise_convolution_scatter
-  - PyTorch_Conv2d_out_in_per_group_ky_kx_flattened_weight_order
-  - zero_weight_stride_padding_dilation_bounds_and_channel_group_filtering
-  - all_16_Icarus_cocotb_RTL_groups_passing
-  implemented_native_SystemVerilog_iteration_4:
-  - channelized_scatter_connected_to_one_canonical_state_per_output_channel_y_x
-  - compile_time_per_output_channel_beta_and_threshold_parameter_tables
-  - actor_spike_output_decoded_back_to_channel_y_x_event_coordinates
-  - independent_same_coordinate_cross_channel_membrane_persistence_verified_across_epochs
-  - exporter_emits_16bit_beta_and_threshold_ROM_images_per_actor
-  - all_17_Icarus_cocotb_RTL_groups_passing
-  implemented_native_SystemVerilog_iteration_5:
-  - unified_packed_spike_and_completion_stream_wrapper_for_every_PLIF_actor
-  - manifest_driven_exact_25_actor_DAG_SystemVerilog_generator
-  - generated_lossless_forks_residual_OR_joins_multiplicity_joins_concat_offsets_and_upsamples
-  - generated_completion_tokens_follow_the_same_non_linear_DAG_as_spikes
-  - atomic_all_channel_retinotopic_commit_for_mechanism_enabled_actors
-  - summed_triangular_threshold_processes_and_shared_RMS_peer_inhibition
-  - non_spiking_signed_temporal_class_current_readout_with_dense_prediction_flush
-  - technology_independent_1R1W_actor_local_SRAM_macro_boundary
-  - generated_25_actor_miniature_DAG_compiles_and_propagates_two_bins_to_prediction
-  - all_22_Icarus_cocotb_RTL_groups_plus_generated_DAG_test_passing
-  legacy_11_class_native_SystemVerilog_iteration_6:
-  - trained_artifacts_checkpointsV4_dsec_EventSpikeSeg140k_seed17_best_checkpoint_exported
-  - exported_counts_150245_registered_149503_executed_143904_synaptic_weights
-  - exported_25_actor_30976000_logical_membrane_state_contract_revalidated
-  - real_export_contains_1_inhibition_actor_and_15_triangular_adaptation_actors
-  - real_143904_word_int8_weight_ROM_set_and_per_actor_beta_threshold_ROMs_emitted
-  - real_370KiB_weighted_eventspikeseg140k_dag_top_SystemVerilog_generated
-  - model_spec_SHA256_680f8c52e909397d3f1e2dbf5cfbc21272d3519ddbbb20abad5f0bca8426ee15
-  - generated_top_SHA256_0fc202f1dbd75dc53eb514657fa2dee8f0cff29d8d346c79f4405f654f0d2d3a
-  - complete_container_regression_79_tests_passing_and_Ruff_clean
-  implemented_six_class_native_SystemVerilog_iteration_7:
-  - trained_artifacts_checkpointsV4_dsec_6class_EventSpikeSeg140k_seed17_best_checkpoint_exported
-  - exported_counts_149835_registered_149423_executed_143824_synaptic_weights
-  - exported_25_actor_30976000_logical_membrane_state_contract_revalidated
-  - active_export_contains_1_inhibition_actor_and_15_triangular_adaptation_actors
-  - active_143824_word_int8_weight_ROM_set_and_per_actor_beta_threshold_ROMs_emitted
-  - active_378396_byte_weighted_eventspikeseg140k_dag_top_SystemVerilog_generated
-  - model_spec_SHA256_949c0721310799b709e0e9fb774b46c998cd486d20fd9cdf618f8f3d3ba53826
-  - generated_top_SHA256_4b789fbf279acc2760f7fc82c6749dba29c2f6f77d14481c7835ba397612a2aa
-  - separate_compose_implementation_yaml_CPU_only_verification_flow
-  - CPU_PyTorch_2_2_2_torchvision_0_17_2_Icarus_12_cocotb_and_Yosys
-  - CPU_regression_83_Python_tests_22_cocotb_RTL_groups_Ruff_and_representative_Yosys_gate_passing
-  remaining_after_active_six_class_iteration_7:
-  - bind_actor_and_readout_behavioral_state_arrays_to_characterized_SRAM_macro_wrappers
-  - bit_exact_full_DAG_integer_reference_equivalence_on_exported_golden_streams
-  - full_sequence_activity_FIFO_latency_and_energy_measurement
-  - full_DAG_equivalence_and_open_PPA_tile_sweep
-  - select_accessible_manufacturable_22nm_or_better_PDK_and_SRAM_compiler
-  legacy_11_class_generated_checkpoint_artifacts:
-    directory: artifacts/asic_export_v4
-    model_spec: artifacts/asic_export_v4/model_spec.yaml
-    layer_graph: artifacts/asic_export_v4/layer_graph.json
-    generated_top: artifacts/asic_export_v4/eventspikeseg140k_dag_top.sv
-    source_checkpoint: artifacts/checkpointsV4/dsec/EventSpikeSeg140k_seed17_best.pt
-  active_six_class_generated_checkpoint_artifacts:
-    directory: artifacts/asic_export_v4_6class
-    model_spec: artifacts/asic_export_v4_6class/model_spec.yaml
-    layer_graph: artifacts/asic_export_v4_6class/layer_graph.json
-    generated_top: artifacts/asic_export_v4_6class/eventspikeseg140k_dag_top.sv
-    source_checkpoint: artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_best.pt
+  - PLIF_peer_inhibition_and_threshold_adaptation_parameters
+  - quantization_saturation_and_rounding
+  - timestep_count_and_class_mapping
+  equivalence_requirement: exported integer golden tests and RTL simulation must match exactly
+
 validation_and_testing:
   required_fast_tests:
   - configuration_schema
@@ -1494,95 +1375,26 @@ experiment_code_layout:
     purpose: Isolate the active accuracy-oriented three-model search from the canonical and completed ablation
       models.
 
-round_one_measured_results:
-  date: '2026-08-06'
-  seed: 17
-  epochs: 10
-  train_samples: 2048
-  held_out_samples: 512
-  resolution_hw: [64, 64]
-  internal_timesteps: 20
-  batch_size: 4
-  source_summary: artifacts/ablation/summary.json
-  ranking_by_mIoU:
-  - {rank: 1, architecture: v10_fpga_hybrid, mIoU: 0.3130307198, parameters: 44016, spike_rate: 0.1411708792}
-  - {rank: 2, architecture: v03_dw_dilated, mIoU: 0.2970095277, parameters: 40824, spike_rate: 0.1125130773}
-  - {rank: 3, architecture: v02_dw_light, mIoU: 0.2849613726, parameters: 30744, spike_rate: 0.1305065870}
-  - {rank: 4, architecture: v08_dw_multiscale_aux, mIoU: 0.2591362894, parameters: 44016, spike_rate: 
-      0.1050513466}
-  - {rank: 5, architecture: v04_dw_multiscale, mIoU: 0.2444102764, parameters: 42552, spike_rate: 0.1188160578}
-  incumbent:
-    architecture: v10_fpga_hybrid
-    pixel_accuracy: 0.7870869637
-    per_class_iou:
-      flat: 0.6082547903
-      construction_plus_sky: 0.8021190763
-      object: 0.0
-      nature: 0.1509719491
-      human: 0.0
-      vehicle: 0.3168385327
-  interpretation:
-  - v10 is the structural incumbent, not a satisfactory final six-class model.
-  - v03 shows that one dilated block can outperform heavier parallel multiscale context.
-  - v02 is the most parameter-efficient leading structure.
-  - v08 supports retaining auxiliary supervision as a contender component.
-  - BatchNorm lowered training loss but did not improve held-out mIoU in this run.
-  open_problem: Object and human classes collapsed to zero IoU and require data/prediction diagnostics.
-
-mechanism_screen_measured_results:
-  date: '2026-08-07'
-  purpose: Select neuron/inhibition dynamics before varying architecture.
-  protocol:
-    seed: 17
-    epochs: 5
-    train_samples: 256
-    held_out_samples: 128
-    resolution_hw: [64, 64]
-    internal_timesteps: 8
-  source_summary: artifacts/ablation/top_five/summary.json
-  ranking_by_mIoU:
-  - {rank: 1, architecture: f05_v02_light_peer_membrane_inhibition, mIoU: 0.1990700960, parameters: 33455, 
-      spike_rate: 0.0616127253}
-  - {rank: 2, architecture: f02_v10_plif_threshold_adaptation, mIoU: 0.1459280401, parameters: 46422, 
-      spike_rate: 0.0469515721}
-  - {rank: 3, architecture: f01_v10_plif_threshold_wta, mIoU: 0.1402056664, parameters: 46392, spike_rate: 
-      0.0456547340}
-  - {rank: 4, architecture: f04_v03_dilated_threshold_adaptation, mIoU: 0.1366340071, parameters: 42830, 
-      spike_rate: 0.0512948520}
-  - {rank: 5, architecture: f03_v10_plif_winner_peer_inhibition, mIoU: 0.1232914403, parameters: 46437, 
-      spike_rate: 0.0415132840}
-  selected_dynamics:
-    neuron: PLIF
-    learnable_base_threshold: true
-    normalization: affine_channel_scale
-    residual_paths: true
-    auxiliary_supervision: true
-    hidden_inhibition:
-      kind: peer_membrane
-      scope: stem
-      inhibition_strength_init: 0.20
-    threshold_adaptation:
-      kind: triangular_threshold
-      scope: encoder_and_context
-      strength_init: 0.20
-      adaptation_duration_init: 5.0
-    output_class_wta: true
-  evidence:
-  - triangular threshold adaptation slightly improved the controlled v10 comparison over PLIF plus learned 
-    threshold alone.
-  - winner_peer hidden inhibition caused severe encoder spike starvation and is excluded from the active five.
-  - stem-only peer_membrane inhibition preserved deeper activity and produced the highest mIoU.
-  - the winner learned inhibition strength 0.2082, threshold-adaptation strength 0.1879, and adaptation 
-    duration 5.196, close to initialization.
-  limitation: This was a low-budget mechanism screen and is not directly comparable to the full-budget 0.3130 
-    incumbent for promotion.
+selected_neuron_dynamics:
+  neuron: PLIF
+  learnable_base_threshold: true
+  normalization: affine_channel_scale
+  residual_paths: true
+  auxiliary_supervision: true
+  hidden_inhibition: {kind: peer_membrane, scope: stem, inhibition_strength_init: 0.20}
+  threshold_adaptation:
+    kind: triangular_threshold
+    scope: encoder_and_context
+    strength_init: 0.20
+    adaptation_duration_init: 5.0
+  output_class_wta: true
 
 completed_top_five_structural_search:
   status: completed_2026_08_08
   definitions: src/eventspikeseg/top_five_models.py::TOP_FIVE_PRESETS
   output_directory: artifacts/ablation/top_five
   goal: Hold selected neuron dynamics fixed and vary width, early kernel size, encoder depth, and context.
-  shared_dynamics: mechanism_screen_measured_results.selected_dynamics
+  shared_dynamics: selected_neuron_dynamics
   structural_support:
     channel_schedule_lengths: [3, 4]
     configurable_stem_kernel: true
@@ -1646,49 +1458,6 @@ completed_top_five_structural_search:
     quantized_neuron_validation_required: true
     hardware_cost_comparison_required: true
     canonical_model_file_unchanged_until_pass: true
-
-round_two_measured_results:
-  date: '2026-08-08'
-  purpose: Test width, depth, early kernel size, and context while holding selected spike dynamics fixed.
-  protocol:
-    seed: 17
-    epochs: 8
-    train_samples: 2048
-    held_out_samples: 512
-    resolution_hw: [64, 64]
-    internal_timesteps: 15
-    batch_size: 14
-    learning_rate: 0.002
-  source_summary: artifacts/ablation/top_five/summary.json
-  ranking_by_mIoU:
-  - {rank: 1, architecture: f05_compact16_dilated, mIoU: 0.2596460283, pixel_accuracy: 0.7821946144, 
-      parameters: 21491, spike_rate: 0.1093264845}
-  - {rank: 2, architecture: f02_wide32_multiscale, mIoU: 0.2283644676, pixel_accuracy: 0.7762918472, 
-      parameters: 77751, spike_rate: 0.0965468354}
-  - {rank: 3, architecture: f04_deep4_dilated, mIoU: 0.2078580111, pixel_accuracy: 0.6792449951, parameters: 
-      107131, spike_rate: 0.1494702339}
-  - {rank: 4, architecture: f01_base24_multiscale, mIoU: 0.1625999361, pixel_accuracy: 0.7293534279, 
-      parameters: 46423, spike_rate: 0.0497176859}
-  - {rank: 5, architecture: f03_early5x5_multiscale, mIoU: 0.1482063681, pixel_accuracy: 0.6718883514, 
-      parameters: 49111, spike_rate: 0.0670325544}
-  key_findings:
-  - The 16/32/64 single-dilation contender was the best overall and by far the most parameter-efficient, so 
-    raw capacity is not the primary accuracy bottleneck.
-  - The 32/64/128 contender produced the best object IoU in this round, so moderate width can improve feature 
-    diversity.
-  - The four-stage contender produced the strongest aggregate rare-class coverage, especially nature and 
-    vehicle, indicating useful deep semantic information that the existing decoder does not preserve well.
-  - Early 5x5 spatial kernels reduced accuracy and are excluded from the next round.
-  - Parallel multi-dilation branch averaging underperformed single dilation; the next round preserves branch 
-    identity by concatenating sparse branch outputs before learned spiking fusion.
-  - None of these models displaced the historical 0.3130307198 mIoU v10_fpga_hybrid incumbent.
-  rare_class_evidence:
-    f02_wide32_multiscale: {object_iou: 0.0141224666, nature_iou: 0.0389757492, human_iou: 0.0, vehicle_iou: 
-        0.0}
-    f04_deep4_dilated: {object_iou: 0.0048840051, nature_iou: 0.0712307617, human_iou: 0.0059523811, 
-        vehicle_iou: 0.1229809299}
-    f05_compact16_dilated: {object_iou: 0.0001719099, nature_iou: 0.0346265808, human_iou: 0.0180736408, 
-        vehicle_iou: 0.0756903067}
 
 active_top_three_accuracy_search:
   status: implemented_pending_real_ddd17_measurement

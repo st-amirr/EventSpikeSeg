@@ -25,8 +25,18 @@ def _packed_literal(path: Path, *, word_bits: int, expected_words: int) -> str:
     mask = (1 << word_bits) - 1
     values = [int(word, 16) & mask for word in words]
     digits = (word_bits + 3) // 4
-    packed = "".join(f"{value:0{digits}x}" for value in reversed(values))
-    return f"{expected_words * word_bits}'h{packed}"
+    reversed_values = list(reversed(values))
+    maximum_hex_digits = 1024
+    words_per_chunk = max(1, maximum_hex_digits // digits)
+    if len(reversed_values) <= words_per_chunk:
+        packed = "".join(f"{value:0{digits}x}" for value in reversed_values)
+        return f"{expected_words * word_bits}'h{packed}"
+    chunks = []
+    for start in range(0, len(reversed_values), words_per_chunk):
+        words = reversed_values[start : start + words_per_chunk]
+        packed = "".join(f"{value:0{digits}x}" for value in words)
+        chunks.append(f"{len(words) * word_bits}'h{packed}")
+    return "{\n      " + ",\n      ".join(chunks) + "\n    }"
 
 
 def _parameter_literal(
@@ -135,7 +145,7 @@ def generate_top(
     module_name: str = "eventspikeseg140k_dag_top",
 ) -> None:
     spec = json.loads(model_spec_path.read_text(encoding="utf-8"))
-    export_dir = model_spec_path.parent
+    export_dir = (model_spec_path.parent / str(spec.get("artifact_root", "."))).resolve()
     graph = spec["graph"]
     actors = list(graph["actor_topological_order"])
     if len(actors) != 25 or graph.get("linear_pipeline") is not False:

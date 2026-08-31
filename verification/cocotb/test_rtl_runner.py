@@ -174,6 +174,15 @@ ROOT = Path(__file__).resolve().parents[2]
             {"DATA_WIDTH": 32, "DEPTH": 8},
         ),
         (
+            "initialized_actor_state_bank",
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/initialized_actor_state_bank.sv",
+            ],
+            "test_initialized_actor_state_bank",
+            {"DATA_WIDTH": 32, "DEPTH": 8},
+        ),
+        (
             "channelized_convolution_scatter",
             ["asic/rtl/channelized_convolution_scatter.sv"],
             "test_channelized_grouped_scatter",
@@ -225,6 +234,7 @@ ROOT = Path(__file__).resolve().parents[2]
         "retinotopic_mechanism_update",
         "retinotopic_asynchronous_plif_actor",
         "actor_local_state_sram",
+        "initialized_actor_state_bank",
         "channelized_grouped_scatter",
         "channelized_depthwise_scatter",
     ],
