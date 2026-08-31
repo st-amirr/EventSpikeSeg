@@ -719,9 +719,10 @@ before claiming no-DDR real-time fit.
 `scripts/generate_asic_top.py` now creates the complete structural 25-actor DAG directly from
 the exported graph and ROM images. A reduced-state generated instance compiles and propagates
 completion through every branch and join into the prediction boundary. Model-scale physical
-implementation still requires replacing behavioral actor/readout arrays with characterized
-SRAM macros, real-checkpoint full-DAG equivalence, and full-sequence activity, latency, and
-energy measurement.
+implementation still requires binding the existing bank interfaces to characterized SRAM
+macros and measuring full-sequence native activity, latency, and energy. The SRAM-integrated
+real-checkpoint reduced-geometry full-DAG equivalence replay passes; it is not a native PPA
+result.
 
 The 16->6 readout is not a spiking layer. Final hidden spikes trigger signed readout
 weight additions at the same `(y,x)`. Class currents accumulate across the configured
@@ -738,8 +739,8 @@ state continues across predictions until a sequence/gap reset.
 - There is no v8 selector, attention rendezvous, projected bridge, or class-spike counter.
 - The readout requires signed current accumulation and per-pixel 6-way argmax; common
   positive readout scaling may be skipped for class selection.
-- Persistent state is actor-local SRAM. Full-scale implementation requires characterized
-  SRAM macros; behavioral arrays are used only for RTL control/equivalence checks.
+- Persistent state is actor-local banked SRAM. The simulation branch is behavioral; full-scale
+  implementation selects the generated top's macro switch and requires characterized macros.
 - Verification compares float -> integer -> RTL at layer currents, membrane/adaptation
   trajectories, emitted hidden spikes, final signed class-current accumulators, and argmax.
 

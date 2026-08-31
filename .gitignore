@@ -1,19 +1,25 @@
-literature_review/**
-literature_review/**/** */
-.DS_Store
+literature_review/
 .venv/
 *.egg-info/
 __pycache__/
 .pytest_cache/
 .env
 sim_build/
-data/**
+
+data/*
 !data/README.md
-artifacts/
-desktop.ini
+
+artifacts/*
+!artifacts/ASIC/
+!artifacts/ASIC/**
+!artifacts/RTL/
+!artifacts/RTL/**
+
 *.pt
+*.png
 kaggle/
 Icon
+
 # macOS
 .DS_Store
 .AppleDouble
@@ -24,5 +30,3 @@ Icon
 Thumbs.db
 ehthumbs.db
 $RECYCLE.BIN/
-artifacts/Icon
-*.png

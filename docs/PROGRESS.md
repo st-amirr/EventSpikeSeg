@@ -402,3 +402,29 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   the dedicated full-DAG replay pass in the CPU-only implementation image;
 - per-actor RTL trace comparison, native DSEC occupancy/activity measurement, characterized
   SRAM binding, and routed PPA remain open and must not be inferred from the smoke replay.
+
+## 2026-08-31 — ASIC actor-local SRAM integration
+
+- replaced destination-scale behavioral current/membrane/tag arrays in ordinary and
+  mechanism-enabled actors with packed single-port read-modify-write SRAM state;
+- moved touched-address queues, retinotopic touched markers, signed temporal class-current
+  scores, and exact residual-union event storage behind the same technology boundary;
+- partitioned large logical memories into at most 65,536-row banks and verified parallel
+  scrub plus tail-bank decoding; actors reject events until every owned bank is initialized;
+- retained exact 5 ms completion-token semantics: raw events cause sparse signed-weight
+  accumulation, while each touched PLIF thresholds/resets exactly once after completion;
+- derived a 338.07 MiB direct-index SRAM correctness upper bound excluding the 0.137 MiB
+  weight ROM; this includes worst-case full-depth queues and is not an area/power result;
+- passed Icarus self-checks for ordinary PLIF persistence, grouped peer inhibition, temporal
+  readout, residual deduplication, and multibank SRAM, plus all-top compilation and
+  representative Yosys synthesis;
+- propagated one generated-top SRAM macro selector through all 35 memory-owning blocks and
+  added replay-side cycle/bin, utilization, and headroom capture;
+- gated generated-top ingress on all 25 actor initialization signals plus readout
+  initialization, so no event can be buffered while owned SRAM is being scrubbed;
+- reran the complete SRAM-integrated 25-actor smoke DAG: all 64 semantic pixels and the
+  bin-10 completion tag matched, no fault asserted, and 1,024 initialization cycles were
+  excluded from 12,135 steady-state cycles (1,213.5 cycles/bin, 0.2427% of a 5 ms bin at
+  100 MHz, 412.03x timing headroom) in the reduced 8x8 case;
+- all 23 component cocotb groups, generated-top contract tests, and both behavioral and
+  macro-selected complete-top compilations pass after the initialization-gate change.

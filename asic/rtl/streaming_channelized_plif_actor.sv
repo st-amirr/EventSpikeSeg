@@ -32,6 +32,7 @@ module streaming_channelized_plif_actor #(
     OUTPUT_CHANNELS * INPUTS_PER_GROUP * KERNEL_WIDTH * KERNEL_HEIGHT,
   parameter integer ENABLE_INHIBITION = 0,
   parameter integer ENABLE_ADAPTATION = 0,
+  parameter integer USE_STATE_MACRO = 0,
   parameter logic signed [WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
   parameter logic [OUTPUT_CHANNELS*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
   parameter logic signed [OUTPUT_CHANNELS*MEM_WIDTH-1:0] CHANNEL_THRESHOLDS = '0,
@@ -51,7 +52,8 @@ module streaming_channelized_plif_actor #(
   output logic [PAYLOAD_WIDTH-1:0] out_payload,
   output logic out_completion,
   output logic [TAG_WIDTH-1:0] out_bin_tag,
-  output logic actor_error_o
+  output logic actor_error_o,
+  output logic initialization_done_o
 );
   localparam integer INPUT_CHANNEL_WIDTH =
     (INPUT_CHANNELS <= 1) ? 1 : $clog2(INPUT_CHANNELS);
@@ -100,6 +102,7 @@ module streaming_channelized_plif_actor #(
     .DILATION_Y(DILATION_Y), .PAD_X(PAD_X), .PAD_Y(PAD_Y),
     .OUTPUT_WIDTH(OUTPUT_WIDTH), .OUTPUT_HEIGHT(OUTPUT_HEIGHT),
     .ENABLE_INHIBITION(ENABLE_INHIBITION), .ENABLE_ADAPTATION(ENABLE_ADAPTATION),
+    .USE_STATE_MACRO(USE_STATE_MACRO),
     .KERNEL_WEIGHTS(KERNEL_WEIGHTS), .CHANNEL_BETAS(CHANNEL_BETAS),
     .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS),
     .INHIBITION_STRENGTH(INHIBITION_STRENGTH),
@@ -117,6 +120,6 @@ module streaming_channelized_plif_actor #(
     .epoch_tag_i(in_bin_tag), .spike_valid, .spike_ready,
     .spike_channel_o(spike_channel), .spike_x_o(spike_x), .spike_y_o(spike_y),
     .epoch_done_valid, .epoch_done_ready, .epoch_tag_o(epoch_tag),
-    .routing_error_o(routing_error)
+    .routing_error_o(routing_error), .initialization_done_o(initialization_done_o)
   );
 endmodule

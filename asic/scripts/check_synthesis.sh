@@ -13,7 +13,7 @@ cd "${PROJECT_DIR}"
 
 printf 'Synthesizing asynchronous PLIF actor...\n'
 yosys -q -p '
-  read_verilog -sv asic/rtl/plif_update.sv asic/rtl/asynchronous_plif_actor.sv;
+  read_verilog -sv asic/rtl/actor_local_state_sram.sv asic/rtl/initialized_actor_state_bank.sv asic/rtl/plif_update.sv asic/rtl/asynchronous_plif_actor.sv;
   hierarchy -top asynchronous_plif_actor;
   proc; memory; opt; check
 '
@@ -47,6 +47,21 @@ yosys -q -p '
   read_verilog -sv asic/rtl/class_current_update.sv;
   hierarchy -top class_current_update;
   proc; opt; check
+'
+
+printf 'Synthesizing SRAM-backed temporal readout control...\n'
+yosys -q -p '
+  read_verilog -sv asic/rtl/actor_local_state_sram.sv asic/rtl/initialized_actor_state_bank.sv asic/rtl/temporal_class_readout.sv;
+  chparam -set OUTPUT_WIDTH 2 -set OUTPUT_HEIGHT 2 -set INPUT_CHANNELS 2 -set CLASS_COUNT 3 temporal_class_readout;
+  hierarchy -top temporal_class_readout;
+  proc; memory; opt; check
+'
+
+printf 'Synthesizing SRAM-backed residual union...\n'
+yosys -q -p '
+  read_verilog -sv asic/rtl/actor_local_state_sram.sv asic/rtl/binary_event_union2.sv;
+  hierarchy -top binary_event_union2;
+  proc; memory; opt; check
 '
 
 printf 'Representative SystemVerilog synthesis checks passed.\n'

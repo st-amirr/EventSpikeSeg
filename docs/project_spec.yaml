@@ -903,8 +903,11 @@ asic_implementation:
     - asic/rtl/temporal_class_readout.sv
     - asic/rtl/actor_local_state_sram.sv
     - asic/rtl/initialized_actor_state_bank.sv
-    current_memory_model: small_direct_indexed_behavioral_arrays_for_control_and_equivalence_testing
-    required_memory_replacement: actor_local_characterized_SRAM_macros_before_full_chip_PPA
+    current_memory_model: bounded_banked_single_port_1RW_interfaces_with_behavioral_simulation_and_compiled_macro_binding
+    maximum_SRAM_bank_depth: 65536
+    macro_binding_switch: generated_top_USE_STATE_MACRO
+    sequence_start_scrub: all_banks_parallel_events_blocked_until_done
+    required_memory_replacement: bind_characterized_actor_local_SRAM_macros_before_full_chip_PPA
   EDA:
     front_end: native_SystemVerilog
     synthesis: Yosys
@@ -917,6 +920,8 @@ asic_implementation:
     weights_int8_MiB: 0.137237548828125
     logical_membranes: 30976000
     dense_exact_state_MiB: 189.599609375
+    implemented_direct_index_SRAM_upper_bound_MiB_excluding_weights: 338.06848907470703
+    implemented_upper_bound_scope: packed_actor_state_full_depth_touched_queues_retinotopic_markers_readout_and_default_residual_buffers
     conclusion: full_chip_PPA_requires_real_SRAM_macros; standard_cell_expanded_arrays_are_invalid_for_scale_or_power
     tapeout_target: pending_access_to_22nm_or_better_PDK_and_high_density_SRAM_compiler
 
@@ -1120,6 +1125,8 @@ export_contract:
     - golden_layer_membranes.npz
     - golden_layer_spikes.npz
     - golden_semantic_outputs.npz
+    smoke_measured_files:
+    - rtl_metrics.json
   model_spec_must_include:
   - layer_order_as_topological_export_order_only
   - explicit_graph_nodes_edges_and_join_semantics
@@ -1220,7 +1227,7 @@ workflow:
   - Add sparse event/spike scatter reference.
   - Implement SystemVerilog PLIF and convolution actor primitives.
   - Integrate the complete 25-actor segmentation graph.
-  - Map actor-local state arrays to characterized SRAM macros and record routed resources,
+  - Bind actor-local bank interfaces to characterized SRAM macros and record routed resources,
     timing, activity-based power, and latency on a scale-suitable ASIC platform.
   - Validate raw-event input on DDD17 or DSEC-Semantic.
   architecture_cleanup_rule: >-

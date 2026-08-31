@@ -34,6 +34,7 @@ module channelized_convolution_plif_actor #(
   parameter integer WEIGHT_COUNT = OUTPUT_CHANNELS * INPUTS_PER_GROUP * TAP_COUNT,
   parameter integer ENABLE_INHIBITION = 0,
   parameter integer ENABLE_ADAPTATION = 0,
+  parameter integer USE_STATE_MACRO = 0,
   parameter logic signed [WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
   parameter logic [OUTPUT_CHANNELS*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
   parameter logic signed [OUTPUT_CHANNELS*MEM_WIDTH-1:0] CHANNEL_THRESHOLDS = '0,
@@ -59,7 +60,8 @@ module channelized_convolution_plif_actor #(
   output logic epoch_done_valid,
   input  logic epoch_done_ready,
   output logic [EPOCH_TAG_WIDTH-1:0] epoch_tag_o,
-  output logic routing_error_o
+  output logic routing_error_o,
+  output logic initialization_done_o
 );
   logic scatter_spike_ready;
   logic contribution_valid;
@@ -128,6 +130,7 @@ module channelized_convolution_plif_actor #(
     .MEM_WIDTH(MEM_WIDTH), .WEIGHT_WIDTH(WEIGHT_WIDTH), .BETA_WIDTH(BETA_WIDTH),
     .BETA_FRAC_BITS(BETA_FRAC_BITS), .EPOCH_TAG_WIDTH(EPOCH_TAG_WIDTH),
     .ENABLE_INHIBITION(ENABLE_INHIBITION), .ENABLE_ADAPTATION(ENABLE_ADAPTATION),
+    .USE_STATE_MACRO(USE_STATE_MACRO),
     .CHANNEL_BETAS(CHANNEL_BETAS), .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS),
     .INHIBITION_STRENGTH(INHIBITION_STRENGTH),
     .ADAPTATION_STRENGTH(ADAPTATION_STRENGTH),
@@ -138,7 +141,8 @@ module channelized_convolution_plif_actor #(
     .epoch_end_valid(actor_epoch_end_valid), .epoch_end_ready(actor_epoch_end_ready),
     .epoch_tag_i, .spike_valid, .spike_ready,
     .spike_destination_o(spike_destination), .epoch_done_valid,
-    .epoch_done_ready, .epoch_tag_o, .address_error_o(actor_address_error)
+    .epoch_done_ready, .epoch_tag_o, .address_error_o(actor_address_error),
+    .initialization_done_o(initialization_done_o)
   );
   end else begin : simple_state
   asynchronous_plif_actor #(
@@ -147,6 +151,7 @@ module channelized_convolution_plif_actor #(
     .BETA_WIDTH(BETA_WIDTH), .BETA_FRAC_BITS(BETA_FRAC_BITS),
     .EPOCH_TAG_WIDTH(EPOCH_TAG_WIDTH), .CHANNEL_COUNT(OUTPUT_CHANNELS),
     .SPATIAL_DEST_COUNT(SPATIAL_DEST_COUNT), .USE_CHANNEL_PARAMETERS(1),
+    .USE_STATE_MACRO(USE_STATE_MACRO),
     .CHANNEL_BETAS(CHANNEL_BETAS), .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS)
   ) neuron_array (
     .clk, .reset, .contribution_valid, .contribution_ready,
@@ -155,7 +160,8 @@ module channelized_convolution_plif_actor #(
     .epoch_tag_i, .beta_i({BETA_WIDTH{1'b0}}),
     .threshold_i({MEM_WIDTH{1'b0}}), .spike_valid, .spike_ready,
     .spike_destination_o(spike_destination), .epoch_done_valid,
-    .epoch_done_ready, .epoch_tag_o, .address_error_o(actor_address_error)
+    .epoch_done_ready, .epoch_tag_o, .address_error_o(actor_address_error),
+    .initialization_done_o(initialization_done_o)
   );
   end endgenerate
 endmodule

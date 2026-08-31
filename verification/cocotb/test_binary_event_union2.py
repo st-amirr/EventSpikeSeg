@@ -73,3 +73,17 @@ async def mismatched_tags_fail_closed_without_downstream_completion(dut):
             int(dut.out_valid.value) and int(dut.out_completion.value)
         )
     assert int(dut.tag_mismatch_o.value) == 1
+
+
+@cocotb.test()
+async def overflow_fails_closed_without_partial_downstream_bin(dut):
+    cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
+    await reset_dut(dut)
+    for value in range(9):
+        await send(dut, 0, payload=value, tag=4)
+    await send(dut, 0, completion=1, tag=4)
+    await send(dut, 1, completion=1, tag=4)
+    for _ in range(20):
+        await RisingEdge(dut.clk)
+        assert not int(dut.out_valid.value)
+    assert int(dut.overflow_o.value) == 1

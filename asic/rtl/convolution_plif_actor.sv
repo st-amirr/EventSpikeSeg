@@ -15,6 +15,7 @@ module convolution_plif_actor #(
   parameter integer DEST_COUNT     = OUTPUT_WIDTH * OUTPUT_HEIGHT,
   parameter integer ADDRESS_WIDTH  = $clog2(DEST_COUNT),
   parameter integer TAP_COUNT      = KERNEL_WIDTH * KERNEL_HEIGHT,
+  parameter integer USE_STATE_MACRO = 0,
   parameter logic signed [TAP_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0
 ) (
   input  logic clk,
@@ -33,7 +34,8 @@ module convolution_plif_actor #(
   output logic [ADDRESS_WIDTH-1:0] spike_destination_o,
   output logic epoch_done_valid,
   input  logic epoch_done_ready,
-  output logic [23:0] epoch_tag_o
+  output logic [23:0] epoch_tag_o,
+  output logic initialization_done_o
 );
   logic [TAP_COUNT-1:0] tap_valid;
   logic [TAP_COUNT*COORD_WIDTH-1:0] tap_x;
@@ -104,13 +106,14 @@ module convolution_plif_actor #(
 
   asynchronous_plif_actor #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH), .DEST_COUNT(DEST_COUNT),
-    .WEIGHT_WIDTH(WEIGHT_WIDTH)
+    .WEIGHT_WIDTH(WEIGHT_WIDTH), .USE_STATE_MACRO(USE_STATE_MACRO)
   ) neuron_array (
     .clk, .reset, .contribution_valid(actor_contribution_valid),
     .contribution_ready(actor_contribution_ready), .destination_i(actor_destination),
     .weight_i(actor_weight), .epoch_end_valid(actor_epoch_end_valid),
     .epoch_end_ready(actor_epoch_end_ready), .epoch_tag_i, .beta_i, .threshold_i,
     .spike_valid, .spike_ready, .spike_destination_o, .epoch_done_valid,
-    .epoch_done_ready, .epoch_tag_o, .address_error_o(actor_address_error)
+    .epoch_done_ready, .epoch_tag_o, .address_error_o(actor_address_error),
+    .initialization_done_o(initialization_done_o)
   );
 endmodule

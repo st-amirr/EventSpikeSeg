@@ -353,6 +353,9 @@ upsample, and a correctness-reference residual binary-OR/dedup merge. Trained we
 replaceable ROM contents. Channelized projections now feed independent per-output-channel
 spatial PLIF state and per-channel beta/threshold tables. The trained v4 checkpoint has been
 exported and the manifest-driven generator emits the complete weighted **25-actor DAG**,
-including retinotopic mechanisms and the temporal readout. Remaining physical work is to replace
-behavioral state/merge arrays with characterized SRAM/banked sparse structures, integrate
-the real exported checkpoint in full-DAG equivalence, and run activity-based PPA.
+including retinotopic mechanisms and the temporal readout. Model-scale state, queues,
+readout, and residual storage now use bounded banked 1RW interfaces. Remaining physical work
+is to bind characterized SRAM macros, size residual capacity from native activity, and run
+routed PPA. The SRAM-integrated real-checkpoint reduced-8x8 full-DAG replay already matches
+all 64 semantic outputs and records 12,135 steady-state cycles per ten-bin frame at the
+assumed 100 MHz simulation clock; this is behavioral verification, not native PPA.

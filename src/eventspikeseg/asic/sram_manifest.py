@@ -52,6 +52,12 @@ def build_sram_manifest(
     collection_current_bits = 0
     touched_bitmap_bits = 0
     worst_case_queue_bits = 0
+    rtl_actor_state_bits = 0
+    rtl_queue_bits = 0
+    rtl_spatial_marker_bits = 0
+    rtl_state_bank_count = 0
+    rtl_queue_bank_count = 0
+    rtl_spatial_marker_bank_count = 0
     adaptation_states = 0
     weight_bits = 0
 
@@ -65,14 +71,36 @@ def build_sram_manifest(
             (export_path / layer["parameter_file"]).read_text(encoding="utf-8")
         )
         adaptation = bool(parameters["threshold_adaptation_enabled"])
+        inhibition = bool(parameters["inhibition_enabled"])
+        mechanism_enabled = adaptation or inhibition
         persistent_width = 16 + 24 + (32 if adaptation else 0)
         address_width = max(1, math.ceil(math.log2(depth)))
         actor_persistent_bits = depth * persistent_width
+        spatial_depth = int(layer["output_hw"][0]) * int(layer["output_hw"][1])
+        rtl_state_width = 24 + 16 + 24 + 2 + (
+            32 if adaptation else (2 if inhibition else 0)
+        )
+        queue_depth = spatial_depth if mechanism_enabled else depth
+        queue_address_width = max(1, math.ceil(math.log2(queue_depth)))
+        actor_queue_bits = queue_depth * queue_address_width
+        actor_marker_bits = spatial_depth if mechanism_enabled else 0
+        state_banking = _bank_plan(depth, maximum_bank_depth)
+        queue_banking = _bank_plan(queue_depth, maximum_bank_depth)
+        marker_banking = (
+            _bank_plan(spatial_depth, maximum_bank_depth) if mechanism_enabled else None
+        )
 
         persistent_bits += actor_persistent_bits
         collection_current_bits += depth * 24
         touched_bitmap_bits += depth
         worst_case_queue_bits += depth * address_width
+        rtl_actor_state_bits += depth * rtl_state_width
+        rtl_queue_bits += actor_queue_bits
+        rtl_spatial_marker_bits += actor_marker_bits
+        rtl_state_bank_count += state_banking["bank_count"]
+        rtl_queue_bank_count += queue_banking["bank_count"]
+        if marker_banking is not None:
+            rtl_spatial_marker_bank_count += marker_banking["bank_count"]
         weight_bits += int(layer["weight_count"]) * 8
         if adaptation:
             adaptation_states += depth
@@ -86,7 +114,7 @@ def build_sram_manifest(
                 "output_channels": int(layer["out_channels"]),
                 "output_hw": layer["output_hw"],
                 "adaptation_enabled": adaptation,
-                "inhibition_enabled": bool(parameters["inhibition_enabled"]),
+                "inhibition_enabled": inhibition,
                 "persistent_record": {
                     "width_bits": persistent_width,
                     "fields": {
@@ -105,7 +133,43 @@ def build_sram_manifest(
                     "touched_bits": 1,
                     "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit",
                 },
-                "banking": _bank_plan(depth, maximum_bank_depth),
+                "banking": state_banking,
+                "rtl_packed_state": {
+                    "width_bits": rtl_state_width,
+                    "logical_bits": depth * rtl_state_width,
+                    "fields": {
+                        "current": 24,
+                        "membrane": 16,
+                        "last_bin_tag": 24,
+                        "live": 1,
+                        "touched": 1,
+                        **(
+                            {"adaptation_age": 16, "adaptation_amplitude": 16}
+                            if adaptation
+                            else (
+                                {"unused_adaptation_placeholders": 2}
+                                if inhibition
+                                else {}
+                            )
+                        ),
+                    },
+                },
+                "touched_queue": {
+                    "depth": queue_depth,
+                    "width_bits": queue_address_width,
+                    "logical_bits": actor_queue_bits,
+                    "banking": queue_banking,
+                },
+                "retinotopic_touched_marker": (
+                    {
+                        "depth": spatial_depth,
+                        "width_bits": 1,
+                        "logical_bits": actor_marker_bits,
+                        "banking": marker_banking,
+                    }
+                    if mechanism_enabled
+                    else None
+                ),
                 "weight_rom_words_int8": int(layer["weight_count"]),
             }
         )
@@ -126,6 +190,25 @@ def build_sram_manifest(
     total_bank_count = sum(actor["banking"]["bank_count"] for actor in actors)
     parallel_scrub_cycles = max(
         min(actor["depth"], maximum_bank_depth) for actor in actors
+    )
+    readout_layer = next(layer for layer in spec["layers"] if layer.get("kind"))
+    readout_depth = int(readout_layer["output_hw"][0]) * int(readout_layer["output_hw"][1])
+    readout_width = int(readout_layer["out_channels"]) * 24
+    readout_bits = readout_depth * readout_width
+    readout_banking = _bank_plan(readout_depth, maximum_bank_depth)
+    residual_union_count = sum(
+        join["kind"] == "binary_residual_or"
+        for join in spec["graph"]["join_nodes"].values()
+    )
+    residual_max_events = 64
+    residual_payload_width = 32
+    residual_bits = residual_union_count * residual_max_events * residual_payload_width
+    rtl_sram_bits = (
+        rtl_actor_state_bits
+        + rtl_queue_bits
+        + rtl_spatial_marker_bits
+        + readout_bits
+        + residual_bits
     )
     return {
         "schema_version": "1.0.0",
@@ -165,6 +248,32 @@ def build_sram_manifest(
             "weight_rom_bytes": weight_bits // 8,
             "parallel_bank_scrub_cycles": parallel_scrub_cycles,
             "parallel_bank_scrub_time_us_at_200MHz": parallel_scrub_cycles / 200,
+            "rtl_actor_packed_state_bits": rtl_actor_state_bits,
+            "rtl_touched_queue_bits": rtl_queue_bits,
+            "rtl_retinotopic_marker_bits": rtl_spatial_marker_bits,
+            "rtl_temporal_readout_bits": readout_bits,
+            "rtl_residual_union_bits_at_default_capacity": residual_bits,
+            "rtl_sram_bits_excluding_weight_rom": rtl_sram_bits,
+            "rtl_sram_bytes_excluding_weight_rom": math.ceil(rtl_sram_bits / 8),
+            "rtl_sram_mib_excluding_weight_rom": rtl_sram_bits / 8 / 2**20,
+            "rtl_state_bank_count": rtl_state_bank_count,
+            "rtl_queue_bank_count": rtl_queue_bank_count,
+            "rtl_retinotopic_marker_bank_count": rtl_spatial_marker_bank_count,
+            "rtl_readout_bank_count": readout_banking["bank_count"],
+        },
+        "shared_state": {
+            "temporal_readout": {
+                "depth": readout_depth,
+                "width_bits": readout_width,
+                "logical_bits": readout_bits,
+                "banking": readout_banking,
+            },
+            "residual_unions": {
+                "count": residual_union_count,
+                "maximum_events_each": residual_max_events,
+                "payload_width_bits": residual_payload_width,
+                "logical_bits": residual_bits,
+            },
         },
         "physical_status": {
             "macro_catalog_selected": False,

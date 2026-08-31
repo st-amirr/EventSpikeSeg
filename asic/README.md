@@ -10,7 +10,7 @@ timing, and power analysis.
 - `asap7` is the primary open, reproducible **research PPA** platform. It is a predictive
   7 nm FinFET platform, not a manufacturable foundry PDK and not tapeout signoff.
 - `sky130ram` is the future open, manufacturable **tile/test-chip** check when the actor
-  state arrays have been replaced by explicit SRAM macros. It is not dense enough for
+  SRAM boundary is bound to characterized macros. It is not dense enough for
   the complete native-resolution state on one economical die.
 - A complete manufacturable EventSpikeSeg chip requires an accessible 22/28 nm-or-better
   foundry PDK plus characterized high-density SRAM macros. That target cannot be called
@@ -24,6 +24,9 @@ touched flags when implemented as direct-index storage, for 281.92 MiB excluding
 touched-address queues. Standard-cell flip-flops are not an acceptable full-chip memory
 implementation. A smaller profiled sparse collection FIFO is valid only with an explicit
 capacity, overflow behavior, and representative event-stream occupancy evidence.
+The current full-depth, no-overflow RTL upper bound is 338.07 MiB excluding weight ROM;
+it also includes touched queues, retinotopic markers, temporal scores, and default residual
+buffers.
 
 ## Current synthesis boundary
 
@@ -57,20 +60,26 @@ actors use grouped retinotopic commits; the final readout accumulates signed cla
 and enumerates a dense prediction after the configured bin window. Large ROM constants are
 emitted as bounded concatenation chunks so Icarus can lex the trained top without changing
 word order. `actor_local_state_sram` defines the compiler-macro interface, and
-`initialized_actor_state_bank` adds parallel per-bank sequence-start zeroization plus
-single-port request arbitration. The current actor arrays remain behavioral until those
-banks are integrated into every actor and a real SRAM compiler is selected and bound.
+`initialized_actor_state_bank` partitions large logical memories into at most 65,536-row
+banks, zeroizes those banks in parallel at sequence start, and provides single-port request
+arbitration. Ordinary and mechanism-enabled actor state, touched queues, retinotopic touched
+markers, the temporal readout, and residual-union storage now cross this explicit SRAM
+boundary. Simulation still selects its behavioral branch; physical PPA requires a real SRAM
+compiler macro binding.
+The generated top-level `USE_STATE_MACRO` parameter propagates to all 25 actors, nine
+residual unions, and the temporal readout; leave it at `0` for simulation and set it to `1`
+only when `eventspikeseg_1rw_sram_macro` is bound to a compatible characterized macro.
 
 The active trained six-class v4 export is retained under
 `artifacts/ASIC`; its generated weighted top contains all 25 actors and
 exactly 143,824 int8 synaptic ROM words. The prior 11-class export is documented as
 historical and is not kept in the active artifacts tree. The active top is the executable logical reference,
-not a full-chip PPA netlist: its large behavioral arrays must not be mapped to standard cells
-or reported as a physical implementation.
+not a full-chip PPA netlist: its logical memories must not be expanded into standard cells or
+reported as a physical implementation.
 
-Before full-chip PPA, behavioral actor state arrays and prototype residual-dedup storage must
-be replaced by actor-local SRAM/banked sparse macro structures with the same logical ownership
-and no inter-layer state fetch.
+Before full-chip PPA, bind the SRAM boundary to characterized macros and size the residual
+dedup capacity from full-sequence activity without overflow. The current default residual
+capacity remains a 64-event equivalence setting, not a native-resolution bound.
 
 Generate the technology-independent memory manifest from the active checkpoint export:
 
@@ -99,6 +108,11 @@ docker compose -f compose_ASIC.yaml run --rm replay
 docker compose -f compose_ASIC.yaml run --rm synthesis
 docker compose -f compose_ASIC.yaml run --rm lint
 ```
+
+A passing full-DAG replay writes `artifacts/RTL/smoke/rtl_metrics.json` with initialization
+cycles, steady-state cycles/frame, cycles/bin, utilization, and headroom. Those values are
+explicitly reduced-8x8 verification metrics and must not be reported as native-resolution
+latency or PPA.
 
 If an ORFS checkout or installation is available, set `ORFS_ROOT` to its root and run:
 

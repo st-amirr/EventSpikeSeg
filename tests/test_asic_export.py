@@ -146,6 +146,12 @@ def test_sram_manifest_derives_exact_actor_local_storage(tmp_path) -> None:
     assert manifest["totals"]["weight_rom_bytes"] == 143_824
     assert manifest["totals"]["parallel_bank_scrub_cycles"] == 65_536
     assert manifest["totals"]["parallel_bank_scrub_time_us_at_200MHz"] == pytest.approx(327.68)
+    assert manifest["totals"]["rtl_sram_bytes_excluding_weight_rom"] == 354_490_504
+    assert manifest["totals"]["rtl_state_bank_count"] == 487
+    assert manifest["totals"]["rtl_queue_bank_count"] == 293
+    assert manifest["totals"]["rtl_retinotopic_marker_bank_count"] == 17
+    assert manifest["totals"]["rtl_readout_bank_count"] == 5
+    assert manifest["shared_state"]["residual_unions"]["count"] == 9
     assert sum(actor["adaptation_enabled"] for actor in manifest["actors"]) == 15
     assert all(actor["banking"]["maximum_bank_depth"] == 65_536 for actor in manifest["actors"])
     assert manifest["physical_status"]["area_power_latency_available"] is False

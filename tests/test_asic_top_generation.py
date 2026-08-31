@@ -101,6 +101,17 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
     assert text.count("binary_event_union2 #(") == 9
     assert text.count("event_upsample2x ") == 3
     assert "temporal_class_readout #(\n" in text
+    assert "parameter integer USE_STATE_MACRO = 0" in text
+    assert text.count(".USE_STATE_MACRO(USE_STATE_MACRO)") == 35
+    assert text.count(".initialization_done_o(initialized_actor_") == 25
+    assert ".initialization_done_o(initialized_readout)" in text
+    assert "assign ingress_valid = input_valid && all_memories_initialized;" in text
+    assert "assign input_ready = ingress_ready && all_memories_initialized;" in text
+    initialization_assignment = next(
+        line for line in text.splitlines() if "assign all_memories_initialized" in line
+    )
+    assert initialization_assignment.count("initialized_actor_") == 25
+    assert initialization_assignment.count("initialized_readout") == 1
 
     testbench = tmp_path / "generated_mini_dag_tb.sv"
     testbench.write_text(

@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "scope": "reduced_8x8_SRAM_integrated_RTL_not_native_resolution_PPA",
+  "clock_mhz": 100,
+  "semantic_bin_us": 5000,
+  "bins": 10,
+  "initialization_cycles_excluded_from_steady_state": 1024,
+  "initialization_latency_us": 10.24,
+  "steady_state_cycles_to_frame_done": 12135,
+  "steady_state_latency_us": 121.35,
+  "average_cycles_per_bin": 1213.5,
+  "average_latency_us_per_bin": 12.135,
+  "ingress_cycles_by_bin": [
+    3,
+    640,
+    412,
+    952,
+    616,
+    6,
+    956,
+    624,
+    646,
+    420
+  ],
+  "maximum_ingress_cycles_per_bin": 956,
+  "utilization_at_100MHz": 0.002427,
+  "headroom_at_100MHz": 412.0313143798929,
+  "native_resolution_claim": false,
+  "power_claim": false
+}

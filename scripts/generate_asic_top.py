@@ -179,7 +179,8 @@ def generate_top(
         f"module {module_name} #(",
         "  parameter integer PAYLOAD_WIDTH = 32,",
         "  parameter integer TAG_WIDTH = 24,",
-        "  parameter integer RESIDUAL_MAX_EVENTS = 64",
+        "  parameter integer RESIDUAL_MAX_EVENTS = 64,",
+        "  parameter integer USE_STATE_MACRO = 0",
         ") (",
         "  input logic clk, input logic reset,",
         "  input logic input_valid, output logic input_ready,",
@@ -200,15 +201,27 @@ def generate_top(
         for name in node_kinds
         if name not in {"input", readout_name, "prediction"}
     }
+    _declare_stream(lines, "ingress")
+    lines.extend(
+        [
+            "  logic all_memories_initialized;",
+            "  assign ingress_valid = input_valid && all_memories_initialized;",
+            "  assign input_ready = ingress_ready && all_memories_initialized;",
+            "  assign ingress_payload = input_payload;",
+            "  assign ingress_completion = input_completion;",
+            "  assign ingress_bin_tag = input_bin_tag;",
+        ]
+    )
     for name in sorted(stream_nodes):
         _declare_stream(lines, f"n_{_identifier(name)}")
     for index, _edge in enumerate(edges):
         _declare_stream(lines, f"e_{index}")
 
     fault_signals: list[str] = []
+    initialization_signals: list[str] = []
 
     def source_base(name: str) -> str:
-        return "input" if name == "input" else f"n_{_identifier(name)}"
+        return "ingress" if name == "input" else f"n_{_identifier(name)}"
 
     for source, source_edges in outgoing.items():
         base = source_base(source)
@@ -251,9 +264,13 @@ def generate_top(
         dilation_y, dilation_x = (int(value) for value in layer["dilation"])
         output_h, output_w = (int(value) for value in layer["output_hw"])
         error = f"error_actor_{_identifier(actor_name)}"
+        initialized = f"initialized_actor_{_identifier(actor_name)}"
         lines.append(f"  logic {error};")
+        lines.append(f"  logic {initialized};")
         fault_signals.append(error)
+        initialization_signals.append(initialized)
         params = [
+            ".USE_STATE_MACRO(USE_STATE_MACRO)",
             f".INPUT_CHANNELS({int(layer['in_channels'])})",
             f".OUTPUT_CHANNELS({int(layer['out_channels'])})",
             f".GROUPS({int(layer['groups'])})",
@@ -272,6 +289,7 @@ def generate_top(
         ]
         ports = [".clk", ".reset", *_ports(edge_base, "in"), *_ports(output_base, "out")]
         ports.append(f".actor_error_o({error})")
+        ports.append(f".initialization_done_o({initialized})")
         _instance(
             lines,
             "streaming_channelized_plif_actor #(\n    " + ",\n    ".join(params) +
@@ -329,7 +347,8 @@ def generate_top(
             common_ports.extend([f".overflow_o({overflow})", f".tag_mismatch_o({mismatch})"])
             _instance(
                 lines,
-                "binary_event_union2 #(.MAX_EVENTS(RESIDUAL_MAX_EVENTS)) "
+                "binary_event_union2 #(.MAX_EVENTS(RESIDUAL_MAX_EVENTS), "
+                ".USE_STATE_MACRO(USE_STATE_MACRO)) "
                 f"union_{_identifier(node_name)}",
                 common_ports,
             )
@@ -348,9 +367,13 @@ def generate_top(
     )
     readout_h, readout_w = (int(value) for value in readout["output_hw"])
     readout_error = "error_readout"
+    readout_initialized = "initialized_readout"
     lines.append(f"  logic {readout_error};")
+    lines.append(f"  logic {readout_initialized};")
     fault_signals.append(readout_error)
+    initialization_signals.append(readout_initialized)
     readout_params = [
+        ".USE_STATE_MACRO(USE_STATE_MACRO)",
         f".INPUT_CHANNELS({int(readout['in_channels'])})",
         f".CLASS_COUNT({int(readout['out_channels'])})",
         f".OUTPUT_WIDTH({readout_w})", f".OUTPUT_HEIGHT({readout_h})",
@@ -365,7 +388,13 @@ def generate_top(
          ".prediction_valid", ".prediction_ready", ".prediction_x_o",
          ".prediction_y_o", ".prediction_class_o", ".frame_done_valid",
          ".frame_done_ready", ".frame_bin_tag_o",
-         f".address_error_o({readout_error})"],
+         f".address_error_o({readout_error})",
+         f".initialization_done_o({readout_initialized})"],
+    )
+    lines.append(
+        "  assign all_memories_initialized = "
+        + (" & ".join(initialization_signals) or "1'b1")
+        + ";"
     )
     lines.append("  assign fault_o = " + (" | ".join(fault_signals) or "1'b0") + ";")
     lines.append("endmodule")

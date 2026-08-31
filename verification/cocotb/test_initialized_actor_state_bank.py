@@ -17,7 +17,9 @@ async def scrub_then_single_port_transactions_are_deterministic(dut):
     await FallingEdge(dut.clk)
     dut.reset.value = 0
 
-    for _ in range(7):
+    # Two four-row banks scrub concurrently, so eight logical rows initialize
+    # in four cycles rather than eight.
+    for _ in range(3):
         await RisingEdge(dut.clk)
         await Timer(1, units="ns")
         assert int(dut.initialization_done_o.value) == 0
@@ -54,3 +56,10 @@ async def scrub_then_single_port_transactions_are_deterministic(dut):
     await RisingEdge(dut.clk)
     await Timer(1, units="ns")
     assert int(dut.request_conflict_o.value) == 1
+
+    dut.write_valid_i.value = 0
+    dut.read_address_i.value = 4
+    await RisingEdge(dut.clk)
+    await Timer(1, units="ns")
+    assert int(dut.read_response_valid_o.value) == 1
+    assert int(dut.read_data_o.value) == 0x12345678

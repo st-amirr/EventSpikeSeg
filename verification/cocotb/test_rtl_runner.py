@@ -18,7 +18,12 @@ ROOT = Path(__file__).resolve().parents[2]
         ),
         (
             "asynchronous_plif_actor",
-            ["asic/rtl/plif_update.sv", "asic/rtl/asynchronous_plif_actor.sv"],
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/initialized_actor_state_bank.sv",
+                "asic/rtl/plif_update.sv",
+                "asic/rtl/asynchronous_plif_actor.sv",
+            ],
             "test_asynchronous_plif_actor",
             {},
         ),
@@ -26,6 +31,8 @@ ROOT = Path(__file__).resolve().parents[2]
             "convolution_plif_actor",
             [
                 "asic/rtl/presynaptic_tap_array.sv",
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/initialized_actor_state_bank.sv",
                 "asic/rtl/plif_update.sv",
                 "asic/rtl/asynchronous_plif_actor.sv",
                 "asic/rtl/convolution_plif_actor.sv",
@@ -56,7 +63,10 @@ ROOT = Path(__file__).resolve().parents[2]
         ("event_join2", ["asic/rtl/event_join2.sv"], "test_event_join2", {}),
         (
             "binary_event_union2",
-            ["asic/rtl/binary_event_union2.sv"],
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/binary_event_union2.sv",
+            ],
             "test_binary_event_union2",
             {"MAX_EVENTS": 8},
         ),
@@ -86,6 +96,8 @@ ROOT = Path(__file__).resolve().parents[2]
             "channelized_convolution_plif_actor",
             [
                 "asic/rtl/channelized_convolution_scatter.sv",
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/initialized_actor_state_bank.sv",
                 "asic/rtl/plif_update.sv",
                 "asic/rtl/asynchronous_plif_actor.sv",
                 "asic/rtl/channelized_convolution_plif_actor.sv",
@@ -110,6 +122,8 @@ ROOT = Path(__file__).resolve().parents[2]
             "streaming_channelized_plif_actor",
             [
                 "asic/rtl/channelized_convolution_scatter.sv",
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/initialized_actor_state_bank.sv",
                 "asic/rtl/plif_update.sv",
                 "asic/rtl/asynchronous_plif_actor.sv",
                 "asic/rtl/channelized_convolution_plif_actor.sv",
@@ -133,7 +147,11 @@ ROOT = Path(__file__).resolve().parents[2]
         ),
         (
             "temporal_class_readout",
-            ["asic/rtl/temporal_class_readout.sv"],
+            [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/initialized_actor_state_bank.sv",
+                "asic/rtl/temporal_class_readout.sv",
+            ],
             "test_temporal_class_readout",
             {
                 "INPUT_CHANNELS": 2,
@@ -153,6 +171,8 @@ ROOT = Path(__file__).resolve().parents[2]
         (
             "retinotopic_asynchronous_plif_actor",
             [
+                "asic/rtl/actor_local_state_sram.sv",
+                "asic/rtl/initialized_actor_state_bank.sv",
                 "asic/rtl/plif_leak_charge.sv",
                 "asic/rtl/retinotopic_mechanism_update.sv",
                 "asic/rtl/retinotopic_asynchronous_plif_actor.sv",
@@ -180,7 +200,7 @@ ROOT = Path(__file__).resolve().parents[2]
                 "asic/rtl/initialized_actor_state_bank.sv",
             ],
             "test_initialized_actor_state_bank",
-            {"DATA_WIDTH": 32, "DEPTH": 8},
+            {"DATA_WIDTH": 32, "DEPTH": 8, "MAXIMUM_BANK_DEPTH": 4},
         ),
         (
             "channelized_convolution_scatter",

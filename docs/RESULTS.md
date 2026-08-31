@@ -173,13 +173,18 @@ permanent PLIF actors. Derived persistent state is 189.60 MiB. Direct-index 24-b
 current plus touched flags raise the exact logical memory to 281.92 MiB before touched-address
 queues; this is a capacity result, not a characterized SRAM area or power result.
 
-The reduced 8×8, ten-bin RTL smoke replay used four deterministic input events. Icarus 12
-completed the full 25-actor DAG in 191.66 seconds of host simulation and matched the integer
-reference for all 64 semantic output pixels and the bin-10 completion tag. The larger integer
-profile used 160 events and produced 37,065 current rows, 37,068 membrane rows, and 3,707
-spikes. These reduced-geometry results verify behavior only; they do not establish native
-latency, throughput, energy, power, or chip area.
+The SRAM-integrated reduced 8×8, ten-bin RTL smoke replay used four deterministic input events.
+Icarus 12 completed the full 25-actor DAG in 211.13 seconds of host simulation and matched the
+integer reference for all 64 semantic output pixels and the bin-10 completion tag with no RTL
+fault. The generated ingress gate excluded 1,024 SRAM-initialization cycles. Measured
+steady-state latency was 12,135 cycles total, or 1,213.5 cycles per 5 ms bin. At the explicitly
+assumed 100 MHz simulation clock this is 121.35 us per ten-bin frame and 12.135 us/bin,
+0.2427% timing-budget utilization, and 412.03x timing headroom. The largest individual
+bin-ingress interval was 956 cycles.
 
-Current regressions: 87 Python tests, 23 cocotb RTL component groups, Ruff, and representative
-Yosys synthesis pass in the CPU-only implementation image. Routed PPA remains unreported
-until characterized SRAM macros and representative native DSEC activity are available.
+The larger integer profile used 160 events and produced 37,065 current rows, 37,068 membrane
+rows, and 3,707 spikes. All 23 cocotb RTL component groups, the generated-top contract tests,
+and complete-top compilation with both behavioral and macro-selected SRAM paths pass. These
+reduced-geometry results verify behavior and simulated cycle latency only; they do not establish
+native-resolution throughput, energy, power, or chip area. Routed PPA remains unreported until
+characterized SRAM macros and representative native DSEC activity are available.

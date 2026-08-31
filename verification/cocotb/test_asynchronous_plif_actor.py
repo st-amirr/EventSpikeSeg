@@ -1,6 +1,6 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge
+from cocotb.triggers import FallingEdge, RisingEdge
 
 
 async def reset_dut(dut):
@@ -13,6 +13,7 @@ async def reset_dut(dut):
     dut.threshold_i.value = 100
     for _ in range(3):
         await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
     dut.reset.value = 0
     await RisingEdge(dut.clk)
 
@@ -20,19 +21,23 @@ async def reset_dut(dut):
 async def send_contribution(dut, address: int, weight: int):
     while not int(dut.contribution_ready.value):
         await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
     dut.destination_i.value = address
     dut.weight_i.value = weight
     dut.contribution_valid.value = 1
     await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
     dut.contribution_valid.value = 0
 
 
 async def close_epoch(dut, tag: int):
     while not int(dut.epoch_end_ready.value):
         await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
     dut.epoch_tag_i.value = tag
     dut.epoch_end_valid.value = 1
     await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
     dut.epoch_end_valid.value = 0
 
 
@@ -121,6 +126,6 @@ async def high_address_uses_first_touch_queue_not_dense_destination_scan(dut):
     while not int(dut.epoch_done_valid.value):
         await RisingEdge(dut.clk)
         cycles += 1
-        assert cycles < 12, "completion latency depends on destination address"
+        assert cycles < 16, "completion latency depends on destination address"
 
     assert int(dut.epoch_tag_o.value) == 9

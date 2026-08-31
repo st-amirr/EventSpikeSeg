@@ -27,6 +27,7 @@ def test_exported_epoch35_replay(tmp_path: Path) -> None:
     )
     environment = dict(os.environ)
     environment["EVENTSPIKESEG_REPLAY_DIR"] = str(REPLAY)
+    environment["EVENTSPIKESEG_RTL_METRICS"] = str(REPLAY / "rtl_metrics.json")
     runner.test(
         hdl_toplevel="eventspikeseg140k_replay_top",
         test_module="test_exported_dag_replay",
