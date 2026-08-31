@@ -9,8 +9,7 @@ __pycache__/
 sim_build/
 data/**
 !data/README.md
-artifacts/**/** */ /**/**/**
-artifacts/ablation/top_five/checkpoints/**
+artifacts
 desktop.ini
 *.pt
 kaggle/
@@ -25,5 +24,4 @@ Icon
 Thumbs.db
 ehthumbs.db
 $RECYCLE.BIN/
-artifacts/Icon
 *.png
