@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-08-30 — Add an idempotent resumed-learning-rate cap
+
+Add `--resume-max-lr` to single-run training. After restoring optimizer and cosine
+scheduler state, cap the largest parameter-group LR at the requested absolute value and
+scale every group, scheduler base rate, and scheduler last rate proportionally. If the
+restored LR is already at or below the cap, make no change. This permits Compose to use
+`0.0002` without restarting the scheduler or repeatedly multiplying rates on each resume.
+
 ## 2026-08-29 — Size Docker shared memory for eight DSEC workers
 
 Keep the user-selected eight CPU preprocessing workers with one prefetched record per

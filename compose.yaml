@@ -114,15 +114,15 @@ services:
       ["python", "-m", "eventspikeseg.train", "single",
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSeg140k", "--suite", "final",
-       "--input-mode", "raw-events",
+       "--input-mode", "raw-events", 
        "--dsec-classes", "6",
        "--device", "auto",
        "--height", "440", "--width", "640", #  "--height", "185", "--width", "320",
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2", "--data-workers", "8",
        "--internal-updates", "10", "--sequential-chunks", "2",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
-       "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch023.pt",
+       "--resume-max-lr", "0.0002" , "--checkpoint-every", "1",
+       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch032.pt",
        "--checkpoint-dir", "artifacts/checkpointsV4/dsec_6class"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.
