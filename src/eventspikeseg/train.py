@@ -127,9 +127,27 @@ def scale_learning_rates(
     scaled_rates = []
     for group in optimizer.param_groups:
         group["lr"] = float(group["lr"]) * factor
+        if "initial_lr" in group:
+            group["initial_lr"] = float(group["initial_lr"]) * factor
         scaled_rates.append(float(group["lr"]))
+    scheduler.base_lrs = [float(rate) * factor for rate in scheduler.base_lrs]
     scheduler._last_lr = list(scaled_rates)
     return scaled_rates
+
+
+def cap_learning_rates(
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    maximum: float,
+) -> list[float]:
+    """Idempotently cap the largest restored LR while preserving group ratios."""
+    if maximum <= 0.0:
+        raise ValueError("resume maximum LR must be positive")
+    current = [float(group["lr"]) for group in optimizer.param_groups]
+    largest = max(current, default=0.0)
+    if largest <= maximum:
+        return current
+    return scale_learning_rates(optimizer, scheduler, maximum / largest)
 
 
 def format_class_validation_report(
@@ -1104,6 +1122,7 @@ def train_architecture(
     dataset_name: str = "ddd17",
     dsec_class_count: int = 11,
     data_workers: int = 0,
+    resume_max_lr: float | None = None,
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
@@ -1112,6 +1131,11 @@ def train_architecture(
         raise ValueError("sequential_chunks must be >= 1")
     if data_workers < 0:
         raise ValueError("data_workers must be >= 0")
+    if resume_max_lr is not None:
+        if resume_max_lr <= 0.0:
+            raise ValueError("resume_max_lr must be positive")
+        if load is None:
+            raise ValueError("resume_max_lr requires a checkpoint supplied with --load")
     if sequential_chunks > 1 and dataset_name != "dsec":
         raise ValueError(
             "sequential_chunks > 1 is supported only for DSEC raw-event inputs"
@@ -1345,6 +1369,7 @@ def train_architecture(
                     and 0 < train_samples < len(train_pool)
                     else 0
                 ),
+                "resume_max_lr": resume_max_lr,
                 "validation_metrics": validation_metrics,
                 "validation_mean_spike_rate": validation_spike_rate,
                 "validation_layer_spike_rates": validation_layer_rates or {},
@@ -1412,6 +1437,11 @@ def train_architecture(
         if scheduler_state is not None:
             scheduler.load_state_dict(scheduler_state)
         resumed_group_rates = restored_resume_learning_rates(optimizer, scheduler)
+        restored_group_rates = list(resumed_group_rates)
+        if resume_max_lr is not None:
+            resumed_group_rates = cap_learning_rates(
+                optimizer, scheduler, resume_max_lr
+            )
         if scaler_state is not None and amp_enabled:
             scaler.load_state_dict(scaler_state)
 
@@ -1488,11 +1518,18 @@ def train_architecture(
                 )
                 shutil.copy2(load_path, best_checkpoint_path)
         previous_training_phase = checkpoint.get("training_phase")
+        lr_status = (
+            f"checkpoint LR capped at {resume_max_lr:.2e}: "
+            f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)} "
+            f"(restored {', '.join(f'{rate:.2e}' for rate in restored_group_rates)})"
+            if resume_max_lr is not None
+            else "checkpoint LR preserved: "
+            f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)}"
+        )
         print(
             f"Resuming {architecture} from {load_path} | "
             f"completed_epoch={loaded_epoch} next_epoch={start_epoch} target_epoch={epochs} | "
-            f"checkpoint LR preserved: "
-            f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)}",
+            f"{lr_status}",
             flush=True,
         )
 
@@ -2194,6 +2231,16 @@ def main() -> None:
             "omit to start training from scratch"
         ),
     )
+    single.add_argument(
+        "--resume-max-lr",
+        type=float,
+        default=None,
+        metavar="RATE",
+        help=(
+            "idempotently cap the largest checkpoint-restored LR and scale all "
+            "optimizer groups and cosine-scheduler rates proportionally"
+        ),
+    )
 
     benchmark = subparsers.add_parser("benchmark")
     _common_training_arguments(benchmark)
@@ -2254,6 +2301,7 @@ def main() -> None:
             dataset_name=args.dataset,
             dsec_class_count=args.dsec_classes,
             data_workers=args.data_workers,
+            resume_max_lr=args.resume_max_lr,
             load=args.load,
         )
     elif args.command == "benchmark":
