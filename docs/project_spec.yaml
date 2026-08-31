@@ -640,6 +640,10 @@ training:
     default_learning_rate: 0.001
     default_weight_decay: 0.0001
   scheduler: cosine_annealing
+  resumed_learning_rate:
+    compose_option: --resume-max-lr
+    behavior: idempotent_cap_on_largest_restored_group_with_proportional_group_and_scheduler_scaling
+    current_dsec_cap: 0.0002
   loss:
     primary: half_pixel_mean_cross_entropy_plus_half_target_present_class_macro_cross_entropy
     ignore_index: 255

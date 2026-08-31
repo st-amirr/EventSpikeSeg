@@ -18,6 +18,7 @@ from eventspikeseg.train import (
     _temporal_parts,
     _training_objective,
     architecture_presets,
+    cap_learning_rates,
     checkpoint_mechanism_scale,
     dsec_colour_mask,
     dsec_event_count_image,
@@ -578,6 +579,22 @@ def test_resume_preserves_checkpoint_learning_rate_and_scheduler_position() -> N
     resumed_optimizer.step()
     resumed_scheduler.step()
     assert resumed_optimizer.param_groups[0]["lr"] < checkpoint_rate * 0.25
+
+
+def test_resume_lr_cap_is_proportional_and_idempotent() -> None:
+    parameters = [torch.nn.Parameter(torch.ones(())) for _ in range(2)]
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": [parameters[0]], "lr": 0.0008},
+            {"params": [parameters[1]], "lr": 0.0002},
+        ]
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=80)
+    capped = cap_learning_rates(optimizer, scheduler, 0.0002)
+    assert capped == pytest.approx([0.0002, 0.00005])
+    assert scheduler.base_lrs == pytest.approx([0.0002, 0.00005])
+    assert cap_learning_rates(optimizer, scheduler, 0.0002) == pytest.approx(capped)
+    assert scheduler.base_lrs == pytest.approx([0.0002, 0.00005])
 
 
 def test_class_validation_report_tracks_iou_and_prediction_share() -> None:
