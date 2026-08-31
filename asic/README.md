@@ -78,7 +78,7 @@ actor transfer without changing ready/valid backpressure. The replay is logical 
 evidence, not native 440x640 capacity, latency, or physical PPA evidence.
 
 The generated top uses `temporal_class_readout_sram`. At native 440x640 and six classes its
-score bank is 281,600 x 144 bits = 4.834 MiB. A synchronous 1R1W transaction accepts at most
+score bank is 281,600 x 144 bits = 4.834 MiB. A synchronous single-port 1RW transaction accepts at most
 one final hidden event every two clocks. Power-on reset scrubs 281,600 words; prediction flush
 uses three clocks per pixel (844,800 clocks/frame) and backpressures the final actor. At
 100 MHz these fixed costs are 2.816 ms once after reset and 8.448 ms per output frame. Input
@@ -123,7 +123,7 @@ python scripts/generate_asic_sram_manifest.py \
 
 The conservative active manifest contains 100 bank records, 3,173 lane instances, and
 3,070,478,400 bits (366.030 MiB). A physical binding must split these logical requests into
-available compiler depths/widths and preserve synchronous 1R1W behavior.
+available compiler depths/widths and preserve synchronous single-port 1RW behavior.
 
 After replacing the schema-only example with an actual compiler catalog, create a banking plan:
 
@@ -170,17 +170,27 @@ docker compose -f compose_ASIC.yaml run --rm test
 docker compose -f compose_ASIC.yaml run --rm rtl
 docker compose -f compose_ASIC.yaml run --rm synthesis
 docker compose -f compose_ASIC.yaml run --rm lint
+docker compose -f compose_ASIC.yaml run --rm ppa
 ```
 
-If an ORFS checkout or installation is available, set `ORFS_ROOT` to its root and run:
+Generate a switching waveform from the bit-exact reduced-spatial checkpoint replay with:
+
+```sh
+python scripts/run_asic_golden_rtl_replay.py \
+  artifacts/asic_rtl_replay_smoke_v4_6class --simulator verilator --waves
+```
+
+For a local ORFS checkout, set `ORFS_ROOT` to its root and run:
 
 ```sh
 ORFS_ROOT=/path/to/OpenROAD-flow-scripts bash asic/scripts/run_orfs.sh
 ```
 
-The ORFS configuration targets the integrated convolution/PLIF **actor prototype** on ASAP7.
-Its report is a representative node result, not a 25-actor-DAG full-model estimate. Full-chip
-PPA requires the exported DAG top level, characterized SRAM macros, all merge/fanout routes,
-and representative full-sequence activity. Activity-based power requires a representative
-VCD/SAIF from the exported DSEC event stream; vectorless default-toggle power must be labeled
-preliminary.
+`orfs_asap7_checkpoint_config.mk` targets the complete 25-actor topology, real frozen V4
+weights, merge/fanout routes, and final readout at reduced 8x8 spatial geometry. The reduced
+route measures checkpoint-specific logic and physical integration feasibility; native state
+capacity is recomposed separately from `sram_manifest.json` and the revision-pinned predictive
+FakeRAM catalog. It is not a routed native-resolution full-chip result. Activity-based power
+requires a representative VCD/SAIF from the exported DSEC event stream; the current synthetic
+replay may only be reported as preliminary, and vectorless default-toggle power must be labeled
+preliminary as well.

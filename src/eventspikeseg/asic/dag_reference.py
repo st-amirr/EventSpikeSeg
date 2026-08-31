@@ -93,7 +93,6 @@ class IntegerDAGReference:
         )
         self.plif = IntegerPLIF()
         self.last_trace: dict[str, dict[str, list[tuple[int, ...]]]] = {}
-        self.last_route_counts: dict[str, int] = {}
 
     def reset(self) -> None:
         """Clear sequence state, including the temporal class-current window."""
@@ -103,7 +102,6 @@ class IntegerDAGReference:
         self.class_scores.clear()
         self.prediction_bin_count = 0
         self.last_trace = {}
-        self.last_route_counts = {}
 
     @staticmethod
     def _edge_events(
@@ -261,10 +259,7 @@ class IntegerDAGReference:
         membranes: list[tuple[int, ...]] = []
         for (y, x), touched_channels in touched_by_spatial.items():
             update_channels = set(range(channels)) if inhibition else touched_channels
-            previous = [
-                states.get(SpikeEvent(channel, y, x), NeuronState())
-                for channel in range(channels)
-            ]
+            previous = [states.get(SpikeEvent(channel, y, x), NeuronState()) for channel in range(channels)]
             elapsed = [
                 self.plif.elapsed_bins(bin_tag, state.last_bin_tag)
                 if channel in update_channels
@@ -333,7 +328,7 @@ class IntegerDAGReference:
                             output_membranes[channel] - decrement, 16
                         )
 
-            for channel in sorted(update_channels):
+            for channel in update_channels:
                 destination = SpikeEvent(channel, y, x)
                 state = NeuronState(
                     membrane=output_membranes[channel],
@@ -423,7 +418,6 @@ class IntegerDAGReference:
 
         streams: dict[str, list[SpikeEvent]] = {"input": list(events)}
         self.last_trace = {}
-        self.last_route_counts = {}
         readout_name = str(self.graph["current_readout"])
         for name in self.graph["node_topological_order"]:
             if name in {"input", "prediction"}:
@@ -440,121 +434,9 @@ class IntegerDAGReference:
                 streams[name] = readout_events
             else:
                 streams[name] = self._route_node(name, streams)
-                if self.node_kinds[name] == "binary_residual_or":
-                    self.last_route_counts[name] = len(streams[name])
         return self._readout(streams[readout_name], int(bin_tag))
 
     def state_profile(self) -> dict[str, int]:
         """Return live sparse entries per actor for capacity profiling."""
 
         return {name: len(states) for name, states in self.states.items()}
-
-
-def write_golden_artifacts(
-    model_spec: str | Path,
-    bins: list[list[SpikeEvent]],
-    output_dir: str | Path | None = None,
-    *,
-    first_bin_tag: int = 1,
-) -> dict[str, int]:
-    """Execute ingress bins and write the specification's five golden NPZ files.
-
-    Layer traces use compact row tables so inactive native-resolution neurons do
-    not inflate the artifacts.  Column names are stored beside each table; no
-    object arrays or pickle loading are required.
-    """
-
-    reference = IntegerDAGReference(model_spec)
-    destination = Path(output_dir) if output_dir is not None else Path(model_spec).parent
-    destination.mkdir(parents=True, exist_ok=True)
-    actor_ids = {
-        name: index for index, name in enumerate(reference.graph["actor_topological_order"])
-    }
-    input_rows: list[tuple[int, ...]] = []
-    current_rows: list[tuple[int, ...]] = []
-    membrane_rows: list[tuple[int, ...]] = []
-    spike_rows: list[tuple[int, ...]] = []
-    prediction_tags: list[int] = []
-    predictions: list[np.ndarray] = []
-
-    for bin_index, events in enumerate(bins):
-        bin_tag = (int(first_bin_tag) + bin_index) % BIN_TAG_MODULUS
-        input_rows.extend(
-            (bin_tag, event.channel, event.y, event.x) for event in events
-        )
-        prediction = reference.process_bin(events, bin_tag=bin_tag)
-        for actor_name, trace in reference.last_trace.items():
-            actor_id = actor_ids[actor_name]
-            current_rows.extend(
-                (bin_tag, actor_id, *row) for row in trace["currents"]
-            )
-            membrane_rows.extend(
-                (bin_tag, actor_id, *row) for row in trace["membranes"]
-            )
-            spike_rows.extend((bin_tag, actor_id, *row) for row in trace["spikes"])
-        if prediction is not None:
-            prediction_tags.append(prediction.bin_tag)
-            predictions.append(prediction.classes)
-
-    def table(rows: list[tuple[int, ...]], width: int) -> np.ndarray:
-        if not rows:
-            return np.empty((0, width), dtype=np.int64)
-        return np.asarray(rows, dtype=np.int64).reshape(-1, width)
-
-    np.savez_compressed(
-        destination / "golden_input_samples.npz",
-        events=table(input_rows, 4),
-        columns=np.asarray(["bin_tag", "channel", "y", "x"]),
-    )
-    np.savez_compressed(
-        destination / "golden_layer_currents.npz",
-        currents=table(current_rows, 6),
-        columns=np.asarray(
-            ["bin_tag", "actor_id", "channel", "y", "x", "current_q"]
-        ),
-        actor_names=np.asarray(list(actor_ids)),
-    )
-    np.savez_compressed(
-        destination / "golden_layer_membranes.npz",
-        membranes=table(membrane_rows, 8),
-        columns=np.asarray(
-            [
-                "bin_tag",
-                "actor_id",
-                "channel",
-                "y",
-                "x",
-                "candidate_q",
-                "membrane_q",
-                "spike",
-            ]
-        ),
-        actor_names=np.asarray(list(actor_ids)),
-    )
-    np.savez_compressed(
-        destination / "golden_layer_spikes.npz",
-        spikes=table(spike_rows, 5),
-        columns=np.asarray(["bin_tag", "actor_id", "channel", "y", "x"]),
-        actor_names=np.asarray(list(actor_ids)),
-    )
-    output_h, output_w = (int(value) for value in reference.spec["input_size"])
-    semantic = (
-        np.stack(predictions).astype(np.uint8, copy=False)
-        if predictions
-        else np.empty((0, output_h, output_w), dtype=np.uint8)
-    )
-    np.savez_compressed(
-        destination / "golden_semantic_outputs.npz",
-        bin_tags=np.asarray(prediction_tags, dtype=np.uint32),
-        classes=semantic,
-    )
-    return {
-        "bins": len(bins),
-        "first_bin_tag": int(first_bin_tag) % BIN_TAG_MODULUS,
-        "input_events": len(input_rows),
-        "current_rows": len(current_rows),
-        "membrane_rows": len(membrane_rows),
-        "spike_rows": len(spike_rows),
-        "predictions": len(predictions),
-        "final_live_state_entries": sum(reference.state_profile().values()),
-    }

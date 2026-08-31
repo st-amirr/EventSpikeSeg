@@ -341,7 +341,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   triangular threshold processes and shared-RMS peer-membrane inhibition;
 - added the non-spiking signed temporal class-current bank, configurable ten-bin window, dense
   pixel argmax enumeration, and prediction reset;
-- added a technology-independent 1R1W state-memory boundary with behavioral simulation and a
+- added a technology-independent single-port 1RW state-memory boundary with behavioral simulation and a
   compiled-SRAM black-box branch;
 - 22 cocotb RTL groups plus the generated-DAG compile/simulation test pass locally;
 - real-checkpoint export/equivalence and physical SRAM binding remain gated separately from the
@@ -417,7 +417,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - added `temporal_class_readout_sram` as the generated-top production readout while retaining
   the original behavioral readout as an independent small-fixture equivalence reference;
 - packed six signed 24-bit class accumulators into one 144-bit word per output pixel behind
-  the technology-independent synchronous 1R1W SRAM boundary;
+  the technology-independent synchronous single-port 1RW SRAM boundary;
 - added deterministic reset scrubbing, two-cycle read/modify/write event backpressure,
   three-cycle-per-pixel argmax/clear flush, saturation, and first-index tie behavior;
 - exposed `USE_SCORE_SRAM_MACRO` at the generated top so physical builds can select a bound
@@ -452,7 +452,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - added `asynchronous_plif_actor_sram` while retaining the original behavioral actor as an
   independent small-fixture reference;
 - packed current, membrane, last-bin tag, live, and touched state into one 66-bit word per
-  logical neuron behind the synchronous 1R1W SRAM boundary;
+  logical neuron behind the synchronous single-port 1RW SRAM boundary;
 - moved first-touch ordering into a second narrow address SRAM, preserving sparse epoch commit
   without any dense runtime membrane sweep;
 - selected the transactional actor for all nine populations without inhibition/adaptation and
@@ -500,7 +500,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - added a deterministic generator for actor state/queues, residual seen/queues, and temporal
   score-bank requirements from the frozen model specification;
 - emitted `artifacts/asic_export_v4_6class/sram_manifest.json` with 100 logical bank records,
-  3,173 lane instances, and explicit 1R1W width/depth/multiplicity ownership;
+  3,173 lane instances, and explicit single-port 1RW width/depth/multiplicity ownership;
 - conservative full-address capacity is 3,070,478,400 bits (366.030 MiB), including 331.117 MiB
   actor banks, 30.078 MiB residual banks, and 4.834 MiB temporal scores;
 - this manifest is the input contract for compiler-specific banking; it is not evidence that a
@@ -509,10 +509,10 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 ## 2026-08-30 — SRAM compiler-catalog banking planner
 
 - added a deterministic planner that tiles every logical request across a supplied catalog's
-  1R1W macro widths and depths;
+  single-port 1RW macro widths and depths;
 - selects minimum allocated bits with deterministic instance-count/name tie breaks and reports
   physical macro count, waste, and utilization per bank and globally;
-- rejects catalogs without a compatible 1R1W entry and gates `PPA_eligible` on an explicit
+- rejects catalogs without a compatible single-port 1RW entry and gates `PPA_eligible` on an explicit
   characterized-catalog declaration;
 - added a schema-only, explicitly uncharacterized example catalog; no fabricated macro timing,
   area, leakage, or energy values enter the implementation record.

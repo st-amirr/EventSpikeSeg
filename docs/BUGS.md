@@ -84,7 +84,7 @@ Native SystemVerilog now covers channel-aware standard/grouped/depthwise kernel 
 
 The active six-class trained-v4 generated channelized convolution/PLIF graph now includes all 25 actors, exact static routes, grouped retinotopic mechanism commits, 143,824 exported synaptic weights, and the temporal readout. A manifest-driven sparse integer oracle emits model-scale golden currents, membranes, spikes, and semantic output. The reduced 8x8 real-checkpoint RTL replay now matches all actor spikes/completions and the final output, but this is functional evidence only. Native 440x640 dataset-derived full-sequence traffic, characterized SRAM macro substitution, native residual occupancy measurement, and routed activity-based PPA remain open. Do not report real-time or power results until those paths are measured.
 
-The production temporal readout now crosses a 281,600 x 144-bit 1R1W SRAM boundary and is
+The production temporal readout now crosses a 281,600 x 144-bit single-port 1RW SRAM boundary and is
 bit-exact in full-DAG replay. Its single-bank dense flush blocks final-actor traffic for
 844,800 clocks per frame (8.448 ms at 100 MHz), so a native traffic study must prove upstream
 FIFO capacity or justify a later ping-pong score-bank variant. This cost is explicit and is
@@ -96,7 +96,7 @@ a 2,252,800-clock parallel reset scrub. The reduced replay's `RESIDUAL_MAX_EVENT
 only a verified fixture bound. Reducing native storage requires maximum per-bin occupancy data from
 complete DSEC sequences; overflow, eviction, or probabilistic deduplication remains prohibited.
 
-Nine non-mechanism PLIF populations now use packed actor-owned 1R1W state SRAM plus first-touch
+Nine non-mechanism PLIF populations now use packed actor-owned single-port 1RW state SRAM plus first-touch
 address-queue SRAM and are whole-DAG bit-exact. Their conservative full-address queues contribute
 to a 186.276 MiB allocation and the largest parallel reset scrub takes 4,505,600 clocks. This is
 correctness-first sizing, not a final area claim. The sixteen inhibition/adaptation populations

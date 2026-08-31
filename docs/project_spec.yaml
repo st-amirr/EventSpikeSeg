@@ -906,7 +906,7 @@ asic_implementation:
     - asic/rtl/temporal_class_readout.sv
     - asic/rtl/temporal_class_readout_sram.sv
     - asic/rtl/actor_local_state_sram.sv
-    current_memory_model: all_25_actor_state_and_touch_queues_all_9_residual_banks_and_temporal_score_bank_use_explicit_actor_owned_1R1W_boundaries
+    current_memory_model: all_25_actor_state_and_touch_queues_all_9_residual_banks_and_temporal_score_bank_use_explicit_actor_owned_single_port_1RW_boundaries
     residual_native_lossless_storage_bits: 252313600
     residual_native_lossless_storage_MiB: 30.078125
     residual_max_parallel_reset_scrub_cycles: 2252800
@@ -996,7 +996,7 @@ legacy_fpga_history:
     model_level: continuous_5ms_bins_with_configurable_prediction_window_default_10_bins
     RTL_level: synchronous_clocked_elastic_pipeline
     global_neural_timestep_barrier: a_bin_retires_only_when_the_final_readout_receives_completion_after_all_required_DAG_branches_rendezvous
-    FPGA_input_bins: continuous_pingpong_5ms_runtime_bins
+    hardware_input_stream: sequential_rectified_raw_events_with_ordered_5ms_completion_tokens
     event_address:
     - global_bin_tag_24bit
     - polarity_or_channel
@@ -1023,8 +1023,9 @@ legacy_fpga_history:
       initial_format: signed_int8
       registered_parameter_upper_bound_MiB: 0.1433
       external_ROM_required: false
-      large_and_pointwise_tables: banked_BRAM_initialized_as_ROM
-      small_depthwise_tables_and_scalars: LUTROM_or_registers
+      ownership: permanently_local_to_each_convolution_actor
+      large_and_pointwise_tables: local_mask_ROM_or_compiled_ROM_without_runtime_reconfiguration
+      small_depthwise_tables_and_scalars: hardwired_constants_or_local_ROM
       replication: only_when_required_by_parallel_read_bandwidth
     logical_state_at_DSEC_440x640:
       dimensions: {native: [440, 640], half: [220, 320], quarter: [110, 160], eighth: [55, 80]}
@@ -1223,7 +1224,7 @@ export_contract:
   - atomic_all_channel_retinotopic_commit_for_mechanism_enabled_actors
   - summed_triangular_threshold_processes_and_shared_RMS_peer_inhibition
   - non_spiking_signed_temporal_class_current_readout_with_dense_prediction_flush
-  - technology_independent_1R1W_actor_local_SRAM_macro_boundary
+  - technology_independent_single_port_1RW_actor_local_SRAM_macro_boundary
   - generated_25_actor_miniature_DAG_compiles_and_propagates_two_bins_to_prediction
   - all_22_Icarus_cocotb_RTL_groups_plus_generated_DAG_test_passing
   legacy_11_class_native_SystemVerilog_iteration_6:
@@ -1238,12 +1239,14 @@ export_contract:
   - complete_container_regression_79_tests_passing_and_Ruff_clean
   implemented_six_class_native_SystemVerilog_iteration_7:
   - trained_artifacts_checkpointsV4_dsec_6class_EventSpikeSeg140k_seed17_best_checkpoint_exported
+  - checkpoint_SHA256_254591fa08e9b872fdcee56464ee907beb57fe6e2e141107fdf1787410ad7dae
   - exported_counts_149835_registered_149423_executed_143824_synaptic_weights
   - exported_25_actor_30976000_logical_membrane_state_contract_revalidated
   - active_export_contains_1_inhibition_actor_and_15_triangular_adaptation_actors
   - active_143824_word_int8_weight_ROM_set_and_per_actor_beta_threshold_ROMs_emitted
   - active_378396_byte_weighted_eventspikeseg140k_dag_top_SystemVerilog_generated
   - model_spec_SHA256_949c0721310799b709e0e9fb774b46c998cd486d20fd9cdf618f8f3d3ba53826
+  - quantized_weights_SHA256_53ebce37b362e5858ed127a0dd4e4b99d5f1c047bf9f00b0c44a6c1d5b0bfd6f
   - generated_top_SHA256_4b789fbf279acc2760f7fc82c6749dba29c2f6f77d14481c7835ba397612a2aa
   - separate_compose_ASIC_yaml_CPU_only_verification_flow
   - CPU_PyTorch_2_2_2_torchvision_0_17_2_Icarus_12_cocotb_and_Yosys
@@ -1293,7 +1296,7 @@ export_contract:
   - generated_production_top_selects_temporal_class_readout_sram
   - six_signed_24bit_class_scores_packed_as_one_144bit_word_per_pixel
   - native_score_bank_281600_words_40550400_bits_4_834_MiB
-  - synchronous_1R1W_actor_local_state_sram_boundary_with_optional_compiled_macro_binding
+  - synchronous_single_port_1RW_actor_local_state_sram_boundary_with_optional_compiled_macro_binding
   - generated_top_parameter_USE_SCORE_SRAM_MACRO
   - deterministic_281600_cycle_power_on_scrub_for_unknown_compiled_SRAM_contents
   - one_hidden_readout_event_accepted_per_two_clocks_with_parallel_six_class_update
@@ -1370,7 +1373,7 @@ export_contract:
   - manifest_is_compiler_input_contract_not_physical_PPA_evidence
   implemented_SRAM_catalog_banking_planner_iteration_15:
   - deterministic_scripts_plan_asic_sram_banking_py
-  - requires_supplied_1R1W_macro_catalog_width_depth_name_and_characterization_status
+  - requires_supplied_single_port_1RW_macro_catalog_width_depth_name_and_characterization_status
   - minimum_allocated_bit_tiling_with_deterministic_instance_and_name_tie_breaks
   - reports_width_tiles_depth_tiles_physical_instances_waste_and_utilization
   - rejects_incompatible_port_catalogs

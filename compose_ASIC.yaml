@@ -37,3 +37,22 @@ services:
   synthesis:
     <<: *cpu-verification
     command: ["bash", "asic/scripts/check_synthesis.sh"]
+
+  ppa:
+    image: openroad/orfs@sha256:d995618be9f2bcdfa5538b885123463070dfbf178bea1818716d4652fe0fa380
+    platform: linux/amd64
+    working_dir: /OpenROAD-flow-scripts/flow
+    environment:
+      ORFS_ROOT: /OpenROAD-flow-scripts
+      ASIC_ORFS_WORK_HOME: /workspace/artifacts/orfs_work
+      ASIC_ORFS_DESIGN_CONFIG: /workspace/asic/orfs_asap7_checkpoint_config.mk
+      ASIC_ORFS_WEIGHT_DIR: /workspace/artifacts/asic_rtl_replay_smoke_v4_6class/weights
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+        read_only: true
+      - type: bind
+        source: ./artifacts
+        target: /workspace/artifacts
+    command: ["bash", "/workspace/asic/scripts/run_orfs.sh"]

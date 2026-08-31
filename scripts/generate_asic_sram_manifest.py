@@ -67,7 +67,8 @@ def generate_manifest(model_spec_path: Path) -> dict[str, Any]:
         banks.append({
             "owner": owner, "kind": kind, "word_bits": width, "depth": depth,
             "instances": instances, "total_bits": width * depth * instances,
-            "ports": "1R1W", "macro_required": True,
+            "ports": "1RW", "simultaneous_read_write": False,
+            "macro_required": True,
         })
 
     for name in graph["actor_topological_order"]:

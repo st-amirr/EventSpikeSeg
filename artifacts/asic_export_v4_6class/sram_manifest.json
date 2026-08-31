@@ -14,7 +14,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 148684800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -24,7 +25,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -34,7 +36,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 148684800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -44,7 +47,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -54,7 +58,8 @@
       "depth": 70400,
       "instances": 32,
       "total_bits": 146432000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -64,7 +69,8 @@
       "depth": 70400,
       "instances": 1,
       "total_bits": 70400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -74,7 +80,8 @@
       "depth": 70400,
       "instances": 1,
       "total_bits": 1196800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -84,7 +91,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 148684800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -94,7 +102,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -104,7 +113,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 148684800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -114,7 +124,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -124,7 +135,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 148684800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -134,7 +146,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -144,7 +157,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 73216000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -154,7 +168,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 36044800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -164,7 +179,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 17600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -174,7 +190,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -184,7 +201,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 73216000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -194,7 +212,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 36044800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -204,7 +223,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 17600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -214,7 +234,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -224,7 +245,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 73216000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -234,7 +256,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 36044800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -244,7 +267,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 17600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -254,7 +278,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -264,7 +289,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 73216000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -274,7 +300,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 36044800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -284,7 +311,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 17600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -294,7 +322,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -304,7 +333,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 73216000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -314,7 +344,8 @@
       "depth": 17600,
       "instances": 64,
       "total_bits": 36044800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -324,7 +355,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 17600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -334,7 +366,8 @@
       "depth": 17600,
       "instances": 1,
       "total_bits": 264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -344,7 +377,8 @@
       "depth": 4400,
       "instances": 64,
       "total_bits": 18304000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -354,7 +388,8 @@
       "depth": 4400,
       "instances": 64,
       "total_bits": 9011200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -364,7 +399,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -374,7 +410,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -384,7 +421,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -394,7 +432,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -404,7 +443,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -414,7 +454,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -424,7 +465,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -434,7 +476,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -444,7 +487,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -454,7 +498,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -464,7 +509,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -474,7 +520,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -484,7 +531,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -494,7 +542,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -504,7 +553,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -514,7 +564,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -524,7 +575,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -534,7 +586,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -544,7 +597,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -554,7 +608,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -564,7 +619,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -574,7 +630,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -584,7 +641,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -594,7 +652,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -604,7 +663,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -614,7 +674,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -624,7 +685,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -634,7 +696,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -644,7 +707,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -654,7 +718,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -664,7 +729,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -674,7 +740,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -684,7 +751,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -694,7 +762,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -704,7 +773,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 36608000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -714,7 +784,8 @@
       "depth": 4400,
       "instances": 128,
       "total_bits": 18022400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -724,7 +795,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 4400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -734,7 +806,8 @@
       "depth": 4400,
       "instances": 1,
       "total_bits": 57200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -744,7 +817,8 @@
       "depth": 281600,
       "instances": 1,
       "total_bits": 18585600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -754,7 +828,8 @@
       "depth": 281600,
       "instances": 1,
       "total_bits": 5350400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -764,7 +839,8 @@
       "depth": 1126400,
       "instances": 1,
       "total_bits": 74342400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -774,7 +850,8 @@
       "depth": 1126400,
       "instances": 1,
       "total_bits": 23654400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -784,7 +861,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 37171200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -794,7 +872,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 11264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -804,7 +883,8 @@
       "depth": 4505600,
       "instances": 1,
       "total_bits": 297369600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -814,7 +894,8 @@
       "depth": 4505600,
       "instances": 1,
       "total_bits": 103628800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -824,7 +905,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 2252800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -834,7 +916,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -844,7 +927,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 2252800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -854,7 +938,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -864,7 +949,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 2252800,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -874,7 +960,8 @@
       "depth": 2252800,
       "instances": 1,
       "total_bits": 49561600,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -884,7 +971,8 @@
       "depth": 1126400,
       "instances": 1,
       "total_bits": 1126400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -894,7 +982,8 @@
       "depth": 1126400,
       "instances": 1,
       "total_bits": 23654400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -904,7 +993,8 @@
       "depth": 1126400,
       "instances": 1,
       "total_bits": 1126400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -914,7 +1004,8 @@
       "depth": 1126400,
       "instances": 1,
       "total_bits": 23654400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -924,7 +1015,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 563200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -934,7 +1026,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 11264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -944,7 +1037,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 563200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -954,7 +1048,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 11264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -964,7 +1059,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 563200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -974,7 +1070,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 11264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -984,7 +1081,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 563200,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -994,7 +1092,8 @@
       "depth": 563200,
       "instances": 1,
       "total_bits": 11264000,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     },
     {
@@ -1004,7 +1103,8 @@
       "depth": 281600,
       "instances": 1,
       "total_bits": 40550400,
-      "ports": "1R1W",
+      "ports": "1RW",
+      "simultaneous_read_write": false,
       "macro_required": true
     }
   ],

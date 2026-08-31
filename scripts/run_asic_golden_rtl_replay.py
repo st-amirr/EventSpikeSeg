@@ -33,6 +33,11 @@ def main() -> None:
     )
     parser.add_argument("--clean-build", action="store_true")
     parser.add_argument(
+        "--waves",
+        action="store_true",
+        help="emit a simulator waveform for switching-activity analysis",
+    )
+    parser.add_argument(
         "--skip-build",
         action="store_true",
         help="run an existing persistent simulator executable without elaboration",
@@ -84,6 +89,7 @@ def main() -> None:
             always=args.clean_build,
             build_args=build_args,
             parameters={"RESIDUAL_MAX_EVENTS": args.residual_capacity},
+            waves=args.waves,
         )
     elif not (build_dir / "eventspikeseg140k_dag_top").is_file():
         raise FileNotFoundError("--skip-build requested but simulator executable is absent")
@@ -94,6 +100,7 @@ def main() -> None:
         build_dir=build_dir,
         test_dir=build_dir,
         extra_env=environment,
+        waves=args.waves,
     )
     results = ET.parse(build_dir / "results.xml")
     if results.findall(".//failure"):

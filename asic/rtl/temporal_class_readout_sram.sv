@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// Production non-spiking temporal readout. One wide 1R1W SRAM word owns all
+// Production non-spiking temporal readout. One wide single-port 1RW SRAM word owns all
 // signed class scores for a pixel. Reset scrubs the bank explicitly because a
 // compiled SRAM has no portable power-up contents.
 module temporal_class_readout_sram #(

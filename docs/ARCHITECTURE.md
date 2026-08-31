@@ -714,7 +714,7 @@ before claiming no-DDR real-time fit.
 - `asic/rtl/retinotopic_mechanism_update.sv`: summed triangular-threshold and shared-RMS peer-inhibition commit across all channels at one location;
 - `asic/rtl/retinotopic_asynchronous_plif_actor.sv`: touched-location grouped state engine for mechanism-enabled actors;
 - `asic/rtl/temporal_class_readout.sv`: signed non-spiking 16-to-6 temporal current accumulation and dense prediction enumeration;
-- `asic/rtl/actor_local_state_sram.sv`: behavioral/compiled-macro 1R1W SRAM binding boundary.
+- `asic/rtl/actor_local_state_sram.sv`: behavioral/compiled-macro synchronous single-port 1RW SRAM binding boundary; read and write are mutually exclusive per cycle.
 
 `scripts/generate_asic_top.py` now creates the complete structural 25-actor DAG directly from
 the exported graph and ROM images. A reduced-state generated instance compiles and propagates
