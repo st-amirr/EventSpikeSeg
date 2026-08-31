@@ -100,8 +100,7 @@ coloured semantic prediction on the right. The predictions are captured during t
 normal chronological validation pass, so this adds no extra forward passes and does not
 disturb recurrent stream state.
 
-The trainer consumes every packet before forming one equal-per-present-class macro CE + Dice + semantic
-auxiliary + boundary objective. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
+The trainer consumes every packet before forming one complete-record semantic objective: ordinary pixel CE + present-class Dice + semantic auxiliary CE + boundary supervision. The prior macro-CE blend and same-class region-consistency term are no longer active. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
 complete-record prediction without an activation graph, then replay chronological chunks
 with that one objective's output gradients. This releases each chunk graph without ever
 applying the complete target to a partial history. The replay state snapshot is kept in

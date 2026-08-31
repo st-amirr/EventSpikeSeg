@@ -1,3 +1,7 @@
+## 2026-08-31 — Simplify the active DSEC segmentation objective
+
+Replace the final-run 0.5 pixel CE + 0.5 target-present macro CE + 0.3 Dice + 0.05 same-class region-consistency objective with a literature-aligned segmentation loss: 1.0 ordinary pixel CE + 0.3 Dice averaged over target-present classes + 0.10 auxiliary semantic CE + 0.02 boundary BCE. Keep the SNN activity regularizer because it constrains spike dynamics rather than semantic class weighting. Remove the macro-CE contribution and region-consistency contribution from the active final run. Historical benchmark suites retain their frozen loss profiles.
+
 # Decisions
 
 ## 2026-08-29 — Size Docker shared memory for eight DSEC workers

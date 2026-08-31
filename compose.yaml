@@ -122,7 +122,7 @@ services:
        "--internal-updates", "10", "--sequential-chunks", "2",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--resume-max-lr"," 0.00005", "--checkpoint-every", "1",
-       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch023.pt",
+       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch035.pt",
        "--checkpoint-dir", "artifacts/checkpointsV4/dsec_6class"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.

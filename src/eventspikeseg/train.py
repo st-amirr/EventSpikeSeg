@@ -246,22 +246,23 @@ class LossProfile:
 
 
 HISTORICAL_LOSS_PROFILE = LossProfile(cross_entropy=0.5)
-# Blend pixel-mean and target-present-class macro CE in the final objective. The
-# pixel term stabilizes dominant-region learning and suppresses false positives,
-# while the macro term retains useful pressure on rare classes. Dice, deep
-# supervision, boundary supervision, and activity remain complementary signals.
+# Keep the active DSEC objective close to the successful event-segmentation
+# literature: ordinary pixel CE as the primary semantic loss, a modest
+# present-class Dice term, deep semantic supervision, and explicit boundary
+# supervision. The SNN activity regularizer remains separate from segmentation
+# supervision.
 FINAL_LOSS_PROFILE = LossProfile(
-    cross_entropy=0.5,
-    pixel_cross_entropy=0.5,
+    cross_entropy=0.0,
+    pixel_cross_entropy=1.0,
     focal=0.0,
     dice=0.30,
-    region_consistency=0.05,
+    region_consistency=0.0,
     auxiliary_ce=0.10,
     auxiliary_focal=0.0,
     boundary=0.02,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-spike-preserving-region-consistency-v11"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-ce-dice-aux-boundary-v12"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -1326,7 +1327,7 @@ def train_architecture(
                 "training_phase": training_phase_name,
                 "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
                 "training_objective": (
-                    "full-window-0.5-pixel-ce-plus-0.5-macro-ce-plus-0.3-dice-plus-0.05-region-plus-0.1-aux-ce-plus-0.02-boundary"
+                    "full-window-1.0-pixel-ce-plus-0.3-present-dice-plus-0.1-aux-ce-plus-0.02-boundary"
                     if is_final_run
                     else "macro-present-class-historical-compound"
                 ),
@@ -1598,7 +1599,7 @@ def train_architecture(
     if is_final_run:
         print(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
-            "objective=0.5-pixel-CE+0.5-macro-CE+0.3-Dice+0.05-region+0.1-aux-CE+0.02-boundary | "
+            "objective=1.0-pixel-CE+0.3-present-Dice+0.1-aux-CE+0.02-boundary | "
             "focal=off activity=on | "
             f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "
