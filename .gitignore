@@ -9,11 +9,8 @@ sim_build/
 data/*
 !data/README.md
 
-artifacts/*
-!artifacts/ASIC/
-!artifacts/ASIC/**
-!artifacts/RTL/
-!artifacts/RTL/**
+# Generated checkpoints, exports, replay vectors, metrics, and PPA outputs stay local.
+artifacts/
 
 *.pt
 *.png

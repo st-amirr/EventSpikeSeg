@@ -52,11 +52,11 @@ class IntegerPLIF:
         self.beta_format = beta_format
 
     def retention_for_bins(self, beta_q: int, elapsed_bins: int) -> int:
-        """Return fixed-point ``beta**elapsed_bins`` using RTL-equivalent rounding.
+        """Return a diagnostic fixed-point ``beta**elapsed_bins`` coefficient.
 
-        The first RTL baseline performs the same operation iteratively, one beta multiply
-        per elapsed bin.  A later LUT/exponentiation accelerator may replace it only after
-        bit-exact equivalence is demonstrated.
+        The RTL state update does not apply this combined coefficient to the membrane:
+        it rounds the membrane after every beta multiply.  Use ``leak_membrane_for_bins``
+        for datapath-equivalent state advancement.
         """
 
         if elapsed_bins < 0:
@@ -70,6 +70,23 @@ class IntegerPLIF:
                 )
             )
         return retention_q
+
+    def leak_membrane_for_bins(
+        self, membrane_q: int, beta_q: int, elapsed_bins: int
+    ) -> int:
+        """Apply and round one learned-beta membrane update per elapsed 5 ms bin."""
+
+        if elapsed_bins < 0:
+            raise ValueError("elapsed_bins must be non-negative")
+        beta_q = self.beta_format.saturate(int(beta_q))
+        leaked = self.membrane_format.saturate(int(membrane_q))
+        for _ in range(int(elapsed_bins)):
+            leaked = self.membrane_format.saturate(
+                round_shift_ties_away(
+                    leaked * beta_q, self.beta_format.fractional_bits
+                )
+            )
+        return leaked
 
     @staticmethod
     def elapsed_bins(current_bin_tag: int, last_bin_tag: int) -> int:
@@ -105,8 +122,8 @@ class IntegerPLIF:
         """Advance one touched logical neuron at the current 5 ms bin."""
 
         retention_q = self.retention_for_bins(beta_q, elapsed_bins)
-        leaked = round_shift_ties_away(
-            int(membrane_q) * retention_q, self.beta_format.fractional_bits
+        leaked = self.leak_membrane_for_bins(
+            membrane_q, beta_q, elapsed_bins
         )
         candidate = self.membrane_format.saturate(leaked + int(current_q))
         spike = int(candidate >= int(threshold_q))

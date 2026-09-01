@@ -37,6 +37,8 @@ module presynaptic_tap_array #(
     tap_x_o = '0;
     tap_y_o = '0;
     tap_weight_o = weights_i;
+    destination_x = 0;
+    destination_y = 0;
 
     for (kernel_y = 0; kernel_y < KERNEL_HEIGHT; kernel_y = kernel_y + 1) begin
       for (kernel_x = 0; kernel_x < KERNEL_WIDTH; kernel_x = kernel_x + 1) begin

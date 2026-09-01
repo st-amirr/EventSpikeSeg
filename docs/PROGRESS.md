@@ -428,3 +428,114 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   100 MHz, 412.03x timing headroom) in the reduced 8x8 case;
 - all 23 component cocotb groups, generated-top contract tests, and both behavioral and
   macro-selected complete-top compilations pass after the initialization-gate change.
+- added per-actor touched-queue and per-residual-join high-watermarks to the existing replay
+  profile instead of creating another artifact family; the deterministic reduced four-event
+  smoke fixture observes maxima of 287 touched entries and one residual entry, while the
+  160-event stress fixture observes 1,018 and 158 respectively;
+- removed the smoke runner's 2,048-entry residual-capacity override so full-DAG verification
+  exercises the generated top's actual 64-entry default; fixture observations remain explicitly
+  non-native and are not a safe production capacity bound;
+- reran the complete smoke DAG with that 64-entry default: all 64 pixels and bin-10 completion
+  still match with no fault or overflow, while the architectural metrics remain 12,135 cycles
+  per ten-bin frame after excluding 1,024 initialization cycles;
+- built and ran `compose_ASIC.yaml`: 87 Python tests, Ruff, 23 cocotb groups, representative
+  Yosys synthesis, and the complete exported-DAG replay pass in the CPU-only image; the image
+  identifies itself as Torch 2.2.2+cpu with no CUDA build or available CUDA runtime;
+- reconciled the stale final-loss regression/YAML with the newer committed v12 implementation:
+  pixel CE 1.0, macro CE 0.0, Dice 0.30, region consistency 0.0, auxiliary CE 0.10, and
+  boundary 0.02.
+
+## 2026-08-31 — OpenROAD routed actor prototype
+
+- completed the official ORFS ASAP7 flow through parasitic extraction and final GDS for a
+  reduced 4x4 integrated convolution/PLIF actor at a 5 ns (200 MHz) clock constraint;
+- post-route timing has zero setup and hold violations, 3.888 ns setup slack, 36.61 ps hold
+  slack, and a reported minimum period of 1.112 ns (899.23 MHz nominal actor-only fmax);
+- the 63.297 x 63.297 um die has 4,006.51 um2 die area, 3,502.74 um2 core area, and
+  1,254.57 um2 non-filler standard-cell area at 35.82% utilization;
+- detailed routing completed with zero DRC violations and the flow reported zero fatal errors;
+- replaced a rejected global 280 ps slew guardband with a targeted 64-sink fanout constraint;
+  the routed maximum net degree fell from 136 to 65 and extracted maximum-slew, fanout, and
+  capacitance violations are all zero, with +47.64 ps worst slew margin;
+- public ASAP7 supplies no characterized SRAM macros, therefore this experiment expands the
+  tiny 4x4 memories into 1,553 sequential cells and cannot be scaled into a full-model area or
+  power claim;
+- OpenROAD's vectorless estimate is 1.335 mW and is retained only as a tool sanity result, not
+  article evidence for event-driven model power; representative checkpoint/event activity and
+  characterized SRAMs remain required;
+- the amd64 ORFS image ran under Apple-silicon emulation with documented post-CTS timing repair
+  skipped after that phase reproducibly raised SIGILL; native-x86 rerun must restore it before
+  publication;
+- `run_orfs.sh` now uses the installed official Docker image when `ORFS_ROOT` is unset and keeps
+  every generated physical-design file under the Git-ignored `artifacts/OpenROAD` tree.
+- `run_orfs.sh` now validates the extracted JSON and detailed-route report after Docker exits;
+  any nonzero setup, hold, slew, fanout, capacitance, DRC, or flow-error count fails the command
+  even when OpenROAD itself returns success.
+
+## 2026-09-01 — Per-actor RTL current, membrane, and spike equivalence
+
+- extended the existing epoch-35 full-DAG replay without adding RTL debug ports or a new
+  artifact family: cocotb observes each generated actor's accepted output stream internally;
+- compared bin tag, channel, y, and x for every emitted spike against the existing integer
+  oracle for all 25 permanent PLIF actors, including exact silence checks;
+- the reduced four-event 8x8 fixture matched all five emitted actor-spike rows exactly, while
+  retaining the final 64-pixel semantic-frame and bin-10 completion-tag checks;
+- trace monitoring does not alter the established latency result: initialization remains
+  1,024 excluded cycles and steady-state completion remains 12,135 cycles;
+- the first direct membrane comparison exposed a genuine one-LSB lazy-leak oracle defect:
+  Python formed a rounded beta-power coefficient and multiplied membrane once, whereas RTL
+  correctly rounds the membrane after each elapsed 5 ms beta update;
+- corrected `IntegerPLIF` and the mechanism-enabled DAG reference to repeat membrane decay in
+  RTL order, added a signed three-bin rounding regression, and regenerated the same fixture;
+- the final replay exactly matches 1,532 accumulated-current rows, 1,538 candidate/membrane/
+  spike transition rows, and five actor-output spike rows across all 25 actors;
+- extended the existing membrane artifact and non-synthesizable monitors to compare adaptation
+  age and amplitude without adding RTL ports or another artifact family; all 126 commits from
+  adaptation-enabled actors match exactly;
+- the final extended replay passes in 209.55 seconds of Icarus host runtime; the focused 37-test
+  ASIC/training regression and Ruff pass after the trace extension, while the prior complete
+  88-test regression remains the latest full-suite result;
+- the five-spike smoke fixture is not a native-resolution activity or capacity bound.
+
+## 2026-09-01 — Native DSEC activity-profile path
+
+- added a narrow native integer-DAG profiler using the existing `artifacts/RTL/profile`
+  output family; no new RTL implementation hierarchy or report claim was introduced;
+- bound record selection to the active checkpoint's exact held-out sequence membership:
+  all 234 records of `zurich_city_02_a`, with PLIF state retained across its 2,340 bins;
+- preserve integer event multiplicity when converting the dataset's ten 5 ms count planes
+  back to ingress events, and report per-actor live-state, touched-queue, output-spike, and
+  residual-union high-watermarks;
+- partial runs are explicitly marked `capacity_claim: false`; untimed integer execution also
+  marks cycle latency and power activity unavailable;
+- the complete Python regression now passes 89 tests and Ruff;
+- native execution awaits a mounted DSEC tree; the active checkpoint is present locally, but
+  no raw DSEC dataset is installed on this Mac and the repository sample directory is empty.
+
+## 2026-09-01 — SKY130 SRAM-backed actor-tile layout
+
+- bound the technology-independent actor memory boundary to two characterized
+  `sky130_sram_1rw1r_80x64_8` OpenRAM macros: one stores the 66-bit packed PLIF state and one
+  stores the touched-address queue for the reduced 4x4 actor;
+- added a dedicated SKY130HD ORFS configuration, fixed macro adapter, and explicit power grid
+  connecting the macros' lowercase met3 `vdd`/`gnd` pins to the met4/met5 core grid;
+- completed synthesis, macro placement, CTS, detailed routing, extraction, connected-power
+  analysis, and merged GDS using the official ORFS image;
+- the final flow contains exactly two SRAM macros, has zero setup/hold/driver violations,
+  zero detailed-route DRC, zero antenna violations, and no orphan LEF/GDS cells;
+- at a 20 ns constraint, extracted setup and hold slack are 5.009 ns and 0.449 ns, with a
+  reported 97.31 MHz nominal actor-tile fmax;
+- die/core area is 1,679,210/1,574,100 um2, comprising 363,942 um2 of SRAM macros and
+  52,935.8 um2 of non-filler standard cells; this deliberately wasteful pair of 80x64 SRAMs
+  validates integration, not the eventual native actor banking policy;
+- vectorless power is 8.295 mW and worst VDD/VSS IR drop is 0.114/0.102 mV; both are tool
+  sanity values without checkpoint-derived DSEC switching activity and are not article
+  event-driven power evidence;
+- normalized the shared report checker across ASAP7 picosecond and SKY130 nanosecond report
+  units and made the SKY130 flow fail unless exactly two macros survive;
+- verified 66-bit write/readback and read-valid timing against the exact bundled OpenRAM
+  functional model; its declaration-order issue required only a temporary Icarus-compatible
+  copy, while the checked-in adapter remains unchanged;
+- added the external-SRAM actor branch to the normal Icarus and representative Yosys gates;
+- post-CTS timing repair remains skipped only for the documented Apple-silicon amd64-emulation
+  `SIGILL`; native-x86 rerun with repair enabled is still required before publication.

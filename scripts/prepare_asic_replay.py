@@ -33,7 +33,9 @@ def _sha256(path: Path) -> str:
 def _scaled_spec(source: Path, destination: Path) -> dict[str, object]:
     spec = json.loads(source.read_text(encoding="utf-8"))
     source_export = source.parent
-    spec["artifact_root"] = os.path.relpath(source_export, destination)
+    spec["artifact_root"] = os.path.relpath(
+        source_export.resolve(), destination.resolve()
+    )
     spec["input_size"] = REPLAY_SHAPES[tuple(spec["input_size"])]
     spec["spatial_shapes"] = {
         tier: REPLAY_SHAPES[tuple(shape)] for tier, shape in spec["spatial_shapes"].items()
@@ -133,6 +135,13 @@ def prepare_replay(
     prediction_tags: list[int] = []
     predictions: list[np.ndarray] = []
     maximum_live_by_actor = {name: 0 for name in indexed_actors}
+    maximum_touched_queue_by_actor = {name: 0 for name in indexed_actors}
+    residual_joins = {
+        name
+        for name, contract in reference.graph["join_nodes"].items()
+        if contract["kind"] == "binary_residual_or"
+    }
+    maximum_residual_events_by_join = {name: 0 for name in sorted(residual_joins)}
 
     for bin_tag in range(1, 11):
         bin_events = [event for tag, event in events if tag == bin_tag]
@@ -145,12 +154,50 @@ def prepare_replay(
                 for channel, y, x, current in trace["currents"]
             )
             membrane_rows.extend(
-                (bin_tag, actor_id, channel, y, x, candidate, membrane, spike)
-                for channel, y, x, candidate, membrane, spike in trace["membranes"]
+                (
+                    bin_tag,
+                    actor_id,
+                    channel,
+                    y,
+                    x,
+                    candidate,
+                    membrane,
+                    spike,
+                    adaptation_age,
+                    adaptation_amplitude,
+                )
+                for (
+                    channel,
+                    y,
+                    x,
+                    candidate,
+                    membrane,
+                    spike,
+                    adaptation_age,
+                    adaptation_amplitude,
+                ) in trace["membranes"]
             )
             spike_rows.extend(
                 (bin_tag, actor_id, channel, y, x)
                 for channel, y, x in trace["spikes"]
+            )
+            parameters = reference.parameters[name]
+            retinotopic_queue = bool(parameters["inhibition_enabled"]) or bool(
+                parameters["threshold_adaptation_enabled"]
+            )
+            if retinotopic_queue:
+                touched_queue_entries = len(
+                    {(y, x) for _channel, y, x, _current in trace["currents"]}
+                )
+            else:
+                touched_queue_entries = len(trace["currents"])
+            maximum_touched_queue_by_actor[name] = max(
+                maximum_touched_queue_by_actor[name], touched_queue_entries
+            )
+        for name in residual_joins:
+            maximum_residual_events_by_join[name] = max(
+                maximum_residual_events_by_join[name],
+                reference.last_route_event_counts[name],
             )
         for name, count in reference.state_profile().items():
             maximum_live_by_actor[name] = max(maximum_live_by_actor[name], count)
@@ -172,7 +219,7 @@ def prepare_replay(
     )
     np.savez(
         output / "golden_layer_membranes.npz",
-        membranes=np.asarray(membrane_rows, dtype=np.int64).reshape(-1, 8),
+        membranes=np.asarray(membrane_rows, dtype=np.int64).reshape(-1, 10),
         columns=np.asarray(
             [
                 "bin_tag",
@@ -183,6 +230,8 @@ def prepare_replay(
                 "candidate_q",
                 "membrane_q",
                 "spike",
+                "adaptation_age_q",
+                "adaptation_amplitude_q",
             ]
         ),
         actor_names=actor_names,
@@ -225,6 +274,15 @@ def prepare_replay(
         ],
         "final_live_state_entries": sum(reference.state_profile().values()),
         "maximum_live_state_entries_by_actor": maximum_live_by_actor,
+        "maximum_touched_queue_entries_by_actor": maximum_touched_queue_by_actor,
+        "maximum_residual_events_by_join": maximum_residual_events_by_join,
+        "fixture_observed_maximum_touched_queue_entries": max(
+            maximum_touched_queue_by_actor.values()
+        ),
+        "fixture_observed_maximum_residual_events": max(
+            maximum_residual_events_by_join.values()
+        ),
+        "occupancy_scope": "observed_reduced_fixture_only_not_a_safe_native_capacity_bound",
         "artifact_sha256": artifacts,
         "scope": "reduced_8x8_bit_exact_equivalence_not_native_resolution_PPA",
     }

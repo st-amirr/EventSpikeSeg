@@ -50,4 +50,15 @@ for top in "${tops[@]}"; do
   fi
 done
 
-printf 'Compiled %d SystemVerilog ASIC tops into %s\n' "${#tops[@]}" "${BUILD_DIR}"
+iverilog -g2012 -DEVENTSPIKESEG_EXTERNAL_SRAM_MACRO \
+  -s convolution_plif_actor \
+  -Pconvolution_plif_actor.OUTPUT_WIDTH=4 \
+  -Pconvolution_plif_actor.OUTPUT_HEIGHT=4 \
+  -Pconvolution_plif_actor.DEST_COUNT=16 \
+  -Pconvolution_plif_actor.ADDRESS_WIDTH=4 \
+  -Pconvolution_plif_actor.USE_STATE_MACRO=1 \
+  -o "${BUILD_DIR}/convolution_plif_actor_sky130_macro.vvp" \
+  "${PROJECT_DIR}"/asic/rtl/*.sv
+
+printf 'Compiled %d SystemVerilog ASIC tops plus the external-SRAM actor into %s\n' \
+  "${#tops[@]}" "${BUILD_DIR}"

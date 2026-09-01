@@ -25,6 +25,13 @@ yosys -q -p '
   proc; opt; check
 '
 
+printf 'Synthesizing presynaptic tap projection...\n'
+yosys -q -p '
+  read_verilog -sv asic/rtl/presynaptic_tap_array.sv;
+  hierarchy -top presynaptic_tap_array;
+  proc; opt; check
+'
+
 printf 'Synthesizing retinotopic mechanism commit...\n'
 yosys -q -p '
   read_verilog -sv asic/rtl/plif_leak_charge.sv asic/rtl/retinotopic_mechanism_update.sv;
@@ -61,6 +68,14 @@ printf 'Synthesizing SRAM-backed residual union...\n'
 yosys -q -p '
   read_verilog -sv asic/rtl/actor_local_state_sram.sv asic/rtl/binary_event_union2.sv;
   hierarchy -top binary_event_union2;
+  proc; memory; opt; check
+'
+
+printf 'Synthesizing the external-SRAM convolution/PLIF actor boundary...\n'
+yosys -q -p '
+  read_verilog -sv -DSYNTHESIS -DEVENTSPIKESEG_EXTERNAL_SRAM_MACRO asic/rtl/*.sv;
+  chparam -set OUTPUT_WIDTH 4 -set OUTPUT_HEIGHT 4 -set DEST_COUNT 16 -set ADDRESS_WIDTH 4 -set USE_STATE_MACRO 1 convolution_plif_actor;
+  hierarchy -top convolution_plif_actor;
   proc; memory; opt; check
 '
 

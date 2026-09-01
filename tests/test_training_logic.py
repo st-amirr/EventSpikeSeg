@@ -353,11 +353,11 @@ def test_loss_profiles_remain_explicit() -> None:
     for suite in ("top-ten", "top-five", "top-three"):
         assert loss_profile_for_suite(suite).cross_entropy == 0.5
     assert loss_profile_for_suite("final") == LossProfile(
-        cross_entropy=0.5,
-        pixel_cross_entropy=0.5,
+        cross_entropy=0.0,
+        pixel_cross_entropy=1.0,
         focal=0.0,
         dice=0.30,
-        region_consistency=0.05,
+        region_consistency=0.0,
         auxiliary_ce=0.10,
         auxiliary_focal=0.0,
         boundary=0.02,

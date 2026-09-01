@@ -174,7 +174,8 @@ current plus touched flags raise the exact logical memory to 281.92 MiB before t
 queues; this is a capacity result, not a characterized SRAM area or power result.
 
 The SRAM-integrated reduced 8×8, ten-bin RTL smoke replay used four deterministic input events.
-Icarus 12 completed the full 25-actor DAG in 211.13 seconds of host simulation and matched the
+The CPU-only Docker image's Icarus 12 completed the full 25-actor DAG in 206.88 seconds of host
+test runtime and matched the
 integer reference for all 64 semantic output pixels and the bin-10 completion tag with no RTL
 fault. The generated ingress gate excluded 1,024 SRAM-initialization cycles. Measured
 steady-state latency was 12,135 cycles total, or 1,213.5 cycles per 5 ms bin. At the explicitly
@@ -186,5 +187,109 @@ The larger integer profile used 160 events and produced 37,065 current rows, 37,
 rows, and 3,707 spikes. All 23 cocotb RTL component groups, the generated-top contract tests,
 and complete-top compilation with both behavioral and macro-selected SRAM paths pass. These
 reduced-geometry results verify behavior and simulated cycle latency only; they do not establish
-native-resolution throughput, energy, power, or chip area. Routed PPA remains unreported until
-characterized SRAM macros and representative native DSEC activity are available.
+native-resolution throughput, energy, power, or chip area. Full-model routed PPA remains unreported
+until native memory banking and representative DSEC activity are available; the later SKY130 result
+closes only a reduced actor-tile characterized-SRAM integration check.
+
+Replay profiling now records buffer occupancy directly. The deterministic reduced four-event
+smoke fixture observed at most 287 touched-queue entries in one actor and one stored event in
+one residual union. The reduced 160-event stress fixture observed maxima of 1,018 and 158.
+These measurements explain why the 64-entry default is sufficient for the smoke replay but not
+for that stress fixture. The complete smoke replay passes with the actual 64-entry generated-top
+default and no overflow; neither fixture is a native DSEC capacity bound.
+
+The final CPU-only implementation-container regression passes 89 Python tests, Ruff, all 23
+cocotb component groups, representative Yosys synthesis, and the full exported-DAG replay.
+The built image reports Torch `2.2.2+cpu`, no CUDA build, and no available CUDA runtime.
+
+## 2026-08-31 — Predictive OpenROAD actor-prototype result
+
+The official OpenROAD Flow Scripts image completed synthesis, floorplanning, placement, clock
+tree synthesis, detailed routing, parasitic extraction, power-grid analysis, and GDS generation
+for the integrated `convolution_plif_actor` with 4x4 output/state geometry. The ASAP7 clock was
+constrained to 5,000 ps (200 MHz); ASAP7 Liberty units are picoseconds.
+
+| metric | post-route result |
+| --- | ---: |
+| setup / hold TNS | 0 / 0 ps |
+| worst setup slack | 3,887.94 ps |
+| worst hold slack | 36.61 ps |
+| reported minimum period / nominal fmax | 1,112.06 ps / 899.23 MHz |
+| die / core area | 4,006.51 / 3,502.74 um2 |
+| non-filler standard-cell area | 1,254.57 um2 |
+| non-filler standard cells / sequential cells | 10,023 / 1,553 |
+| standard-cell utilization | 35.82% |
+| detailed-route DRC violations | 0 |
+| maximum-slew / fanout / capacitance violations | 0 / 0 / 0 |
+| vectorless power estimate | 1.335 mW |
+| worst VDD / VSS IR drop | 0.531 / 0.544 mV |
+
+This is a predictive control/datapath implementation result, not full-model PPA. Public ASAP7
+has no characterized SRAM macros, so the reduced state arrays were synthesized into standard
+cells; the reported area and vectorless power must not be extrapolated to the 25-actor model or
+presented as event-driven inference power. The 899.23 MHz value is an actor-only nominal result,
+not end-to-end model throughput. Article-grade PPA still requires a manufacturable PDK with
+compiled SRAMs, representative native-resolution event activity for VCD/SAIF power, removal of
+the Apple-silicon emulation workaround through a native-x86 run with post-CTS timing repair
+enabled.
+
+The clean driver result uses a 64-sink design maximum fanout. It replaced a rejected 280 ps
+global transition guardband experiment, which changed mapping enough to increase extracted
+library-slew failures. Targeted fanout splitting reduced the routed maximum degree from 136 to
+65 and produced +47.64 ps worst slew margin against ASAP7's 320 ps library limit.
+
+## 2026-09-01 — Reduced full-DAG actor-state trace result
+
+The epoch-35 SRAM-integrated 8x8 smoke replay now compares every accepted actor-output spike
+against `golden_layer_spikes.npz`, in addition to checking the final semantic frame and
+completion tag. All 25 permanent actors were checked by `(bin_tag, channel, y, x)`. The
+fixture emitted five actor-spike rows and all matched exactly; actors with no expected output
+were also required to remain silent.
+
+The first membrane-trace attempt detected one-unit differences after multi-bin idle periods.
+The Python oracle had rounded `beta**delta` in coefficient space and then multiplied membrane
+once. The RTL—and the intended repeated 5 ms update contract—rounds membrane after every beta
+application. After correcting the integer oracle and regenerating the unchanged four-event
+fixture, RTL exactly matched **1,532 accumulated-current rows**, **1,538 candidate/membrane/
+spike transition rows**, and all five emitted spike rows. The replay completed successfully
+in 211.97 seconds of Icarus host runtime, and the regression suite now contains 88 tests.
+
+The trace monitors do not change architectural timing: 1,024 initialization cycles remain
+excluded and steady-state frame completion remains 12,135 cycles. The extended replay also
+matches adaptation age and amplitude exactly for all **126 adaptation-enabled commit rows**;
+the Icarus gate passes in 209.55 seconds of host runtime. This result strengthens routing and
+actor-state equivalence for the deterministic reduced fixture only. It is not evidence for
+native DSEC activity, throughput, queue capacity, power, or energy.
+
+## 2026-09-01 — Manufacturable SKY130 SRAM actor-tile integration
+
+The official OpenROAD Flow Scripts image completed merged GDS for the reduced 4x4
+`convolution_plif_actor` on SKY130HD with two characterized
+`sky130_sram_1rw1r_80x64_8` macros. One macro holds the 66-bit packed PLIF state and the
+other holds the touched-address queue. The clock was constrained to 20 ns (50 MHz).
+
+| metric | post-route result |
+| --- | ---: |
+| SRAM macros | 2 x 80x64 |
+| setup / hold TNS | 0 / 0 ns |
+| worst setup / hold slack | 5.009 / 0.449 ns |
+| reported minimum period / nominal fmax | 10.277 ns / 97.31 MHz |
+| die / core area | 1,679,210 / 1,574,100 um2 |
+| SRAM macro area | 363,942 um2 |
+| non-filler standard-cell area | 52,935.8 um2 |
+| sequential cells | 363 |
+| total instance / standard-cell utilization | 26.48% / 4.37% |
+| detailed-route DRC / antenna violations | 0 / 0 |
+| maximum-slew / fanout / capacitance violations | 0 / 0 / 0 |
+| vectorless power estimate | 8.295 mW |
+| worst VDD / VSS IR drop | 0.114 / 0.102 mV |
+
+OpenROAD reports every VDD and VSS shape connected, and the merged layout has matching GDS
+for every LEF cell with no orphan cells. This closes the actor-tile characterized-SRAM
+integration check, not full-model physical implementation. The two shallow macros waste most
+rows/bits and cannot be extrapolated into full-chip area. The nominal fmax is an isolated actor
+result, and vectorless power is not event-driven inference power. Full-model banking and
+capacity require the complete native DSEC activity profile; activity-based power requires
+representative checkpoint-derived switching. The Apple-silicon run also skips post-CTS timing
+repair because the emulated amd64 binary raises `SIGILL`, so native-x86 rerun is required before
+publication-grade timing or power claims.

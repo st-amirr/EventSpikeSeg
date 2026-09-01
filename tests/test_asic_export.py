@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pytest
 import torch
 
@@ -23,6 +24,8 @@ from eventspikeseg.asic import (
     state_capacity_contract,
     validate_eventspikeseg140k_topology,
 )
+from eventspikeseg.asic.activity_profile import counted_events
+from eventspikeseg.asic.dag_reference import SpikeEvent
 from eventspikeseg.model import EventSpikeSeg140k, EventSpikeSegXL
 
 
@@ -104,6 +107,31 @@ def test_integer_plif_lazy_decay_and_subtractive_reset() -> None:
     assert result.candidate == 544
     assert result.spike == 1
     assert result.membrane == 32
+
+
+def test_native_activity_event_expansion_preserves_count_multiplicity() -> None:
+    counts = np.zeros((2, 3, 4), dtype=np.float32)
+    counts[0, 1, 2] = 3
+    counts[1, 2, 0] = 1
+    events = counted_events(counts)
+    assert events.count(SpikeEvent(0, 1, 2)) == 3
+    assert events.count(SpikeEvent(1, 2, 0)) == 1
+
+
+def test_integer_plif_rounds_membrane_after_each_lazy_decay_step() -> None:
+    plif = IntegerPLIF()
+    result = plif.step(
+        membrane_q=-200,
+        current_q=0,
+        beta_q=30_000,
+        threshold_q=512,
+        elapsed_bins=3,
+    )
+    # Per-step membrane rounding gives -154. Applying one rounded beta**3
+    # coefficient would incorrectly give -153.
+    assert result.candidate == -154
+    assert result.membrane == -154
+    assert result.spike == 0
 
 
 def test_actor_local_state_zero_default_reclaim_and_tag() -> None:

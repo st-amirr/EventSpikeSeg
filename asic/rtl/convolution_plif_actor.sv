@@ -28,7 +28,9 @@ module convolution_plif_actor #(
   output logic epoch_end_ready,
   input  logic [23:0] epoch_tag_i,
   input  logic [15:0] beta_i,
-  input  logic signed [15:0] threshold_i,
+  // Plain external bit vector for OpenROAD netlist compatibility; the actor
+  // formal interprets the same 16 bits as a signed fixed-point threshold.
+  input  logic [15:0] threshold_i,
   output logic spike_valid,
   input  logic spike_ready,
   output logic [ADDRESS_WIDTH-1:0] spike_destination_o,

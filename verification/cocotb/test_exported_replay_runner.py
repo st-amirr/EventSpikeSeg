@@ -23,7 +23,6 @@ def test_exported_epoch35_replay(tmp_path: Path) -> None:
         build_dir=tmp_path / "exported_replay",
         always=True,
         build_args=["-g2012"],
-        parameters={"RESIDUAL_MAX_EVENTS": 2048},
     )
     environment = dict(os.environ)
     environment["EVENTSPIKESEG_REPLAY_DIR"] = str(REPLAY)

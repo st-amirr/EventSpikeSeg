@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 
 from .contracts import BIN_TAG_MODULUS
-from .fixed_point import ASIC_FORMATS, round_shift_ties_away
+from .fixed_point import ASIC_FORMATS
 from .integer_reference import IntegerPLIF, NeuronState
 
 
@@ -95,6 +95,7 @@ class IntegerDAGReference:
         )
         self.plif = IntegerPLIF()
         self.last_trace: dict[str, dict[str, list[tuple[int, ...]]]] = {}
+        self.last_route_event_counts: dict[str, int] = {}
 
     def reset(self) -> None:
         """Clear sequence state, including the temporal class-current window."""
@@ -104,6 +105,7 @@ class IntegerDAGReference:
         self.class_scores.clear()
         self.prediction_bin_count = 0
         self.last_trace = {}
+        self.last_route_event_counts = {}
 
     @staticmethod
     def _edge_events(
@@ -233,6 +235,8 @@ class IntegerDAGReference:
                     result.candidate,
                     result.membrane,
                     result.spike,
+                    -1,
+                    0,
                 )
             )
             if result.spike:
@@ -276,10 +280,10 @@ class IntegerDAGReference:
                 if channel not in update_channels:
                     candidates.append(state.membrane)
                     continue
-                retention = self.plif.retention_for_bins(betas[channel], elapsed[channel])
-                leaked = round_shift_ties_away(
-                    state.membrane * retention,
-                    ASIC_FORMATS["beta"].fractional_bits,
+                leaked = self.plif.leak_membrane_for_bins(
+                    state.membrane,
+                    betas[channel],
+                    elapsed[channel],
                 )
                 current = currents.get(SpikeEvent(channel, y, x), 0)
                 candidates.append(ASIC_FORMATS["membrane"].saturate(leaked + current))
@@ -353,6 +357,8 @@ class IntegerDAGReference:
                         candidates[channel],
                         output_membranes[channel],
                         int(channel_spikes[channel]),
+                        new_ages[channel],
+                        new_amplitudes[channel],
                     )
                 )
                 if channel_spikes[channel]:
@@ -423,6 +429,7 @@ class IntegerDAGReference:
 
         streams: dict[str, list[SpikeEvent]] = {"input": list(events)}
         self.last_trace = {}
+        self.last_route_event_counts = {}
         readout_name = str(self.graph["current_readout"])
         for name in self.graph["node_topological_order"]:
             if name in {"input", "prediction"}:
@@ -439,6 +446,7 @@ class IntegerDAGReference:
                 streams[name] = readout_events
             else:
                 streams[name] = self._route_node(name, streams)
+                self.last_route_event_counts[name] = len(streams[name])
         return self._readout(streams[readout_name], int(bin_tag))
 
     def state_profile(self) -> dict[str, int]:

@@ -17,7 +17,7 @@
   "logical_membrane_states": 7040,
   "final_live_state_entries": 1229,
   "maximum_live_state_entries_by_actor": {
-    "detail_stem": 189,
+    "detail_stem": 188,
     "detail1.standard": 0,
     "stem": 380,
     "enc1.standard": 287,
@@ -43,15 +43,55 @@
     "project2": 0,
     "final_fuse.standard": 239
   },
+  "maximum_touched_queue_entries_by_actor": {
+    "detail_stem": 71,
+    "detail1.standard": 0,
+    "stem": 6,
+    "enc1.standard": 287,
+    "enc1_extra.depthwise": 9,
+    "enc1_extra.pointwise": 0,
+    "down2.standard": 2,
+    "enc2.depthwise": 0,
+    "enc2.pointwise": 0,
+    "enc2_extra.depthwise": 0,
+    "enc2_extra.pointwise": 0,
+    "down3.depthwise": 0,
+    "down3.pointwise": 0,
+    "enc3.depthwise": 0,
+    "enc3.pointwise": 0,
+    "enc3_extra.depthwise": 0,
+    "enc3_extra.pointwise": 0,
+    "context1.depthwise": 0,
+    "context1.pointwise": 0,
+    "context2.depthwise": 0,
+    "context2.pointwise": 0,
+    "project3": 0,
+    "decoder2_fuse": 0,
+    "project2": 0,
+    "final_fuse.standard": 240
+  },
+  "maximum_residual_events_by_join": {
+    "context1.residual_or": 0,
+    "context2.residual_or": 0,
+    "detail1.residual_or": 0,
+    "enc1.residual_or": 1,
+    "enc1_extra.residual_or": 1,
+    "enc2.residual_or": 0,
+    "enc2_extra.residual_or": 0,
+    "enc3.residual_or": 0,
+    "enc3_extra.residual_or": 0
+  },
+  "fixture_observed_maximum_touched_queue_entries": 287,
+  "fixture_observed_maximum_residual_events": 1,
+  "occupancy_scope": "observed_reduced_fixture_only_not_a_safe_native_capacity_bound",
   "artifact_sha256": {
     "model_spec.yaml": "1e0801e721c401563aad9d40034e705669a6254474297709120c67a7c2e7a813",
     "eventspikeseg140k_replay_top.sv": "ec43d9bd17ff3e415497ada8bf173015012a084d7e8d9da6dbd5978893aeca34",
     "golden_input_samples.npz": "b87264c63a4c8a9260ff7611f0bb31625c184ab6db4d010c71fab79bd26b74f1",
     "golden_layer_currents.npz": "9a08bae8e6f399c7780bf46d8c103872070b1e5675ea259208a0b7f9001b2a43",
-    "golden_layer_membranes.npz": "e6bb63c4916f510db7b73f49633bca5cfbaa9fd47938906a7f19d439b7a674d9",
+    "golden_layer_membranes.npz": "6dac6a42a957a8dbf1f6fb4bc41f2183b62136151c7ac44c752cf15e248fac4a",
     "golden_layer_spikes.npz": "3219673664eb81cf35c53289db30af46e271f3abe3f41a1490fa7299f035f9b2",
-    "golden_semantic_outputs.npz": "5d7a188ac1c4cc22c0eb5ba2f0a334cd5329a6f9c9a2489d3f0bde56f96ef431",
-    "rtl_metrics.json": "7a32976f5bcd183ce28c157c403ca1c8255d2997af82d0e2539f849f9b11bdc2"
+    "golden_semantic_outputs.npz": "5d7a188ac1c4cc22c0eb5ba2f0a334cd5329a6f9c9a2489d3f0bde56f96ef431"
   },
   "scope": "reduced_8x8_bit_exact_equivalence_not_native_resolution_PPA"
 }

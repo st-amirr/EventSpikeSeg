@@ -316,6 +316,11 @@ python scripts/export_asic_model.py \
   --output artifacts/ASIC
 ```
 
+The complete `artifacts/` directory is intentionally ignored by Git. Checkpoints, exported
+weights, generated tops, replay vectors, metrics, and physical-design outputs remain local and
+must be retained or backed up outside Git; derived exports are regenerated from the retained
+checkpoint using the tracked source and scripts.
+
 The exporter hard-rejects XL and emits the exact 25-PLIF-actor plus current-readout manifest,
 affine-folded int8 ROMs, per-actor quantized neuron parameters, the fixed-point contract,
 and an explicit `layer_graph.json` containing DAG nodes, directed edges, channel-remap/fanout

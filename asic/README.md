@@ -9,9 +9,10 @@ timing, and power analysis.
 
 - `asap7` is the primary open, reproducible **research PPA** platform. It is a predictive
   7 nm FinFET platform, not a manufacturable foundry PDK and not tapeout signoff.
-- `sky130ram` is the future open, manufacturable **tile/test-chip** check when the actor
-  SRAM boundary is bound to characterized macros. It is not dense enough for
-  the complete native-resolution state on one economical die.
+- `sky130hd` plus the bundled `sky130ram` OpenRAM views is the open, manufacturable
+  **tile/test-chip** check. The reduced actor tile is now placed and routed with two
+  characterized 80x64 macros. SKY130 is not dense enough for the complete
+  native-resolution state on one economical die.
 - A complete manufacturable EventSpikeSeg chip requires an accessible 22/28 nm-or-better
   foundry PDK plus characterized high-density SRAM macros. That target cannot be called
   selected or power-signoff-ready until those libraries are available.
@@ -114,7 +115,42 @@ cycles, steady-state cycles/frame, cycles/bin, utilization, and headroom. Those 
 explicitly reduced-8x8 verification metrics and must not be reported as native-resolution
 latency or PPA.
 
-If an ORFS checkout or installation is available, set `ORFS_ROOT` to its root and run:
+Profile the checkpoint-authoritative complete native validation sequence after mounting DSEC:
+
+```sh
+docker compose -f compose_ASIC.yaml run --rm \
+  -v /absolute/path/to/DSEC:/datasets/DSEC:ro test \
+  python scripts/profile_asic_dsec.py --dataset-root /datasets/DSEC
+```
+
+The profiler requires all 234 records from checkpoint validation sequence
+`zurich_city_02_a`, preserves event-count multiplicity, and writes the ignored
+`artifacts/RTL/profile/native_activity_profile.json`. A run with `--maximum-records` is a
+debug-only partial profile and sets `capacity_claim` false. Integer profiling establishes
+state/queue/residual activity bounds; it does not produce cycle timing or switching power.
+
+Run with the official OpenROAD Flow Scripts Docker image (the default is
+`openroad/orfs:latest`):
+
+```bash
+bash asic/scripts/run_orfs.sh
+```
+
+Run the separate SKY130HD actor-tile flow with two real 80x64 OpenRAM macros:
+
+```bash
+bash asic/scripts/run_orfs_sky130_sram.sh
+```
+
+This variant uses the same 4x4 actor geometry only as a macro-integration test. It checks
+that exactly two SRAMs survive synthesis, builds an explicit met3-to-met4 macro power grid,
+and fails on extracted timing/driver violations or nonempty detailed-route DRC. It is not a
+full-model capacity, latency, energy, or power result. The checked-in configuration skips
+post-CTS timing repair only because the amd64 OpenROAD binary raises `SIGILL` under
+Apple-silicon emulation; a native-x86 publication run must remove that switch.
+
+Generated flow data is written below the Git-ignored `artifacts/OpenROAD` directory. To use a
+host ORFS checkout instead, set `ORFS_ROOT` to its root:
 
 ```sh
 ORFS_ROOT=/path/to/OpenROAD-flow-scripts bash asic/scripts/run_orfs.sh
