@@ -224,6 +224,21 @@ Run the checkpoint-exact resident `detail_stem` characterization unit separately
 bash asic/scripts/run_orfs_resident_tile.sh
 ```
 
+Run the checkpoint-exact two-tile receptive-halo boundary characterization on a larger-memory
+machine with:
+
+```bash
+bash asic/scripts/run_orfs_resident_two_tile.sh
+```
+
+Before running it on another machine, place the trained checkpoint at
+`artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_best.pt`, regenerate the ignored
+checkpoint export if it is absent, and allocate **at least 16 GiB of Docker system memory**;
+24--32 GiB is recommended. GPU VRAM is not used by Yosys/OpenROAD. The command creates the ignored
+two-column, two-2x2-tile `detail_stem` top and runs the separate
+`resident_detail_stem_2x2x2` ASAP7 flow. It must produce `6_report.json` plus the final routed
+reports before any area, timing, power, or DRC result is accepted.
+
 This uses the trained weights and a 2x2/32-PLIF interior unit because 8x8 and 4x4 fully parallel
 standard-cell elaboration are impractically slow under the current x86-on-Apple emulation. It is a
 scaling experiment only; the production resident hierarchy remains 8x8. The accepted ASAP7 run

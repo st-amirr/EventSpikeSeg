@@ -928,3 +928,20 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - next resume point: produce a separate OpenROAD configuration for the two-tile boundary top and
   obtain routed fanout/area/timing data. Keep it distinct from the accepted single-unit result and
   do not extrapolate either result to full-chip power or latency.
+
+### Two-tile boundary PPA reaches detailed-route memory boundary
+
+- the separate checkpoint-exact `detail_stem` two-column (two 2x2 child tiles, 64 resident PLIFs,
+  all 144 actor weights) ASAP7 flow completed synthesis, floorplan, placement, CTS, and global
+  routing after the multi-tile ready/valid loop was removed;
+- completed intermediate values: 13,492.10 um^2 synthesized standard-cell area; 38,466.18 um^2
+  core at 35% target utilization; 13,226 um^2 after CTS; 118,367 CTS instances; 2,674 clock sinks;
+  197 clock buffers; global-route area 13,271 um^2; +3,502.265 ps global-route setup slack at the
+  5 ns constraint. These are not extracted final results;
+- detailed routing began with 1,024,833 guides and reached 10% of its first optimization pass with
+  zero violations, then the amd64-on-Apple container stopped at 7,764,480 KB peak memory, which is
+  effectively the configured 8 GB Docker limit. No `6_report.json`, detailed-route DRC report,
+  extracted timing, IR-drop, GDS, or power report was produced;
+- next resume point: run this same configuration on a host with more than 8 GB Docker memory (or a
+  native x86 host) before reporting any two-tile PPA. Do not shrink/replace the checkpoint-exact
+  hierarchy merely to obtain a routed result.

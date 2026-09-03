@@ -148,6 +148,15 @@ stages. Extracted max-slew, max-capacitance, max-fanout, setup, hold, and detail
 are all zero; worst max-slew margin is +90.03 ps. This does not resolve full-model elaboration or
 full-chip PPA.
 
+# 2026-09-03 — Two-tile resident detailed routing reaches Docker memory limit
+
+The checkpoint-exact two-column `detail_stem` boundary top completed synthesis, placement, CTS,
+and global routing, then reached detailed routing with 1,024,833 guides. At 10% of the first
+detail-route optimization iteration it consumed 7,764,480 KB and was stopped by the configured
+8 GB Docker limit. The final report bundle was never generated. The completed global-route slack
+and area are intermediate only; no extracted timing, DRC, power, latency, or two-tile PPA claim is
+valid. Repeat unchanged on a larger-memory/native-x86 host.
+
 # 2026-09-02 — Multi-tile tag checker inferred a latch
 
 The first Yosys process-lowering run of the checkpoint-exact two-tile wrapper found that the
