@@ -168,7 +168,7 @@ No new mIoU, pixel accuracy, spike-rate, latency, power, or FPGA-resource result
 
 ## 2026-08-31 — ASIC/RTL verification results
 
-The active epoch-35 six-class checkpoint exports 143,824 int8 convolution weights and 25
+The then-active epoch-35 six-class checkpoint exported 143,824 int8 convolution weights and 25
 permanent PLIF actors. Derived persistent state is 189.60 MiB. Direct-index 24-bit same-bin
 current plus touched flags raise the exact logical memory to 281.92 MiB before touched-address
 queues; this is a capacity result, not a characterized SRAM area or power result.
@@ -293,3 +293,262 @@ capacity require the complete native DSEC activity profile; activity-based power
 representative checkpoint-derived switching. The Apple-silicon run also skips post-CTS timing
 repair because the emulated amd64 binary raises `SIGILL`, so native-x86 rerun is required before
 publication-grade timing or power claims.
+
+## 2026-09-01 — Native 440x640 real-event short-interval activity
+
+The first 5 ms of the supplied `zurich_city_13_a/events.h5` was executed through the complete
+25-actor integer DAG regenerated from the current epoch-40/seed-17 six-class V4 checkpoint
+(training strategy v12). A provenance guard compares six checkpoint identity fields before every
+profile so a replaced `.pt` cannot silently reuse stale weights. Because the sample does not
+include its matching `rectify_map.h5`, coordinates were conservatively left unrectified and cropped
+from sensor rows 0..479 to native model rows 0..439. This makes the run useful for implementation
+stress and preliminary activity, but not publication-grade DSEC spatial preprocessing.
+
+| metric | native 5 ms result |
+| --- | ---: |
+| retained input events | 41,839 |
+| exact synaptic additions | 138,562,457 |
+| actor-output spikes | 646,175 |
+| final live sparse-state entries | 5,869,959 |
+| Python bit-exact host runtime | 349.53 s |
+| bottleneck actor | `final_fuse.standard` |
+| bottleneck serial RTL service floor | 277,279,611 cycles |
+| latency floor at 97.31 MHz tile clock | 2.849 s / 5 ms bin |
+| deadline miss floor | 569.9x |
+| ideal independent lanes/banks required floor | 570 |
+
+The 97.31 MHz value comes from the isolated routed SKY130 actor tile and is not a full-chip clock.
+The cycle result is a conservative bound derived from the implemented single-1RW-lane FSM and exact
+native activity, not a full-native cycle-accurate RTL measurement. It is nevertheless sufficient to
+reject the present one-lane actor organization for real-time operation. No full-model power number is
+reported: the native graph has not been routed with characterized scale-suitable SRAM macros and no
+post-route DSEC VCD/SAIF exists.
+
+### Conflict-aware parallel-bank service result
+
+The implemented parallel scatter and actor-local bank wrappers were configured from the same
+native activity, then reprofiled by physical bank until every busiest-bank service floor met the
+project's `U <= 0.8` engineering target. Ordinary actors use channel-by-spatial banks;
+mechanism-enabled actors use spatial-only banks so inhibition/adaptation still updates all peer
+channels atomically. The final manifest contains 1,718 independent actor lanes across the 25
+resident populations, including 800 lanes for `final_fuse.standard`, 412 spatial lanes for
+`down2.standard`, and 134 spatial lanes for `stem`.
+
+| metric | measured configured-bank result |
+| --- | ---: |
+| exact synaptic additions (unchanged) | 138,562,457 |
+| actor-output spikes (unchanged) | 646,175 |
+| total configured actor lanes | 1,718 |
+| `final_fuse.standard` lanes | 16 channel x 50 spatial = 800 |
+| busiest configured actor/bank | `enc2_extra.depthwise` |
+| busiest-bank service floor | 388,589 cycles |
+| service-interval floor at 97.31 MHz | 3.993 ms |
+| utilization floor | 0.79866 |
+| hard real-time floor gate (`U <= 1`) | pass |
+| engineering floor gate (`U <= 0.8`) | pass |
+
+The lane-manifest SHA-256 is
+`8ff8673edbe91a72142aaa95f6b91d530808013110f662700fcb3a92ff6c0519`; it matches the
+native bank-activity profile and is embedded in the generated 25-actor top. This establishes a
+conflict-aware lower bound on the sustainable bin service interval for this one unrectified 5 ms
+sample. It is not cycle-accurate end-to-end DAG latency: completion-token critical-path delay,
+inter-actor FIFO occupancy, routing timing, and full-chip clock degradation remain unmeasured.
+It is also not a power or area result; 1,718 independently ported state/queue banks require a
+scale-suitable characterized SRAM architecture and physical design before PPA can be reported.
+
+### FIFO-buffered reduced-DAG replay
+
+The generated graph now inserts an ordered depth-two FIFO on all 53 non-prediction edges. The
+epoch-40 reduced 8x8 replay remains bit-exact after buffering and simultaneous full-FIFO pop/push
+support. It completes in 12,186 steady-state cycles, eight cycles more than the prior 12,178-cycle
+unbuffered replay. Seventeen edges reach occupancy two; the remaining 36 reach at most one. This
+proves lossless ordering/backpressure and supplies a reduced-fixture lower limit for edge depth.
+It does not size native-resolution FIFOs or change the native 388,589-cycle busiest-bank floor.
+
+### Completion-token critical-path correction and reprofile
+
+The PLIF commit for an actor begins only after every required same-bin upstream completion token
+has arrived. Therefore, the longest dependency-path sum of configured-bank commit costs is a
+response-latency lower bound even though current collection can overlap upstream activity. On the
+1,718-lane throughput configuration this floor is 1,050,545 cycles (10.796 ms at 97.31 MHz), so
+that configuration cannot meet a 5 ms single-bin response deadline.
+
+A candidate with additional spatial banks on eight critical actors was generated from measured
+commit imbalance with a 1.10 extrapolation safety factor, then rerun through the exact full native
+integer event profile. The accepted mapping contains 1,966 lanes.
+
+| metric | exact reprofiled 1,966-lane result |
+| --- | ---: |
+| retained input events | 41,839 |
+| exact synaptic additions | 138,562,457 |
+| actor-output spikes | 646,175 |
+| busiest complete actor bank | `final_fuse.standard` |
+| busiest-bank service floor | 384,334 cycles |
+| busiest-bank interval at 97.31 MHz | 3.950 ms (`U=0.78992`) |
+| commit-only completion critical path | 349,094 cycles |
+| commit-only latency floor at 97.31 MHz | 3.587 ms (`U=0.71749`) |
+| hard/80% floor gates | pass / pass |
+
+The accepted mapping SHA-256 is
+`172121ae49208c034d95314ab65b1cf6cb1975f7a7166d78f558f830f6ff003d` and is embedded in the
+generated top. This is stronger than the prior bottleneck-throughput result but still is not a
+cycle-accurate full-DAG latency measurement: collection backpressure, 53 edge FIFOs, routing/join
+logic, temporal readout, and full-chip physical timing are excluded. The same unrectified,
+single-bin sample limitation applies.
+
+### Native edge serialization floor
+
+Graph-conserved edge accounting finds 657,634 data events on
+`final.concat -> final_fuse.standard`; its ordered completion token is packet 657,635. Since the
+implemented generated edge is scalar, this alone requires at least 657,635 clocks, or 6.758 ms at
+97.31 MHz (`U=1.35163`). It fails the 5 ms hard deadline despite the state-bank service and
+commit-path floors passing. At least two packet lanes are required at that clock; alternatively,
+the scalar link requires at least 131.527 MHz for the hard deadline or 164.409 MHz for the 80%
+engineering target. These are volume/clock bounds, not routed timing or FIFO occupancy results.
+
+### Cost-refined 200 MHz target mapping
+
+The target ASIC clock in the predictive ASAP7 flow is 200 MHz, providing 1,000,000 hard cycles or
+800,000 cycles at the 80% engineering limit. A first 917-lane cost candidate was rejected by exact
+native reprofiling (`stem`: 1,176,798 cycles; completion chain: 897,040 cycles). The second
+iteration uses 924 lanes and passes all independently measurable workload floors:
+
+| metric | exact 924-lane activity result at 200 MHz |
+| --- | ---: |
+| busiest complete actor bank | `final_fuse.standard` |
+| busiest-bank service floor | 781,772 cycles / 3.909 ms (`U=0.78177`) |
+| commit-only completion critical path | 737,691 cycles / 3.688 ms (`U=0.73769`) |
+| scalar edge serialization floor | 657,635 cycles / 3.288 ms (`U=0.65764`) |
+| hard/80% floor gates for all three | pass / pass |
+| configured independent actor lanes | 924 |
+
+The mapping SHA-256 is
+`81f8381ec225b82d5f03965e5a9415bb7e07b1126a4072497906f4037860f257`; it matches the exact
+candidate-2 profile and generated full top. Compared with the 1,966-lane 97.31 MHz mapping, this
+reduces independent lane count by 53.0%. It is conditional on full-chip 200 MHz timing closure and
+does not yet combine collection stalls, scatter contention, FIFO occupancy, joins, and readout in
+one cycle schedule. The routed 200 MHz evidence remains the reduced SRAM-free ASAP7 actor
+prototype, so these numbers are implementation targets and workload floors—not measured full-chip
+latency or power.
+
+The maximum of the three independent floors is 781,772 cycles, implying at least 156.354 MHz for
+the hard deadline or 195.443 MHz for the 80% target. Thus 200 MHz has only 2.28% frequency margin
+over the independent-floor target. This envelope still does not combine contention or
+backpressure, so it is a go/no-go prerequisite rather than the final timing result.
+
+### Event-order scatter/bank timing result
+
+The next profiler models the implemented scatter and bank-ready sequence for every event instead
+of comparing aggregate counts independently. The 924-lane target is rejected:
+
+| actor | isolated collection | collection + busiest commit | time at 200 MHz |
+| --- | ---: | ---: | ---: |
+| `down2.standard` | 40,097,168 cycles | 40,107,810 cycles | 200.539 ms |
+| `stem` | 6,560,029 cycles | 6,593,614 cycles | 32.968 ms |
+| `final_fuse.standard` | 1,842,152 cycles | 1,875,150 cycles | 9.376 ms |
+
+This is not yet whole-DAG timing, but it is sufficient to reject the current collection fabric.
+Mechanism actors serialize same-pixel output channels behind one spatial contribution port, while
+ordinary actors allow one busy bank to hold the single pending-event bitmap. The implied 10.027 GHz
+80%-target clock for the current `down2.standard` organization is physically irrelevant and is
+reported only as proof that frequency scaling is not the remedy. Accumulation must be
+channel-by-spatial banked and decoupled; peer-channel atomicity is required at mechanism commit,
+not at every synaptic addition.
+# Resident full-model elaboration boundary (2026-09-02)
+
+The checkpoint-authoritative resident generator emitted the complete 25-PLIF actor DAG with all
+143,824 int8 synaptic weights. A bounded native Icarus elaboration attempt was killed by the 8 GB
+Docker memory limit (exit 137) before event simulation. Therefore there is currently **no valid
+native resident latency or power number**. Reduced actor and routing tests establish RTL behavior,
+and representative synthesis establishes synthesizability only; neither is a full-chip PPA result.
+
+## Resident 8x8 spatial partition inventory (2026-09-02)
+
+| quantity | exact value |
+| --- | ---: |
+| PLIF actors | 25 |
+| nominal spatial tile | 8x8 locations |
+| spatial actor tiles | 20,410 |
+| logical PLIFs | 30,976,000 |
+| resident state | 1,590,476,800 bits |
+| byte-equivalent resident state | 198,809,600 bytes |
+| actor convolution weights | 143,728 int8 |
+| temporal-readout weights | 96 int8 |
+
+These are inventory values, not SRAM capacity or PPA. The state bits are dedicated local current,
+membrane, and (where enabled) adaptation elements. The ignored derived manifest is
+`artifacts/ASIC/resident_tile_plan_8x8.json`; its generator and conservation test are tracked.
+
+## Preliminary routed 2x2 `detail_stem` resident unit (2026-09-02)
+
+This checkpoint-exact ASAP7 run uses all 144 trained actor weights and 32 resident PLIFs. It is a
+characterization unit, not the production 8x8 tile and not a full-model result.
+
+| routed quantity | result |
+| --- | ---: |
+| standard-cell instance area | 7,247.19 um^2 |
+| core area / utilization | 21,139.7 um^2 / 34% |
+| sequential cells | 1,337 |
+| multi-input combinational cells | 56,841 |
+| extracted setup / hold violations | 0 / 0 |
+| reported internal fmax | 772.241 MHz |
+| global routing overflow / detailed-route DRC | 0 / 0 |
+| vectorless power at 0.77 V, 200 MHz | 30.9699 mW |
+| worst VDD drop | 3.579 mV (0.46%) |
+| final max-slew violations | 68 |
+
+The run is **not timing-clean**: violating internal slews are 321.65--360.29 ps against 320 ps.
+It also copied the older SDC before the resident-specific port constraints were introduced. Power
+uses default vectorless switching, not the Zurich DSEC trace. Therefore the area/routability result
+is usable as preliminary evidence, while latency and power remain non-publication estimates pending
+a resident-SDC rerun with slew over-repair and an activity-annotated run.
+
+## Clean routed 2x2 `detail_stem` resident unit (2026-09-02)
+
+The accepted checkpoint-exact ASAP7 characterization uses the same 144 trained int8 weights and
+32 resident PLIFs, the resident-port SDC, and a 50% OpenROAD slew-repair margin. The margin is an
+integer percentage; exploratory 1.2% and 20% runs left 27 and 8 extracted slew violations.
+
+| routed quantity | accepted result |
+| --- | ---: |
+| standard-cell instance area | 7,311.29 um^2 |
+| core area / utilization | 21,139.7 um^2 / 34.59% |
+| sequential cells | 1,337 |
+| multi-input combinational cells | 56,841 |
+| timing-repair buffers | 970 |
+| extracted setup / hold violations | 0 / 0 |
+| max slew / fanout / capacitance violations | 0 / 0 / 0 |
+| worst max-slew margin | +90.03 ps against 320 ps |
+| reported internal fmax | 639.636 MHz |
+| global routing overflow / detailed-route DRC | 0 / 0 |
+| vectorless power at 0.77 V, 200 MHz | 30.9607 mW |
+| worst VDD drop | 4.453 mV (0.58%) |
+
+This closes the physical implementation check for the 2x2 characterization unit only. The power
+uses OpenROAD's default vectorless activity, not DSEC switching, and cannot be multiplied by 20,410
+tiles into a defensible full-chip result. Likewise, 639.636 MHz is an internal tile clock result,
+not measured 25-actor DAG throughput or event latency. Full-model simulation/PPA and
+activity-annotated energy remain open.
+
+## Exact receptive-halo wiring inventory (2026-09-02)
+
+The production 8x8 resident wrapper now statically connects each tile only to input locations that
+can reach one of its outputs under the actor's exported kernel, stride, padding, and dilation.
+
+| checkpoint-derived 25-actor inventory | exact value |
+| --- | ---: |
+| resident output tiles | 20,410 |
+| receptive-halo tile-input bit endpoints | 51,871,626 |
+| full-bitmap-per-tile bit endpoints avoided baseline | 73,444,096,000 |
+| logical endpoint reduction | 99.929% |
+
+The endpoint counts include input channels and tile overlap. They quantify elaborated static
+connectivity, not unique source bits or physical routed wire length. No power or latency reduction
+is claimed until a representative multi-tile wrapper and ultimately the complete graph are routed
+and exercised with DSEC switching activity. All 96 Python tests, 47 cocotb RTL groups, Verilator
+lint, and 40-top compile check pass with this wiring.
+
+A checkpoint-exact two-column `detail_stem` hierarchy (two 2x2 tiles, 64 resident PLIFs, all 144
+trained actor weights) also passes Yosys process lowering, memory lowering, optimization, and
+structural checking. This establishes synthesis legality across a real tile boundary; it is not a
+routed area, frequency, power, or latency result.

@@ -48,12 +48,12 @@ N_adapt = 320*110*160 + 1216*55*80
         = 10,982,400 adaptation-enabled values
 ```
 
-With 16-bit membrane and two 16-bit adaptation fields, dense persistent state is
-100.98 MiB before lazy-update tags, queues, and alignment. This is lower than the old 241x351 graph's
-72.84 million membranes/192.44 MiB because the wide paths now begin at half resolution.
-For ASIC deployment this is an SRAM-macro problem, not an FPGA BRAM limit. A dense
-standard-cell implementation is invalid; full-chip PPA requires characterized actor-local
-SRAM macros or a lossless sparse organization proven over complete DSEC sequences.
+The active resident mapping adds one int24 current value per PLIF, so current, membrane, and
+adaptation state total 189.60 MiB-equivalent. This is lower than the old 241x351 graph's
+72.84 million membranes/192.44 MiB even before current state because the wide paths now begin at
+half resolution. For ASIC deployment this is a direct standard-cell/register/latch area, clock,
+and routing problem—not an FPGA BRAM or runtime-SRAM capacity requirement. Full-chip PPA must
+place, route, and power this complete direct-state design.
 
 
 ## Exact computational primitive
@@ -167,29 +167,23 @@ N_adapt = 320*110*160 + 1216*55*80
         = 10,982,400 adaptation-enabled neurons
 ```
 
-Each adaptation-enabled neuron owns `adaptation_age` and `adaptation_amplitude`.
-Because DSEC training keeps touched-neuron lazy updates enabled, the exact streaming
-runtime also associates each live neuron with a compact **24-bit last-bin tag**. It is a
-5 ms bin index, not a microsecond timestamp. On the next touch the elapsed-bin distance
-`Δk` determines the required lazy leak `beta[c]^Δk`.
+Each adaptation-enabled neuron owns `adaptation_age` and `adaptation_amplitude`. The active
+resident implementation also gives every PLIF an int24 current accumulator. An ordered completion
+token advances all PLIFs exactly once per 5 ms epoch, so it needs no touched-neuron tag or lazy
+elapsed-bin calculation.
 
-For a hypothetical dense exact-state implementation the persistent payload is therefore:
+The exact resident-state inventory is therefore:
 
 | State | Values | Storage |
 | --- | ---: | ---: |
+| current, int24 | 30,976,000 | 88.62 MiB |
 | membrane, int16 | 30,976,000 | 59.08 MiB |
 | adaptation age + amplitude, two int16 fields | 21,964,800 | 41.90 MiB |
-| last-bin tag, 24 bit | 30,976,000 | 88.62 MiB |
-| exact dense touched-state total | — | **189.60 MiB** |
+| exact resident-state total | — | **189.60 MiB-equivalent** |
 
-The active implementation is sparse, so last-bin tags exist only for live table entries.
-With a 28-bit logical address, int16 membrane and 24-bit bin tag, the raw non-adaptive
-payload is about 9 bytes/entry; adding two int16 adaptation fields gives about 13 bytes.
-The conservative profiler keeps **12-byte non-adaptive** and **16-byte adaptive** aligned
-entry budgets. This is why actor-local SRAM capacity and macro selection are hard full-chip gates.
-For the ASIC target, these values set the SRAM-macro requirement rather than an FPGA BRAM
-limit. Full-chip PPA is invalid until actor-local state is mapped to characterized SRAM
-macros instead of standard-cell register arrays.
+These bits are distributed register/latch state beside their PLIF update logic, not an addressed
+byte store or SRAM capacity request. Full-chip PPA must include all of them; a reduced tile result
+cannot establish full-model feasibility.
 
 ### Why v8 is structurally cheaper than v6
 
@@ -271,8 +265,8 @@ path only when bit-exact logits are required for verification.
 | membrane `V[layer,c,y,x]` | **independent persistent state** |
 | adaptation age/amplitude | independent persistent state where enabled |
 | per-neuron microsecond timestamp | absent |
-| compact `last_bin_tag` | **24-bit persistent field for each live sparse state** |
-| synaptic current accumulator | temporary for one layer/slice destination |
+| compact `last_bin_tag` | absent; completion advances every resident PLIF |
+| synaptic current accumulator | independent resident int24 state per PLIF; cleared at commit |
 | hidden spikes | transient sparse `(slice,c,y,x)` events |
 | final class-current accumulator | transient across configurable prediction window; default 10 bins / 50 ms, then reset |
 
@@ -437,15 +431,16 @@ The canonical deployment objective is:
 3. define deterministic fixed-point formats, rounding, saturation, and overflow rules;
 4. build a bit-exact integer reference and verify layer currents, membranes, spikes, and
    semantic output against the float model;
-5. instantiate one permanent SystemVerilog actor per executed layer; each owns convolution
-   addressing, accumulator lanes, PLIF/mechanism logic, queue, and weight ROM;
-6. store persistent membrane/adaptation state in actor-local characterized SRAM macros together
-   with the compact lazy-update metadata required by the frozen integer contract;
-7. implement touched-address queues and lazy `beta^Δk` state updates as baseline behavior because
-   DSEC training already uses touched-neuron asynchronous updates inside the fixed 5 ms time grid;
+5. instantiate one permanent SystemVerilog actor per executed layer and spatially tile it; every
+   logical PLIF owns local current, membrane, and optional adaptation registers/latches;
+6. implement convolution as compile-time weighted connectivity from each tile's exact input
+   receptive halo, with no runtime weight or state-memory transaction;
+7. send ordered completion tokens through the same DAG as spikes and apply exactly one learned-beta
+   update to every resident PLIF at each 5 ms boundary;
 8. run Icarus/cocotb RTL verification, Yosys mapping, OpenROAD place-and-route/parasitics, and
    representative-event SAIF/VCD power analysis;
-9. use ASAP7 only for predictive research PPA and require real foundry SRAM libraries before full-chip signoff.
+9. use ASAP7 only for predictive research PPA and require a manufacturable foundry standard-cell/
+   latch library before tapeout signoff.
 
 ## Exact streaming 5 ms sparse layer procedure
 
@@ -461,26 +456,22 @@ For input bin `k`:
    dense tensor is required.
 2. Each receiving actor immediately generates only its connected convolution destinations
    from kernel, stride, padding, dilation and group rules and adds its static signed weights.
-3. All synaptic contributions targeting the same logical neuron **within this bin** are
-   accumulated before threshold/reset; the neuron is committed at most once for that layer/bin.
-4. Read the destination's sparse state. A missing entry is exact reset state. A live entry
-   provides `V`, optional adaptation age/amplitude, and `last_bin_tag`.
-5. Compute `Δk = (current_bin_tag - last_bin_tag) mod 2^24`. For a live entry apply the
-   exported learned beta exactly `Δk` times (equivalent to `beta^Δk`) before adding current.
-   The initial RTL uses an iterative multiply loop; a LUT/power accelerator is a later
-   performance optimization and must remain bit-exact.
-6. Apply the trained threshold/adaptation/reset/inhibition order, write the new state with
-   `last_bin_tag = current_bin_tag`, reclaim it only when quantized membrane is zero and
-   adaptation is inactive, and emit only output spikes.
-7. After the input epoch marker arrives, both ingress branches commit their touched neurons.
-   Event/completion tokens then follow the fixed DAG. Fanout nodes multicast losslessly;
+3. All synaptic contributions targeting the same logical neuron **within this bin** accumulate in
+   that PLIF's resident int24 current register before threshold/reset.
+4. After the input epoch marker arrives, both ingress branches commit every resident PLIF once.
+   Each PLIF reads its directly wired membrane/adaptation registers, applies one quantized learned
+   beta step, integrates current, applies the trained mechanism/reset order, writes its own local
+   state, clears current, and emits only output spikes.
+5. Event/completion tokens then follow the fixed DAG. Fanout nodes multicast losslessly;
    residual/concat/skip joins wait for all required upstream completion tokens carrying the
    same bin tag before forwarding one downstream completion. The final completion emerges
    only after `final_fuse.standard` and the stateless 16->6 class-current update have seen
    all branches for that bin.
-8. PLIF/adaptation state persists across epochs. Camera ingress may continue independently
-   if its event FIFO provides sufficient lossless backpressure capacity.
-9. Signed class current persists only across the configured prediction window. The default
+6. No state address, sparse-table lookup, reclaim operation, `last_bin_tag`, or state SRAM
+   transaction occurs on this active path.
+7. PLIF/adaptation state persists across epochs. Camera ingress may continue independently
+   if its event/vector buffering provides sufficient lossless backpressure capacity.
+8. Signed class current persists only across the configured prediction window. The default
    is ten bins, so a segmentation argmax is emitted every **50 ms / 20 Hz**, matching training.
    The prediction-window length is configurable for later latency/accuracy experiments.
 
@@ -537,40 +528,36 @@ At common clocks this gives:
 | 200 MHz | 1,000,000 cycles | 800,000 cycles |
 
 The controller reports cycles/bin plus hard-deadline and target-budget misses. Sparse
-activity, cache/bank conflicts, iterative lazy-leak cycles, event-FIFO stalls and actor
+activity, vector handshakes, completion-token stalls, resident commit latency and actor
 parallelism are therefore automatically reflected in `U`; a design that cannot sustain
 `U <= 1` cannot consume a continuous 200-bin/s camera stream without backlog or loss.
 
 ## Static layer-actor ASIC execution
 
-There is no requirement for one hardware PLIF circuit per logical `[C,H,W]` neuron, but
-there is one permanent actor per executed PLIF population. These actors are connected by
-the fixed v8 DAG rather than a linear pipeline. An actor can sequence local lanes over its
-own destinations; those arithmetic blocks are never reused by a different PLIF population:
+There is one permanent actor per executed PLIF population and one physically distinct state
+identity per logical `[C,H,W]` PLIF. These actors are connected by the fixed v8 DAG rather than
+a linear pipeline. The active direct-state architecture spatially partitions each actor into
+8x8 output tiles without sharing or addressing their state:
 
 ```text
-event/spike FIFO -> shared-kernel weight lookup -> synaptic accumulator
-                 -> load PLIF state -> fixed-point leak/integrate/threshold/reset
-                 -> save state -> emit output spike event
+spike bitmap -> compile-time receptive-halo wiring -> fixed-weight synaptic sums
+             -> local current registers -> fixed-step resident PLIF commit
+             -> resident membrane/adaptation registers -> output spike bitmap
 ```
 
-The state path is banked and locality-aware. A layer actor does not issue a backing-memory
-transaction for every individual synaptic addition. It retains recently touched state in
-actor-local banks, accumulates the contribution for the destination being serviced, performs
-one PLIF update, and writes the resulting state once. A missing sparse-table address is the
-exact reset state. A state entry may be reclaimed only when quantized membrane and adaptation
-are inactive; a full associative set reports overflow and never evicts live state silently.
+Each tile receives only the exact clamped input rectangle needed by its convolution receptive
+fields. Global coordinates are converted to tile-local halo coordinates at elaboration, so this
+is static physical connectivity rather than a runtime fetch. A border halo can overlap the halo
+of an adjacent output tile, but no membrane/current/adaptation state is duplicated by that
+overlap. Kernel weights and per-channel beta/threshold values are compile-time constants.
 
-This reduces traffic but does not remove the fundamental per-neuron state requirement. A
-presynaptic event that touches a postsynaptic destination must eventually read or already
-have that destination's state locally. Conventional and neuromorphic hardware differ mainly
-in where that state resides, how spikes are multicast, and how well local memory exploits
-event locality.
-
-Logical live membrane/adaptation state remains persistent in banked on-chip BRAM/LUTRAM.
-Common clock/reset and state-bank fabrics are shared infrastructure, not shared layer
-compute. The main trade-off is per-actor lane parallelism versus state-bank bandwidth, event-FIFO
-pressure, logic area, and latency.
+Every 5 ms completion token causes exactly one learned-beta commit in every resident PLIF. Current
+registers clear after commit; membrane and enabled adaptation registers persist across epochs.
+There is no state address, tag lookup, cache, SRAM read/write, reconfiguration, or reclaim policy
+in the active path. Common clock/reset and completion routing are shared infrastructure, not shared
+state or layer compute. The cost is the physical area and clock/reset load of roughly 31 million
+logical PLIF state/update datapaths; spatial tiling controls hierarchy and wiring locality but does
+not reduce that state inventory.
 
 ## Why the ASIC implementation is still neuromorphic
 
@@ -652,77 +639,55 @@ There is no active global actor-index scheduler. Sparse events traverse the perm
 wired actor graph over ready/valid channels. After the final event belonging to a trained
 5 ms epoch, the source injects an ordered completion token. Each receiving actor uses that
 token as proof that all signed contributions for the epoch have arrived, commits every
-touched PLIF exactly once, emits spikes, and forwards completion. The SystemVerilog RTL is a
+resident PLIF exactly once, emits spikes, and forwards completion. The SystemVerilog RTL is a
 clocked logical-asynchrony reference; a future clockless/QDI circuit would be a separate
 physical implementation and validation step.
 
-For one active input/output channel plane, `presynaptic_tap_array.sv` evaluates all kernel
-taps in parallel. A 3x3 kernel therefore has nine tap projection cells. Each valid tap
-emits `(destination_y, destination_x, signed_weight)` using the presynaptic scatter equation,
-including stride divisibility, padding, dilation, bounds, and zero-weight suppression.
-The receiving actor accumulates every tap into one canonical state indexed by output
-channel and spatial location. Kernel taps never own membrane copies.
-
-Each actor-local live state stores `last_bin_tag`. `plif_update.sv` accepts `elapsed_bins`
-and implements the exact baseline lazy leak as repeated learned-beta fixed-point
-multiplies before current integration.
+`resident_convolution_synapses.sv` evaluates the fixed Conv2d connectivity in parallel. A 3x3
+kernel has nine static tap projections; an asserted input bit gates its corresponding signed
+weight into the canonical local current register. The receptive-halo wrapper applies stride,
+padding, dilation, grouping, bounds, and tile-coordinate mapping at elaboration. Kernel taps
+never own membrane copies or runtime weight storage.
 
 ### Actor-local state requirement
 
-Int16 membranes + two int16 adaptation fields where enabled + a dense 24-bit last-bin tag
-would require **189.60 MiB**. Actor ownership removes inter-layer state transport, but it
-does not remove these bits. The complete implementation therefore requires actor-local,
-characterized high-density SRAM macros; standard-cell registers are valid only for small
-control/equivalence prototypes. A zero-default sparse organization remains an allowed
-lossless SRAM representation:
+The int24 current plus int16 membrane and optional two int16 adaptation fields require
+**189.60 MiB-equivalent** of permanent local state. Actor ownership removes inter-layer state
+transport and runtime state fetches, but does not remove these physical bits. Every state element
+is a dedicated standard-cell register/latch beside its PLIF logic; it is never reclaimed, aliased,
+or indexed through a sparse table. The complete physical implementation must therefore measure
+register/latch area, clock/reset distribution, routing, and switching activity rather than
+substituting an SRAM-capacity estimate.
 
-```text
-missing address == membrane 0 and inactive adaptation
-live entry       == address/tag + membrane + last_bin_tag [+ age + amplitude]
-```
-
-A state may be reclaimed only when its **quantized** membrane is zero and adaptation is
-inactive. Full associative sets assert overflow; live state is never silently evicted.
-The conservative profiler uses 12-byte non-adaptive and 16-byte adaptive aligned entries;
-these budgets include the compact bin tag. The selected SRAM compiler's LEF/liberty and
-post-route OpenROAD reports are the physical authority.
-
-A previous one-record profile is not a capacity proof. The v8 model must be profiled over
-complete DSEC sequences and report per-layer high-watermarks, set conflicts, FIFO occupancy,
-class-current accumulator occupancy, cycles/bin, utilization `U`, headroom `H`, and margin
-before claiming no-DDR real-time fit.
+A previous one-record profile is not a capacity or real-time proof. The v8 model must be exercised
+over complete DSEC sequences and report event/vector occupancy, completion-token backpressure,
+cycles/bin, utilization `U`, headroom `H`, and activity-annotated energy before claiming sustained
+operation.
 
 ### Active native SystemVerilog RTL blocks
 
-- `asic/rtl/convolution_plif_actor.sv`: integrated static-kernel scatter and actor-local PLIF population;
-- `asic/rtl/presynaptic_tap_array.sv`: parallel presynaptic tap scatter for one kernel plane;
-- `asic/rtl/asynchronous_plif_actor.sv`: actor-local current/membrane/tag arrays, first-touch commits, and output backpressure;
-- `asic/rtl/plif_update.sv`: learned-beta lazy PLIF with subtractive reset;
-- `asic/rtl/peer_membrane_inhibition.sv`: retinotopic RMS-energy decrement for non-spiking peers;
-- `asic/rtl/triangular_threshold_adaptation.sv`: per-neuron learned-amplitude inverted-V threshold state;
-- `asic/rtl/class_current_update.sv`: signed class-current accumulation and prediction flush;
-- `asic/rtl/class_argmax.sv`: first-index-tie signed argmax matching PyTorch behavior;
-- `asic/rtl/event_fork2.sv`: lossless two-way multicast for events and completion tokens;
-- `asic/rtl/event_join2.sv`: multiplicity-preserving two-input merge with same-bin completion rendezvous;
-- `asic/rtl/binary_event_union2.sv`: correctness-reference residual binary-OR/dedup merge with same-bin completion rendezvous.
-- `asic/rtl/event_channel_offset.sv`: fixed compile-time channel-ID remap for concatenation routes;
-- `asic/rtl/event_upsample2x.sv`: nearest-neighbor 2x event-address expansion with one completion-token forwarding;
-- `asic/rtl/channelized_convolution_scatter.sv`: standard/grouped/depthwise input-to-output-channel projection using PyTorch Conv2d weight order.
-- `asic/rtl/channelized_convolution_plif_actor.sv`: channel-aware scatter integrated with canonical `(channel,y,x)` local state and per-channel beta/threshold tables.
-- `asic/rtl/streaming_channelized_plif_actor.sv`: unified packed spike/completion-token interface used by generated graph wiring;
-- `asic/rtl/plif_leak_charge.sv`: lazy learned-beta leak/current phase for grouped mechanism commits;
-- `asic/rtl/retinotopic_mechanism_update.sv`: summed triangular-threshold and shared-RMS peer-inhibition commit across all channels at one location;
-- `asic/rtl/retinotopic_asynchronous_plif_actor.sv`: touched-location grouped state engine for mechanism-enabled actors;
-- `asic/rtl/temporal_class_readout.sv`: signed non-spiking 16-to-6 temporal current accumulation and dense prediction enumeration;
-- `asic/rtl/actor_local_state_sram.sv`: behavioral/compiled-macro synchronous single-port 1RW SRAM binding boundary.
+- `asic/rtl/resident_convolution_synapses.sv`: compile-time standard/grouped/depthwise weighted
+  connectivity into one current delta per resident destination;
+- `asic/rtl/resident_plif_population.sv`: direct resident current/membrane PLIF commit;
+- `asic/rtl/resident_retinotopic_plif_population.sv`: direct resident inhibition/adaptation commit;
+- `asic/rtl/resident_channelized_plif_actor.sv`: one resident convolution/PLIF actor tile;
+- `asic/rtl/tiled_resident_channelized_plif_actor.sv`: exact receptive-halo spatial hierarchy;
+- `asic/rtl/resident_spike_vector_*.sv`: fixed vector fork, route, union, edge, and upsample
+  operations with completion-token rendezvous;
+- `asic/rtl/streaming_resident_channelized_plif_actor.sv`: vector/completion interface used by
+  generated DAG wiring;
+- `asic/rtl/resident_temporal_class_readout.sv`: resident signed non-spiking 16-to-6 temporal
+  current accumulation and argmax.
 
-`scripts/generate_asic_top.py` now creates the complete structural 25-actor DAG directly from
-the exported graph and ROM images. A reduced-state generated instance compiles and propagates
-completion through every branch and join into the prediction boundary. Model-scale physical
-implementation still requires binding the existing bank interfaces to characterized SRAM
-macros and measuring full-sequence native activity, latency, and energy. The SRAM-integrated
-real-checkpoint reduced-geometry full-DAG equivalence replay passes; it is not a native PPA
-result.
+The scalar scatter, banked, and SRAM blocks remain tracked only as historical/equivalence
+references. They are not the active physical implementation or PPA target.
+
+`scripts/generate_asic_top.py` creates the complete structural 25-actor DAG directly from
+the exported graph and compile-time constants. A reduced-state generated instance compiles and
+propagates completion through every branch and join into the prediction boundary. Model-scale
+physical implementation still requires full resident-graph elaboration, routing, and
+activity-annotated DSEC measurement. Historical SRAM-integrated reduced-geometry replay remains
+an equivalence reference, not a native PPA result.
 
 The 16->6 readout is not a spiking layer. Final hidden spikes trigger signed readout
 weight additions at the same `(y,x)`. Class currents accumulate across the configured
@@ -739,8 +704,8 @@ state continues across predictions until a sequence/gap reset.
 - There is no v8 selector, attention rendezvous, projected bridge, or class-spike counter.
 - The readout requires signed current accumulation and per-pixel 6-way argmax; common
   positive readout scaling may be skipped for class selection.
-- Persistent state is actor-local banked SRAM. The simulation branch is behavioral; full-scale
-  implementation selects the generated top's macro switch and requires characterized macros.
+- Persistent state is actor-local direct current/membrane/adaptation registers or latches; full-scale
+  implementation must route and clock the complete resident state inventory.
 - Verification compares float -> integer -> RTL at layer currents, membrane/adaptation
   trajectories, emitted hidden spikes, final signed class-current accumulators, and argmax.
 

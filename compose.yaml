@@ -121,8 +121,8 @@ services:
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2", "--data-workers", "8",
        "--internal-updates", "10", "--sequential-chunks", "2",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
-       "--resume-max-lr"," 0.00005", "--checkpoint-every", "1",
-       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch035.pt",
+       "--resume-max-lr"," 0.0001", "--checkpoint-every", "1",
+       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch056.pt",
        "--checkpoint-dir", "artifacts/checkpointsV4/dsec_6class"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.

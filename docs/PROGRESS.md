@@ -383,7 +383,7 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 
 ## 2026-08-31 — Epoch-35 provenance, memory contract, and full-DAG replay
 
-- verified that the active checkpoint is epoch 35/seed 17 and exactly matches the epoch-35
+- verified that the then-active checkpoint was epoch 35/seed 17 and exactly matched the epoch-35
   tensor state, then regenerated all weights, neuron parameters, and the structural top;
 - quarantined the two remaining epoch-19 replay directories so they cannot be reported as
   evidence for the current checkpoint;
@@ -539,3 +539,392 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - added the external-SRAM actor branch to the normal Icarus and representative Yosys gates;
 - post-CTS timing repair remains skipped only for the documented Apple-silicon amd64-emulation
   `SIGILL`; native-x86 rerun with repair enabled is still required before publication.
+
+## 2026-09-01 — Native real-event full-DAG short-interval execution
+
+- rebuilt the CPU-only ASIC image with the declared HDF5 compression plugin and read the supplied
+  `zurich_city_13_a/events.h5` directly; no CUDA training image is involved;
+- executed the first complete 5 ms interval through all 25 checkpoint-exported actors at native
+  440x640 geometry, retaining event multiplicity and actor-local state while disabling only the
+  enormous diagnostic row trace;
+- the raw file contains 42,764 indexed events in the first 5 ms; the unrectified native crop keeps
+  41,839, so this is a sample-only activity run until the matching DSEC rectification map is added;
+- regenerated all ASIC weights, parameters, memory manifest, and the 25-actor top after a
+  provenance guard detected that the current checkpoint is epoch 40/seed 17 strategy v12 rather
+  than the previous epoch-35 export; profiling now refuses any such mismatch;
+- the corrected bit-exact run completed in 349.53 host seconds, performed 138,562,457 synaptic
+  additions, emitted 646,175 actor spikes, and ended with 5,869,959 live actor-state entries;
+- `final_fuse.standard` is the present single-lane RTL bottleneck: 88,597,529 additions,
+  1,401,431 touched destinations, and 275,576 spikes imply a conservative 277,279,611-cycle
+  actor-service floor;
+- using the routed SKY130 actor tile's non-full-chip nominal 97.31 MHz only as a clock reference,
+  that floor is 2.849 s per 5 ms bin (at least 569.9x over deadline) and requires at least 570
+  ideal conflict-free lanes/banks before routing and SRAM conflicts;
+- this is full-model native functional activity plus an RTL-FSM lower bound, not a cycle-accurate
+  full-native RTL run or a routed full-chip power/latency result. Activity-based power remains open.
+
+## 2026-09-01 — Banked actor implementation resume point
+
+- keep the 25 permanent actor DAG and exact bin-completion semantics; the performance defect is
+  intra-actor serialization, not runtime layer reconfiguration;
+- retain `asynchronous_plif_actor.sv` as the one-lane oracle and implement an ordinary-actor bank
+  wrapper first, with `global_destination % lane_count` routing and disjoint local SRAM/queue state;
+- required wrapper behavior: selected-lane input backpressure, global/local address conversion,
+  fair spike merge, one same-tag completion only after every lane completes, error aggregation, and
+  all-lane initialization gating;
+- after ordinary-lane equivalence, replace the single-output convolution scatter bottleneck with
+  parallel contribution streams, then bank retinotopic mechanism actors by spatial address so all
+  channels at one location remain atomic;
+- verification gates are one-lane equivalence, collision/no-loss tests, independent-bank overlap,
+  completion rendezvous, randomized integer-oracle comparison, synthesis, and native workload lane
+  sizing. Do not claim the ideal 570-lane floor as an implemented result.
+
+### Completed ordinary-actor banking stage
+
+- regenerated the reduced smoke and 160-event profiles from the epoch-40/seed-17 strategy-v12
+  export; the reduced full-DAG RTL replay passes exact output plus 1,540 current, 1,542 membrane,
+  five spike, and adaptation trace comparisons in 12,178 steady-state cycles;
+- added `banked_asynchronous_plif_actor.sv`, which interleaves global destinations across disjoint
+  local state/queue SRAMs and never duplicates a membrane/current entry;
+- added global-stride/offset parameter lookup to the retained single-lane actor so an interleaved
+  local row still selects the correct global output-channel beta and threshold;
+- implemented selected-bank input backpressure, local/global address conversion, deterministic
+  spike merge, all-lane completion/tag rendezvous, initialization gating, and fault aggregation;
+- integrated ordinary banking beneath `channelized_convolution_plif_actor` and
+  `streaming_channelized_plif_actor` with `STATE_LANE_COUNT=1` as the equivalence-preserving default;
+- four lanes accept eight round-robin-bank contributions on eight consecutive clocks; same-bank
+  accesses correctly backpressure, and global-channel parameter/spike-address tests pass;
+- all 25 component cocotb groups pass after integration. The next resume point is parallel
+  convolution scatter: the current scalar contribution output still caps the actor at one addition
+  per clock even when state banks are available.
+
+### Completed parallel scatter and mechanism-aware actor banking
+
+- added a vector convolution scatter that emits at most one ordered contribution per
+  channel-by-spatial bank each clock and retains the remaining projection bitmap under
+  backpressure; per-bank projection order matches the scalar reference so signed saturation
+  behavior is unchanged;
+- added the end-to-end ordinary parallel actor with disjoint state/queue memories and verified
+  simultaneous contributions to different channel/spatial banks, state retention across bins,
+  global coordinate reconstruction, and completion rendezvous;
+- added spatially interleaved retinotopic banks. Every lane owns all channels for its pixels, so
+  inhibition and threshold adaptation remain atomic across peer channels while different pixels
+  execute independently;
+- integrated both ordinary and mechanism-enabled parallel actors beneath the unified stream
+  interface. Reference, four-bank ordinary, and two-bank inhibited stream configurations pass;
+- corrected the stream testbench to hold a completion packet until the completion-specific ready
+  signal accepts it; the former zero-latency assumption could drop a token while parallel scatter
+  work was draining;
+- the next resume point is full-DAG generation: export per-actor lane factors, instantiate the
+  parallel stream paths in the generated 25-actor top, then derive conflict-aware lane sizing from
+  the native epoch-40 activity rather than presenting the 570 ideal floor as implemented latency.
+
+### Completed native conflict-aware lane sizing
+
+- extended the full-DAG generator with an external per-actor lane manifest and emitted explicit
+  parallel-state, channel-lane, and spatial-lane parameters for all 25 actors; generated RTL embeds
+  the exact manifest SHA-256;
+- added low-memory bank counters to the integer DAG reference. They count all additions, touched
+  entries, and spikes by the same modulo mapping used in RTL without retaining a 138-million-row
+  contribution trace;
+- require per-bank counts to conserve the aggregate actor totals before accepting a service result,
+  and added a synthetic imbalance regression;
+- iterated the one-bin native profile against actual modulo-bank imbalance. The final manifest owns
+  1,718 independent actor lanes; ordinary actors split channel and spatial dimensions, while the 15
+  mechanism actors split only spatial locations;
+- the final exact activity totals remain 138,562,457 additions, 646,175 actor spikes, and 5,869,959
+  live sparse state entries. Manifest, profile, and generated top share SHA-256
+  `8ff8673edbe91a72142aaa95f6b91d530808013110f662700fcb3a92ff6c0519`;
+- the busiest configured bank is `enc2_extra.depthwise` at a 388,589-cycle service floor, 3.993 ms
+  at the isolated tile's 97.31 MHz reference, and `U=0.79866`; both the hard `U<=1` and engineering
+  `U<=0.8` service-floor gates pass for this sample;
+- do not report this as end-to-end latency or power. Next resume point: add generated-top FIFO depth
+  sizing and a tractable cycle-accurate critical-path/full-DAG validation, then bind the 1,718 bank
+  interfaces to scale-suitable characterized SRAM macros before full-chip PPA.
+
+### Completed lossless elastic DAG-edge buffering
+
+- added `event_stream_fifo.sv`, a synthesizable ordered ready/valid queue for the unified payload,
+  completion flag, and bin tag; full queues backpressure and never discard or reorder packets;
+- inserted a configurable FIFO on every non-prediction edge generated for the exact 25-actor DAG,
+  breaking direct combinational ready chains while guaranteeing completion stays behind its bin's
+  spikes;
+- verified full/backpressure behavior and ordered spike/token drain in cocotb, and compiled plus
+  token-simulated the complete reduced generated DAG with all edge FIFOs present;
+- added per-edge occupancy/high-watermark registers and reran the epoch-40 reduced 8x8 replay. It
+  remains bit-exact for all current, membrane, spike, and adaptation traces and completes in 12,186
+  cycles; the FIFO insertion adds eight cycles relative to the 12,178-cycle unbuffered replay;
+- 17 of 53 edges reach the depth-two default on that fixture, so none of those edges may be reduced
+  to depth one from current evidence. Full queues can pop and accept a replacement in one clock;
+- the default depth is still a reduced-fixture timing choice, not a native occupancy claim. Next
+  resume point: obtain native cycle traffic or a calibrated event-level schedule before selecting
+  deeper per-edge buffers or reporting end-to-end latency.
+
+### Completed completion-token latency-floor sizing
+
+- split each configured bank's service estimate into collection and post-token PLIF-commit terms;
+  because a downstream actor cannot commit before all required same-bin tokens arrive, a
+  topological longest-path sum of commit terms is a strict response-latency floor;
+- the 1,718-lane throughput configuration fails that test at 1,050,545 cycles, 10.796 ms at the
+  isolated 97.31 MHz tile reference, or 2.159 times the 5 ms deadline. This corrects the possible
+  misreading of its 3.993 ms busiest-bank service interval as end-to-end latency;
+- added `plan_asic_latency_lanes.py`, which adds spatial banks using observed commit imbalance and
+  an explicit safety factor. Its output is labelled a candidate and cannot become a measurement
+  until the exact native event profile is rerun;
+- exact reprofiling accepted a 1,966-lane mapping. It leaves the `final_fuse.standard` service
+  bottleneck at 384,334 cycles (3.950 ms, `U=0.78992`) and reduces the commit-only critical path to
+  349,094 cycles (3.587 ms, `U=0.71749`), passing both 5 ms and 80% floor gates on this sample;
+- the accepted manifest/profile/generated-top SHA-256 is
+  `172121ae49208c034d95314ab65b1cf6cb1975f7a7166d78f558f830f6ff003d`; the prior 1,718-lane
+  manifest is retained locally as the throughput-only baseline;
+- post-change verification passes: lint, 94 Python tests, 32 cocotb RTL groups, representative
+  Yosys synthesis, and the previously completed bit-exact FIFO-buffered replay;
+- this remains a lower bound, not measured end-to-end latency. Next resume point: account for
+  native edge traffic, FIFO/backpressure, route/join/readout cycles, then characterize the
+  1,966-bank SRAM organization and run full-chip physical PPA.
+
+### Completed native edge-volume gate
+
+- derived every edge's exact one-bin data volume from actor outputs and route semantics, validating
+  each actor input count against its incoming graph stream; the generated graph has 53 FIFO edges;
+- the busiest edge is `final.concat -> final_fuse.standard` with 657,634 data events plus one
+  completion token. A scalar link therefore has a 657,635-cycle serialization floor: 6.758 ms and
+  `U=1.35163` at 97.31 MHz, failing both hard and 80% gates;
+- the minimum volume-only width is two packets per clock at 97.31 MHz. Occupancy is still unknown
+  because volume alone has no arrival/departure timing and is not used to resize the FIFOs;
+- removed the avoidable empty cycle between parallel-scatter inputs: when every pending projection
+  handshakes, the next presynaptic spike can replace it on the same rising edge; focused RTL
+  back-to-back acceptance passes;
+- next resume point: either implement and verify a two-packet hot-path interface or demonstrate a
+  routed full-chip clock of at least 164.41 MHz for the scalar volume/80% gate, then run a timed
+  native backpressure model. The current 97.31 MHz result cannot support a real-time claim.
+
+### Completed 200 MHz lane-cost refinement
+
+- evaluated the existing architectural 200 MHz target, whose 800,000-cycle 80% budget allows the
+  scalar hot edge to pass without adding a second packet network;
+- rejected the first 917-lane candidate after exact reprofiling: `stem` reached 1,176,798 cycles
+  and the commit chain reached 897,040 cycles, demonstrating that ideal/projection sizing was
+  insufficient;
+- fed those measured conflicts into a second exact iteration. The 924-lane result passes the three
+  independent floors: busiest bank 781,772 cycles (`U=0.78177`), completion-token commit path
+  737,691 cycles (`U=0.73769`), and scalar edge 657,635 cycles (`U=0.65764`);
+- promoted the 924-lane mapping to the generated full top and preserved the 1,966-lane 97.31 MHz
+  mapping locally. Manifest, exact profile, and top share SHA-256
+  `81f8381ec225b82d5f03965e5a9415bb7e07b1126a4072497906f4037860f257`;
+- this promotion is a target configuration, not a full-chip latency claim. Next resume point:
+  timed scatter/bank/FIFO backpressure analysis and full-chip 200 MHz physical closure with
+  scale-suitable SRAM macros; failure of either requires wider links or more lanes.
+
+### Event-order collection timing rejected the spatial-only mechanism datapath
+
+- instrumented exact event order, same-cycle scatter replacement, ordinary three-cycle bank
+  cadence, mechanism five-cycle cadence plus first-spatial-touch write, and completion admission
+  only after every bank returns to collect;
+- the promoted 924-lane mapping fails before inter-actor FIFOs are considered. `down2.standard`
+  requires 40,097,168 collection cycles and 40,107,810 cycles including its busiest commit bank
+  (200.539 ms at 200 MHz); `stem` needs 6,593,614 total isolated cycles;
+- `final_fuse.standard` also rises from its bank-count floor to 1,875,150 isolated cycles because a
+  single pending-event bitmap stalls all otherwise independent banks when any destination bank is
+  busy;
+- the mechanism failure is structural: spatial-only contribution ports serialize all output
+  channels that target the same pixel. More spatial modulo banks cannot fix this same-pixel
+  serialization;
+- next resume point: separate mechanism accumulation banking from mechanism commit atomicity.
+  Channel-by-spatial current/state ports must collect independently, then one spatial coordinator
+  must read peer channels, apply inhibition/adaptation atomically, and write them together. Ordinary
+  actors also need multiple pending scatter contexts or per-bank projection queues.
+
+### Ordinary actor scatter decoupling in progress
+
+- added an ordered depth-four contribution FIFO between each ordinary scatter output and its
+  destination state bank; each queue stores destination channel/coordinate and signed weight;
+- full queues backpressure only their corresponding scatter bank, simultaneous pop/push has no
+  bubble, and completion cannot enter until the scatter plus every contribution FIFO is empty;
+- integrated tests accept four consecutive presynaptic events while the three-cycle accumulator
+  banks are busy, then prove the expected spikes and clean completion with no routing fault;
+- this is a functional decoupling step, not a new native timing result. FIFO depth and ordinary
+  actor timing must be reprofiled after the mechanism channel-by-spatial collection path exists.
+
+### Register-resident PLIF replacement started
+
+- added `resident_plif_population.sv`: every logical ordinary neuron owns local current and
+  membrane state elements, parallel contribution lanes accumulate directly into those elements,
+  and one completion edge updates the whole population in parallel;
+- the resident primitive has no state-memory request/response interface, touched queue, scrub pass,
+  or last-bin tag. Applying one beta update to every neuron on every 5 ms completion is numerically
+  equivalent to lazy elapsed-bin leakage while state remains continuously resident;
+- a four-neuron/two-channel test accepts two different destination contributions in one clock and
+  produces the exact two-neuron spike bitmap on the following completion transaction;
+- Icarus and Yosys pass; Yosys explicitly reports the current and membrane arrays replaced by
+  registers, confirming that this primitive does not infer SRAM. Full regression now contains 33
+  RTL groups;
+- next resume point: create the resident retinotopic population with per-channel current/membrane/
+  adaptation state, parallel peer-channel inhibition/adaptation at completion, then replace the
+  generated actor stream with direct spike bitmaps and remove superseded SRAM actor paths.
+
+### Direct resident actor datapath implemented
+
+- added `resident_retinotopic_plif_population.sv`; every mechanism-enabled PLIF now owns
+  resident current, membrane, adaptation-age, and adaptation-amplitude state, while each
+  spatial peer group performs its inhibition/adaptation commit atomically and in parallel;
+- added `resident_convolution_synapses.sv`; a binary presynaptic spike bitmap gates the
+  compile-time int8 convolution weights and forms the complete postsynaptic current-delta
+  vector without weight-ROM or state-memory transactions;
+- added `resident_channelized_plif_actor.sv` to bind the static synapse fabric to either the
+  ordinary or mechanism-enabled resident population. Repeated bitmap transactions preserve
+  event multiplicity, and the completion token commits the resident population;
+- focused cocotb verification covers direct grouped convolution, simultaneous peer-channel
+  accumulation, inhibition/adaptation, and an end-to-end resident actor transaction;
+- next resume point: change the generated 25-actor graph and its join/fanout representation
+  from scalar event streams to resident spike-vector transactions, then establish full-model
+  elaboration feasibility before removing the superseded SRAM actors.
+
+### Resident graph routing and readout primitives implemented
+
+- added `streaming_resident_channelized_plif_actor.sv`, which accepts one or more spike-vector
+  pulses followed by a completion token and emits one result vector followed by the matching
+  completion token;
+- added `resident_event_ingress_adapter.sv`; every raw `(channel,y,x)` event becomes a one-hot
+  pulse transaction, so timestamp order and repeated-event multiplicity are preserved without
+  constructing or preloading a 5 ms input bin;
+- added bitmap-native channel-offset, nearest-neighbor 2x upsample, and binary residual-OR
+  blocks. The residual block rendezvous-checks bin tags and emits coincident spikes once;
+- added a storage-free two-way vector fork that retains only branch-acceptance bits while the
+  source holds its vector stable, avoiding a duplicate feature-map register bank at fanout;
+- added `resident_temporal_class_readout.sv`; signed class currents are local resident elements
+  over the prediction window and first-index-tie argmax enumerates the semantic map;
+- updated `docs/AGENTS.md`, which still mandated the superseded SRAM/tag design, to match the
+  higher-priority resident-state project specification;
+- next resume point: make resident bitmap generation the default path in
+  `scripts/generate_asic_top.py`, infer every intermediate vector shape from the exported graph,
+  compile the complete 25-actor reduced fixture, then attempt native checkpoint elaboration.
+
+### Resident 25-actor generator completed; native elaboration exceeded 8 GB
+
+- `scripts/generate_asic_top.py` now defaults to the resident architecture and infers every
+  actor/route channel-height-width vector shape from the exported non-linear graph. The old path
+  remains available only as `--architecture legacy_sram` for replay/equivalence history;
+- the geometry-preserving reduced fixture generates and compiles all 25 resident actors, nine
+  bitmap residual unions, three bitmap upsamplers, both concats, the multiplicity join, and the
+  resident temporal readout. Icarus event simulation of even that fully parallel graph is too
+  slow for the normal gate, so behavior remains covered by bounded primitive/actor cocotb tests;
+- generated the checkpoint-authoritative native top at
+  `artifacts/ASIC/eventspikeseg140k_resident_dag_top.sv` (ignored, 387,139 bytes), containing all
+  25 actors and 143,824 exported int8 synaptic weights;
+- native Icarus elaboration under the configured 8 GB Docker limit was killed with exit 137 after
+  roughly 79 seconds. No native simulation began, so this produces no latency or power result;
+- next resume point: introduce a spatially tiled hierarchical resident implementation and
+  characterize one exact tile per actor configuration. State remains register/latch-local to each
+  PLIF; tiling may reduce tool object expansion but cannot erase the 1.59-billion resident state
+  bits or guarantee that full-chip synthesis will fit in 8 GB.
+
+### Register-resident spatial tile boundary established
+
+- added output-tile coordinates and dimensions to the resident convolution, direct actor, and
+  streaming actor. A tile evaluates the original global convolution coordinates but instantiates
+  state only for the PLIFs physically owned by that tile;
+- actor-level cocotb proves that a tile covering global x=2..3 responds to those source
+  coordinates and returns its two local PLIF results;
+- changed the vector-to-completion edge to retain only one phase bit. The producer holds its result
+  bitmap and tag stable through the data and completion handshakes, avoiding a second wide register;
+- added `scripts/plan_asic_resident_tiles.py`. The checkpoint export's nominal 8x8 plan contains
+  20,410 tiles and conserves all 30,976,000 PLIFs. Resident state is 1,590,476,800 bits
+  (198,809,600 byte-equivalent): 24-bit current plus 16-bit membrane for every PLIF, plus 16-bit
+  adaptation age and 16-bit adaptation amplitude where enabled;
+- the 25 PLIF actors own 143,728 int8 convolution weights; the remaining 96 of the model's 143,824
+  weights belong to the temporal readout. The derived ignored manifest is
+  `artifacts/ASIC/resident_tile_plan_8x8.json`;
+- next resume point: add a lockstep tile-array wrapper and compile a reduced multi-tile actor, then
+  synthesize representative exact 8x8 actor tiles. Scaled tile PPA remains an estimate, not a
+  substitute for full-chip placement and routing.
+
+### Resident tile hierarchy integrated; emulated PPA front-end bounded
+
+- added `tiled_resident_channelized_plif_actor.sv`. Every child tile accepts input and completion
+  atomically with its peers, retains its own state, and contributes its local bitmap back to the
+  actor's global channel-major output. A two-tile test proves one event/completion/result transaction;
+- the streaming resident actor now defaults to explicit 8x8 spatial children, and the native
+  checkpoint top was regenerated with the tile dimensions embedded for all 25 actors;
+- added a PPA-top generator that uses the real checkpoint weights, beta, and threshold. This avoids
+  the invalid zero-weight optimization that would otherwise erase the synapse fabric;
+- bounded ASAP7 attempts under amd64 emulation did not reach routing: the 8x8 `detail_stem` tile was
+  stopped after more than ten minutes in Yosys canonicalization; the 4x4 tile canonicalized in 58 s
+  at 329 MiB peak but was stopped after more than twenty minutes in technology-map optimization.
+  Both exited 137 because their disposable containers were deliberately stopped, not because the
+  8 GB limit was exhausted. Neither attempt provides latency, area, or power;
+- next resume point: route a checkpoint-exact 2x2 characterization unit, then use its result only as
+  a standard-cell scaling datum while improving the structural synapse/leak elaboration.
+
+### Checkpoint-exact 2x2 resident unit routed with a slew-cleanup failure
+
+- disabled optional ASAP7 full-adder extraction for this characterization flow; under x86
+  emulation it dominated runtime without changing the RTL state or arithmetic contract;
+- Yosys mapped the 32-PLIF `detail_stem` unit with its 144 trained int8 weights. Synthesis took
+  271 s and peaked at 1,456 MiB; detailed routing completed and peaked at 7,568 MiB;
+- the routed unit contains 1,337 sequential cells and 56,841 multi-input combinational cells.
+  Final standard-cell instance area is 7,247.19 um^2 in a 21,139.7 um^2 core (34% utilization);
+- setup/hold, max capacitance, max fanout, global congestion, detailed-route DRC, power connectivity,
+  and GDS orphan-cell checks pass. Reported internal fmax is 772.241 MHz;
+- final validation still fails on 68 internal max-slew endpoints: 321.65--360.29 ps against the
+  320 ps limit. The completed run also used the previously copied SDC with stale input names, so
+  timing is not accepted for publication;
+- vectorless power is 30.9699 mW at 0.77 V and 200 MHz, with 0.003579 V (0.46%) worst VDD drop.
+  This is preliminary default-toggle tile power, not DSEC activity-based power and not full-chip
+  power. The next run uses the resident-port SDC and corrected integer-percentage slew repair.
+
+### Checkpoint-exact 2x2 resident unit reaches clean routed sign-off checks
+
+- the resident-specific SDC rerun reduced but did not eliminate extracted max-slew failures:
+  1.2% repair margin left 27 violations and 20% left 8. OpenROAD's `SLEW_MARGIN` is an integer
+  percentage, not a multiplier;
+- the accepted run uses a conservative 50% pre-route slew margin. Placement repair resized 140
+  cells and inserted 175 buffers; global-route repair resized 2 more cells and inserted 117 more
+  buffers. Final standard-cell area is 7,311.29 um^2 in the unchanged 21,139.7 um^2 core
+  (34.59% utilization);
+- extracted setup and hold violation counts are zero, max-slew/max-capacitance/max-fanout counts
+  are all zero, and worst slew has 90.03 ps positive margin against the 320 ps ASAP7 limit.
+  Detailed-route DRC is empty, global congestion is zero, both power nets are connected, and GDS
+  merging reports neither missing nor orphan cells;
+- reported internal fmax is 639.636 MHz. Default vectorless power is 30.9607 mW at 0.77 V and
+  200 MHz; worst VDD drop is 4.453 mV (0.58%). These are clean physical-characterization results
+  for one checkpoint-exact 2x2/32-PLIF `detail_stem` unit, not full-model latency or power and not
+  DSEC activity-based energy;
+- next resume point: replace full-layer bitmap broadcast at the production tile wrapper with each
+  tile's exact convolution receptive halo, verify global-to-local coordinate equivalence, and then
+  characterize the reduced inter-tile fanout. Full-chip PPA remains blocked by native scale.
+
+### Production resident tiles use exact receptive halos
+
+- replaced full-input bitmap replication at `tiled_resident_channelized_plif_actor` with a
+  compile-time clamped receptive rectangle for every output tile. The synapse fabric subtracts the
+  halo origin after applying the checkpoint's global stride, padding, and dilation geometry;
+- the local bitmap contains input spike bits only. Every tile still owns exactly its original
+  output PLIF current, membrane, and optional adaptation registers, so the change adds neither
+  runtime state addressing nor duplicated PLIF state;
+- a cross-tile 3x3 cocotb case proves that the second output tile receives an input pixel from the
+  neighboring receptive border and produces the same three global outputs as untiled convolution.
+  The focused tests, all 47 cocotb groups, 96 Python tests, Verilator lint, and compilation of all
+  40 SystemVerilog tops pass;
+- the checkpoint-derived 8x8 plan now counts 51,871,626 tile-input bit endpoints versus
+  73,444,096,000 endpoints for replicating every complete actor input bitmap to every tile: a
+  99.929% logical endpoint reduction. This is a static wiring/fanout inventory, not routed wire
+  length, capacitance, power, or full-chip PPA;
+- next resume point: synthesize a representative boundary-aware multi-tile wrapper and compare its
+  net fanout/area against the isolated interior unit. Full native graph simulation and PPA remain
+  blocked by the 8 GB elaboration boundary and physical model scale.
+
+### Checkpoint-exact two-tile synthesis gate added
+
+- extended the resident physical-design top generator with explicit tile rows/columns. Its default
+  remains the accepted isolated interior unit; multi-tile mode keeps the actor's real padding and
+  stride and instantiates the production receptive-halo wrapper;
+- generated and synthesized a two-column `detail_stem` top containing all 144 trained int8 weights,
+  64 resident PLIFs, and two 2x2 child tiles. Yosys `proc`, memory lowering, optimization, and
+  structural `check` complete successfully;
+- the first synthesis exposed an unintended latch on the procedural tag-check loop index. The index
+  is now assigned on every combinational path; the same synthesis and tiled cocotb regression pass.
+  A small tiled-wrapper case is included in `check_synthesis.sh` so this class of issue is gated;
+- next resume point: produce a separate OpenROAD configuration for the two-tile boundary top and
+  obtain routed fanout/area/timing data. Keep it distinct from the accepted single-unit result and
+  do not extrapolate either result to full-chip power or latency.

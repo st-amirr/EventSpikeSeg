@@ -9,30 +9,45 @@ timing, and power analysis.
 
 - `asap7` is the primary open, reproducible **research PPA** platform. It is a predictive
   7 nm FinFET platform, not a manufacturable foundry PDK and not tapeout signoff.
-- `sky130hd` plus the bundled `sky130ram` OpenRAM views is the open, manufacturable
-  **tile/test-chip** check. The reduced actor tile is now placed and routed with two
-  characterized 80x64 macros. SKY130 is not dense enough for the complete
-  native-resolution state on one economical die.
-- A complete manufacturable EventSpikeSeg chip requires an accessible 22/28 nm-or-better
-  foundry PDK plus characterized high-density SRAM macros. That target cannot be called
-  selected or power-signoff-ready until those libraries are available.
+- `sky130hd` plus the bundled `sky130ram` OpenRAM views records the superseded addressed-SRAM
+  **tile/test-chip** experiment. It is retained for article evidence, not as the final actor.
+- The final target is a standard-cell/latch resident-state ASIC on an accessible 22 nm-or-better
+  foundry PDK. That target cannot be called selected or power-signoff-ready until the complete
+  resident graph is elaborated, placed, timed, and measured in an appropriate library.
 
 The distinction matters because 143,824 int8 synaptic weights consume only about
-0.137 MiB, while the frozen 440x640 graph has 30,976,000 logical membranes. Persistent
-int16 membrane, adaptation fields, and 24-bit lazy-update tags require 189.60 MiB. Exact
-same-bin collection additionally requires 88.62 MiB of 24-bit current and 3.69 MiB of
-touched flags when implemented as direct-index storage, for 281.92 MiB excluding the
-touched-address queues. Standard-cell flip-flops are not an acceptable full-chip memory
-implementation. A smaller profiled sparse collection FIFO is valid only with an explicit
-capacity, overflow behavior, and representative event-stream occupancy evidence.
-The current full-depth, no-overflow RTL upper bound is 338.07 MiB excluding weight ROM;
-it also includes touched queues, retinotopic markers, temporal scores, and default residual
-buffers.
+0.137 MiB, while the frozen 440x640 graph has 30,976,000 logical PLIF states. The selected
+direct-state design allocates 59.08 MiB-equivalent of int16 membrane elements, 88.62 MiB-
+equivalent of int24 current elements, and 41.89 MiB-equivalent of adaptation state: 189.60 MiB-
+equivalent of logical resident state. These are distributed registers/latches local to the PLIFs,
+not a byte-addressed memory capacity or an SRAM-fetch design. The elimination of reads, writes,
+tags, touched queues, and scrub cycles is intentional; the resulting physical area, clock-tree
+load, combinational depth, and switching power remain an open full-chip implementation result.
 
 ## Current synthesis boundary
 
-`convolution_plif_actor.sv` is the one-plane reference actor. The channelized and streaming
-actors extend it to exported per-channel parameters and packed ready/valid traffic.
+`resident_channelized_plif_actor.sv` is the active replacement actor. Its
+`resident_convolution_synapses.sv` fabric gates compile-time int8 weights with a presynaptic
+spike bitmap and produces every postsynaptic current delta in parallel. Ordinary PLIFs use
+`resident_plif_population.sv`; layers with peer inhibition or threshold adaptation use
+`resident_retinotopic_plif_population.sv`. Every logical PLIF owns its current, membrane, and
+enabled adaptation elements for the life of the sequence. There is no addressed state fetch.
+
+`scripts/plan_asic_resident_tiles.py` partitions each actor spatially while preserving global
+convolution coordinates and the exact PLIF count:
+
+```bash
+python scripts/plan_asic_resident_tiles.py \
+  artifacts/ASIC/model_spec.yaml \
+  artifacts/ASIC/resident_tile_plan_8x8.json \
+  --tile-width 8 --tile-height 8
+```
+
+The derived output remains under the wholly ignored `artifacts/` tree. Tiling is a physical and
+elaboration hierarchy only; it does not introduce runtime state loads or reduce total state.
+
+The older `convolution_plif_actor.sv` and channelized/streaming actors remain temporarily as
+equivalence references while the generated full graph is migrated.
 EventSpikeSeg140k v8 contains 25 permanent PLIF actors connected as a fixed DAG with
 input/detail-semantic forks, residual binary-OR joins, `x1`/`x2` skip fanout, decoder
 upsample/concat, multiplicity-preserving `project2+x1`, and late semantic/detail concat.
@@ -47,14 +62,12 @@ OR/dedup join. The generated top instantiates these routes around all 25 actors.
 `event_upsample2x.sv` expands a spike into four nearest-neighbor addresses, and
 `channelized_convolution_scatter.sv` expands one input spike across legal standard, grouped,
 or depthwise output-channel/tap projections using exported PyTorch Conv2d weight order.
-`channelized_convolution_plif_actor.sv` now joins that scatter to canonical local
-`(output_channel,y,x)` membrane/current/tag state and selects compile-time per-channel beta
-and threshold tables. The exporter emits matching 16-bit beta and threshold ROM images for
-each actor. `scripts/generate_asic_top.py` performs model-scale instantiation and wiring.
-`scripts/generate_sram_manifest.py` derives every actor depth, record width, logical bank
-count, persistent/transient total, and worst-case touched-queue bound from that same export.
+The exporter emits matching fixed int8 synapses and 16-bit beta/threshold constants for each
+actor. `scripts/generate_asic_top.py` now defaults to the resident bitmap graph; pass
+`--architecture legacy_sram` only for the prior exact scalar replay reference.
 
-`scripts/generate_asic_top.py` now consumes an exported `model_spec.yaml` and emits the exact
+Historical addressed-SRAM reference: the generator's `legacy_sram` mode consumes an exported
+`model_spec.yaml` and emits the exact
 25-actor structural top with fixed ROM constants and all routing primitives. The generated
 miniature-state regression exercises the complete completion-token DAG. Mechanism-enabled
 actors use grouped retinotopic commits; the final readout accumulates signed class currents
@@ -71,16 +84,13 @@ The generated top-level `USE_STATE_MACRO` parameter propagates to all 25 actors,
 residual unions, and the temporal readout; leave it at `0` for simulation and set it to `1`
 only when `eventspikeseg_1rw_sram_macro` is bound to a compatible characterized macro.
 
-The active trained six-class v4 export is retained under
-`artifacts/ASIC`; its generated weighted top contains all 25 actors and
-exactly 143,824 int8 synaptic ROM words. The prior 11-class export is documented as
-historical and is not kept in the active artifacts tree. The active top is the executable logical reference,
-not a full-chip PPA netlist: its logical memories must not be expanded into standard cells or
-reported as a physical implementation.
+Generated exports are ignored build products under `artifacts/ASIC`; the checkpoint-authoritative
+six-class v4 export contains all 25 actors and exactly 143,824 int8 synaptic weights. The existing
+generated scalar/SRAM top is an executable logical reference, not the selected resident full-chip
+implementation and not a reportable PPA netlist.
 
-Before full-chip PPA, bind the SRAM boundary to characterized macros and size the residual
-dedup capacity from full-sequence activity without overflow. The current default residual
-capacity remains a 64-event equivalence setting, not a native-resolution bound.
+Before full-chip PPA, complete bitmap graph generation, prove exact integer equivalence, elaborate
+the native dimensions without truncation, and size any boundary/result buffering without overflow.
 
 Generate the technology-independent memory manifest from the active checkpoint export:
 
@@ -129,6 +139,72 @@ The profiler requires all 234 records from checkpoint validation sequence
 debug-only partial profile and sets `capacity_claim` false. Integer profiling establishes
 state/queue/residual activity bounds; it does not produce cycle timing or switching power.
 
+For the supplied event-only DSEC sample, run a shortest complete hardware interval with:
+
+```sh
+docker compose -f compose_ASIC.yaml run --rm test \
+  python scripts/profile_asic_dsec.py \
+  --event-file asic/DSEC_sample/zurich_city_13_a/events.h5 \
+  --duration-ms 5 \
+  --output artifacts/RTL/profile/zurich_city_13_a_native_5ms_activity.json
+```
+
+Without a matching `rectify_map.h5`, this path labels its spatial preprocessing as an unrectified
+row crop and cannot support a publication-grade spatial/activity claim. Derive the implemented
+single-lane RTL service floor from the exact actor counts with:
+
+```sh
+docker compose -f compose_ASIC.yaml run --rm test \
+  python scripts/analyze_asic_native_profile.py \
+  --profile artifacts/RTL/profile/zurich_city_13_a_native_5ms_activity.json \
+  --output artifacts/RTL/profile/zurich_city_13_a_native_5ms_rtl_bounds.json \
+  --lane-config-output artifacts/ASIC/lane_config.json
+```
+
+Regenerate the historical banked reference with that provisional manifest, then rerun the same
+event interval with exact per-bank counters:
+
+```sh
+docker compose -f compose_ASIC.yaml run --rm test \
+  python scripts/generate_asic_top.py \
+  artifacts/ASIC/model_spec.yaml artifacts/ASIC/eventspikeseg140k_dag_top.sv \
+  --architecture legacy_sram --lane-config artifacts/ASIC/lane_config.json
+
+docker compose -f compose_ASIC.yaml run --rm test \
+  python scripts/profile_asic_dsec.py \
+  --event-file asic/DSEC_sample/zurich_city_13_a/events.h5 \
+  --duration-ms 5 \
+  --lane-config artifacts/ASIC/lane_config.json \
+  --output artifacts/RTL/profile/zurich_city_13_a_native_5ms_activity.json
+```
+
+Run the analyzer once more to report the busiest configured bank and modulo-bank imbalance. These
+analyses are conservative FSM-cycle lower bounds, not cycle-accurate full-native RTL simulation,
+and they do not produce power.
+
+The analyzer also reports the longest same-bin completion-token commit path. If actor throughput
+passes but that response-latency floor fails, generate a separate candidate rather than
+overwriting the measured manifest:
+
+```sh
+docker compose -f compose_ASIC.yaml run --rm test \
+  python scripts/plan_asic_latency_lanes.py \
+  --bounds artifacts/RTL/profile/zurich_city_13_a_native_5ms_rtl_bounds.json \
+  --lane-config artifacts/ASIC/lane_config.json \
+  --model-spec artifacts/ASIC/model_spec.yaml \
+  --output artifacts/ASIC/lane_config_latency_candidate.json
+```
+
+Rerun `profile_asic_dsec.py` with the candidate and analyze that new profile. The planner's
+imbalance-adjusted value is only a sizing projection; only the exact reprofile is accepted as a
+measured service/commit floor. Preserve the old manifest as the throughput baseline when promoting
+an accepted candidate.
+
+For the 200 MHz target, pass `--clock-mhz 200` to the analyzer. The cost-reduction workflow may use
+`--start-from-service-refinement` on the planner, but each resulting modulo map must again be
+profiled exactly. The current promoted 924-lane map passes the independent service, commit-path,
+and scalar-edge floors; it still requires timed backpressure analysis and full-chip timing closure.
+
 Run with the official OpenROAD Flow Scripts Docker image (the default is
 `openroad/orfs:latest`):
 
@@ -141,6 +217,24 @@ Run the separate SKY130HD actor-tile flow with two real 80x64 OpenRAM macros:
 ```bash
 bash asic/scripts/run_orfs_sky130_sram.sh
 ```
+
+Run the checkpoint-exact resident `detail_stem` characterization unit separately:
+
+```bash
+bash asic/scripts/run_orfs_resident_tile.sh
+```
+
+This uses the trained weights and a 2x2/32-PLIF interior unit because 8x8 and 4x4 fully parallel
+standard-cell elaboration are impractically slow under the current x86-on-Apple emulation. It is a
+scaling experiment only; the production resident hierarchy remains 8x8. The accepted ASAP7 run
+uses a 50% integer slew-repair margin and passes extracted setup, hold, slew, capacitance, fanout,
+detailed-route DRC, power-connectivity, and GDS-integrity checks. Its 639.636 MHz, 7,311.29 um^2,
+and 30.9607 mW vectorless results characterize this unit only, not the full model.
+
+The production tiled wrapper uses exact compile-time receptive halos rather than sending each full
+actor input bitmap to every spatial tile. For the checkpoint-derived nominal 8x8 hierarchy this
+reduces logical tile-input endpoints from 73,444,096,000 to 51,871,626 (99.929%). This is a wiring
+inventory only; it is not a routed power, capacitance, area, or latency result.
 
 This variant uses the same 4x4 actor geometry only as a macro-integration test. It checks
 that exactly two SRAMs survive synthesis, builds an explicit met3-to-met4 macro power grid,

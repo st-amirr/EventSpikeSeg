@@ -120,6 +120,7 @@ def prepare_replay(
         replay_spec,
         output / "eventspikeseg140k_replay_top.sv",
         module_name="eventspikeseg140k_replay_top",
+        architecture="legacy_sram",
     )
 
     reference = IntegerDAGReference(replay_spec)

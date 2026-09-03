@@ -56,7 +56,13 @@ def _scalar(value: object) -> int:
 class IntegerDAGReference:
     """Execute an exported model specification using RTL-equivalent integers."""
 
-    def __init__(self, model_spec: str | Path) -> None:
+    def __init__(
+        self,
+        model_spec: str | Path,
+        *,
+        capture_trace: bool = True,
+        lane_config: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self.model_spec_path = Path(model_spec)
         self.spec = json.loads(self.model_spec_path.read_text(encoding="utf-8"))
         self.export_dir = (
@@ -94,7 +100,13 @@ class IntegerDAGReference:
             self.spec["timing_contract"]["prediction_bins_default"]
         )
         self.plif = IntegerPLIF()
+        self.capture_trace = bool(capture_trace)
         self.last_trace: dict[str, dict[str, list[tuple[int, ...]]]] = {}
+        self.last_actor_activity: dict[str, dict[str, int]] = {}
+        self.lane_config = lane_config or {}
+        self.last_actor_bank_activity: dict[str, dict[str, list[int]]] = {}
+        self._scatter_bank_contributions: dict[str, list[int]] = {}
+        self._scatter_collection_cycles: dict[str, int] = {}
         self.last_route_event_counts: dict[str, int] = {}
 
     def reset(self) -> None:
@@ -105,6 +117,10 @@ class IntegerDAGReference:
         self.class_scores.clear()
         self.prediction_bin_count = 0
         self.last_trace = {}
+        self.last_actor_activity = {}
+        self.last_actor_bank_activity = {}
+        self._scatter_bank_contributions = {}
+        self._scatter_collection_cycles = {}
         self.last_route_event_counts = {}
 
     @staticmethod
@@ -139,7 +155,7 @@ class IntegerDAGReference:
 
     def _scatter(
         self, name: str, events: list[SpikeEvent]
-    ) -> tuple[dict[SpikeEvent, int], list[tuple[int, ...]]]:
+    ) -> tuple[dict[SpikeEvent, int], list[tuple[int, ...]], int]:
         layer = self.layers[name]
         weights = self.weights[name]
         input_channels = int(layer["in_channels"])
@@ -157,8 +173,32 @@ class IntegerDAGReference:
         current_max = ASIC_FORMATS["current"].maximum
         currents: dict[SpikeEvent, int] = {}
         contributions: list[tuple[int, ...]] = []
+        contribution_count = 0
+        bank_config = self.lane_config.get(name)
+        bank_contributions: list[int] = []
+        bank_next_accept_cycle: list[int] = []
+        bank_touched_spatial: list[set[int]] = []
+        next_scatter_load_cycle = 0
+        channel_lanes = 1
+        spatial_lanes = 1
+        if bank_config is not None:
+            channel_lanes = int(bank_config.get("channel_lanes", 1))
+            spatial_lanes = int(bank_config.get("spatial_lanes", 1))
+            if not 0 < channel_lanes <= output_channels:
+                raise ValueError(f"{name}: invalid channel lane count")
+            if not 0 < spatial_lanes <= output_h * output_w:
+                raise ValueError(f"{name}: invalid spatial lane count")
+            bank_contributions = [0] * (channel_lanes * spatial_lanes)
+            bank_next_accept_cycle = [0] * len(bank_contributions)
+            bank_touched_spatial = [set() for _ in bank_contributions]
+
+        parameters = self.parameters[name]
+        mechanism = bool(parameters.get("inhibition_enabled", False)) or bool(
+            parameters.get("threshold_adaptation_enabled", False)
+        )
 
         for event in events:
+            event_bank_spatials: dict[int, list[int]] = defaultdict(list)
             if not (0 <= event.channel < input_channels):
                 raise ValueError(f"{name}: input channel out of range: {event}")
             if not (0 <= event.x < input_w and 0 <= event.y < input_h):
@@ -186,24 +226,63 @@ class IntegerDAGReference:
                         )
                         if weight == 0:
                             continue
+                        contribution_count += 1
                         destination = SpikeEvent(output_channel, output_y, output_x)
+                        if bank_config is not None:
+                            spatial = output_y * output_w + output_x
+                            lane = (
+                                (output_channel % channel_lanes) * spatial_lanes
+                                + spatial % spatial_lanes
+                            )
+                            bank_contributions[lane] += 1
+                            event_bank_spatials[lane].append(spatial)
                         updated = min(
                             max(currents.get(destination, 0) + weight, current_min),
                             current_max,
                         )
                         currents[destination] = updated
-                        contributions.append(
-                            (
-                                event.channel,
-                                event.y,
-                                event.x,
-                                output_channel,
-                                output_y,
-                                output_x,
-                                weight,
+                        if self.capture_trace:
+                            contributions.append(
+                                (
+                                    event.channel,
+                                    event.y,
+                                    event.x,
+                                    output_channel,
+                                    output_y,
+                                    output_x,
+                                    weight,
+                                )
                             )
+            if bank_config is not None:
+                if event_bank_spatials:
+                    event_done_cycle = next_scatter_load_cycle
+                    for lane, spatials in event_bank_spatials.items():
+                        accept_cycle = max(
+                            next_scatter_load_cycle + 1,
+                            bank_next_accept_cycle[lane],
                         )
-        return currents, contributions
+                        for spatial in spatials:
+                            event_done_cycle = max(event_done_cycle, accept_cycle)
+                            if mechanism:
+                                first_touch = spatial not in bank_touched_spatial[lane]
+                                bank_touched_spatial[lane].add(spatial)
+                                accept_cycle += 6 if first_touch else 5
+                            else:
+                                accept_cycle += 3
+                        bank_next_accept_cycle[lane] = accept_cycle
+                    # The next event replaces the drained projection set on
+                    # the same edge; no empty scatter cycle is inserted.
+                    next_scatter_load_cycle = event_done_cycle
+                else:
+                    # A zero-projection event still consumes one input edge.
+                    next_scatter_load_cycle += 1
+        if bank_config is not None:
+            self._scatter_bank_contributions[name] = bank_contributions
+            self._scatter_collection_cycles[name] = max(
+                next_scatter_load_cycle + (1 if events else 0),
+                max(bank_next_accept_cycle, default=0),
+            )
+        return currents, contributions, contribution_count
 
     def _ordinary_commit(
         self, name: str, bin_tag: int, currents: dict[SpikeEvent, int]
@@ -227,18 +306,19 @@ class IntegerDAGReference:
                 states.pop(destination, None)
             else:
                 states[destination] = updated
-            membranes.append(
-                (
-                    destination.channel,
-                    destination.y,
-                    destination.x,
-                    result.candidate,
-                    result.membrane,
-                    result.spike,
-                    -1,
-                    0,
+            if self.capture_trace:
+                membranes.append(
+                    (
+                        destination.channel,
+                        destination.y,
+                        destination.x,
+                        result.candidate,
+                        result.membrane,
+                        result.spike,
+                        -1,
+                        0,
+                    )
                 )
-            )
             if result.spike:
                 spikes.append(destination)
         return spikes, membranes
@@ -349,18 +429,19 @@ class IntegerDAGReference:
                     states.pop(destination, None)
                 else:
                     states[destination] = state
-                membranes.append(
-                    (
-                        channel,
-                        y,
-                        x,
-                        candidates[channel],
-                        output_membranes[channel],
-                        int(channel_spikes[channel]),
-                        new_ages[channel],
-                        new_amplitudes[channel],
+                if self.capture_trace:
+                    membranes.append(
+                        (
+                            channel,
+                            y,
+                            x,
+                            candidates[channel],
+                            output_membranes[channel],
+                            int(channel_spikes[channel]),
+                            new_ages[channel],
+                            new_amplitudes[channel],
+                        )
                     )
-                )
                 if channel_spikes[channel]:
                     spikes.append(destination)
         return spikes, membranes
@@ -368,7 +449,7 @@ class IntegerDAGReference:
     def _actor(
         self, name: str, bin_tag: int, events: list[SpikeEvent]
     ) -> list[SpikeEvent]:
-        currents, contributions = self._scatter(name, events)
+        currents, contributions, contribution_count = self._scatter(name, events)
         parameters = self.parameters[name]
         mechanism = bool(parameters.get("inhibition_enabled", False)) or bool(
             parameters.get("threshold_adaptation_enabled", False)
@@ -377,15 +458,59 @@ class IntegerDAGReference:
             spikes, membranes = self._mechanism_commit(name, bin_tag, currents)
         else:
             spikes, membranes = self._ordinary_commit(name, bin_tag, currents)
-        self.last_trace[name] = {
-            "contributions": contributions,
-            "currents": [
-                (event.channel, event.y, event.x, current)
-                for event, current in currents.items()
-            ],
-            "membranes": membranes,
-            "spikes": [(event.channel, event.y, event.x) for event in spikes],
+        touched_entries = (
+            len({(event.y, event.x) for event in currents}) if mechanism else len(currents)
+        )
+        self.last_actor_activity[name] = {
+            "input_events": len(events),
+            "synaptic_contributions": contribution_count,
+            "current_entries": len(currents),
+            "touched_entries": touched_entries,
+            "output_spikes": len(spikes),
         }
+        bank_config = self.lane_config.get(name)
+        if bank_config is not None:
+            channel_lanes = int(bank_config.get("channel_lanes", 1))
+            spatial_lanes = int(bank_config.get("spatial_lanes", 1))
+            lane_count = channel_lanes * spatial_lanes
+
+            def lane_for(event: SpikeEvent) -> int:
+                spatial = event.y * int(self.layers[name]["output_hw"][1]) + event.x
+                return (
+                    (event.channel % channel_lanes) * spatial_lanes
+                    + spatial % spatial_lanes
+                )
+
+            if mechanism:
+                touched_events = {
+                    SpikeEvent(0, event.y, event.x) for event in currents
+                }
+            else:
+                touched_events = set(currents)
+            touched_by_bank = [0] * lane_count
+            spikes_by_bank = [0] * lane_count
+            for destination in touched_events:
+                touched_by_bank[lane_for(destination)] += 1
+            for destination in spikes:
+                spikes_by_bank[lane_for(destination)] += 1
+            self.last_actor_bank_activity[name] = {
+                "synaptic_contributions": self._scatter_bank_contributions[name],
+                "touched_entries": touched_by_bank,
+                "output_spikes": spikes_by_bank,
+            }
+            self.last_actor_activity[name]["isolated_saturated_collection_cycles"] = (
+                self._scatter_collection_cycles[name]
+            )
+        if self.capture_trace:
+            self.last_trace[name] = {
+                "contributions": contributions,
+                "currents": [
+                    (event.channel, event.y, event.x, current)
+                    for event, current in currents.items()
+                ],
+                "membranes": membranes,
+                "spikes": [(event.channel, event.y, event.x) for event in spikes],
+            }
         return spikes
 
     def _readout(self, events: list[SpikeEvent], bin_tag: int) -> Prediction | None:
@@ -429,7 +554,9 @@ class IntegerDAGReference:
 
         streams: dict[str, list[SpikeEvent]] = {"input": list(events)}
         self.last_trace = {}
+        self.last_actor_activity = {}
         self.last_route_event_counts = {}
+        self._scatter_collection_cycles = {}
         readout_name = str(self.graph["current_readout"])
         for name in self.graph["node_topological_order"]:
             if name in {"input", "prediction"}:

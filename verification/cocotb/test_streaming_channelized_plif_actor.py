@@ -8,14 +8,15 @@ def payload(channel: int, x: int, y: int) -> int:
 
 
 async def send_packet(dut, value: int, completion: int, tag: int):
-    while not int(dut.in_ready.value):
-        await RisingEdge(dut.clk)
     await FallingEdge(dut.clk)
     dut.in_payload.value = value
     dut.in_completion.value = completion
     dut.in_bin_tag.value = tag
     dut.in_valid.value = 1
-    await RisingEdge(dut.clk)
+    while True:
+        await RisingEdge(dut.clk)
+        if int(dut.in_ready.value):
+            break
     await FallingEdge(dut.clk)
     dut.in_valid.value = 0
 
@@ -29,6 +30,16 @@ async def unified_stream_preserves_spikes_and_completion(dut):
     for _ in range(3):
         await RisingEdge(dut.clk)
     dut.reset.value = 0
+
+    # Banked state implementations scrub each independent state SRAM after
+    # reset.  Do not present stream traffic until every lane has completed
+    # that initialization rendezvous.
+    for _ in range(500):
+        await RisingEdge(dut.clk)
+        if int(dut.initialization_done_o.value):
+            break
+    else:
+        raise AssertionError("stream actor state initialization did not complete")
 
     await send_packet(dut, payload(0, 2, 3), completion=0, tag=0)
     await send_packet(dut, 0, completion=1, tag=9)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the dedicated epoch-35 exported full-DAG cocotb replay."""
+"""Run the dedicated current-checkpoint exported full-DAG cocotb replay."""
 
 from __future__ import annotations
 

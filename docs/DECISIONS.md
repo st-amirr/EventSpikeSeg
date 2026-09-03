@@ -4,6 +4,17 @@ Replace the final-run 0.5 pixel CE + 0.5 target-present macro CE + 0.3 Dice + 0.
 
 # Decisions
 
+## 2026-09-02 — Spatial hierarchy must preserve dedicated PLIF state
+
+Use spatial tiles as elaboration and physical hierarchy boundaries, not as time-multiplexed caches.
+Each tile owns dedicated current/membrane/adaptation elements for its PLIFs and evaluates global
+convolution coordinates. It may share immutable weight constants with peer tiles, but it must not
+fetch or write runtime state through an addressed memory interface. Nominal 8x8 partitioning of
+the checkpoint model creates 20,410 tiles while preserving 30,976,000 PLIFs and 1,590,476,800
+resident state bits. Isolated tile synthesis can provide per-configuration evidence, but a scaled
+sum is only an estimate until complete placement and routing includes clocking, pulse distribution,
+completion trees, readout, and wiring.
+
 ## 2026-08-29 — Size Docker shared memory for eight DSEC workers
 
 Keep the user-selected eight CPU preprocessing workers with one prefetched record per
@@ -757,3 +768,87 @@ epoch before a slower skip/detail branch has contributed.
 Use compile-time dedicated routing rather than a programmable NoC unless later evidence
 shows programmability is worth its area/energy cost. Actor-local membrane/adaptation SRAM
 remains unchanged by this decision; only spikes and completion tokens traverse the graph.
+## 2026-09-01 — Replace single-lane actor service with destination-banked lanes
+
+Keep the exact 25 permanent PLIF-population DAG and the 5 ms completion-token semantics of the
+trained checkpoint. Do not reinterpret one actor as one physical neuron: the model owns
+30,976,000 logical `(actor,channel,y,x)` PLIF states, so each actor remains an addressable local
+population. Replace the current one-port/one-update-lane actor organization with deterministic
+destination banking. Each lane owns disjoint state/current/queue SRAM rows, and contributions are
+routed by a compile-time address-to-bank mapping. Reconstruct global spike addresses at lane egress
+and merge completion only after every lane has retired the same bin.
+
+Parallel arithmetic without independent SRAM/queue ports does not count as lane scaling. Preserve
+signed saturating current accumulation, per-destination ordering, one PLIF commit per touched
+destination per bin, lazy last-bin tags, and exact spike backpressure. First implement and prove the
+ordinary non-retinotopic actor bank wrapper used by the measured `final_fuse.standard` bottleneck;
+then add multi-output convolution scatter and mechanism-enabled spatial/channel-group banking.
+Keep the existing single-lane RTL as the bit-exact reference and service-bound baseline.
+
+The lane count is workload- and clock-profiled rather than fixed at 570. The current epoch-40
+5 ms sample establishes only an ideal lower bound; final sizing must include bank conflicts,
+scatter bandwidth, routing, FIFO occupancy, the 0.8 utilization target, and full-sequence DSEC
+activity. A fully event-continuous PLIF that fires after each raw event is a different temporal
+model and requires retraining or accuracy revalidation; it is not silently substituted here.
+
+Mechanism-enabled actors may partition state only by spatial location. All channels at one
+`(y,x)` location must stay in the same lane because peer inhibition and triangular threshold
+adaptation are computed as one retinotopic group. Ordinary actors may partition by both output
+channel and spatial address. In both cases, the scatter fabric must preserve contribution order
+within a destination bank; cross-bank work may proceed concurrently.
+
+Place one ordered elastic FIFO on every generated DAG edge. Spike packets and completion tokens
+share the same queue so a token cannot overtake contributions from its bin. A full FIFO applies
+ready/valid backpressure rather than dropping data; depth affects elasticity and timing, not model
+semantics. Keep depth compile-time configurable and measure native occupancy before replacing the
+default depth of two with per-edge values.
+
+Treat busiest-bank service interval and same-bin response latency as separate acceptance gates.
+Throughput uses the maximum complete bank workload; response latency has an additional unavoidable
+floor from the longest topological chain of post-token PLIF commits. A lane manifest is accepted
+only after exact native reprofiling passes both the hard and 80% floors. Heuristic lane planning may
+choose a candidate, but its projection is never reported as measured latency.
+
+Apply a third independent gate to every ordered graph edge: packet count divided by physical link
+width cannot exceed the bin cycle budget. State-bank parallelism does not compensate for a scalar
+link. Widen a proven hot path or raise the physically closed full-chip clock; do not claim either
+from an unconstrained analytical rate. FIFO depth cannot repair a sustained serialization-rate
+failure.
+
+For inhibition/adaptation actors, distinguish accumulation ownership from commit ownership.
+Synaptic currents and persistent per-channel PLIF state may use independent channel-by-spatial SRAM
+ports. A spatial coordinator owns the completion-time transaction: it reads every peer channel for
+one `(y,x)`, computes the retinotopic mechanism once, and commits peer results atomically. The old
+spatial-only contribution port is rejected because it serializes all output channels before the
+mechanism is even evaluated. For ordinary actors, replace the one-event pending bitmap with
+decoupled per-bank projection queues or multiple ordered contexts so one busy bank cannot stall all
+independent destinations.
+
+Use a distinct small ordered contribution FIFO per destination bank between projection generation
+and state SRAM. The FIFO stores the complete destination plus signed weight, preserves saturating
+addition order within that bank, and must drain before the actor accepts the bin completion token.
+Its depth is a measured elasticity parameter; it is not a substitute for sufficient sustained bank
+bandwidth.
+
+The final direct-state ASIC uses register/latch-resident current, membrane, and enabled adaptation
+state for every logical PLIF neuron; it does not use an addressed state SRAM or touched-address
+queue. Every 5 ms completion applies one beta step to all resident neurons in parallel, which is
+equivalent to the prior lazy elapsed-bin update without storing a last-bin tag. Convolution weights
+remain compile-time constants at their owning synapses. This deliberately exchanges dense local
+state area for elimination of memory-fetch latency; physical area and clock/power must be measured
+after the complete resident graph is synthesized and placed.
+
+The inter-actor representation for this implementation is a binary spike vector per PLIF
+population and bin. Static convolutional synapses are compile-time wires/constants that reduce
+the asserted presynaptic bits into a signed current delta for every destination in parallel.
+More than one accepted vector transaction in a bin adds the delta again, preserving multiplicity
+at joins or ingress. A held result vector is also the actor's completion transaction, including
+the 24-bit bin tag. This removes the scalar per-channel contribution bottleneck as well as the
+addressed state fetch, at the explicit cost of wide routing and replicated adder logic.
+
+Wide fanout must not silently allocate a second full feature-map register bank. The resident
+fork holds the producing actor's ready/valid vector stable and records only whether each branch
+has accepted it. Residual branches rendezvous and OR complete binary vectors; concatenation
+remaps fixed channel slices; the half-resolution decoder sum forwards both vector pulses before
+completion so coincident activity causes two downstream additions. Raw ingress remains scalar
+and is decoded into a one-hot pulse independently at each first-layer branch.

@@ -267,8 +267,8 @@ FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
 FINAL_NEURON_FREEZE_FRACTION = 0.20
-FINAL_REFINEMENT_LR_MULTIPLIER = 0.50
-FINAL_JOINT_LR_MULTIPLIER = 0.20
+FINAL_REFINEMENT_LR_MULTIPLIER = 1.0
+FINAL_JOINT_LR_MULTIPLIER = 0.50
 BASE_NEURON_PARAMETER_TOKENS = ("beta_logit", "threshold_logit")
 MECHANISM_PARAMETER_TOKENS = (
     "adaptation_tau_logit",
@@ -727,12 +727,13 @@ def _backward_temporal_record(
             used = [
                 (value, gradients[key])
                 for key, value in replay.items()
-                if gradients[key] is not None
+                if gradients[key] is not None and value.requires_grad
             ]
-            torch.autograd.backward(
-                [value for value, _ in used],
-                [gradient * weight / total_weight for _, gradient in used],
-            )
+            if used:
+                torch.autograd.backward(
+                    [value for value, _ in used],
+                    [gradient * weight / total_weight for _, gradient in used],
+                )
             model.detach_state()  # type: ignore[attr-defined]
 
     if not torch.isfinite(loss):

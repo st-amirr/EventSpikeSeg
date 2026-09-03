@@ -32,6 +32,10 @@ module streaming_channelized_plif_actor #(
     OUTPUT_CHANNELS * INPUTS_PER_GROUP * KERNEL_WIDTH * KERNEL_HEIGHT,
   parameter integer ENABLE_INHIBITION = 0,
   parameter integer ENABLE_ADAPTATION = 0,
+  parameter integer STATE_LANE_COUNT = 1,
+  parameter integer STATE_CHANNEL_LANE_COUNT = 1,
+  parameter integer STATE_SPATIAL_LANE_COUNT = STATE_LANE_COUNT,
+  parameter integer USE_PARALLEL_BANKED_STATE = 0,
   parameter integer USE_STATE_MACRO = 0,
   parameter logic signed [WEIGHT_COUNT*WEIGHT_WIDTH-1:0] KERNEL_WEIGHTS = '0,
   parameter logic [OUTPUT_CHANNELS*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
@@ -72,6 +76,15 @@ module streaming_channelized_plif_actor #(
   logic routing_error;
   logic input_channel_error;
 
+  initial begin
+    if (STATE_LANE_COUNT != STATE_CHANNEL_LANE_COUNT*STATE_SPATIAL_LANE_COUNT)
+      $error("state lane count must equal channel lanes times spatial lanes");
+    if (USE_PARALLEL_BANKED_STATE &&
+        (ENABLE_INHIBITION || ENABLE_ADAPTATION) &&
+        STATE_CHANNEL_LANE_COUNT != 1)
+      $error("mechanism actors may bank spatial locations but not peer channels");
+  end
+
   assign in_ready = in_completion ? epoch_end_ready : presynaptic_ready;
   assign out_valid = spike_valid || epoch_done_valid;
   assign out_completion = epoch_done_valid;
@@ -93,6 +106,65 @@ module streaming_channelized_plif_actor #(
     end
   end
 
+  generate if (USE_PARALLEL_BANKED_STATE &&
+               (ENABLE_INHIBITION || ENABLE_ADAPTATION)) begin : parallel_mechanism_actor
+  parallel_banked_retinotopic_channelized_plif_actor #(
+    .COORD_WIDTH(X_WIDTH), .WEIGHT_WIDTH(WEIGHT_WIDTH), .MEM_WIDTH(MEM_WIDTH),
+    .BETA_WIDTH(BETA_WIDTH), .EPOCH_TAG_WIDTH(TAG_WIDTH),
+    .INPUT_CHANNELS(INPUT_CHANNELS), .OUTPUT_CHANNELS(OUTPUT_CHANNELS),
+    .GROUPS(GROUPS), .KERNEL_WIDTH(KERNEL_WIDTH), .KERNEL_HEIGHT(KERNEL_HEIGHT),
+    .STRIDE_X(STRIDE_X), .STRIDE_Y(STRIDE_Y), .DILATION_X(DILATION_X),
+    .DILATION_Y(DILATION_Y), .PAD_X(PAD_X), .PAD_Y(PAD_Y),
+    .OUTPUT_WIDTH(OUTPUT_WIDTH), .OUTPUT_HEIGHT(OUTPUT_HEIGHT),
+    .SPATIAL_LANE_COUNT(STATE_SPATIAL_LANE_COUNT),
+    .ENABLE_INHIBITION(ENABLE_INHIBITION), .ENABLE_ADAPTATION(ENABLE_ADAPTATION),
+    .USE_STATE_MACRO(USE_STATE_MACRO), .KERNEL_WEIGHTS(KERNEL_WEIGHTS),
+    .CHANNEL_BETAS(CHANNEL_BETAS), .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS),
+    .INHIBITION_STRENGTH(INHIBITION_STRENGTH),
+    .ADAPTATION_STRENGTH(ADAPTATION_STRENGTH),
+    .ADAPTATION_DURATION(ADAPTATION_DURATION)
+  ) actor (
+    .clk, .reset,
+    .presynaptic_valid(in_valid && !in_completion && !input_channel_error),
+    .presynaptic_ready,
+    .presynaptic_channel_i(in_payload[CHANNEL_LSB +: INPUT_CHANNEL_WIDTH]),
+    .presynaptic_x_i(in_payload[X_LSB +: X_WIDTH]),
+    .presynaptic_y_i({{(X_WIDTH-Y_WIDTH){1'b0}},
+                      in_payload[Y_LSB +: Y_WIDTH]}),
+    .epoch_end_valid(in_valid && in_completion), .epoch_end_ready,
+    .epoch_tag_i(in_bin_tag), .spike_valid, .spike_ready,
+    .spike_channel_o(spike_channel), .spike_x_o(spike_x), .spike_y_o(spike_y),
+    .epoch_done_valid, .epoch_done_ready, .epoch_tag_o(epoch_tag),
+    .routing_error_o(routing_error), .initialization_done_o(initialization_done_o)
+  );
+  end else if (USE_PARALLEL_BANKED_STATE) begin : parallel_banked_actor
+  parallel_banked_channelized_plif_actor #(
+    .COORD_WIDTH(X_WIDTH), .WEIGHT_WIDTH(WEIGHT_WIDTH), .MEM_WIDTH(MEM_WIDTH),
+    .BETA_WIDTH(BETA_WIDTH), .EPOCH_TAG_WIDTH(TAG_WIDTH),
+    .INPUT_CHANNELS(INPUT_CHANNELS), .OUTPUT_CHANNELS(OUTPUT_CHANNELS),
+    .GROUPS(GROUPS), .KERNEL_WIDTH(KERNEL_WIDTH), .KERNEL_HEIGHT(KERNEL_HEIGHT),
+    .STRIDE_X(STRIDE_X), .STRIDE_Y(STRIDE_Y), .DILATION_X(DILATION_X),
+    .DILATION_Y(DILATION_Y), .PAD_X(PAD_X), .PAD_Y(PAD_Y),
+    .OUTPUT_WIDTH(OUTPUT_WIDTH), .OUTPUT_HEIGHT(OUTPUT_HEIGHT),
+    .CHANNEL_LANE_COUNT(STATE_CHANNEL_LANE_COUNT),
+    .SPATIAL_LANE_COUNT(STATE_SPATIAL_LANE_COUNT),
+    .USE_STATE_MACRO(USE_STATE_MACRO), .KERNEL_WEIGHTS(KERNEL_WEIGHTS),
+    .CHANNEL_BETAS(CHANNEL_BETAS), .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS)
+  ) actor (
+    .clk, .reset,
+    .presynaptic_valid(in_valid && !in_completion && !input_channel_error),
+    .presynaptic_ready,
+    .presynaptic_channel_i(in_payload[CHANNEL_LSB +: INPUT_CHANNEL_WIDTH]),
+    .presynaptic_x_i(in_payload[X_LSB +: X_WIDTH]),
+    .presynaptic_y_i({{(X_WIDTH-Y_WIDTH){1'b0}},
+                      in_payload[Y_LSB +: Y_WIDTH]}),
+    .epoch_end_valid(in_valid && in_completion), .epoch_end_ready,
+    .epoch_tag_i(in_bin_tag), .spike_valid, .spike_ready,
+    .spike_channel_o(spike_channel), .spike_x_o(spike_x), .spike_y_o(spike_y),
+    .epoch_done_valid, .epoch_done_ready, .epoch_tag_o(epoch_tag),
+    .routing_error_o(routing_error), .initialization_done_o(initialization_done_o)
+  );
+  end else begin : reference_actor
   channelized_convolution_plif_actor #(
     .COORD_WIDTH(X_WIDTH), .WEIGHT_WIDTH(WEIGHT_WIDTH), .MEM_WIDTH(MEM_WIDTH),
     .BETA_WIDTH(BETA_WIDTH), .EPOCH_TAG_WIDTH(TAG_WIDTH),
@@ -102,6 +174,9 @@ module streaming_channelized_plif_actor #(
     .DILATION_Y(DILATION_Y), .PAD_X(PAD_X), .PAD_Y(PAD_Y),
     .OUTPUT_WIDTH(OUTPUT_WIDTH), .OUTPUT_HEIGHT(OUTPUT_HEIGHT),
     .ENABLE_INHIBITION(ENABLE_INHIBITION), .ENABLE_ADAPTATION(ENABLE_ADAPTATION),
+    .STATE_LANE_COUNT(STATE_LANE_COUNT),
+    .STATE_CHANNEL_LANE_COUNT(STATE_CHANNEL_LANE_COUNT),
+    .STATE_SPATIAL_LANE_COUNT(STATE_SPATIAL_LANE_COUNT),
     .USE_STATE_MACRO(USE_STATE_MACRO),
     .KERNEL_WEIGHTS(KERNEL_WEIGHTS), .CHANNEL_BETAS(CHANNEL_BETAS),
     .CHANNEL_THRESHOLDS(CHANNEL_THRESHOLDS),
@@ -122,4 +197,5 @@ module streaming_channelized_plif_actor #(
     .epoch_done_valid, .epoch_done_ready, .epoch_tag_o(epoch_tag),
     .routing_error_o(routing_error), .initialization_done_o(initialization_done_o)
   );
+  end endgenerate
 endmodule

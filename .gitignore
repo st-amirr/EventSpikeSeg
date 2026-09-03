@@ -16,6 +16,7 @@ artifacts/
 *.png
 kaggle/
 Icon
+Icon?
 
 # macOS
 .DS_Store

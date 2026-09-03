@@ -8,6 +8,7 @@ bash "${SCRIPT_DIR}/check_rtl.sh"
 
 DESIGN_CONFIG="${ORFS_DESIGN_CONFIG:-${PROJECT_DIR}/asic/orfs_asap7_config.mk}"
 REPORT_PLATFORM="${ORFS_REPORT_PLATFORM:-asap7}"
+REPORT_DESIGN="${ORFS_REPORT_DESIGN:-convolution_plif_actor}"
 REPORT_VARIANT="${ORFS_REPORT_VARIANT:-logic4x4}"
 REPORT_TIME_UNIT="${ORFS_REPORT_TIME_UNIT:-ps}"
 
@@ -36,8 +37,8 @@ docker run --rm --platform linux/amd64 \
     DESIGN_CONFIG="/workspace/asic/$(basename "${DESIGN_CONFIG}")"
 
 CHECK_ARGS=(
-  "${OUTPUT_DIR}/logs/${REPORT_PLATFORM}/convolution_plif_actor/${REPORT_VARIANT}/6_report.json"
-  "${OUTPUT_DIR}/reports/${REPORT_PLATFORM}/convolution_plif_actor/${REPORT_VARIANT}/5_route_drc.rpt"
+  "${OUTPUT_DIR}/logs/${REPORT_PLATFORM}/${REPORT_DESIGN}/${REPORT_VARIANT}/6_report.json"
+  "${OUTPUT_DIR}/reports/${REPORT_PLATFORM}/${REPORT_DESIGN}/${REPORT_VARIANT}/5_route_drc.rpt"
   --time-unit "${REPORT_TIME_UNIT}"
 )
 if [[ -n "${ORFS_EXPECTED_MACROS:-}" ]]; then

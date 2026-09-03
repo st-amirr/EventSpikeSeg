@@ -91,7 +91,13 @@ async def _capture_actor_commits(
     """Observe actor commit internals used by the synthesized state machines."""
 
     wrapper = getattr(dut, f"actor_{_signal_stem(actor_name)[2:]}")
-    actor = wrapper.actor
+    # The banking-capable stream wrapper places the retained one-lane oracle
+    # under a named generate scope. Keep compatibility with replay fixtures
+    # generated before that structural wrapper was introduced.
+    try:
+        actor = wrapper.reference_actor.actor
+    except AttributeError:
+        actor = wrapper.actor
     neuron = (
         actor.mechanism_state.neuron_array
         if mechanism
@@ -178,7 +184,7 @@ async def _capture_actor_commits(
 
 
 @cocotb.test()
-async def epoch35_integer_golden_replay_matches_semantic_output(dut) -> None:
+async def current_checkpoint_integer_golden_replay_matches_semantic_output(dut) -> None:
     replay = Path(os.environ["EVENTSPIKESEG_REPLAY_DIR"])
     inputs = np.load(replay / "golden_input_samples.npz")["events"]
     spike_archive = np.load(replay / "golden_layer_spikes.npz")
@@ -321,6 +327,15 @@ async def epoch35_integer_golden_replay_matches_semantic_output(dut) -> None:
     budget_cycles_per_bin = 500_000  # 100 MHz * 5 ms
     utilization = average_cycles_per_bin / budget_cycles_per_bin
     clock_mhz = 100
+    edge_fifo_high_watermarks = {}
+    edge_index = 0
+    while True:
+        try:
+            high_watermark = getattr(dut, f"edge_{edge_index}_high_watermark")
+        except AttributeError:
+            break
+        edge_fifo_high_watermarks[str(edge_index)] = int(high_watermark.value)
+        edge_index += 1
     metrics = {
         "schema_version": "1.0.0",
         "scope": "reduced_8x8_SRAM_integrated_RTL_not_native_resolution_PPA",
@@ -335,6 +350,11 @@ async def epoch35_integer_golden_replay_matches_semantic_output(dut) -> None:
         "average_latency_us_per_bin": average_cycles_per_bin / clock_mhz,
         "ingress_cycles_by_bin": ingress_cycles_by_bin,
         "maximum_ingress_cycles_per_bin": max(ingress_cycles_by_bin),
+        "edge_FIFO_depth": 2,
+        "edge_FIFO_high_watermarks": edge_fifo_high_watermarks,
+        "maximum_edge_FIFO_high_watermark": max(
+            edge_fifo_high_watermarks.values(), default=0
+        ),
         "per_actor_spike_trace_actors_compared": len(actor_names),
         "per_actor_spike_trace_rows_compared": compared_spike_rows,
         "per_actor_spike_trace_exact_match": True,

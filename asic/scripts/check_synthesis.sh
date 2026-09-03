@@ -39,6 +39,22 @@ yosys -q -p '
   proc; memory; opt; check
 '
 
+printf 'Synthesizing the direct resident convolution/PLIF actor...\n'
+yosys -q -p '
+  read_verilog -sv asic/rtl/resident_convolution_synapses.sv asic/rtl/resident_plif_population.sv asic/rtl/retinotopic_mechanism_update.sv asic/rtl/resident_retinotopic_plif_population.sv asic/rtl/resident_channelized_plif_actor.sv;
+  chparam -set INPUT_CHANNELS 1 -set OUTPUT_CHANNELS 2 -set INPUT_WIDTH 2 -set INPUT_HEIGHT 1 -set OUTPUT_WIDTH 2 -set OUTPUT_HEIGHT 1 -set KERNEL_WIDTH 1 -set KERNEL_HEIGHT 1 -set PAD_X 0 -set PAD_Y 0 -set KERNEL_WEIGHTS 1542 -set CHANNEL_BETAS 2147450879 -set CHANNEL_THRESHOLDS 655370 resident_channelized_plif_actor;
+  hierarchy -top resident_channelized_plif_actor;
+  proc; memory; opt; check
+'
+
+printf 'Synthesizing the receptive-halo resident tile hierarchy...\n'
+yosys -q -p '
+  read_verilog -sv asic/rtl/resident_convolution_synapses.sv asic/rtl/resident_plif_population.sv asic/rtl/retinotopic_mechanism_update.sv asic/rtl/resident_retinotopic_plif_population.sv asic/rtl/resident_channelized_plif_actor.sv asic/rtl/tiled_resident_channelized_plif_actor.sv;
+  chparam -set INPUT_CHANNELS 1 -set OUTPUT_CHANNELS 1 -set INPUT_WIDTH 4 -set INPUT_HEIGHT 2 -set OUTPUT_WIDTH 4 -set OUTPUT_HEIGHT 2 -set TILE_WIDTH 2 -set TILE_HEIGHT 2 -set KERNEL_WIDTH 3 -set KERNEL_HEIGHT 3 -set PAD_X 1 -set PAD_Y 1 tiled_resident_channelized_plif_actor;
+  hierarchy -top tiled_resident_channelized_plif_actor;
+  proc; memory; opt; check
+'
+
 printf 'Synthesizing actor-local SRAM boundary...\n'
 yosys -q -p '
   read_verilog -sv asic/rtl/actor_local_state_sram.sv asic/rtl/initialized_actor_state_bank.sv;
@@ -54,6 +70,14 @@ yosys -q -p '
   read_verilog -sv asic/rtl/class_current_update.sv;
   hierarchy -top class_current_update;
   proc; opt; check
+'
+
+printf 'Synthesizing resident temporal class readout...\n'
+yosys -q -p '
+  read_verilog -sv asic/rtl/resident_temporal_class_readout.sv;
+  chparam -set INPUT_CHANNELS 2 -set CLASS_COUNT 3 -set OUTPUT_WIDTH 2 -set OUTPUT_HEIGHT 1 -set PREDICTION_BINS 2 -set READOUT_WEIGHTS 281470715297793 resident_temporal_class_readout;
+  hierarchy -top resident_temporal_class_readout;
+  proc; memory; opt; check
 '
 
 printf 'Synthesizing SRAM-backed temporal readout control...\n'

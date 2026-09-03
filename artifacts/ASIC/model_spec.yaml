@@ -4,10 +4,10 @@
   "checkpoint": {
     "architecture": "EventSpikeSeg140k",
     "dataset": "dsec",
-    "epoch": 35,
+    "epoch": 40,
     "seed": 17,
     "temporal_protocol_version": "dsec-six-class-fixed-time-counts-async-v1",
-    "training_strategy_version": "dsec-spike-preserving-region-consistency-v11"
+    "training_strategy_version": "dsec-ce-dice-aux-boundary-v12"
   },
   "class_count": 6,
   "class_mapping_file": "class_mapping.json",

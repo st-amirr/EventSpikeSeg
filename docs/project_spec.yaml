@@ -25,7 +25,7 @@ document:
     slices and rectifies exact raw events, then schedules each 50 ms semantic interval
     into the same ten fixed 5 ms updates used during training. Deployment preserves
     those semantic epochs but uses autonomous event actors: an upstream completion token
-    causes each actor to commit every touched destination exactly once, emit spikes, and
+    causes each actor to commit every resident destination exactly once, emit spikes, and
     forward completion. It is not immediate thresholding after each signed contribution.
   preservation_policy:
     retained_from_previous_specification:
@@ -74,7 +74,7 @@ project_goal:
   - Do adaptive thresholds improve firing balance and multi-seed stability?
   - Is one encoder skip sufficient, or are two additive skips required for boundaries and small classes?
   - What accuracy is lost after weight, membrane, threshold, and accumulator quantization?
-  - Which operations dominate local SRAM, standard-cell logic, event routing, memory bandwidth, and ASIC energy?
+  - Which operations dominate resident-state cells, synapse logic, event routing, clock load, and ASIC energy?
   - Which non-local operations require dedicated reduction/control logic or a hardware-aware replacement?
   working_hypotheses:
   - Depthwise-pointwise blocks greatly reduce parameters and weight memory but require pointwise channel 
@@ -104,7 +104,7 @@ framework:
       and data loading.
   hardware_backend:
     primary_type: custom_SystemVerilog_digital_neuromorphic_ASIC
-    primary_target: technology_agnostic_actor_array_with_local_SRAM_macros
+    primary_target: technology_agnostic_actor_array_with_register_or_latch_resident_PLIF_state
     primary_goal: >-
       Instantiate all 25 trained PLIF populations permanently as nodes in the fixed EventSpikeSeg140k v8 DAG, not as a
       linear 25-stage pipeline. A convolution actor uses parallel kernel-tap projection cells and one canonical
@@ -122,7 +122,7 @@ framework:
       name: SKY130RAM
       purpose: open_actor_tile_and_SRAM_macro_validation
       limitation: 130nm_is_not_dense_enough_for_economical_full_native_resolution_state
-    full_model_tapeout_gate: accessible_22nm_or_better_foundry_PDK_plus_characterized_high_density_SRAM_compiler
+    full_model_tapeout_gate: accessible_22nm_or_better_foundry_PDK_plus_successful_full_resident_graph_place_route
   spiker_plus:
     implementation_status: literature_and_design_inspiration_only
     retained_takeaways:
@@ -230,7 +230,7 @@ future_datasets:
       asic_input: live_raw_events_partitioned_into_consecutive_5ms_semantic_epochs
       event_value_encoding: every_source_event_contributes_one_no_log_or_cap
       hidden_spike_encoding: binary
-      plif_time_rule: touched_neuron_lazy_beta_power_delta_bins_on_the_fixed_5ms_grid
+      plif_time_rule: one_beta_step_for_every_resident_PLIF_on_each_fixed_5ms_completion
       full_recording_preload: false
       validation_split:
         sequence_count:
@@ -343,21 +343,14 @@ input_and_time:
     - Rectify and route each raw camera event in timestamp order as it arrives; do not materialize a dense input tensor or preload a complete 5 ms bin.
     - Each input event is losslessly multicast to the fixed ingress actors `detail_stem` and `stem`; each branch immediately triggers only its connected static-weight additions.
     - At each 5 ms boundary, inject a completion token after the final raw event assigned to that semantic epoch.
-    - Each actor independently scatters a spike through its valid nonzero kernel taps, accumulates signed contributions
-      in one canonical current slot per postsynaptic channel/spatial destination, and commits touched PLIFs only after
-      the upstream completion token proves that no more contributions can arrive for that epoch.
-    - Emit resulting spike addresses as soon as they are committed. Fanout nodes multicast both events and completion tokens; join nodes forward one completion only after all required upstream tokens carry the same bin tag.
-    - Read touched sparse state including membrane, optional adaptation fields and compact last-bin tag.
-    - Compute delta_bins from the current global bin tag and stored last-bin tag, then apply learned beta 
-      exactly delta_bins times before adding current.
-    - Write the updated sparse state with last-bin tag equal to the current bin; untouched neurons incur no 
-      state access or arithmetic.
+    - Each actor routes valid nonzero static-synapse contributions directly into the resident current element of each postsynaptic channel/spatial PLIF.
+    - On the upstream completion token, every resident PLIF applies one beta step and commits in parallel without an addressed state fetch; retinotopic peers apply inhibition/adaptation atomically.
+    - Retain membrane and enabled adaptation state in the PLIF population and emit the resulting spike bitmap through fixed downstream synapses.
     - Accumulate signed final class current across prediction_window_bins and emit argmax when the window 
       completes; default is ten bins / 50 ms.
     state_persistence: 
       PLIF_and_adaptation_state_persists_across_bins_and_predictions_reset_only_at_sequence_or_gap_boundaries
-    last_bin_tag_bits: 24
-    last_bin_tag_wrap_period_at_5ms_hours: 23.30168888888889
+    resident_state_last_bin_tag_bits: 0
     realtime:
       hard_condition: U = C_bin/(f_clk*0.005) <= 1.0
       target_condition: U <= 0.8
@@ -388,7 +381,7 @@ input_and_time:
 
 runtime_batching_decision:
   decision: autonomous_static_actor_DAG_with_ordered_5ms_completion_tokens
-  rationale: This preserves the fixed 5 ms training time grid and touched-neuron lazy state while accepting
+  rationale: This preserves the fixed 5 ms training time grid and continuously resident PLIF state while accepting
     raw events sequentially without dense bin loading. The 5 ms marker is a semantic commit boundary, not an
     instruction to preload or sweep a bin. It avoids the superseded 50 ms layer-major schedule.
   bin_structure:
@@ -400,9 +393,8 @@ runtime_batching_decision:
     default_rate_hz: 20
     configurable: true
   graph_order: events_and_completion_tokens_follow_explicit_static_DAG_edges; actor_list_is_topological_export_order_only
-  state_rule: every_actor_owns_direct_indexed_current_membrane_and_tag_arrays; only_touched_destinations_commit
-  lazy_decay: delta_bins=current_bin_tag-last_bin_tag_mod_2^24; apply learned_beta delta_bins times before 
-    current
+  state_rule: every_logical_PLIF_owns_resident_current_membrane_and_enabled_adaptation_elements; all_destinations_commit_once_per_bin
+  decay: one_learned_beta_step_per_resident_PLIF_per_5ms_completion_without_last_bin_tag
   double_buffering: optional_ingress_FIFO_or_pingpong_capture_may_overlap_bin_k_plus_1_with_graph_processing_of_bin_k
   realtime_utilization:
     U: C_bin/(f_clk*5ms)
@@ -414,7 +406,7 @@ runtime_batching_decision:
   asynchronous_claim: true
   asynchronous_scope: logical_event_driven_ready_valid_actor_dataflow_without_a_global_actor_scheduler
   electrically_clockless_QDI_claim: false
-  sparsity_claim: 5ms_binned_touched_neuron_lazy_execution_with_sparse_synaptic_zero_skipping
+  sparsity_claim: event_driven_synaptic_zero_skipping_with_dense_parallel_resident_PLIF_commit_each_5ms
 neuron:
   name: HardwareLIF
   equation: V[t] = V[t-1] - V[t-1] / 2^q + I[t]
@@ -474,7 +466,7 @@ custom_spiking_dynamics:
     expected_effects:
     - Temporarily raise the local threshold after spiking.
     - Reduce repeated dominance while retaining spatially local evidence.
-    limitation: The age and amplitude maps are material ASIC SRAM state and are not negligible.
+    limitation: The age and amplitude maps are material resident ASIC state elements and are not negligible.
 
 architecture_family:
   implementation_model: EventSpikeSeg140k
@@ -875,39 +867,48 @@ asic_implementation:
       standard_5x5: twenty_five_parallel_tap_projection_cells
     state_ownership: one_canonical_current_and_membrane_entry_per_layer_channel_y_x_destination
     invariant: kernel_taps_never_own_or_duplicate_membrane_state
-    firing_rule: commit_each_touched_PLIF_once_after_upstream_epoch_completion
+    firing_rule: commit_every_resident_PLIF_once_after_upstream_epoch_completion
   RTL:
     language: SystemVerilog_2012
     logical_asynchrony: clocked_ready_valid_events_and_completion_tokens
     electrically_clockless_QDI: false
-    required_blocks:
-    - asic/rtl/presynaptic_tap_array.sv
-    - asic/rtl/plif_update.sv
-    - asic/rtl/asynchronous_plif_actor.sv
-    - asic/rtl/convolution_plif_actor.sv
-    - asic/rtl/peer_membrane_inhibition.sv
-    - asic/rtl/triangular_threshold_adaptation.sv
+    active_required_blocks:
+    - asic/rtl/resident_convolution_synapses.sv
+    - asic/rtl/resident_plif_population.sv
+    - asic/rtl/resident_retinotopic_plif_population.sv
+    - asic/rtl/resident_channelized_plif_actor.sv
+    - asic/rtl/resident_spike_vector_edge.sv
+    - asic/rtl/tiled_resident_channelized_plif_actor.sv
+    - asic/rtl/streaming_resident_channelized_plif_actor.sv
+    - asic/rtl/resident_event_ingress_adapter.sv
+    - asic/rtl/resident_spike_vector_channel_offset.sv
+    - asic/rtl/resident_spike_vector_upsample2x.sv
+    - asic/rtl/resident_spike_vector_union2.sv
+    - asic/rtl/resident_temporal_class_readout.sv
+    - asic/rtl/resident_spike_vector_fork2.sv
+    - asic/rtl/retinotopic_mechanism_update.sv
     - asic/rtl/class_current_update.sv
     - asic/rtl/class_argmax.sv
     - asic/rtl/event_fork2.sv
     - asic/rtl/event_join2.sv
+    - asic/rtl/event_stream_fifo.sv
     - asic/rtl/binary_event_union2.sv
     - asic/rtl/event_channel_offset.sv
     - asic/rtl/event_upsample2x.sv
-    - asic/rtl/channelized_convolution_scatter.sv
-    - asic/rtl/channelized_convolution_plif_actor.sv
-    - asic/rtl/streaming_channelized_plif_actor.sv
-    - asic/rtl/plif_leak_charge.sv
-    - asic/rtl/retinotopic_mechanism_update.sv
-    - asic/rtl/retinotopic_asynchronous_plif_actor.sv
     - asic/rtl/temporal_class_readout.sv
-    - asic/rtl/actor_local_state_sram.sv
-    - asic/rtl/initialized_actor_state_bank.sv
-    current_memory_model: bounded_banked_single_port_1RW_interfaces_with_behavioral_simulation_and_compiled_macro_binding
-    maximum_SRAM_bank_depth: 65536
-    macro_binding_switch: generated_top_USE_STATE_MACRO
-    sequence_start_scrub: all_banks_parallel_events_blocked_until_done
-    required_memory_replacement: bind_characterized_actor_local_SRAM_macros_before_full_chip_PPA
+    superseded_reference_blocks: scalar_scatter_banked_actor_and_addressed_SRAM_RTL_pending_removal_after_resident_full_graph_equivalence
+    current_memory_model: register_or_latch_resident_per_neuron_current_membrane_and_enabled_adaptation_state
+    superseded_memory_model: addressed_actor_local_state_SRAM_and_touched_queue
+    active_actor: asic/rtl/resident_channelized_plif_actor.sv
+    active_synapse_fabric: compile_time_int8_weights_gated_by_spike_bitmaps_without_runtime_weight_fetch
+    runtime_parallelism_requirement: direct_static_synapse_contributions_and_parallel_resident_PLIF_commit
+    latency_scaling_rule: exact_native_reprofile_must_pass_both_busiest_bank_service_and_completion_token_commit_critical_path_gates
+    link_scaling_rule: exact_per_edge_packet_volume_over_physical_link_width_must_pass_hard_and_target_bin_cycle_gates
+    mechanism_banking_rule: channel_by_spatial_accumulation_ports_with_spatially_atomic_peer_channel_commit
+    realtime_gate: every_5ms_bin_must_retire_with_U_le_1_and_target_U_le_0_8_on_representative_DSEC_activity
+    edge_buffering: ordered_lossless_spike_and_completion_FIFO_on_every_generated_DAG_edge
+    default_edge_FIFO_depth: 2
+    sequence_start_reset: resident_state_elements_clear_without_addressed_scrub
   EDA:
     front_end: native_SystemVerilog
     synthesis: Yosys
@@ -920,10 +921,9 @@ asic_implementation:
     weights_int8_MiB: 0.137237548828125
     logical_membranes: 30976000
     dense_exact_state_MiB: 189.599609375
-    implemented_direct_index_SRAM_upper_bound_MiB_excluding_weights: 338.06848907470703
-    implemented_upper_bound_scope: packed_actor_state_full_depth_touched_queues_retinotopic_markers_readout_and_default_residual_buffers
-    conclusion: full_chip_PPA_requires_real_SRAM_macros; standard_cell_expanded_arrays_are_invalid_for_scale_or_power
-    tapeout_target: pending_access_to_22nm_or_better_PDK_and_high_density_SRAM_compiler
+    final_storage_architecture: dense_register_or_latch_resident_state_without_last_bin_tags_or_touched_queues
+    conclusion: full_chip_synthesis_and_place_route_must_measure_dense_resident_state_area_clock_and_power
+    tapeout_target: pending_access_to_22nm_or_better_PDK_with_suitable_dense_latch_or_register_cells
 
 legacy_fpga_history:
   status: implementation_removed_from_active_repository
@@ -962,17 +962,16 @@ legacy_fpga_history:
     purpose: predictive_research_PPA_not_manufacturable_signoff
     RTL_language: SystemVerilog_2012
     nominal_clock_target_mhz: 200
-    manufacturable_full_model_gate: accessible_22nm_or_better_foundry_PDK_plus_characterized_high_density_actor_local_SRAM_macros
-    sky130ram_role: open_small_actor_tile_and_SRAM_macro_validation_only
+    manufacturable_full_model_gate: accessible_22nm_or_better_foundry_PDK_and_successful_dense_resident_state_place_route
+    sky130ram_role: historical_open_SRAM_actor_tile_validation_only
     external_runtime_DRAM_dependency: false_by_architecture_goal_actor_state_is_local_on_chip
   execution:
     physical_topology: 25_permanent_PLIF_actors_in_static_DAG_plus_one_final_current_readout
     cross_layer_compute_sharing: forbidden
     layer_reconfiguration: forbidden
     partial_reconfiguration: forbidden
-    permitted_shared_infrastructure: [clock_reset, input_dispatch, on_chip_state_banks, final_class_readout]
-    actor_owned_blocks: [weight_ROM, convolution_address_generator, synaptic_accumulator_lanes, PLIF_update, 
-        mechanism_logic, output_FIFO]
+    permitted_shared_infrastructure: [clock_reset, input_dispatch, final_class_readout]
+    actor_owned_blocks: [static_synapses, resident_currents, resident_membranes, resident_adaptation_state, parallel_PLIF_update, mechanism_logic]
     model_level: continuous_5ms_bins_with_configurable_prediction_window_default_10_bins
     RTL_level: synchronous_clocked_elastic_pipeline
     global_neural_timestep_barrier: a_bin_retires_only_when_the_final_readout_receives_completion_after_all_required_DAG_branches_rendezvous
@@ -985,11 +984,9 @@ legacy_fpga_history:
     procedure:
     - Stream rectified raw events to both fixed ingress branches during the active 5 ms bin; no dense whole-bin tensor is required.
     - Inject one tagged completion token at the 5 ms boundary. The token follows the same static DAG as spikes, forks on fanout, and rendezvous-waits at residual/skip/concat joins.
-    - Within each actor, accumulate all synaptic contributions for one touched destination before exactly one 
-      PLIF commit for that bin.
-    - Read sparse state including last_bin_tag; apply learned beta once per elapsed bin before current 
-      integration.
-    - Write state with the current bin tag and emit sparse output spikes to every statically connected downstream route.
+    - Accumulate static-synapse contributions directly into each destination neuron's resident current state.
+    - At completion, apply one learned-beta step and one PLIF commit to every resident neuron in parallel; no state address fetch or last-bin tag is used.
+    - Retain updated membrane and adaptation values locally and emit the resulting spike bitmap to statically connected downstream synapses.
     - After `final_fuse.standard` and all required branches have completed, update signed class-current state; every prediction_window_bins emit argmax and clear only class-current state.
     quarter_skip_merge: concatenate_project3_and_encoder2_channels_then_standard_1x1_fusion_before_PLIF
     half_skip_merge: event_multiplicity_sum_without_OR_dedup
@@ -1228,7 +1225,7 @@ workflow:
   - Add sparse event/spike scatter reference.
   - Implement SystemVerilog PLIF and convolution actor primitives.
   - Integrate the complete 25-actor segmentation graph.
-  - Bind actor-local bank interfaces to characterized SRAM macros and record routed resources,
+  - Generate and verify the complete resident spike-vector graph, then record routed resources,
     timing, activity-based power, and latency on a scale-suitable ASIC platform.
   - Validate raw-event input on DDD17 or DSEC-Semantic.
   architecture_cleanup_rule: >-

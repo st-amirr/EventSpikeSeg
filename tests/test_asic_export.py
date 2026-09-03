@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import h5py
 import numpy as np
 import pytest
 import torch
@@ -24,7 +25,12 @@ from eventspikeseg.asic import (
     state_capacity_contract,
     validate_eventspikeseg140k_topology,
 )
-from eventspikeseg.asic.activity_profile import counted_events
+from eventspikeseg.asic.activity_profile import (
+    CHECKPOINT_IDENTITY_FIELDS,
+    _event_file_bins,
+    _validate_export_checkpoint,
+    counted_events,
+)
 from eventspikeseg.asic.dag_reference import SpikeEvent
 from eventspikeseg.model import EventSpikeSeg140k, EventSpikeSegXL
 
@@ -116,6 +122,40 @@ def test_native_activity_event_expansion_preserves_count_multiplicity() -> None:
     events = counted_events(counts)
     assert events.count(SpikeEvent(0, 1, 2)) == 3
     assert events.count(SpikeEvent(1, 2, 0)) == 1
+
+
+def test_native_event_file_short_sample_preserves_geometry_and_multiplicity(
+    tmp_path,
+) -> None:
+    event_path = tmp_path / "events.h5"
+    with h5py.File(event_path, "w") as handle:
+        events = handle.create_group("events")
+        events.create_dataset("x", data=np.asarray([2, 2, 3, 4], dtype=np.uint16))
+        events.create_dataset("y", data=np.asarray([1, 1, 439, 440], dtype=np.uint16))
+        events.create_dataset("p", data=np.asarray([0, 0, 1, 1], dtype=np.uint8))
+        events.create_dataset("t", data=np.asarray([0, 1, 2, 3], dtype=np.uint32))
+        handle.create_dataset(
+            "ms_to_idx", data=np.asarray([0, 4, 4, 4, 4, 4], dtype=np.uint64)
+        )
+        handle.create_dataset("t_offset", data=np.int64(0))
+
+    bins, preprocessing = _event_file_bins(
+        event_path, start_ms=0, duration_ms=5, rectify_path=None
+    )
+
+    assert preprocessing.startswith("unrectified_sensor_coordinates")
+    assert bins == [
+        [SpikeEvent(0, 1, 2), SpikeEvent(0, 1, 2), SpikeEvent(1, 439, 3)]
+    ]
+
+
+def test_native_profile_rejects_stale_checkpoint_export() -> None:
+    identity = {field: f"value-{field}" for field in CHECKPOINT_IDENTITY_FIELDS}
+    assert _validate_export_checkpoint({"checkpoint": identity}, identity) == identity
+    stale = dict(identity)
+    stale["epoch"] = "different"
+    with pytest.raises(ValueError, match="regenerate artifacts/ASIC"):
+        _validate_export_checkpoint({"checkpoint": stale}, identity)
 
 
 def test_integer_plif_rounds_membrane_after_each_lazy_decay_step() -> None:

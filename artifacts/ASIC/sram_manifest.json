@@ -2,14 +2,14 @@
   "schema_version": "1.0.0",
   "source": {
     "model_spec": "artifacts/ASIC/model_spec.yaml",
-    "model_spec_sha256": "bbe7daffe83c723c44a39c98d32a2ca13477c026435c12711bc1d7463386c9d9",
+    "model_spec_sha256": "71d13a5a451561796428169cd015aac78561ae1898d6fdf7ba15ffcd3006c0e2",
     "checkpoint": {
       "architecture": "EventSpikeSeg140k",
       "dataset": "dsec",
-      "epoch": 35,
+      "epoch": 40,
       "seed": 17,
       "temporal_protocol_version": "dsec-six-class-fixed-time-counts-async-v1",
-      "training_strategy_version": "dsec-spike-preserving-region-consistency-v11"
+      "training_strategy_version": "dsec-ce-dice-aux-boundary-v12"
     }
   },
   "memory_contract": {

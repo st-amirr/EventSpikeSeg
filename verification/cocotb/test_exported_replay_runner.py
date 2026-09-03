@@ -9,10 +9,10 @@ ROOT = Path(__file__).resolve().parents[2]
 REPLAY = ROOT / "artifacts/RTL/smoke"
 
 
-def test_exported_epoch35_replay(tmp_path: Path) -> None:
+def test_exported_current_checkpoint_replay(tmp_path: Path) -> None:
     if not (REPLAY / "eventspikeseg140k_replay_top.sv").is_file():
         raise FileNotFoundError(
-            "generate the epoch-35 replay with scripts/prepare_asic_replay.py first"
+            "generate the current-checkpoint replay with scripts/prepare_asic_replay.py first"
         )
     sources = sorted((ROOT / "asic/rtl").glob("*.sv"))
     sources.append(REPLAY / "eventspikeseg140k_replay_top.sv")

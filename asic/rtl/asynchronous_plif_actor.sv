@@ -11,6 +11,9 @@ module asynchronous_plif_actor #(
   parameter integer COUNT_WIDTH     = $clog2(DEST_COUNT + 1),
   parameter integer CHANNEL_COUNT   = 1,
   parameter integer SPATIAL_DEST_COUNT = DEST_COUNT,
+  parameter integer PARAMETER_LOCAL_SPATIAL_DEST_COUNT = SPATIAL_DEST_COUNT,
+  parameter integer PARAMETER_CHANNEL_STRIDE = 1,
+  parameter integer PARAMETER_CHANNEL_OFFSET = 0,
   parameter integer USE_CHANNEL_PARAMETERS = 0,
   parameter integer USE_STATE_MACRO = 0,
   parameter logic [CHANNEL_COUNT*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
@@ -140,12 +143,16 @@ module asynchronous_plif_actor #(
                               (commit_index_reg + 1'b1);
 
   initial begin
-    if (USE_CHANNEL_PARAMETERS && DEST_COUNT != CHANNEL_COUNT * SPATIAL_DEST_COUNT)
-      $error("channelized destination geometry does not match DEST_COUNT");
+    if (USE_CHANNEL_PARAMETERS &&
+        (((DEST_COUNT-1)/PARAMETER_LOCAL_SPATIAL_DEST_COUNT)*
+          PARAMETER_CHANNEL_STRIDE+PARAMETER_CHANNEL_OFFSET) >= CHANNEL_COUNT)
+      $error("channelized destination geometry exceeds the global population");
   end
 
   always_comb begin
-    parameter_channel = $unsigned(destination_reg) / SPATIAL_DEST_COUNT;
+    parameter_channel =
+      ($unsigned(destination_reg)/PARAMETER_LOCAL_SPATIAL_DEST_COUNT)*
+      PARAMETER_CHANNEL_STRIDE+PARAMETER_CHANNEL_OFFSET;
     if (USE_CHANNEL_PARAMETERS) begin
       selected_beta = CHANNEL_BETAS[parameter_channel*BETA_WIDTH +: BETA_WIDTH];
       selected_threshold = CHANNEL_THRESHOLDS[

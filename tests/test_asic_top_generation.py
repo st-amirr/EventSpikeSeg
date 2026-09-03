@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import subprocess
@@ -23,7 +24,60 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
     generator = _load_module(
         ROOT / "scripts/generate_asic_top.py", "eventspikeseg_asic_top_generator"
     )
-    graph = topology.eventspikeseg140k_graph_contract()
+    graph = copy.deepcopy(topology.eventspikeseg140k_graph_contract())
+    # Preserve native/half/quarter/eighth geometry and concat widths in the
+    # reduced resident fixture. The old all-1x1 scalar fixture could ignore
+    # these relationships; bitmap routing cannot and should not.
+    for edge in graph["edges"]:
+        if edge.get("transform") == "channel_concat":
+            edge["channel_offset"] = 0 if edge["channel_offset"] == 0 else 1
+    native = {"detail_stem", "detail1.standard", "final_fuse.standard"}
+    half = {
+        "stem",
+        "enc1.standard",
+        "enc1_extra.depthwise",
+        "enc1_extra.pointwise",
+    }
+    quarter = {
+        "down2.standard",
+        "enc2.depthwise",
+        "enc2.pointwise",
+        "enc2_extra.depthwise",
+        "enc2_extra.pointwise",
+        "decoder2_fuse",
+        "project2",
+    }
+
+    def output_hw(name: str) -> list[int]:
+        if name in native:
+            return [8, 8]
+        if name in half:
+            return [4, 4]
+        if name in quarter:
+            return [2, 2]
+        return [1, 1]
+
+    def input_hw(name: str) -> list[int]:
+        if name in {"detail_stem", "stem", "detail1.standard", "final_fuse.standard"}:
+            return [8, 8]
+        if name in {
+            "enc1.standard",
+            "enc1_extra.depthwise",
+            "enc1_extra.pointwise",
+            "down2.standard",
+        }:
+            return [4, 4]
+        if name in {
+            "enc2.depthwise",
+            "enc2.pointwise",
+            "enc2_extra.depthwise",
+            "enc2_extra.pointwise",
+            "down3.depthwise",
+            "decoder2_fuse",
+            "project2",
+        }:
+            return [2, 2]
+        return [1, 1]
     layers = []
     for index, name in enumerate(graph["actor_topological_order"]):
         safe = name.replace(".", "_")
@@ -31,7 +85,9 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
         beta = tmp_path / f"{index:02d}_{safe}_beta.mem"
         threshold = tmp_path / f"{index:02d}_{safe}_threshold.mem"
         parameters = tmp_path / f"{index:02d}_{safe}.json"
-        weight.write_text("01\n", encoding="ascii")
+        input_channels = 2 if name in {"decoder2_fuse", "final_fuse.standard"} else 1
+        weight_count = input_channels
+        weight.write_text("01\n" * weight_count, encoding="ascii")
         beta.write_text("7fff\n", encoding="ascii")
         threshold.write_text("0001\n", encoding="ascii")
         parameters.write_text(
@@ -49,16 +105,16 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
         layers.append(
             {
                 "name": name,
-                "input_hw": [1, 1],
-                "output_hw": [1, 1],
-                "in_channels": 1,
+                "input_hw": input_hw(name),
+                "output_hw": output_hw(name),
+                "in_channels": input_channels,
                 "out_channels": 1,
                 "kernel": [1, 1],
                 "stride": [1, 1],
                 "padding": [0, 0],
                 "dilation": [1, 1],
                 "groups": 1,
-                "weight_count": 1,
+                "weight_count": weight_count,
                 "weight_rom": weight.name,
                 "beta_rom": beta.name,
                 "threshold_rom": threshold.name,
@@ -70,8 +126,8 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
     layers.append(
         {
             "name": graph["current_readout"],
-            "input_hw": [1, 1],
-            "output_hw": [1, 1],
+            "input_hw": [8, 8],
+            "output_hw": [8, 8],
             "in_channels": 1,
             "out_channels": 2,
             "kernel": [1, 1],
@@ -95,9 +151,23 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
         encoding="utf-8",
     )
     generated = tmp_path / "generated_dag.sv"
-    generator.generate_top(model_spec, generated, module_name="generated_mini_dag")
+    generator.generate_top(
+        model_spec,
+        generated,
+        module_name="generated_mini_dag",
+        architecture="legacy_sram",
+    )
     text = generated.read_text(encoding="utf-8")
     assert text.count("streaming_channelized_plif_actor #(") == 25
+    buffered_edge_count = sum(
+        edge["destination"] != "prediction" for edge in graph["edges"]
+    )
+    assert text.count("event_stream_fifo #(") == buffered_edge_count
+    assert text.count("_high_watermark;") == buffered_edge_count
+    assert "parameter integer EDGE_FIFO_DEPTH = 2" in text
+    assert text.count(".USE_PARALLEL_BANKED_STATE(0)") == 25
+    assert text.count(".STATE_CHANNEL_LANE_COUNT(1)") == 25
+    assert text.count(".STATE_SPATIAL_LANE_COUNT(1)") == 25
     assert text.count("binary_event_union2 #(") == 9
     assert text.count("event_upsample2x ") == 3
     assert "temporal_class_readout #(\n" in text
@@ -112,6 +182,34 @@ def test_exact_dag_generator_emits_compilable_25_actor_top(tmp_path: Path) -> No
     )
     assert initialization_assignment.count("initialized_actor_") == 25
     assert initialization_assignment.count("initialized_readout") == 1
+
+    lane_config = tmp_path / "lane_config.json"
+    first_actor = graph["actor_topological_order"][0]
+    lane_config.write_text(
+        json.dumps(
+            {
+                "actors": {
+                    first_actor: {
+                        "use_parallel_banked_state": True,
+                        "channel_lanes": 1,
+                        "spatial_lanes": 1,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    configured = tmp_path / "generated_configured_dag.sv"
+    generator.generate_top(
+        model_spec,
+        configured,
+        module_name="generated_configured_dag",
+        lane_config_path=lane_config,
+        architecture="legacy_sram",
+    )
+    configured_text = configured.read_text(encoding="utf-8")
+    assert configured_text.count(".USE_PARALLEL_BANKED_STATE(1)") == 1
+    assert configured_text.count(".USE_PARALLEL_BANKED_STATE(0)") == 24
 
     testbench = tmp_path / "generated_mini_dag_tb.sv"
     testbench.write_text(
@@ -184,6 +282,69 @@ endmodule
         ["vvp", str(executable)], check=True, capture_output=True, text=True, cwd=ROOT
     )
     assert "FULL_DAG_COMPLETION_PASS" in result.stdout
+
+    resident = tmp_path / "generated_resident_dag.sv"
+    generator.generate_top(
+        model_spec, resident, module_name="generated_resident_dag"
+    )
+    resident_text = resident.read_text(encoding="utf-8")
+    assert resident_text.count("streaming_resident_channelized_plif_actor #(") == 25
+    assert resident_text.count(".SPATIAL_TILE_WIDTH(") == 25
+    assert resident_text.count(".SPATIAL_TILE_HEIGHT(") == 25
+    assert resident_text.count("resident_spike_vector_union2 #(") == 9
+    assert resident_text.count("resident_spike_vector_upsample2x #(") == 3
+    assert "resident_temporal_class_readout #(\n" in resident_text
+    assert "actor_local_state_sram" not in resident_text
+    assert "USE_STATE_MACRO" not in resident_text
+
+    resident_testbench = tmp_path / "generated_resident_dag_tb.sv"
+    resident_testbench.write_text(
+        testbench.read_text(encoding="utf-8").replace(
+            "generated_mini_dag", "generated_resident_dag"
+        ),
+        encoding="utf-8",
+    )
+    resident_executable = tmp_path / "generated_resident_dag.vvp"
+    resident_sources = [
+        ROOT / "asic/rtl/event_fork2.sv",
+        ROOT / "asic/rtl/event_join2.sv",
+        ROOT / "asic/rtl/resident_channelized_plif_actor.sv",
+        ROOT / "asic/rtl/resident_convolution_synapses.sv",
+        ROOT / "asic/rtl/resident_event_ingress_adapter.sv",
+        ROOT / "asic/rtl/resident_plif_population.sv",
+        ROOT / "asic/rtl/resident_retinotopic_plif_population.sv",
+        ROOT / "asic/rtl/resident_spike_vector_channel_offset.sv",
+        ROOT / "asic/rtl/resident_spike_vector_edge.sv",
+        ROOT / "asic/rtl/resident_spike_vector_fork2.sv",
+        ROOT / "asic/rtl/resident_spike_vector_union2.sv",
+        ROOT / "asic/rtl/resident_spike_vector_upsample2x.sv",
+        ROOT / "asic/rtl/resident_temporal_class_readout.sv",
+        ROOT / "asic/rtl/tiled_resident_channelized_plif_actor.sv",
+        ROOT / "asic/rtl/retinotopic_mechanism_update.sv",
+        ROOT / "asic/rtl/streaming_resident_channelized_plif_actor.sv",
+    ]
+    subprocess.run(
+        [
+            "iverilog",
+            "-g2012",
+            "-s",
+            "generated_resident_dag_tb",
+            "-o",
+            str(resident_executable),
+            *(str(path) for path in resident_sources),
+            str(resident),
+            str(resident_testbench),
+        ],
+        check=True,
+        cwd=ROOT,
+        timeout=60,
+    )
+    # Icarus compiles the complete reduced resident DAG, but event simulation
+    # of its deliberately fully parallel bitmap combinational network takes
+    # more than 60 seconds even at 8x8. Bounded cocotb tests cover each resident
+    # actor/route primitive; full-DAG resident equivalence needs a compiled
+    # simulator and is not claimed by this elaboration gate.
+    assert resident_executable.exists()
 
 
 def test_packed_literal_chunks_large_rom_without_changing_word_order(tmp_path: Path) -> None:

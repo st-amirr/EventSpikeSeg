@@ -36,14 +36,18 @@ The completed mechanism screen showed `winner_peer` inhibition starving the enco
 The active six-class DSEC/ASIC target is `EventSpikeSeg140k`: 149,835 registered
 parameters, 149,423 executed inference parameters, 25 permanent PLIF actors, and one
 temporal class-current readout. The prior 11-class export is historical only.
-Parameter count is only a proxy for ASIC logic cost; the dominant constraint is persistent
-membrane/adaptation traffic, followed by pointwise mixing, event routing, FIFO
-pressure, and inhibition/adaptation arithmetic.
+Parameter count is only a proxy for ASIC logic cost; the dominant constraint is physical
+resident current/membrane/adaptation state, followed by pointwise mixing, event routing,
+clock/reset distribution, and inhibition/adaptation arithmetic.
 
 ### Logical-state footprint is much larger than parameter memory
 
-At native 440x640, v8 owns **30,976,000** membrane states. Threshold adaptation adds
-age/amplitude on **10,982,400** neurons. Because the current DSEC training path uses touched-neuron lazy updates, exact runtime needs a compact 24-bit `last_bin_tag` for every live sparse state. A hypothetical dense exact representation is about **189.60 MiB** before queues/alignment. The full ASIC therefore requires characterized actor-local SRAM macros; a sparse implementation is valid only if full-sequence measurements establish a lossless bound.
+At native 440x640, v8 owns **30,976,000** current/membrane identities. Threshold adaptation adds
+age/amplitude on **10,982,400** neurons. The active direct-state design gives every identity local
+register/latch state and advances every PLIF once per 5 ms completion token; it therefore needs no
+`last_bin_tag`, addressed state SRAM, fetch, or writeback. The exact logical state inventory is
+1,590,476,800 bits, or **189.60 MiB-equivalent**, before routing and control. This is a physical
+standard-cell/latch implementation burden, not a memory-device capacity requirement.
 
 ## Open: continuous learned neuron parameters
 
@@ -84,7 +88,70 @@ Native SystemVerilog now covers channel-aware standard/grouped/depthwise kernel 
 
 The active six-class trained-v4 generated channelized convolution/PLIF graph includes all 25 actors, exact static routes, grouped retinotopic mechanism commits, 143,824 exported synaptic weights, and the temporal readout. Model-scale memories now cross bounded banked 1RW interfaces, and the SRAM-integrated reduced-geometry full-DAG replay passes final-output plus per-actor current, candidate/membrane, spike, and adaptation age/amplitude comparison. A reduced 4x4 actor now also reaches clean routed SKY130 GDS with two characterized 80x64 macros, closing the interface experiment only. Full-model macro selection/banking, native residual-dedup capacity, native-resolution activity/latency, and routed activity-based PPA remain open. Do not report native real-time or power results until those paths are measured.
 
-The tracked native profiler now targets the checkpoint-authoritative complete 234-record
-validation sequence `zurich_city_02_a`. Execution is currently blocked by local data
-availability: this Mac has the checkpoint and export but no mounted DSEC raw-event tree.
-Random or reduced synthetic events must not be substituted for article activity evidence.
+The paragraph above records the superseded SRAM implementation milestone; it is not the active
+direct-state architecture. The active replacement uses resident state elements and spike-vector
+synapse fabrics. Its full 25-actor generated graph, full-scale elaboration, placement, timing, and
+power are not complete, so no resident full-model PPA claim is yet valid.
+
+The tracked native profiler still targets the checkpoint-authoritative complete 234-record
+validation sequence `zurich_city_02_a` for a capacity claim. A real `zurich_city_13_a/events.h5`
+sample is now available and its first 5 ms has completed through the full native integer DAG, but
+the sample has no matching rectification map and is not the checkpoint validation sequence. It is
+therefore preliminary implementation activity, not a full-sequence capacity or publication power
+claim. The resulting activity also proves that the present single-lane actor organization misses
+the 5 ms deadline by at least 569.9x at the isolated tile's nominal clock; parallel bank/lane design
+is now an explicit open implementation requirement.
+
+Ordinary and retinotopic actors now have parallel scatter plus independent state/queue banks, and
+the generated graph has ordered edge FIFOs. Aggregate bank/commit/link floors produced a 924-lane
+200 MHz target, but the subsequent event-order timing model rejected the collection fabric:
+`down2.standard` serializes peer-channel contributions and needs 40,107,810 isolated cycles. The
+spatial-only contribution port must be replaced by channel-by-spatial accumulation with an atomic
+spatial mechanism commit. Ordinary actors now have per-bank contribution FIFOs, but their native
+depth/occupancy and combined timing have not been reprofiled. Inter-actor FIFO occupancy, route
+backpressure, full-chip timing degradation, physical SRAM ports, area, and activity power remain
+unmeasured. Do not report the earlier independent floors as end-to-end latency.
+
+The final direction now removes addressed PLIF state SRAM entirely. Ordinary and retinotopic
+resident populations, direct convolution synapses, raw-event ingress, bitmap routing, and the
+resident temporal readout are implemented as primitives. Full 25-actor resident graph generation,
+native elaboration, routed timing, and power remain open. Dense residency eliminates fetch latency
+but exposes parallel reduction trees, roughly 31 million PLIF update datapaths, and their clock/reset
+load. The former full-map-per-tile broadcast has been replaced by exact receptive-halo wiring;
+reduced synthesis is still not proof the native graph fits. Publication results
+must report the synthesized resident implementation rather than infer chip size from parameters.
+
+Native resident elaboration currently exceeds the available tool memory. The checkpoint-derived
+25-actor top was generated successfully, but Icarus was killed with exit 137 under the 8 GB Docker
+limit before simulation. This is not a functional mismatch and must not be reported as a latency
+or power result. Hierarchical spatial tiling and exact receptive-halo mapping now pass unit and full
+regressions, but the physical design still contains about 1.59 billion resident state bits plus
+update and synapse logic. Representative multi-tile routing is the next implementation experiment.
+# 2026-09-02 — Exact resident tiles are slow in emulated Yosys/ORFS
+
+The checkpoint-weighted 8x8 `detail_stem` resident tile spent more than ten minutes in Yosys
+canonicalization. A 4x4 version canonicalized in 58 seconds (329 MiB peak) but remained in mapped
+netlist optimization after more than twenty additional minutes. Both bounded runs were manually
+terminated, producing exit 137 from container stop; neither was an OOM and neither reached routing.
+No PPA may be extracted from these partial logs. The immediate characterization fallback is 2x2,
+while the implementation hierarchy remains 8x8.
+
+The subsequent 2x2 run completed detailed routing and extraction but failed strict final validation
+on 68 max-slew endpoints (321.65--360.29 ps versus 320 ps). It had zero setup/hold, capacitance,
+fanout, congestion, and DRC failures. Because it copied the stale SDC before the resident input-port
+fix, it required a resident-SDC rerun.
+
+**Resolved for the 2x2 characterization unit:** OpenROAD interprets `SLEW_MARGIN` as an integer
+percentage. A 1.2% rerun left 27 violations and a 20% rerun left 8. The accepted 50% run resized
+142 cells and inserted 292 additional pre-route repair buffers across the placement and global-route
+stages. Extracted max-slew, max-capacitance, max-fanout, setup, hold, and detailed-route DRC counts
+are all zero; worst max-slew margin is +90.03 ps. This does not resolve full-model elaboration or
+full-chip PPA.
+
+# 2026-09-02 — Multi-tile tag checker inferred a latch
+
+The first Yosys process-lowering run of the checkpoint-exact two-tile wrapper found that the
+integer loop index in the result-tag comparator was assigned only when results were valid. This
+inferred unintended storage even though the comparator output itself had a default. The index now
+has an unconditional combinational assignment. The same two-tile synthesis and cocotb regression
+pass, and the tiled wrapper is now part of the representative synthesis gate.
