@@ -269,6 +269,7 @@ FINAL_MECHANISM_MAX_SCALE = 0.0625
 FINAL_NEURON_FREEZE_FRACTION = 0.20
 FINAL_REFINEMENT_LR_MULTIPLIER = 1.0
 FINAL_JOINT_LR_MULTIPLIER = 0.50
+DATALOADER_PREFETCH_FACTOR = 2
 BASE_NEURON_PARAMETER_TOKENS = ("beta_logit", "threshold_logit")
 MECHANISM_PARAMETER_TOKENS = (
     "adaptation_tau_logit",
@@ -1174,9 +1175,9 @@ def train_architecture(
         "pin_memory": resolved_device.type == "cuda",
     }
     if data_workers > 0:
-        # One queued native-resolution record per worker bounds host RAM while
-        # overlapping HDF5 decode, rectification, augmentation, and binning.
-        loader_options["prefetch_factor"] = 1
+        # Two queued native-resolution records per worker keep CPU preprocessing
+        # ahead of the GPU. Docker /dev/shm must cover workers * this factor.
+        loader_options["prefetch_factor"] = DATALOADER_PREFETCH_FACTOR
     validation_loader = DataLoader(
         validation_dataset,
         batch_size=batch_size,
@@ -1357,7 +1358,9 @@ def train_architecture(
                 "sequential_chunks": sequential_chunks,
                 "data_workers": data_workers,
                 "pin_memory": resolved_device.type == "cuda",
-                "prefetch_factor": 1 if data_workers > 0 else None,
+                "prefetch_factor": (
+                    DATALOADER_PREFETCH_FACTOR if data_workers > 0 else None
+                ),
                 "training_sampling_strategy": (
                     "sequential-circular-v1"
                     if isinstance(train_pool, DSECRawEventDataset) and train_samples > 0
@@ -1587,7 +1590,8 @@ def train_architecture(
         )
         print(
             f"DSEC input pipeline | cpu_workers={data_workers} | "
-            f"prefetch_per_worker={1 if data_workers > 0 else 0} | "
+            f"prefetch_per_worker="
+            f"{DATALOADER_PREFETCH_FACTOR if data_workers > 0 else 0} | "
             f"pinned_host_memory={'on' if resolved_device.type == 'cuda' else 'off'}",
             flush=True,
         )
