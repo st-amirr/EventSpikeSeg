@@ -1,3 +1,11 @@
+## 2026-09-03 — Balance workers and two-record prefetch
+
+Retain the intentional `prefetch_factor=2` throughput setting, reduce the DSEC
+Compose service from eight workers to four, and retain the 512 MiB container
+`/dev/shm` limit. This permits eight queued native 440x640 records, preserving CPU
+preprocessing overlap without the sixteen-record pressure that exhausted shared
+memory. Report the factor consistently in startup output and checkpoint metadata.
+
 ## 2026-09-03 — Restore rare-class CE and delay backbone refinement
 
 The epoch-40 to epoch-60 checkpoint comparison showed that the six-class model
