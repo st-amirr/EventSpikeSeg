@@ -69,10 +69,13 @@ FINAL_ARCHITECTURE = SegmentationArchitecture(
     output_competition_enabled=False,
 )
 
-# Final-model-only late refinement schedule.  The generic trainer discovers this
-# attribute at runtime, so frozen historical benchmark models are unaffected.
-FINAL_REFINEMENT_FREEZE_START = 0.70
-FINAL_REFINEMENT_UNFREEZE_START = 0.90
+# Final-model-only late refinement schedule.  Keep the semantic backbone
+# trainable until the final 10% so rare-class features can continue improving.
+# A value of 1.0 leaves the backbone frozen through the last training epoch.
+# The generic trainer discovers this attribute at runtime, so frozen historical
+# benchmark models are unaffected.
+FINAL_REFINEMENT_FREEZE_START = 0.90
+FINAL_REFINEMENT_UNFREEZE_START = 1.00
 
 
 def _block_lif(block: SpikingConvBlock) -> LIFConfig:

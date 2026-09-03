@@ -100,7 +100,7 @@ coloured semantic prediction on the right. The predictions are captured during t
 normal chronological validation pass, so this adds no extra forward passes and does not
 disturb recurrent stream state.
 
-The trainer consumes every packet before forming one complete-record semantic objective: ordinary pixel CE + present-class Dice + semantic auxiliary CE + boundary supervision. The prior macro-CE blend and same-class region-consistency term are no longer active. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
+The trainer consumes every packet before forming one complete-record semantic objective: 0.5 pixel-mean CE + 0.5 target-present-class macro CE + 0.4 present-class Dice + 0.1 semantic auxiliary CE + 0.01 boundary supervision. Static class weights and same-class region-consistency are inactive. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
 complete-record prediction without an activation graph, then replay chronological chunks
 with that one objective's output gradients. This releases each chunk graph without ever
 applying the complete target to a partial history. The replay state snapshot is kept in
@@ -254,9 +254,8 @@ sequence and resets at sequence/frame gaps.
 The model exposes a late refinement schedule:
 
 ```text
-0–70%   all layers train jointly
-70–90%  semantic backbone frozen; detail/decoder/readout heads refine
-90–100% all layers unfrozen with an additional 0.20× LR multiplier
+0–90%   all layers train jointly
+90–100% semantic backbone frozen; detail/decoder/readout heads refine
 ```
 
 Final training validates after every epoch, saves the best validation-mIoU model, saves a recovery checkpoint every configured N epochs, and saves the last state separately. Auxiliary heads are training-only and are skipped in evaluation/inference.

@@ -1,3 +1,14 @@
+## 2026-09-03 — Restore rare-class CE and delay backbone refinement
+
+The epoch-40 to epoch-60 checkpoint comparison showed that the six-class model
+retained useful IoU for broad classes but produced effectively zero object and
+human IoU. The decoder-detail phase beginning at 70% did not recover either class
+and held mIoU near 25.8%, below the 27.44% epoch-40 best. Restore the intended
+0.5 pixel-mean CE plus 0.5 target-present-class macro CE, increase present-class
+Dice moderately from 0.3 to 0.4, retain auxiliary CE at 0.1, and reduce boundary
+BCE from 0.02 to 0.01. Keep all semantic-backbone modules trainable through 90%
+of training and reserve decoder/detail-only refinement for the final 10%.
+
 ## 2026-08-31 — Simplify the active DSEC segmentation objective
 
 Replace the final-run 0.5 pixel CE + 0.5 target-present macro CE + 0.3 Dice + 0.05 same-class region-consistency objective with a literature-aligned segmentation loss: 1.0 ordinary pixel CE + 0.3 Dice averaged over target-present classes + 0.10 auxiliary semantic CE + 0.02 boundary BCE. Keep the SNN activity regularizer because it constrains spike dynamics rather than semantic class weighting. Remove the macro-CE contribution and region-consistency contribution from the active final run. Historical benchmark suites retain their frozen loss profiles.

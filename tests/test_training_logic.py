@@ -353,14 +353,14 @@ def test_loss_profiles_remain_explicit() -> None:
     for suite in ("top-ten", "top-five", "top-three"):
         assert loss_profile_for_suite(suite).cross_entropy == 0.5
     assert loss_profile_for_suite("final") == LossProfile(
-        cross_entropy=0.0,
-        pixel_cross_entropy=1.0,
+        cross_entropy=0.50,
+        pixel_cross_entropy=0.50,
         focal=0.0,
-        dice=0.30,
+        dice=0.40,
         region_consistency=0.0,
         auxiliary_ce=0.10,
         auxiliary_focal=0.0,
-        boundary=0.02,
+        boundary=0.01,
     )
 
 
@@ -513,6 +513,15 @@ def test_final_objective_keeps_ce_dice_activity_and_auxiliary_supervision() -> N
     assert torch.allclose(loss, expected)
 
 
+def test_final_loss_profile_balances_common_and_rare_classes() -> None:
+    profile = loss_profile_for_suite("final")
+    assert profile.pixel_cross_entropy == 0.50
+    assert profile.cross_entropy == 0.50
+    assert profile.dice == 0.40
+    assert profile.auxiliary_ce == 0.10
+    assert profile.boundary == 0.01
+
+
 def test_present_class_dice_excludes_target_absent_classes() -> None:
     logits = torch.tensor(
         [[[[2.0, 2.0], [2.0, 2.0]], [[4.0, 4.0], [4.0, 4.0]]]]
@@ -547,6 +556,19 @@ def test_final_refinement_schedule_phases() -> None:
         False,
     )
     assert refinement_phase_for_epoch(10, 10, schedule) == ("final_joint_low_lr", True)
+
+
+def test_refinement_can_freeze_backbone_through_last_epoch() -> None:
+    schedule = (0.90, 1.00)
+    assert refinement_phase_for_epoch(72, 80, schedule) == ("joint", True)
+    assert refinement_phase_for_epoch(73, 80, schedule) == (
+        "decoder_detail_refinement",
+        False,
+    )
+    assert refinement_phase_for_epoch(80, 80, schedule) == (
+        "decoder_detail_refinement",
+        False,
+    )
 
 
 def test_resume_preserves_checkpoint_learning_rate_and_scheduler_position() -> None:

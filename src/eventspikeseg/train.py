@@ -246,23 +246,23 @@ class LossProfile:
 
 
 HISTORICAL_LOSS_PROFILE = LossProfile(cross_entropy=0.5)
-# Keep the active DSEC objective close to the successful event-segmentation
-# literature: ordinary pixel CE as the primary semantic loss, a modest
-# present-class Dice term, deep semantic supervision, and explicit boundary
-# supervision. The SNN activity regularizer remains separate from segmentation
-# supervision.
+# Balance ordinary pixel CE with target-present class-macro CE. The former keeps
+# large regions stable; the latter prevents rare classes from disappearing from
+# the gradient. A moderate Dice term reinforces complete regions without
+# overwhelming the CE signal. The SNN activity regularizer remains separate from
+# semantic supervision.
 FINAL_LOSS_PROFILE = LossProfile(
-    cross_entropy=0.0,
-    pixel_cross_entropy=1.0,
+    cross_entropy=0.50,
+    pixel_cross_entropy=0.50,
     focal=0.0,
-    dice=0.30,
+    dice=0.40,
     region_consistency=0.0,
     auxiliary_ce=0.10,
     auxiliary_focal=0.0,
-    boundary=0.02,
+    boundary=0.01,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-ce-dice-aux-boundary-v12"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-balanced-ce-dice-aux-boundary-v13"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -1089,8 +1089,8 @@ def refinement_phase_for_epoch(
     if schedule is None:
         return "joint", True
     freeze_start, unfreeze_start = schedule
-    if not (0.0 < freeze_start < unfreeze_start < 1.0):
-        raise ValueError("refinement schedule must satisfy 0 < freeze < unfreeze < 1")
+    if not (0.0 < freeze_start < unfreeze_start <= 1.0):
+        raise ValueError("refinement schedule must satisfy 0 < freeze < unfreeze <= 1")
     progress = (epoch - 1) / float(max(1, epochs))
     if progress >= unfreeze_start:
         return "final_joint_low_lr", True
@@ -1328,7 +1328,7 @@ def train_architecture(
                 "training_phase": training_phase_name,
                 "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
                 "training_objective": (
-                    "full-window-1.0-pixel-ce-plus-0.3-present-dice-plus-0.1-aux-ce-plus-0.02-boundary"
+                    "full-window-0.5-pixel-ce-plus-0.5-present-class-macro-ce-plus-0.4-present-dice-plus-0.1-aux-ce-plus-0.01-boundary"
                     if is_final_run
                     else "macro-present-class-historical-compound"
                 ),
@@ -1600,7 +1600,8 @@ def train_architecture(
     if is_final_run:
         print(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
-            "objective=1.0-pixel-CE+0.3-present-Dice+0.1-aux-CE+0.02-boundary | "
+            "objective=0.5-pixel-CE+0.5-present-class-macro-CE"
+            "+0.4-present-Dice+0.1-aux-CE+0.01-boundary | "
             "focal=off activity=on | "
             f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "

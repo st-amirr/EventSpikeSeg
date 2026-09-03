@@ -633,17 +633,20 @@ training:
     default_weight_decay: 0.0001
   scheduler: cosine_annealing
   loss:
-    primary: pixel_mean_cross_entropy
+    primary: balanced_pixel_and_target_present_class_cross_entropy
     ignore_index: 255
     class_balancing: no_static_class_weights_for_final_suite
     focal_balancing: macro_average_over_target_present_classes_where_focal_is_enabled
-    final_pixel_cross_entropy_weight: 1.0
-    final_macro_cross_entropy_weight: 0.0
-    final_dice_weight: 0.3
+    final_pixel_cross_entropy_weight: 0.5
+    final_macro_cross_entropy_weight: 0.5
+    final_dice_weight: 0.4
     final_same_class_neighbor_consistency_weight: 0.0
     region_consistency: disabled_for_final_suite
     final_auxiliary_pixel_ce_weight: 0.1
-    final_boundary_weight: 0.02
+    final_boundary_weight: 0.01
+    backbone_refinement:
+      joint_training_fraction: [0.0, 0.9]
+      decoder_detail_only_fraction: [0.9, 1.0]
     absent_class_behavior: no_positive_class_term_but_logits_remain_in_every_present_class_softmax_denominator
     optional_future_regularizers:
       spike_rate: 0.001
