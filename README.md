@@ -260,11 +260,20 @@ The model exposes a late refinement schedule:
 
 Final training validates after every epoch, saves the best validation-mIoU model, saves a recovery checkpoint every configured N epochs, and saves the last state separately. Auxiliary heads are training-only and are skipped in evaluation/inference.
 
+The `train-dsec-no-custom-mechanisms` service performs a one-epoch weights-only
+fine-tune from the completed epoch-80 checkpoint with peer-membrane inhibition
+and triangular threshold adaptation forced off. It retains all tensor-shape and
+checkpoint-compatible PLIF stages, uses a fresh `1e-5` optimizer, and writes only
+to `artifacts/checkpointsV4/dsec_6class/no_custom_mechanisms`.
+
 When resuming, `--resume-lr RATE` replaces the largest optimizer-group initial
 learning rate with `RATE`, preserves the relative initial rates of the other
-groups, and then calculates the current rates from the cosine scheduler's
-restored epoch. It does not restart the schedule or force a late epoch to use the
-full initial rate.
+groups, retargets cosine decay to the current `--epochs` value, and then
+calculates the current rates from the checkpoint's completed epoch. It does not
+restart training at epoch zero or force a late epoch to use the full initial
+rate. This also lets a checkpoint produced by a short ablation (for example,
+one epoch) continue under a longer schedule without restoring an already
+exhausted scheduler.
 
 ## Accuracy status
 

@@ -139,16 +139,22 @@ def set_resume_learning_rate(
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     rate: float,
+    total_epochs: int,
 ) -> list[float]:
-    """Replace the largest base LR and evaluate the scheduler at its saved epoch."""
+    """Replace base LR/horizon and evaluate the schedule at its saved epoch."""
     if rate <= 0.0:
         raise ValueError("resume LR must be positive")
+    if total_epochs < 1:
+        raise ValueError("resume scheduler total epochs must be positive")
     restored_base_rates = [float(value) for value in scheduler.base_lrs]
     largest_base = max(restored_base_rates, default=0.0)
     if largest_base <= 0.0:
         raise ValueError("cannot set resume LR from zero scheduler base rates")
     factor = rate / largest_base
     scheduler.base_lrs = [value * factor for value in restored_base_rates]
+    if not hasattr(scheduler, "T_max"):
+        raise TypeError("resume LR requires a cosine scheduler with T_max")
+    scheduler.T_max = total_epochs
     for group, base_rate in zip(optimizer.param_groups, scheduler.base_lrs):
         group["initial_lr"] = base_rate
 
@@ -1138,6 +1144,8 @@ def train_architecture(
     dsec_class_count: int = 11,
     data_workers: int = 0,
     resume_lr: float | None = None,
+    load_weights_only: bool = False,
+    disable_custom_mechanisms: bool = False,
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
@@ -1151,6 +1159,10 @@ def train_architecture(
             raise ValueError("resume_lr must be positive")
         if load is None:
             raise ValueError("resume_lr requires a checkpoint supplied with --load")
+    if load_weights_only and load is None:
+        raise ValueError("load_weights_only requires a checkpoint supplied with --load")
+    if load_weights_only and resume_lr is not None:
+        raise ValueError("load_weights_only uses --learning-rate, not --resume-lr")
     if sequential_chunks > 1 and dataset_name != "dsec":
         raise ValueError(
             "sequential_chunks > 1 is supported only for DSEC raw-event inputs"
@@ -1365,6 +1377,8 @@ def train_architecture(
                 "mechanism_scale": current_mechanism_scale,
                 "competition_enabled": current_competition_enabled,
                 "hidden_inhibition_enabled": current_hidden_inhibition_enabled,
+                "custom_neuron_mechanisms_enabled": not disable_custom_mechanisms,
+                "weights_only_fine_tune": load_weights_only,
                 "neuron_dynamics_trainable": current_neuron_dynamics_trainable,
                 "amp": amp_enabled,
                 "sequential_chunks": sequential_chunks,
@@ -1446,9 +1460,15 @@ def train_architecture(
             )
         model.load_state_dict(checkpoint["model_state_dict"])
 
-        optimizer_state = checkpoint.get("optimizer_state_dict")
-        scheduler_state = checkpoint.get("scheduler_state_dict")
-        scaler_state = checkpoint.get("scaler_state_dict")
+        optimizer_state = (
+            None if load_weights_only else checkpoint.get("optimizer_state_dict")
+        )
+        scheduler_state = (
+            None if load_weights_only else checkpoint.get("scheduler_state_dict")
+        )
+        scaler_state = (
+            None if load_weights_only else checkpoint.get("scaler_state_dict")
+        )
         if optimizer_state is not None:
             optimizer.load_state_dict(optimizer_state)
         if scheduler_state is not None:
@@ -1457,14 +1477,14 @@ def train_architecture(
         restored_group_rates = list(resumed_group_rates)
         if resume_lr is not None:
             resumed_group_rates = set_resume_learning_rate(
-                optimizer, scheduler, resume_lr
+                optimizer, scheduler, resume_lr, epochs
             )
         if scaler_state is not None and amp_enabled:
             scaler.load_state_dict(scaler_state)
 
         loaded_epoch = int(checkpoint.get("epoch", 0))
-        start_epoch = loaded_epoch + 1
-        if start_epoch > epochs:
+        start_epoch = 1 if load_weights_only else loaded_epoch + 1
+        if not load_weights_only and start_epoch > epochs:
             raise ValueError(
                 f"checkpoint is already at epoch {loaded_epoch}, but --epochs={epochs}; "
                 "set --epochs to a larger total target"
@@ -1534,21 +1554,36 @@ def train_architecture(
                     checkpoint.get("neuron_diagnostics", {}) or {}
                 )
                 shutil.copy2(load_path, best_checkpoint_path)
-        previous_training_phase = checkpoint.get("training_phase")
-        lr_status = (
-            f"checkpoint initial LR set to {resume_lr:.2e}: current rates "
-            f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)} "
-            f"(restored {', '.join(f'{rate:.2e}' for rate in restored_group_rates)})"
-            if resume_lr is not None
-            else "checkpoint LR preserved: "
-            f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)}"
-        )
-        print(
-            f"Resuming {architecture} from {load_path} | "
-            f"completed_epoch={loaded_epoch} next_epoch={start_epoch} target_epoch={epochs} | "
-            f"{lr_status}",
-            flush=True,
-        )
+        if load_weights_only:
+            best_mean_iou = float("-inf")
+            best_epoch = 0
+            best_metrics = None
+            best_mean_spike_rate = 0.0
+            best_layer_spike_rates = {}
+            best_neuron_diagnostics = {}
+            previous_training_phase = None
+            print(
+                f"Fine-tuning {architecture} weights from {load_path} | "
+                f"source_epoch={loaded_epoch} fresh_epoch=1/{epochs} | "
+                f"fresh optimizer LR={learning_rate:.2e}",
+                flush=True,
+            )
+        else:
+            previous_training_phase = checkpoint.get("training_phase")
+            lr_status = (
+                f"checkpoint initial LR set to {resume_lr:.2e}: current rates "
+                f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)} "
+                f"(restored {', '.join(f'{rate:.2e}' for rate in restored_group_rates)})"
+                if resume_lr is not None
+                else "checkpoint LR preserved: "
+                f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)}"
+            )
+            print(
+                f"Resuming {architecture} from {load_path} | "
+                f"completed_epoch={loaded_epoch} next_epoch={start_epoch} "
+                f"target_epoch={epochs} | {lr_status}",
+                flush=True,
+            )
 
     precision = "AMP FP16" if amp_enabled else "FP32"
     size_label = (
@@ -1624,6 +1659,12 @@ def train_architecture(
             f"backbone_refinement={refinement_schedule}",
             flush=True,
         )
+        if disable_custom_mechanisms:
+            print(
+                "Ablation | peer-membrane inhibition=off | "
+                "triangular threshold adaptation=off",
+                flush=True,
+            )
     print(
         "Batch Dice-loss order | " + ", ".join(class_names),
         flush=True,
@@ -1663,7 +1704,13 @@ def train_architecture(
                 )
         previous_training_phase = training_phase
 
-        if is_final_run and mechanism_round:
+        if disable_custom_mechanisms:
+            mechanism_scale = 0.0
+            competition_enabled = False
+            hidden_inhibition_enabled = False
+            neuron_dynamics_trainable = False
+            set_neuron_dynamics_trainable(model, False)
+        elif is_final_run and mechanism_round:
             mechanism_scale = final_mechanism_scale(epoch, epochs)
             neuron_dynamics_trainable = (
                 epoch / float(max(1, epochs)) < FINAL_NEURON_FREEZE_FRACTION
@@ -1895,10 +1942,13 @@ def train_architecture(
 
     set_mechanism = getattr(model, "set_mechanism_scale", None)
     if callable(set_mechanism):
-        set_mechanism(1.0)
+        set_mechanism(0.0 if disable_custom_mechanisms else 1.0)
     set_competition = getattr(model, "set_competition_enabled", None)
     if callable(set_competition):
-        set_competition(True)
+        set_competition(not disable_custom_mechanisms)
+    set_hidden_inhibition = getattr(model, "set_hidden_inhibition_enabled", None)
+    if callable(set_hidden_inhibition):
+        set_hidden_inhibition(not disable_custom_mechanisms)
     if is_final_run:
         # The final epoch was evaluated immediately after its optimizer step.
         # Reuse that result instead of running an identical full validation pass.
@@ -2257,8 +2307,24 @@ def main() -> None:
         metavar="RATE",
         help=(
             "replace the largest checkpoint-restored initial LR, preserve all "
-            "optimizer-group ratios, and calculate current rates from the "
-            "cosine scheduler's restored epoch"
+            "optimizer-group ratios, retarget cosine decay to --epochs, and "
+            "calculate current rates from the checkpoint's completed epoch"
+        ),
+    )
+    single.add_argument(
+        "--load-weights-only",
+        action="store_true",
+        help=(
+            "load model weights but start a fresh optimizer and epoch schedule; "
+            "useful for short checkpoint-compatible fine-tuning ablations"
+        ),
+    )
+    single.add_argument(
+        "--disable-custom-mechanisms",
+        action="store_true",
+        help=(
+            "ablate peer-membrane inhibition and triangular threshold adaptation "
+            "without changing checkpoint-compatible layer shapes"
         ),
     )
 
@@ -2322,6 +2388,8 @@ def main() -> None:
             dsec_class_count=args.dsec_classes,
             data_workers=args.data_workers,
             resume_lr=args.resume_lr,
+            load_weights_only=args.load_weights_only,
+            disable_custom_mechanisms=args.disable_custom_mechanisms,
             load=args.load,
         )
     elif args.command == "benchmark":

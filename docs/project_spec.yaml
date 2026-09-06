@@ -631,7 +631,7 @@ training:
     name: AdamW
     default_learning_rate: 0.001
     default_weight_decay: 0.0001
-    resume_lr_semantics: replace_largest_initial_group_rate_preserve_ratios_then_evaluate_saved_scheduler_epoch
+    resume_lr_semantics: replace_initial_group_rates_and_cosine_horizon_then_evaluate_completed_epoch
     epoch_74_experimental_resume_lr: 0.001
   scheduler: cosine_annealing
   loss:
@@ -653,6 +653,18 @@ training:
     optional_future_regularizers:
       spike_rate: 0.001
       channel_utilization_balance: 0.001
+  no_custom_mechanism_ablation:
+    source_checkpoint: artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch080.pt
+    service: train-dsec-no-custom-mechanisms
+    fine_tune_epochs: 1
+    optimizer: fresh_AdamW
+    initial_learning_rate: 0.00001
+    disabled_runtime_mechanisms:
+    - peer_membrane_inhibition
+    - triangular_threshold_adaptation
+    structural_layers_removed: false
+    structural_reason: preserve_checkpoint_tensor_shapes_and_isolate_neuron_mechanism_effect
+    output_directory: artifacts/checkpointsV4/dsec_6class/no_custom_mechanisms
   deterministic_seed_default: 17
   default_full_search:
     epochs: 10

@@ -612,19 +612,22 @@ def test_resume_lr_sets_initial_group_rate_then_applies_saved_epoch() -> None:
             {"params": [second], "lr": 2.5e-7},
         ]
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=80)
-    for _ in range(12):
-        optimizer.step()
-        scheduler.step()
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1)
+    optimizer.step()
+    scheduler.step()
+    assert [group["lr"] for group in optimizer.param_groups] == pytest.approx(
+        [0.0, 0.0]
+    )
 
-    updated = set_resume_learning_rate(optimizer, scheduler, 1.0e-5)
+    updated = set_resume_learning_rate(optimizer, scheduler, 1.0e-3, 80)
 
-    cosine_factor = (1.0 + np.cos(np.pi * 12 / 80)) / 2.0
+    cosine_factor = (1.0 + np.cos(np.pi / 80)) / 2.0
     assert updated == pytest.approx(
-        [1.0e-5 * cosine_factor, 2.5e-6 * cosine_factor]
+        [1.0e-3 * cosine_factor, 2.5e-4 * cosine_factor]
     )
     assert scheduler.get_last_lr() == pytest.approx(updated)
-    assert scheduler.base_lrs == pytest.approx([1.0e-5, 2.5e-6])
+    assert scheduler.base_lrs == pytest.approx([1.0e-3, 2.5e-4])
+    assert scheduler.T_max == 80
     assert [group["initial_lr"] for group in optimizer.param_groups] == pytest.approx(
         scheduler.base_lrs
     )

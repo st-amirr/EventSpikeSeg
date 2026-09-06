@@ -122,8 +122,28 @@ services:
        "--internal-updates", "10", "--sequential-chunks", "2",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--resume-lr", "0.001", "--checkpoint-every", "1",
-       "--load","artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_epoch075.pt",
-       "--checkpoint-dir", "artifacts/checkpointsV4/dsec_6class"]
+       "--load","artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_epoch075.pt",
+       "--checkpoint-dir", "artifacts/model_checkpoints/dsec_6class"]
+
+  # One-epoch checkpoint-compatible ablation of the former FInST/FLong-derived
+  # neuron mechanisms. The canonical checkpoint directory remains untouched.
+  train-dsec-no-custom:
+    <<: *dsec
+    gpus: all
+    command:
+      ["python", "-m", "eventspikeseg.train", "single",
+       "--dataset", "dsec", "--root", "/datasets/DSEC",
+       "--architecture", "EventSpikeSeg140k", "--suite", "final",
+       "--input-mode", "raw-events", "--dsec-classes", "6",
+       "--device", "auto", "--height", "440", "--width", "640",
+       "--seed", "17", "--epochs", "80", "--batch-size", "1",
+       "--accumulate-steps", "2", "--data-workers", "4",
+       "--internal-updates", "10", "--sequential-chunks", "2",
+       "--train-samples", "0.5", "--validation-fraction", "0.10",
+       "--resume-lr", "0.001", "--checkpoint-every", "1",
+      #  "--load-weights-only", "--disable-custom-mechanisms",
+       "--load", "artifacts/model_checkpoints/no_custom_mechanisms/EventSpikeSeg140k_seed17_epoch001.pt",
+       "--checkpoint-dir", "artifacts/model_checkpoints/no_custom_mechanisms"]
 
   # Expanded DSEC comparison using count-preserving clocks and full-window loss.
   train-dsec-xl:

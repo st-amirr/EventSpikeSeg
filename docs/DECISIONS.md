@@ -1,10 +1,23 @@
+## 2026-09-06 — Add a checkpoint-compatible no-custom-mechanism ablation
+
+Test the completed epoch-80 140k model without the mechanisms formerly described
+as FInST/FLong by forcing peer-membrane inhibition and triangular threshold
+adaptation to zero. Do not physically delete PLIF stages or trained structural
+blocks: that would invalidate checkpoint keys and mix a structural ablation with
+the neuron-mechanism question. Load epoch-80 weights only, use a fresh AdamW
+optimizer at 1e-5 for exactly one epoch, retain the normal sequential half-stream
+sampling, and write into a separate `no_custom_mechanisms` checkpoint directory.
+
 ## 2026-09-05 — Make resume LR an explicit absolute override
 
 Replace the ambiguous `--resume-max-lr` ceiling with `--resume-lr`, an explicit
 override for the largest initial optimizer-group LR. Preserve initial group
-ratios, retain the restored cosine-scheduler epoch, and recompute the current LR
-at that epoch. For epoch 74 of 80, an initial LR of 1e-3 therefore resumes near
-1.38e-5 instead of forcing the current LR to 1e-3.
+ratios, retain the checkpoint's completed epoch, set the cosine horizon from the
+current `--epochs`, and recompute the current LR at that epoch. For epoch 74 of
+80, an initial LR of 1e-3 therefore resumes near 1.38e-5 instead of forcing the
+current LR to 1e-3. A one-epoch ablation checkpoint continued to epoch 80 now
+uses epoch 1 of an 80-epoch cosine curve instead of restoring its exhausted
+one-epoch curve at zero LR.
 
 ## 2026-09-03 — Balance workers and two-record prefetch
 
