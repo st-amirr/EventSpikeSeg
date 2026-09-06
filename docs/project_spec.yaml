@@ -631,6 +631,8 @@ training:
     name: AdamW
     default_learning_rate: 0.001
     default_weight_decay: 0.0001
+    resume_lr_semantics: replace_largest_initial_group_rate_preserve_ratios_then_evaluate_saved_scheduler_epoch
+    epoch_74_experimental_resume_lr: 0.001
   scheduler: cosine_annealing
   loss:
     primary: balanced_pixel_and_target_present_class_cross_entropy

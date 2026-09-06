@@ -34,6 +34,7 @@ from eventspikeseg.train import (
     scale_learning_rates,
     select_winner,
     set_neuron_dynamics_trainable,
+    set_resume_learning_rate,
     soft_dice_loss,
 )
 
@@ -600,6 +601,33 @@ def test_resume_preserves_checkpoint_learning_rate_and_scheduler_position() -> N
     resumed_optimizer.step()
     resumed_scheduler.step()
     assert resumed_optimizer.param_groups[0]["lr"] < checkpoint_rate * 0.25
+
+
+def test_resume_lr_sets_initial_group_rate_then_applies_saved_epoch() -> None:
+    first = torch.nn.Parameter(torch.ones(()))
+    second = torch.nn.Parameter(torch.ones(()))
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": [first], "lr": 1.0e-6},
+            {"params": [second], "lr": 2.5e-7},
+        ]
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=80)
+    for _ in range(12):
+        optimizer.step()
+        scheduler.step()
+
+    updated = set_resume_learning_rate(optimizer, scheduler, 1.0e-5)
+
+    cosine_factor = (1.0 + np.cos(np.pi * 12 / 80)) / 2.0
+    assert updated == pytest.approx(
+        [1.0e-5 * cosine_factor, 2.5e-6 * cosine_factor]
+    )
+    assert scheduler.get_last_lr() == pytest.approx(updated)
+    assert scheduler.base_lrs == pytest.approx([1.0e-5, 2.5e-6])
+    assert [group["initial_lr"] for group in optimizer.param_groups] == pytest.approx(
+        scheduler.base_lrs
+    )
 
 
 def test_class_validation_report_tracks_iou_and_prediction_share() -> None:

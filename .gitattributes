@@ -1,0 +1,2 @@
+# ASIC flow scripts execute in Linux containers and must retain Unix line endings.
+*.sh text eol=lf

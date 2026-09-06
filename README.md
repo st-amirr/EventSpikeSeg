@@ -260,6 +260,12 @@ The model exposes a late refinement schedule:
 
 Final training validates after every epoch, saves the best validation-mIoU model, saves a recovery checkpoint every configured N epochs, and saves the last state separately. Auxiliary heads are training-only and are skipped in evaluation/inference.
 
+When resuming, `--resume-lr RATE` replaces the largest optimizer-group initial
+learning rate with `RATE`, preserves the relative initial rates of the other
+groups, and then calculates the current rates from the cosine scheduler's
+restored epoch. It does not restart the schedule or force a late epoch to use the
+full initial rate.
+
 ## Accuracy status
 
 Choosing 140k as the implementation target does not make a new accuracy claim. Accuracy

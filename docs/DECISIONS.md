@@ -1,3 +1,11 @@
+## 2026-09-05 — Make resume LR an explicit absolute override
+
+Replace the ambiguous `--resume-max-lr` ceiling with `--resume-lr`, an explicit
+override for the largest initial optimizer-group LR. Preserve initial group
+ratios, retain the restored cosine-scheduler epoch, and recompute the current LR
+at that epoch. For epoch 74 of 80, an initial LR of 1e-3 therefore resumes near
+1.38e-5 instead of forcing the current LR to 1e-3.
+
 ## 2026-09-03 — Balance workers and two-record prefetch
 
 Retain the intentional `prefetch_factor=2` throughput setting, reduce the DSEC

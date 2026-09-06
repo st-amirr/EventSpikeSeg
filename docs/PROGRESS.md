@@ -945,3 +945,25 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
 - next resume point: run this same configuration on a host with more than 8 GB Docker memory (or a
   native x86 host) before reporting any two-tile PPA. Do not shrink/replace the checkpoint-exact
   hierarchy merely to obtain a routed result.
+
+### Checkpoint-exact two-tile boundary PPA completes on the expanded-memory host
+
+- reran the identical two-column `detail_stem` boundary top on Docker Desktop with 30.61 GiB
+  available memory. The run completed routing, extraction, IR analysis, GDS generation, and final
+  report generation; the prior 8 GiB detailed-route stop is superseded for this configuration;
+- final ASAP7 result: 13,271.30 um^2 standard-cell area in a 38,466.2 um^2 core (34.50%
+  utilization), 653.704 MHz internal fmax, +3,470.26 ps setup slack, and +35.6615 ps hold slack
+  at the 5 ns constraint. The design contains 64 resident PLIFs across two 2x2 tiles and all 144
+  trained `detail_stem` int8 weights;
+- final checks pass: zero setup/hold, max-slew, max-capacitance, max-fanout, and detailed-route
+  DRC violations; `finish__flow__errors__count` is zero. Worst VDD drop is 3.2908 mV (0.43% of
+  0.77 V). Default vectorless power is 55.7057 mW at 0.77 V and 200 MHz;
+- retain the reproducibility bundle under
+  `artifacts/OpenROAD/{logs,reports,results}/asap7/resident_actor_tile_pnr_top/resident_detail_stem_2x2x2`.
+  The reports include `6_report.json`, `6_finish.rpt`, final GDS/DEF/SPEF/netlist, timing/power
+  summaries, and layout images. This is a checkpoint-exact two-tile characterization only—not a
+  full-model area, latency, or activity-based power result;
+- next resume point: use the expanded-memory host to regenerate and verify the complete 25-actor
+  resident spike-vector graph, then record routed resources, timing, activity-based power, and
+  latency on a scale-suitable ASIC platform. Do not substitute additional per-layer samples for
+  this project-specification milestone or extrapolate any tile result to full-chip PPA.

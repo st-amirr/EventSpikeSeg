@@ -54,6 +54,7 @@ module streaming_resident_channelized_plif_actor #(
   output logic [TAG_WIDTH-1:0] out_tag_o,
   output logic error_o
 );
+  /*verilator hier_block*/
   logic presynaptic_ready;
   logic completion_ready;
   logic result_valid;
