@@ -54,23 +54,28 @@ optional optimization only after bit-exact and semantic-accuracy revalidation.
 ## Logical resident-state accounting rule
 
 Do not infer neuron-state capacity from parameter count. The 25-population 140k graph has
-30,976,000 logical membrane/current states and 10,982,400 adaptation-enabled states at DSEC
-`440x640`. Every logical PLIF owns a local int24 current, int16 membrane, and, where enabled,
-two int16 adaptation elements. This is 189.60 MiB-equivalent of logical state, but it is
+30,976,000 logical accumulator/membrane identities and 10,982,400 adaptation-enabled states at DSEC
+`440x640`. Every logical PLIF owns one signed int32 Q15.16 combined accumulator/state element. During a
+bin it contains the pre-leaked membrane plus accepted current; completion thresholds/resets it and
+pre-applies beta for the next bin. Static weights use signed Q7.16 in 24 bits, membrane and
+threshold use signed Q7.16 in 24 bits, and beta uses unsigned UQ1.23. Enabled adaptation stores a
+6-bit integer-bin age and a 19-bit unsigned Q3.16 amplitude. This is 150.89 MiB-equivalent of
+logical state, but it is
 distributed register/latch state rather than an addressed byte store. There is no last-bin tag,
 touched queue, SRAM fetch, or writeback. Full-chip PPA must measure this resident design.
 
 Each actor owns resident local state across its spatial/channel destinations and may
 not lend that state or compute identity to another layer. It must never alias logical
-membrane identities from different channels, positions, or layers. Current elements clear at commit;
-persistent membrane/adaptation state survives events and consecutive records until the
+membrane identities from different channels, positions, or layers. The combined element becomes
+the pre-leaked state for the next bin at commit; combined accumulator/adaptation state survives
+events and consecutive records until the
 documented reset boundary.
 
 ## Digital neuromorphic ASIC deployment rule
 
 The primary runtime is fully digital but must preserve neuromorphic/SNN execution:
 
-- PLIF current, membrane, and adaptation state persist in local fixed-point elements;
+- PLIF combined accumulator and adaptation state persist in local fixed-point elements;
 - hidden binary spike pulse/vector bits gate compile-time fixed weights;
 - convolution remains fixed local synaptic connectivity and skips unasserted inputs;
 - elastic pulse/vector routing carries only emitted binary activity between stages;
@@ -87,7 +92,7 @@ Cross-layer compute sharing, layer reconfiguration, and partial reconfiguration 
 The interconnect is compile-time fixed: input/detail-semantic forks, residual binary-OR joins,
 `x1`/`x2` skip fanout, decoder upsample/concat, multiplicity-preserving `project2+x1`, and
 late semantic/detail concat. Common clock/reset and final readout may be shared infrastructure.
-Every logical spatial PLIF owns physical register/latch current and membrane elements; enabled
+Every logical spatial PLIF owns one physical register/latch combined accumulator element; enabled
 adaptation fields are local to that PLIF. This direct-state rule is intentional.
 
 ### Exact autonomous actor execution order
@@ -114,7 +119,7 @@ not a dense sliding scan.
 - binary hidden spikes -> pulse/vector bits that gate weight additions
 - PLIF beta -> quantized per-channel leak coefficient
 - learned threshold -> quantized per-channel comparator threshold
-- current/membrane/adaptation -> register/latch-resident per-PLIF state
+- combined accumulator/compact adaptation -> register/latch-resident per-PLIF state
 - ChannelAffine -> fold into quantized weight/scale
 - concat -> channel-ID routing
 - nearest upsample -> spike-address fan-out

@@ -48,10 +48,11 @@ N_adapt = 320*110*160 + 1216*55*80
         = 10,982,400 adaptation-enabled values
 ```
 
-The active resident mapping adds one int24 current value per PLIF, so current, membrane, and
-adaptation state total 189.60 MiB-equivalent. This is lower than the old 241x351 graph's
-72.84 million membranes/192.44 MiB even before current state because the wide paths now begin at
-half resolution. For ASIC deployment this is a direct standard-cell/register/latch area, clock,
+The active resident mapping uses one signed int32 Q15.16 combined accumulator/state value per PLIF. A
+6-bit integer-bin age plus 19-bit unsigned Q3.16 amplitude is present only where adaptation is
+enabled, so exact logical state totals **150.89 MiB-equivalent**. At completion the accumulator is
+thresholded/reset and then receives the learned beta step for the next 5 ms bin; there is no
+separate permanent current or membrane array. For ASIC deployment this is a direct standard-cell/register/latch area, clock,
 and routing problem—not an FPGA BRAM or runtime-SRAM capacity requirement. Full-chip PPA must
 place, route, and power this complete direct-state design.
 
@@ -122,8 +123,15 @@ V_next[c,y,x] = beta_q[c] * V[c,y,x] + I_q[c,y,x]
 spike = V_next >= threshold_q[c] + adaptive_threshold_q[c,y,x]
 ```
 
-`beta_q`, thresholds, membrane state, synaptic currents, and adaptation state are stored
-as integer/fixed-point values under one frozen rounding/saturation contract. The first
+The active RTL stores this equation in one signed int32 Q15.16 combined element `A`. Immediately
+after a commit it stores `A = round(beta_q * V_committed)`; all signed contributions for
+the following bin add directly to `A`; the next completion clamps `A` to signed 24-bit Q7.16 for
+threshold/reset/mechanism evaluation and again pre-applies beta. Thus the logical equation
+is unchanged without separate permanent current and membrane arrays. This equivalence assumes
+the int32 accumulator does not saturate; overflow counters and semantic validation remain required.
+
+`beta_q`, thresholds, combined state, synaptic contributions, and adaptation state use
+integer/fixed-point values under one frozen rounding/saturation contract. The first
 implementation should preserve the learned per-channel beta with a fixed-point
 coefficient. A shift-only/power-of-two leak is an optional optimization only after its
 accuracy and bit-level behavior are explicitly revalidated.
@@ -168,18 +176,19 @@ N_adapt = 320*110*160 + 1216*55*80
 ```
 
 Each adaptation-enabled neuron owns `adaptation_age` and `adaptation_amplitude`. The active
-resident implementation also gives every PLIF an int24 current accumulator. An ordered completion
-token advances all PLIFs exactly once per 5 ms epoch, so it needs no touched-neuron tag or lazy
+resident implementation gives every PLIF one int32 Q15.16 combined accumulator/state element; it
+does not keep a second membrane or current array. An ordered completion token advances all PLIFs
+exactly once per 5 ms epoch, so it needs no touched-neuron tag or lazy
 elapsed-bin calculation.
 
 The exact resident-state inventory is therefore:
 
 | State | Values | Storage |
 | --- | ---: | ---: |
-| current, int24 | 30,976,000 | 88.62 MiB |
-| membrane, int16 | 30,976,000 | 59.08 MiB |
-| adaptation age + amplitude, two int16 fields | 21,964,800 | 41.90 MiB |
-| exact resident-state total | — | **189.60 MiB-equivalent** |
+| combined accumulator/state, signed int32 Q15.16 | 30,976,000 | 118.16 MiB |
+| adaptation age, unsigned 6-bit integer bins | 10,982,400 | 7.85 MiB |
+| adaptation amplitude, unsigned 19-bit Q3.16 | 10,982,400 | 24.88 MiB |
+| exact resident-state total | — | **150.89 MiB-equivalent** |
 
 These bits are distributed register/latch state beside their PLIF update logic, not an addressed
 byte store or SRAM capacity request. Full-chip PPA must include all of them; a reduced tile result
@@ -201,7 +210,7 @@ high-resolution stateful transformations:
 The comparison is especially notable because v8 processes the **native 440x640** semantic
 plane rather than 241x351. It has about 3.33x as many input pixels but still owns fewer
 logical membranes. The state-per-synaptic-weight ratio falls from roughly 572 to 215.
-This is the intended state-first hardware design direction: static int8 weights are cheap;
+This is the intended state-first hardware design direction: static int24 Q7.16 weights remain small;
 large read/write PLIF maps are expensive.
 
 The reduction comes from four code-level changes:
@@ -432,7 +441,7 @@ The canonical deployment objective is:
 4. build a bit-exact integer reference and verify layer currents, membranes, spikes, and
    semantic output against the float model;
 5. instantiate one permanent SystemVerilog actor per executed layer and spatially tile it; every
-   logical PLIF owns local current, membrane, and optional adaptation registers/latches;
+   logical PLIF owns one local combined accumulator and optional compact adaptation registers/latches;
 6. implement convolution as compile-time weighted connectivity from each tile's exact input
    receptive halo, with no runtime weight or state-memory transaction;
 7. send ordered completion tokens through the same DAG as spikes and apply exactly one learned-beta
@@ -455,13 +464,13 @@ For input bin `k`:
    ingress actors required by the real graph: `detail_stem` and `stem`. No complete-bin
    dense tensor is required.
 2. Each receiving actor immediately generates only its connected convolution destinations
-   from kernel, stride, padding, dilation and group rules and adds its static signed weights.
-3. All synaptic contributions targeting the same logical neuron **within this bin** accumulate in
-   that PLIF's resident int24 current register before threshold/reset.
+   from kernel, stride, padding, dilation and group rules and adds its static signed Q7.16 weights.
+3. All synaptic contributions targeting the same logical neuron **within this bin** accumulate
+   directly in that PLIF's resident int32 Q15.16 combined accumulator/state element.
 4. After the input epoch marker arrives, both ingress branches commit every resident PLIF once.
-   Each PLIF reads its directly wired membrane/adaptation registers, applies one quantized learned
-   beta step, integrates current, applies the trained mechanism/reset order, writes its own local
-   state, clears current, and emits only output spikes.
+   Each PLIF clamps the combined value to the membrane grid, applies the trained threshold,
+   clocked mechanism, and reset order, then pre-applies the learned beta for the next bin and
+   emits only output spikes. There is no separate current clear or membrane write.
 5. Event/completion tokens then follow the fixed DAG. Fanout nodes multicast losslessly;
    residual/concat/skip joins wait for all required upstream completion tokens carrying the
    same bin tag before forwarding one downstream completion. The final completion emerges
@@ -602,6 +611,39 @@ At native 440x640 DSEC resolution, XL owns 78,707,200 inference membrane element
 wide-everywhere XL layout, while retaining a multi-stage native detail path. The
 15,910,400 adaptation-enabled neurons remain confined to semantic encoder/context scales.
 
+Any future XL ASIC must use the same clocked combined-state contract: signed int32 Q15.16 accumulator,
+6-bit integer age, and unsigned 19-bit Q3.16 amplitude. This calculates to **347.66
+MiB-equivalent** for XL, compared with 436.00 MiB under the former separate int24-current,
+int16-membrane, and two-int16-adaptation representation. XL export remains rejected until the
+140k implementation is fully validated and an explicit XL export/RTL verification project is approved.
+
+### XL ASIC migration procedure
+
+XL is not a parameter-only replacement for the 140k netlist. Most arithmetic actors are reusable,
+but its graph and one operation class are different. Promotion requires these gates in order:
+
+1. Complete XL training and epochs 78--80 QAT, then select the best checkpoint using fixed-point
+   validation. Do not freeze an RTL graph from an epoch-1 or floating-point-only checkpoint.
+2. Generalize the exporter from the hard-coded six-class/25-actor 140k contract to an explicit
+   XL contract with 44 inference PLIF actors, 11 classes, 959,824 shared convolution weights,
+   24-to-11 temporal readout, and training-only auxiliary heads omitted.
+3. Write and validate the exact XL DAG: projected `bridge12`/`bridge23` residual joins, two semantic
+   capacity blocks, three-way parallel dilated context, asymmetric detail kernels, decoder refinement,
+   fanout, concatenation, binary residual joins, and completion-token rendezvous.
+4. Reuse the existing fixed convolution/PLIF/tile/readout RTL for ordinary 1x1, 3x3, rectangular
+   depthwise, strided, and dilated actors. Add one new spike-attention primitive: per spatial location,
+   form Q/K coincidence popcounts for four eight-channel heads, compare each count with its exported
+   fixed threshold, gate V spikes, and rendezvous before the existing 1x1 output actor and residual join.
+5. Extend the integer reference, capacity manifest, tile planner, top generator, and replay tooling so
+   none assumes 25 actors, six classes, a 16-channel readout, or the 140k-only topology module.
+6. Prove layerwise FP32/QAT -> integer -> RTL equivalence, followed by the complete 5 ms event interval
+   and ten-bin/50 ms prediction. Only then attempt full-graph elaboration and activity-annotated PPA.
+
+The software/export work is moderate, the attention/rendezvous RTL is moderate-to-hard, and the
+physical implementation is hard. XL has about 2.30 times the resident state of 140k (347.66 versus
+150.89 MiB-equivalent), 44 versus 25 PLIF actors, and about 2.75 MiB of signed 24-bit convolution
+weights. The state/routing/clock-tree scale—not weight ROM size—is the main feasibility risk.
+
 ### Native DSEC layer graph and dimensions
 
 `T=10` below is the current software timing schedule. XL is not an ASIC export target; the
@@ -654,8 +696,8 @@ never own membrane copies or runtime weight storage.
 
 ### Actor-local state requirement
 
-The int24 current plus int16 membrane and optional two int16 adaptation fields require
-**189.60 MiB-equivalent** of permanent local state. Actor ownership removes inter-layer state
+The signed int32 Q15.16 combined accumulator plus optional 6-bit age and 19-bit amplitude require
+**150.89 MiB-equivalent** of permanent local state. Actor ownership removes inter-layer state
 transport and runtime state fetches, but does not remove these physical bits. Every state element
 is a dedicated standard-cell register/latch beside its PLIF logic; it is never reclaimed, aliased,
 or indexed through a sparse table. The complete physical implementation must therefore measure
@@ -671,7 +713,7 @@ operation.
 
 - `asic/rtl/resident_convolution_synapses.sv`: compile-time standard/grouped/depthwise weighted
   connectivity into one current delta per resident destination;
-- `asic/rtl/resident_plif_population.sv`: direct resident current/membrane PLIF commit;
+- `asic/rtl/resident_plif_population.sv`: direct resident combined-accumulator PLIF commit;
 - `asic/rtl/resident_retinotopic_plif_population.sv`: direct resident inhibition/adaptation commit;
 - `asic/rtl/resident_channelized_plif_actor.sv`: one resident convolution/PLIF actor tile;
 - `asic/rtl/tiled_resident_channelized_plif_actor.sv`: exact receptive-halo spatial hierarchy;
@@ -707,7 +749,7 @@ state continues across predictions until a sequence/gap reset.
 - There is no v8 selector, attention rendezvous, projected bridge, or class-spike counter.
 - The readout requires signed current accumulation and per-pixel 6-way argmax; common
   positive readout scaling may be skipped for class selection.
-- Persistent state is actor-local direct current/membrane/adaptation registers or latches; full-scale
+- Persistent state is actor-local direct combined-accumulator/compact-adaptation registers or latches; full-scale
   implementation must route and clock the complete resident state inventory.
 - Verification compares float -> integer -> RTL at layer currents, membrane/adaptation
   trajectories, emitted hidden spikes, final signed class-current accumulators, and argmax.

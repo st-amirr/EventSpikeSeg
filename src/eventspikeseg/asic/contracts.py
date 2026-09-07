@@ -11,13 +11,18 @@ EXECUTED_SYNAPTIC_WEIGHTS = 143_824
 LOGICAL_MEMBRANES = 30_976_000
 ADAPTATION_ENABLED_NEURONS = 10_982_400
 
-WEIGHT_BYTES_INT8 = EXECUTED_SYNAPTIC_WEIGHTS
+WEIGHT_BYTES_INT24 = EXECUTED_SYNAPTIC_WEIGHTS * 3
 MEMBRANE_BYTES_INT16 = LOGICAL_MEMBRANES * 2
-ADAPTATION_BYTES_TWO_INT16 = ADAPTATION_ENABLED_NEURONS * 4
-LAST_BIN_TAG_BYTES_24 = LOGICAL_MEMBRANES * 3
-DENSE_EXACT_STATE_BYTES = (
-    MEMBRANE_BYTES_INT16 + ADAPTATION_BYTES_TWO_INT16 + LAST_BIN_TAG_BYTES_24
+COMBINED_ACCUMULATOR_BYTES_INT32 = LOGICAL_MEMBRANES * 4
+ADAPTATION_AGE_BITS = 6
+ADAPTATION_AMPLITUDE_BITS = 19
+ADAPTATION_STATE_BITS = ADAPTATION_ENABLED_NEURONS * (
+    ADAPTATION_AGE_BITS + ADAPTATION_AMPLITUDE_BITS
 )
+DENSE_EXACT_STATE_BITS = (
+    LOGICAL_MEMBRANES * 32 + ADAPTATION_STATE_BITS
+)
+DENSE_EXACT_STATE_BYTES = (DENSE_EXACT_STATE_BITS + 7) // 8
 
 OPEN_PPA_TARGET = {
     "flow": "Yosys_OpenROAD_Flow_Scripts",
@@ -45,10 +50,12 @@ def state_capacity_contract() -> dict[str, object]:
     return {
         "logical_membranes": LOGICAL_MEMBRANES,
         "adaptation_enabled_neurons": ADAPTATION_ENABLED_NEURONS,
-        "weight_bytes_int8": WEIGHT_BYTES_INT8,
-        "membrane_bytes_int16": MEMBRANE_BYTES_INT16,
-        "adaptation_bytes_two_int16": ADAPTATION_BYTES_TWO_INT16,
-        "last_bin_tag_bytes_24": LAST_BIN_TAG_BYTES_24,
+        "weight_bytes_int24": WEIGHT_BYTES_INT24,
+        "combined_accumulator_bytes_int32": COMBINED_ACCUMULATOR_BYTES_INT32,
+        "adaptation_age_bits_per_enabled_neuron": ADAPTATION_AGE_BITS,
+        "adaptation_amplitude_bits_per_enabled_neuron": ADAPTATION_AMPLITUDE_BITS,
+        "adaptation_state_bits": ADAPTATION_STATE_BITS,
+        "last_bin_tag_bytes": 0,
         "dense_exact_state_bytes": DENSE_EXACT_STATE_BYTES,
         "dense_exact_state_mib": DENSE_EXACT_STATE_BYTES / 2**20,
         "full_chip_PPA_gate": "characterized_actor_local_SRAM_macros_required",

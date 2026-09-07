@@ -1,3 +1,11 @@
+## 2026-09-07 — Bound validation with the configured temporal chunk count
+
+Use `--sequential-chunks` for validation as well as the memory-bounded training replay.
+Validation remains under `no_grad`, carries recurrent state chronologically between
+chunks, and merges chunk logits/rates into one complete-record prediction. This prevents
+the full ten-update validation forward from exceeding a training run deliberately sized
+with smaller temporal chunks; it does not introduce partial-history validation metrics.
+
 ## 2026-09-07 — Schedule final-model loss by completed epoch fraction
 
 Use one direct `progress = current_epoch / --epochs` loss calculation for both
@@ -72,6 +80,21 @@ of training and reserve decoder/detail-only refinement for the final 10%.
 Replace the final-run 0.5 pixel CE + 0.5 target-present macro CE + 0.3 Dice + 0.05 same-class region-consistency objective with a literature-aligned segmentation loss: 1.0 ordinary pixel CE + 0.3 Dice averaged over target-present classes + 0.10 auxiliary semantic CE + 0.02 boundary BCE. Keep the SNN activity regularizer because it constrains spike dynamics rather than semantic class weighting. Remove the macro-CE contribution and region-consistency contribution from the active final run. Historical benchmark suites retain their frozen loss profiles.
 
 # Decisions
+
+## 2026-09-07 — Finish final models with range-matched fixed-point QAT
+
+Train both final architectures in FP32 for optimization stability, then enable ASIC
+quantization-aware forward execution for the last three epochs by default. Keep FP32 master
+parameters and straight-through gradients, but fake-quantize folded convolution/readout weights,
+PLIF accumulator/membrane, beta, threshold, and retinotopic adaptation values on the exact export
+grids. Use range-matched precision rather than int8: signed 24-bit Q7.16 weights and membrane/
+threshold, signed 32-bit Q15.16 combined accumulator, unsigned 24-bit UQ1.23 beta, 19-bit UQ3.16
+strength/amplitude, 21-bit UQ5.16 duration, and exact 6-bit integer age. Restart best-checkpoint
+selection when QAT begins so the canonical checkpoint is always one validated with deployment
+arithmetic. QAT overrides the earlier refinement/neuron freezes: all model parameters are
+unfrozen so convolution, readout, beta, threshold, inhibition, and adaptation values can jointly
+compensate for the deployment grid. `--asic-qat-epochs 0` remains an explicit diagnostic escape
+hatch.
 
 ## 2026-09-02 — Spatial hierarchy must preserve dedicated PLIF state
 
@@ -921,3 +944,28 @@ has accepted it. Residual branches rendezvous and OR complete binary vectors; co
 remaps fixed channel slices; the half-resolution decoder sum forwards both vector pulses before
 completion so coincident activity causes two downstream additions. Raw ingress remains scalar
 and is decoded into a one-hot pulse independently at each first-layer branch.
+## 2026-09-07 — Fuse resident current/membrane storage and compact clocked adaptation
+
+Replace the active direct resident ASIC's separate int24 current and int16 membrane arrays
+with one signed int32 Q15.16 combined accumulator/state element per logical PLIF. After each fixed
+5 ms completion, perform clamp, threshold/reset, peer inhibition, and adaptation atomically,
+then pre-apply one learned-beta step into the same element for the next bin. Events add signed
+contributions to that prepared element. This preserves the discrete-time equation when int32
+does not saturate and removes a permanent int16 array; overflow instrumentation and bit-exact
+regression remain mandatory.
+
+Store weights and membrane/threshold values as signed Q7.16 in 24 bits, the combined accumulator
+as signed Q15.16 in 32 bits, and beta as unsigned UQ1.23 in 24 bits. Store triangular adaptation
+age as an unsigned 6-bit integer count of 5 ms bins with value 63 reserved for inactive,
+amplitude and strength as unsigned Q3.16 in 19 bits, and duration as unsigned Q5.16 in 21 bits.
+Age is deliberately integer rather
+than fixed point because it advances only by whole clocked bins. The epoch-80 140k checkpoint's
+15 enabled populations learn durations 4.82625..5.22349 bins and strengths
+0.185593..0.219574; XL training currently has only an early checkpoint, not a completed model.
+The selected widths cover the configured
+duration maximum of 16 bins and the worst configured amplitude bound of membrane-energy clip
+1.5 times strength maximum 4.0, rather than depending only on that checkpoint.
+
+The 140k logical resident-state inventory falls from 189.60 to 150.89 MiB-equivalent. A future
+XL mapping under the same contract calculates to 347.66 MiB instead of 436.00 MiB, but XL
+remains software-only and rejected by the exporter.

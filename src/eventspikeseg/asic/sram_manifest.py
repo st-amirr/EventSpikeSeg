@@ -34,10 +34,10 @@ def build_sram_manifest(
 ) -> dict[str, Any]:
     """Build a technology-independent memory/banking manifest.
 
-    The persistent state total reproduces the export's frozen 189.60 MiB contract.
-    Collection current and touched metadata are reported separately because they are
-    transient but still require a bounded physical implementation. No SRAM area or
-    power is invented before a characterized macro catalog is supplied.
+    The persistent state total reproduces the export's combined-accumulator
+    contract. No separate collection-current, touched, or last-bin-tag arrays are
+    allocated by the clocked resident baseline. No SRAM area or power is invented
+    before a characterized macro catalog is supplied.
     """
 
     if maximum_bank_depth <= 0:
@@ -64,7 +64,7 @@ def build_sram_manifest(
     for layer in spec["layers"]:
         depth = int(layer.get("logical_membrane_states", 0))
         if depth == 0:
-            weight_bits += int(layer.get("weight_count", 0)) * 8
+            weight_bits += int(layer.get("weight_count", 0)) * 24
             continue
 
         parameters = json.loads(
@@ -73,27 +73,23 @@ def build_sram_manifest(
         adaptation = bool(parameters["threshold_adaptation_enabled"])
         inhibition = bool(parameters["inhibition_enabled"])
         mechanism_enabled = adaptation or inhibition
-        persistent_width = 16 + 24 + (32 if adaptation else 0)
+        persistent_width = 32 + (25 if adaptation else 0)
         address_width = max(1, math.ceil(math.log2(depth)))
         actor_persistent_bits = depth * persistent_width
         spatial_depth = int(layer["output_hw"][0]) * int(layer["output_hw"][1])
-        rtl_state_width = 24 + 16 + 24 + 2 + (
-            32 if adaptation else (2 if inhibition else 0)
-        )
-        queue_depth = spatial_depth if mechanism_enabled else depth
-        queue_address_width = max(1, math.ceil(math.log2(queue_depth)))
-        actor_queue_bits = queue_depth * queue_address_width
-        actor_marker_bits = spatial_depth if mechanism_enabled else 0
+        rtl_state_width = persistent_width
+        queue_depth = 0
+        queue_address_width = 1
+        actor_queue_bits = 0
+        actor_marker_bits = 0
         state_banking = _bank_plan(depth, maximum_bank_depth)
         queue_banking = _bank_plan(queue_depth, maximum_bank_depth)
-        marker_banking = (
-            _bank_plan(spatial_depth, maximum_bank_depth) if mechanism_enabled else None
-        )
+        marker_banking = None
 
         persistent_bits += actor_persistent_bits
-        collection_current_bits += depth * 24
-        touched_bitmap_bits += depth
-        worst_case_queue_bits += depth * address_width
+        collection_current_bits += 0
+        touched_bitmap_bits += 0
+        worst_case_queue_bits += 0
         rtl_actor_state_bits += depth * rtl_state_width
         rtl_queue_bits += actor_queue_bits
         rtl_spatial_marker_bits += actor_marker_bits
@@ -101,7 +97,7 @@ def build_sram_manifest(
         rtl_queue_bank_count += queue_banking["bank_count"]
         if marker_banking is not None:
             rtl_spatial_marker_bank_count += marker_banking["bank_count"]
-        weight_bits += int(layer["weight_count"]) * 8
+        weight_bits += int(layer["weight_count"]) * 24
         if adaptation:
             adaptation_states += depth
 
@@ -118,10 +114,9 @@ def build_sram_manifest(
                 "persistent_record": {
                     "width_bits": persistent_width,
                     "fields": {
-                        "membrane": 16,
-                        "last_bin_tag": 24,
+                        "combined_accumulator": 32,
                         **(
-                            {"adaptation_age": 16, "adaptation_amplitude": 16}
+                            {"adaptation_age_bins": 6, "adaptation_amplitude": 19}
                             if adaptation
                             else {}
                         ),
@@ -129,28 +124,19 @@ def build_sram_manifest(
                     "logical_bits": actor_persistent_bits,
                 },
                 "collection_record": {
-                    "current_bits": 24,
-                    "touched_bits": 1,
-                    "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit",
+                    "current_bits": 0,
+                    "touched_bits": 0,
+                    "semantics": "folded_into_combined_accumulator",
                 },
                 "banking": state_banking,
                 "rtl_packed_state": {
                     "width_bits": rtl_state_width,
                     "logical_bits": depth * rtl_state_width,
                     "fields": {
-                        "current": 24,
-                        "membrane": 16,
-                        "last_bin_tag": 24,
-                        "live": 1,
-                        "touched": 1,
+                        "combined_accumulator": 32,
                         **(
-                            {"adaptation_age": 16, "adaptation_amplitude": 16}
-                            if adaptation
-                            else (
-                                {"unused_adaptation_placeholders": 2}
-                                if inhibition
-                                else {}
-                            )
+                            {"adaptation_age_bins": 6, "adaptation_amplitude": 19}
+                            if adaptation else {}
                         ),
                     },
                 },
@@ -170,7 +156,7 @@ def build_sram_manifest(
                     if mechanism_enabled
                     else None
                 ),
-                "weight_rom_words_int8": int(layer["weight_count"]),
+                "weight_rom_words_int24": int(layer["weight_count"]),
             }
         )
 
@@ -183,14 +169,12 @@ def build_sram_manifest(
         )
     if adaptation_states != int(capacity["adaptation_enabled_neurons"]):
         raise ValueError("derived adaptation population does not match model_spec")
-    if weight_bits // 8 != int(capacity["weight_bytes_int8"]):
+    if weight_bits // 8 != int(capacity["weight_bytes_int24"]):
         raise ValueError("derived weight ROM size does not match model_spec")
 
-    combined_direct_bits = persistent_bits + collection_current_bits + touched_bitmap_bits
+    combined_direct_bits = persistent_bits
     total_bank_count = sum(actor["banking"]["bank_count"] for actor in actors)
-    parallel_scrub_cycles = max(
-        min(actor["depth"], maximum_bank_depth) for actor in actors
-    )
+    parallel_scrub_cycles = 0
     readout_layer = next(layer for layer in spec["layers"] if layer.get("kind"))
     readout_depth = int(readout_layer["output_hw"][0]) * int(readout_layer["output_hw"][1])
     readout_width = int(readout_layer["out_channels"]) * 24
@@ -223,7 +207,7 @@ def build_sram_manifest(
             "ownership": "one_permanent_PLIF_actor_owns_its_local_banks",
             "runtime_reconfiguration": False,
             "inter_actor_membrane_access": False,
-            "sequence_start_initialization": "all_actor_banks_zeroized_in_parallel",
+            "sequence_start_initialization": "clocked_resident_state_reset",
             "events_accepted_during_initialization": False,
         },
         "actors": actors,
@@ -247,7 +231,7 @@ def build_sram_manifest(
             "weight_rom_bits": weight_bits,
             "weight_rom_bytes": weight_bits // 8,
             "parallel_bank_scrub_cycles": parallel_scrub_cycles,
-            "parallel_bank_scrub_time_us_at_200MHz": parallel_scrub_cycles / 200,
+            "parallel_bank_scrub_time_us_at_200MHz": 0.0,
             "rtl_actor_packed_state_bits": rtl_actor_state_bits,
             "rtl_touched_queue_bits": rtl_queue_bits,
             "rtl_retinotopic_marker_bits": rtl_spatial_marker_bits,

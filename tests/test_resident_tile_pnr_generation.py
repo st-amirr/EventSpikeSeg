@@ -68,9 +68,9 @@ def test_pnr_tile_uses_exported_nonzero_parameters(tmp_path: Path) -> None:
         model_spec, output, actor_name="actor", tile_width=2, tile_height=2
     )
     text = output.read_text(encoding="utf-8")
-    assert ".KERNEL_WEIGHTS(16'hfe01)" in text
-    assert ".CHANNEL_BETAS(16'h7fff)" in text
-    assert ".CHANNEL_THRESHOLDS(16'h0005)" in text
+    assert ".KERNEL_WEIGHTS(48'h0000fe000001)" in text
+    assert ".CHANNEL_BETAS(24'h007fff)" in text
+    assert ".CHANNEL_THRESHOLDS(24'h000005)" in text
     assert "input logic [7:0] presynaptic_spike_vector_i" in text
 
 

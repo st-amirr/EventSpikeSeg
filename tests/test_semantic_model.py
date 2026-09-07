@@ -136,6 +136,24 @@ def test_elapsed_time_controls_physical_membrane_decay(neuron_type) -> None:
     assert neuron.membrane.item() == pytest.approx(expected, rel=1e-5)
 
 
+def test_asic_qat_uses_fixed_grid_and_preserves_parameter_gradients() -> None:
+    neuron = ParametricLIF(
+        1,
+        LIFConfig(threshold=2.0, learnable_threshold=True),
+    )
+    neuron.set_asic_qat_enabled(True)
+    current = torch.tensor([[[[0.1234567]]]], requires_grad=True)
+    first = neuron(current)
+    second = neuron(torch.zeros_like(current))
+    (first + second).sum().backward()
+
+    scaled_state = neuron.membrane.detach() * (1 << 16)
+    assert torch.equal(scaled_state, torch.round(scaled_state))
+    assert current.grad is not None and current.grad.abs().item() > 0.0
+    assert neuron.beta_logit.grad is not None
+    assert neuron.threshold_logit is not None and neuron.threshold_logit.grad is not None
+
+
 def test_asynchronous_neuron_lazily_decays_only_when_touched() -> None:
     neuron = HardwareLIF(1, LIFConfig(threshold=10.0, threshold_adaptation_enabled=False))
     neuron.set_asynchronous_updates(True)

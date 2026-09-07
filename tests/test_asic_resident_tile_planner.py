@@ -56,7 +56,7 @@ def test_tile_plan_preserves_every_resident_state_bit(tmp_path: Path) -> None:
     assert actor["tile_count"] == 4
     assert actor["tile_shape_counts"] == {"2x4": 1, "2x1": 1, "1x4": 1, "1x1": 1}
     assert actor["logical_plifs"] == 45
-    assert actor["resident_state_bits"] == 45 * (24 + 16 + 16 + 16)
+    assert actor["resident_state_bits"] == 45 * (32 + 6 + 19)
     assert actor["receptive_halo_shape_counts"] == {
         "3x5": 1,
         "3x2": 1,
@@ -66,4 +66,4 @@ def test_tile_plan_preserves_every_resident_state_bit(tmp_path: Path) -> None:
     assert actor["receptive_halo_input_bits"] == 2 * (15 + 6 + 10 + 4)
     assert actor["full_bitmap_broadcast_input_bits"] == 2 * 3 * 5 * 4
     assert result["totals"]["input_wiring_reduction_fraction"] == 1 - 70 / 120
-    assert result["totals"]["static_weight_bits"] == 56
+    assert result["totals"]["static_weight_bits"] == 168

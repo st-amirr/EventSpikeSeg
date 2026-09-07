@@ -17,4 +17,4 @@ async def bitmap_spikes_drive_static_grouped_synapses_in_parallel(dut) -> None:
     # Channel-major input bitmap: c0 pixels 0,1 and c1 pixel 0 spike.
     dut.spike_vector_i.value = 0b010011
     await Timer(1, units="ns")
-    assert signed_words(int(dut.current_delta_o.value), 24, 8) == [3, 3, 0, 0, -2, 0, 0, 0]
+    assert signed_words(int(dut.current_delta_o.value), 32, 8) == [3, 3, 0, 0, -2, 0, 0, 0]

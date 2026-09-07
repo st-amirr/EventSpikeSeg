@@ -22,8 +22,32 @@
 - explicit 3- or 4-stage channel schedules
 - configurable stem and first-block kernel size
 - dynamic `enc4_spikes` activity/evaluation diagnostics for the deep contender
+- active 140k resident RTL now uses one signed int32 Q15.16 combined accumulator/state per PLIF
+  and signed int24 Q7.16 weights; clocked adaptation uses 6-bit integer-bin age plus
+  19-bit Q3.16 amplitude
 
 ## Completed evidence
+
+### 2026-09-07 combined-state implementation
+
+- changed ordinary and retinotopic resident PLIF RTL from separate int24 current plus int16
+  membrane arrays to one signed int32 Q15.16 accumulator that is thresholded/reset at completion and
+  pre-leaked for the next fixed 5 ms bin;
+- reduced adaptation age from 16-bit Q10 to a lossless 6-bit integer-bin counter; the
+  accuracy-first formats retain 16 fractional bits using 19-bit Q3.16 amplitude/strength and
+  21-bit Q5.16 duration, with 24-bit Q7.16 weights/membrane/threshold and 24-bit UQ1.23 beta;
+- inspected the completed epoch-80 140k checkpoint: 15 enabled populations have learned
+  duration 4.82625..5.22349 bins and strength 0.185593..0.219574; no XL checkpoint exists yet;
+- updated export, capacity, tile-planning, top-generation, and integer-reference contracts;
+  the new 140k logical state is 150.89 MiB-equivalent, while a future XL mapping calculates
+  to 347.66 MiB-equivalent and remains outside the active export target;
+- added a common final-model QAT phase: by default the last three epochs of both 140k and XL
+  retain FP32 master parameters and gradients while every deployed forward operation uses the
+  ASIC fixed-point grids; best-checkpoint selection restarts at QAT entry so the exported best
+  is selected by deployment-precision validation rather than an earlier FP32 score; the QAT
+  phase explicitly unfreezes the semantic backbone and PLIF/mechanism parameters;
+- validation passes: 83 focused Python/generated-RTL tests, all 107 Python tests, Ruff on every
+  changed Python file, and all 47 cocotb RTL tests (one non-functional cocotb runner API warning).
 
 ### Historical structural incumbent
 

@@ -8,6 +8,8 @@ from typing import Literal
 import torch
 from torch import Tensor, nn
 
+from .deployment_quantization import fake_quantize_ste
+
 try:
     from spikingjelly.activation_based import functional as sj_functional
     from spikingjelly.activation_based import layer as sj_layer
@@ -197,6 +199,7 @@ class HardwareLIF(nn.Module):
         self.register_buffer("threshold_adaptation_penalty", torch.empty(0), persistent=False)
         self.competition_enabled = True
         self.asynchronous_updates = False
+        self.asic_qat_enabled = False
 
         if config.threshold_adaptation_enabled and config.adaptation_kind == "rate":
             self.adaptation_tau_logit = nn.Parameter(
@@ -371,6 +374,10 @@ class HardwareLIF(nn.Module):
     def set_asynchronous_updates(self, enabled: bool) -> None:
         self.asynchronous_updates = bool(enabled)
 
+    def set_asic_qat_enabled(self, enabled: bool) -> None:
+        """Use deployment fixed-point arithmetic in the differentiable forward."""
+        self.asic_qat_enabled = bool(enabled)
+
     def set_step_deltas_us(self, deltas_us: Tensor | None) -> None:
         """Set physical elapsed time for each update in the next sequence.
 
@@ -498,6 +505,8 @@ class HardwareLIF(nn.Module):
             return self.threshold_adaptation_penalty
         duration = self.adaptation_duration
         assert duration is not None
+        if self.asic_qat_enabled:
+            duration = fake_quantize_ste(duration, "adaptation_duration")
         t = duration.view(1, 1, 1, 1)
         age = self.threshold_adaptation_age
         active = age >= 0.0
@@ -521,17 +530,17 @@ class HardwareLIF(nn.Module):
             return
         strength = self.inhibition_strength
         assert strength is not None
+        effective_strength = self.inhibition_scale * strength
+        if self.asic_qat_enabled:
+            effective_strength = fake_quantize_ste(
+                effective_strength, "inhibition_strength"
+            )
         # An output spike at a retinotopic location inhibits peer feature maps.
         # The spiking neuron itself is excluded because it has already reset.
         u_prop = self._retinotopic_membrane_energy(candidate)
         trigger = (spikes.detach().sum(dim=1, keepdim=True) > 0).to(candidate.dtype)
         peers = (spikes.detach() <= 0).to(candidate.dtype)
-        decrement = (
-            self.inhibition_scale
-            * strength.view(1, 1, 1, 1)
-            * u_prop
-            * trigger
-        )
+        decrement = effective_strength.view(1, 1, 1, 1) * u_prop * trigger
         self.membrane = self.membrane - decrement * peers
 
     def _update_threshold_adaptation(
@@ -594,12 +603,17 @@ class HardwareLIF(nn.Module):
         # triangular phase calculation used on the next forward pass.
         strength = self.threshold_adaptation_strength
         assert strength is not None
+        effective_strength = self.threshold_adaptation_scale * strength
+        if self.asic_qat_enabled:
+            effective_strength = fake_quantize_ste(
+                effective_strength, "adaptation_strength"
+            )
         u_prop = self._retinotopic_membrane_energy(candidate)
-        scaled_amplitude = (
-            self.threshold_adaptation_scale
-            * strength.view(1, 1, 1, 1)
-            * u_prop
-        )
+        scaled_amplitude = effective_strength.view(1, 1, 1, 1) * u_prop
+        if self.asic_qat_enabled:
+            scaled_amplitude = fake_quantize_ste(
+                scaled_amplitude, "adaptation_amplitude"
+            )
         spiked = spikes > 0
         # A new spike resets that neuron's triangular process. Existing ages
         # were advanced at the start of this forward step, before thresholding.
@@ -628,6 +642,11 @@ class HardwareLIF(nn.Module):
                 self.threshold_adaptation_age + elapsed_steps,
                 self.threshold_adaptation_age,
             )
+            if self.asic_qat_enabled:
+                inactive = self.threshold_adaptation_age < 0.0
+                self.threshold_adaptation_age = fake_quantize_ste(
+                    self.threshold_adaptation_age.clamp(min=0.0), "adaptation_age"
+                ).masked_fill(inactive, -1.0)
 
     def _threshold_tensor(self, current: Tensor) -> Tensor:
         base = self._base_threshold(current).view(1, -1, 1, 1)
@@ -637,13 +656,24 @@ class HardwareLIF(nn.Module):
         ):
             self.threshold_adaptation_penalty = self._triangular_threshold_penalty()
             effective = base + self.threshold_adaptation_penalty
-            return effective.clamp(self.config.threshold_min, self.config.threshold_max)
+            effective = effective.clamp(
+                self.config.threshold_min, self.config.threshold_max
+            )
+            return (
+                fake_quantize_ste(effective, "threshold")
+                if self.asic_qat_enabled
+                else effective
+            )
         effective = base + self.adaptation.view(1, -1, 1, 1)
         if self.config.adaptation_kind == "rate" or self.config.learnable_threshold:
             effective = effective.clamp(
                 self.config.threshold_min, self.config.threshold_max
             )
-        return effective
+        return (
+            fake_quantize_ste(effective, "threshold")
+            if self.asic_qat_enabled
+            else effective
+        )
 
     def _candidate_membrane(
         self, current: Tensor, elapsed_steps: Tensor
@@ -653,6 +683,8 @@ class HardwareLIF(nn.Module):
         Fixed LIF keeps the original hardware equation. ParametricLIF overrides
         this hook with SpikingJelly's PLIF charge equation when available.
         """
+        if self.asic_qat_enabled:
+            return self.membrane + fake_quantize_ste(current, "current")
         return self._leaked_membrane(elapsed_steps) + current
 
     def forward(
@@ -683,6 +715,8 @@ class HardwareLIF(nn.Module):
         self._advance_threshold_adaptation(elapsed_map)
         updated_candidate = self._candidate_membrane(current, elapsed_map)
         candidate = torch.where(update_mask, updated_candidate, self.membrane)
+        if self.asic_qat_enabled:
+            candidate = fake_quantize_ste(candidate, "membrane")
         threshold = self._threshold_tensor(current)
         raw = self.spike_function(candidate - threshold)
         above = (candidate >= threshold) & update_mask
@@ -699,6 +733,18 @@ class HardwareLIF(nn.Module):
         )
         self._apply_peer_membrane_inhibition(candidate, spikes)
         self._update_threshold_adaptation(spikes, candidate, elapsed_map)
+        if self.asic_qat_enabled:
+            beta = getattr(self, "beta", None)
+            if beta is None:
+                beta = torch.as_tensor(
+                    self.config.beta,
+                    device=self.membrane.device,
+                    dtype=self.membrane.dtype,
+                )
+                beta = fake_quantize_ste(beta, "beta")
+            self.membrane = fake_quantize_ste(
+                self.membrane * beta.view(1, -1, 1, 1), "current"
+            )
         return spikes
 
 
@@ -761,17 +807,19 @@ class ParametricLIF(HardwareLIF):
 
     @property
     def beta(self) -> Tensor:
-        return torch.sigmoid(self.beta_logit)
+        value = torch.sigmoid(self.beta_logit)
+        return fake_quantize_ste(value, "beta") if self.asic_qat_enabled else value
 
     @property
     def learned_threshold(self) -> Tensor | None:
         if self.threshold_logit is None:
             return None
-        return self._bounded(
+        value = self._bounded(
             self.threshold_logit,
             self.config.threshold_min,
             self.config.threshold_max,
         )
+        return fake_quantize_ste(value, "threshold") if self.asic_qat_enabled else value
 
     @property
     def reciprocal_tau(self) -> Tensor:
@@ -785,6 +833,8 @@ class ParametricLIF(HardwareLIF):
     def _candidate_membrane(
         self, current: Tensor, elapsed_steps: Tensor
     ) -> Tensor:
+        if self.asic_qat_enabled:
+            return self.membrane + fake_quantize_ste(current, "current")
         unit_step = bool(
             torch.isclose(elapsed_steps, torch.ones_like(elapsed_steps)).all()
         )
@@ -965,9 +1015,34 @@ class SpikingStage(nn.Module):
         self.transform = CurrentTransform(out_channels, norm)
         neuron_type = ParametricLIF if neuron_kind == "plif" else HardwareLIF
         self.neuron = neuron_type(out_channels, lif)
+        self.asic_qat_enabled = False
 
     def reset(self) -> None:
         self.neuron.reset()
+
+    def set_asic_qat_enabled(self, enabled: bool) -> None:
+        self.asic_qat_enabled = bool(enabled)
+        self.neuron.set_asic_qat_enabled(enabled)
+
+    def _qat_convolution(self, flat: Tensor) -> Tensor:
+        """Fold the affine gain and fake-quantize exactly like ASIC export."""
+        weight = self.conv.weight
+        transform = self.transform.op
+        if isinstance(transform, ChannelAffine):
+            weight = weight * transform.gain.view(-1, 1, 1, 1)
+        elif not isinstance(transform, nn.Identity):
+            raise ValueError("ASIC QAT supports only identity or foldable ChannelAffine")
+        weight = fake_quantize_ste(weight, "weight")
+        current = F.conv2d(
+            flat,
+            weight,
+            bias=None,
+            stride=self.conv.stride,
+            padding=self.conv.padding,
+            dilation=self.conv.dilation,
+            groups=self.conv.groups,
+        )
+        return fake_quantize_ste(current, "current")
 
     def forward(self, sequence: Tensor) -> Tensor:
         if sequence.ndim != 5:
@@ -982,13 +1057,17 @@ class SpikingStage(nn.Module):
             flat = sequence.reshape(
                 clock_updates * batch_size, *sequence.shape[2:]
             ).float()
-            currents = self.transform(self.conv(flat))
+            currents = (
+                self._qat_convolution(flat)
+                if self.asic_qat_enabled
+                else self.transform(self.conv(flat))
+            )
             currents = currents.reshape(
                 clock_updates, batch_size, *currents.shape[1:]
             )
             elapsed = self.neuron.elapsed_step_scales(clock_updates, currents)
             touched = None
-            if self.neuron.asynchronous_updates:
+            if self.neuron.asynchronous_updates and not self.asic_qat_enabled:
                 touched = F.conv2d(
                     (flat != 0).to(flat.dtype),
                     torch.ones_like(self.conv.weight),
@@ -1494,6 +1573,12 @@ class EventSpikeSegBase(nn.Module):
         for module in self.modules():
             if isinstance(module, HardwareLIF):
                 module.set_asynchronous_updates(enabled)
+
+    def set_asic_qat_enabled(self, enabled: bool) -> None:
+        """Toggle the exact deployment-format forward path for final QAT epochs."""
+        for module in self.modules():
+            if isinstance(module, SpikingStage):
+                module.set_asic_qat_enabled(enabled)
 
     def temporal_normalization_steps(self, sequence: Tensor) -> Tensor:
         """Elapsed time expressed in historical 5 ms neuron updates."""

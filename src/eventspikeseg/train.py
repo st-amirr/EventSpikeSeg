@@ -48,6 +48,7 @@ from .data import (
     split_records_by_sequence,
     temporal_collate,
 )
+from .deployment_quantization import ASIC_FORMATS
 from .metrics import ConfusionMatrix
 from .model import FINAL_MODELS
 from .model import build_model as build_final_model
@@ -281,6 +282,7 @@ FINAL_LOSS_PROFILE = LossProfile(
 )
 
 STABLE_TRAINING_STRATEGY_VERSION = "dsec-dynamic-loss-curriculum-v14"
+DEFAULT_ASIC_QAT_EPOCHS = 3
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -322,6 +324,15 @@ def set_neuron_dynamics_trainable(model: nn.Module, trainable: bool) -> int:
     return changed
 
 
+def set_all_parameters_trainable(model: nn.Module, trainable: bool) -> int:
+    """Set every model parameter trainable for the deployment-precision QAT phase."""
+    changed = 0
+    for parameter in model.parameters():
+        parameter.requires_grad_(trainable)
+        changed += parameter.numel()
+    return changed
+
+
 def checkpoint_mechanism_scale(checkpoint: dict[str, object]) -> float:
     """Resolve the runtime mechanism scale, including legacy checkpoints."""
     saved_scale = checkpoint.get("mechanism_scale")
@@ -352,7 +363,19 @@ def restore_checkpoint_runtime_state(
     set_hidden_inhibition = getattr(model, "set_hidden_inhibition_enabled", None)
     if callable(set_hidden_inhibition):
         set_hidden_inhibition(bool(checkpoint.get("hidden_inhibition_enabled", True)))
+    set_asic_qat = getattr(model, "set_asic_qat_enabled", None)
+    if callable(set_asic_qat):
+        set_asic_qat(bool(checkpoint.get("asic_qat_enabled", False)))
     return scale
+
+
+def asic_qat_enabled_for_epoch(
+    suite: str, epoch: int, epochs: int, qat_epochs: int
+) -> bool:
+    """Use deployment arithmetic for the requested final epochs of final models."""
+    if qat_epochs < 0:
+        raise ValueError("asic_qat_epochs must be non-negative")
+    return suite == "final" and qat_epochs > 0 and epoch > epochs - qat_epochs
 
 
 def loss_profile_for_suite(suite: str) -> LossProfile:
@@ -1035,6 +1058,7 @@ def evaluate_model(
     *,
     device: torch.device,
     stateful_stream: bool = True,
+    chunks: int = 1,
     preview_indices: Sequence[int] = (),
     preview_sink: dict[int, tuple[Tensor, Tensor, Tensor]] | None = None,
 ) -> tuple[dict[str, object], float, dict[str, float]]:
@@ -1073,8 +1097,8 @@ def evaluate_model(
                 callable(is_stream_start) and is_stream_start(batch_index)
             ):
                 model.reset()
-            model.set_step_deltas_us(deltas_us)  # type: ignore[attr-defined]
-            outputs = model(sequence)
+            parts = _temporal_parts(sequence, deltas_us, chunks)
+            outputs = _forward_temporal_parts(model, parts, amp_enabled=False)
             prediction = outputs["segmentation_logits"].argmax(dim=1)
             confusion.update(prediction, target)
             if preview_sink is not None and batch_index in requested_previews:
@@ -1118,6 +1142,8 @@ def refinement_phase_for_epoch(
     epoch: int,
     epochs: int,
     schedule: tuple[float, float] | None,
+    *,
+    asic_qat_enabled: bool = False,
 ) -> tuple[str, bool]:
     """Return final-model training phase and semantic-backbone trainability.
 
@@ -1125,6 +1151,8 @@ def refinement_phase_for_epoch(
     The canonical model trains jointly, freezes the semantic backbone for late
     detail/decoder refinement, then performs a final all-layer low-LR tune.
     """
+    if asic_qat_enabled:
+        return "asic_qat_full_unfreeze", True
     if schedule is None:
         return "joint", True
     freeze_start, unfreeze_start = schedule
@@ -1166,6 +1194,7 @@ def train_architecture(
     resume_lr: float | None = None,
     load_weights_only: bool = False,
     disable_custom_mechanisms: bool = False,
+    asic_qat_epochs: int = DEFAULT_ASIC_QAT_EPOCHS,
     load: Path | None = None,
 ) -> TrainResult:
     if batch_size != 1:
@@ -1174,6 +1203,8 @@ def train_architecture(
         raise ValueError("sequential_chunks must be >= 1")
     if data_workers < 0:
         raise ValueError("data_workers must be >= 0")
+    if asic_qat_epochs < 0:
+        raise ValueError("asic_qat_epochs must be non-negative")
     if resume_lr is not None:
         if resume_lr <= 0.0:
             raise ValueError("resume_lr must be positive")
@@ -1328,6 +1359,8 @@ def train_architecture(
     current_competition_enabled = True
     current_hidden_inhibition_enabled = True
     current_neuron_dynamics_trainable = True
+    current_asic_qat_enabled = False
+    previous_asic_qat_enabled = False
     current_loss_profile = loss_profile
     def save_training_checkpoint(
         path: Path,
@@ -1402,6 +1435,12 @@ def train_architecture(
                 "custom_neuron_mechanisms_enabled": not disable_custom_mechanisms,
                 "weights_only_fine_tune": load_weights_only,
                 "neuron_dynamics_trainable": current_neuron_dynamics_trainable,
+                "asic_qat_enabled": current_asic_qat_enabled,
+                "asic_qat_epochs": asic_qat_epochs,
+                "asic_fixed_point_formats": {
+                    name: fixed_format.to_dict()
+                    for name, fixed_format in ASIC_FORMATS.items()
+                },
                 "amp": amp_enabled,
                 "sequential_chunks": sequential_chunks,
                 "data_workers": data_workers,
@@ -1584,6 +1623,7 @@ def train_architecture(
             best_layer_spike_rates = {}
             best_neuron_diagnostics = {}
             previous_training_phase = None
+            previous_asic_qat_enabled = False
             print(
                 f"Fine-tuning {architecture} weights from {load_path} | "
                 f"source_epoch={loaded_epoch} fresh_epoch=1/{epochs} | "
@@ -1592,6 +1632,9 @@ def train_architecture(
             )
         else:
             previous_training_phase = checkpoint.get("training_phase")
+            previous_asic_qat_enabled = bool(
+                checkpoint.get("asic_qat_enabled", False)
+            )
             lr_status = (
                 f"checkpoint initial LR set to {resume_lr:.2e}: current rates "
                 f"{', '.join(f'{rate:.2e}' for rate in resumed_group_rates)} "
@@ -1680,6 +1723,11 @@ def train_architecture(
             f"backbone_refinement={refinement_schedule}",
             flush=True,
         )
+        print(
+            f"ASIC quantization-aware finish | last_epochs={asic_qat_epochs} | "
+            "FP32 master parameters + deployment-format forward arithmetic",
+            flush=True,
+        )
         if disable_custom_mechanisms:
             print(
                 "Ablation | peer-membrane inhibition=off | "
@@ -1694,6 +1742,28 @@ def train_architecture(
 
     for epoch in range(start_epoch, epochs + 1):
         model.train()
+        current_asic_qat_enabled = asic_qat_enabled_for_epoch(
+            resolved_suite, epoch, epochs, asic_qat_epochs
+        )
+        set_asic_qat = getattr(model, "set_asic_qat_enabled", None)
+        if callable(set_asic_qat):
+            set_asic_qat(current_asic_qat_enabled)
+        if current_asic_qat_enabled and not previous_asic_qat_enabled:
+            # Deployment accuracy, rather than an earlier floating-point score,
+            # determines the canonical best checkpoint once QAT begins.
+            best_mean_iou = float("-inf")
+            best_epoch = 0
+            best_metrics = None
+            best_mean_spike_rate = 0.0
+            best_layer_spike_rates = {}
+            best_neuron_diagnostics = {}
+            print(
+                f"ASIC QAT begins at epoch {epoch}/{epochs} | "
+                "weights=Q7.16 accumulator=Q15.16 beta=UQ1.23 threshold=Q7.16 "
+                "age=U6 amplitude=UQ3.16 duration=UQ5.16",
+                flush=True,
+            )
+        previous_asic_qat_enabled = current_asic_qat_enabled
         current_loss_profile = loss_profile_for_epoch(resolved_suite, epoch, epochs)
         epoch_train_dataset = _epoch_train_dataset(
             train_pool,
@@ -1711,10 +1781,18 @@ def train_architecture(
             **loader_options,
         )
         training_phase, semantic_backbone_trainable = refinement_phase_for_epoch(
-            epoch, epochs, refinement_schedule
+            epoch,
+            epochs,
+            refinement_schedule,
+            asic_qat_enabled=current_asic_qat_enabled,
         )
         if callable(set_backbone_trainable):
             set_backbone_trainable(semantic_backbone_trainable)
+        if current_asic_qat_enabled:
+            # QAT must let every deployed weight and neuron parameter compensate
+            # for the fixed-point forward grid. The optimizer already owns all
+            # parameters because its groups are constructed before phase freezing.
+            set_all_parameters_trainable(model, True)
         if training_phase != previous_training_phase:
             if training_phase == "decoder_detail_refinement":
                 scale_learning_rates(
@@ -1735,7 +1813,8 @@ def train_architecture(
         elif is_final_run and mechanism_round:
             mechanism_scale = final_mechanism_scale(epoch, epochs)
             neuron_dynamics_trainable = (
-                epoch / float(max(1, epochs)) < FINAL_NEURON_FREEZE_FRACTION
+                current_asic_qat_enabled
+                or epoch / float(max(1, epochs)) < FINAL_NEURON_FREEZE_FRACTION
             )
             set_neuron_dynamics_trainable(model, neuron_dynamics_trainable)
             # Keep mutually-exclusive semantic class WTA active from the start.
@@ -1791,7 +1870,7 @@ def train_architecture(
                     sequence,
                     deltas_us,
                     chunks=sequential_chunks,
-                    amp_enabled=amp_enabled,
+                    amp_enabled=amp_enabled and not current_asic_qat_enabled,
                     scaler=scaler,
                     loss_scale=1.0 / accumulate_steps,
                     objective=(
@@ -1853,6 +1932,7 @@ def train_architecture(
                     f"{value:.2f}" for value in detached_dice_losses.tolist()
                 ),
                 phase=training_phase,
+                qat="on" if current_asic_qat_enabled else "off",
                 refresh=False,
             )
             del sequence, target, deltas_us
@@ -1869,6 +1949,7 @@ def train_architecture(
             f"Epoch {epoch:02d}/{epochs:02d} complete | "
             f"loss={mean_epoch_loss:.4f} | phase={training_phase} | "
             f"mechanism_scale={mechanism_scale:.2f} | "
+            f"asic_qat={'on' if current_asic_qat_enabled else 'off'} | "
             "loss_mix="
             f"macro_ce={current_loss_profile.cross_entropy:.3f},"
             f"pixel_ce={current_loss_profile.pixel_cross_entropy:.3f},"
@@ -1894,6 +1975,7 @@ def train_architecture(
                 validation_loader,
                 device=resolved_device,
                 stateful_stream=continuous_state,
+                chunks=sequential_chunks,
                 preview_indices=validation_preview_indices,
                 preview_sink=validation_previews,
             )
@@ -2009,6 +2091,7 @@ def train_architecture(
             validation_loader,
             device=resolved_device,
             stateful_stream=continuous_state,
+            chunks=sequential_chunks,
         )
         diagnostics_fn = getattr(model, "neuron_diagnostics", None)
         neuron_diagnostics = diagnostics_fn() if callable(diagnostics_fn) else {}
@@ -2104,6 +2187,7 @@ def benchmark_architectures(args: argparse.Namespace) -> dict[str, object]:
             dataset_name=args.dataset,
             dsec_class_count=args.dsec_classes,
             data_workers=args.data_workers,
+            asic_qat_epochs=args.asic_qat_epochs,
             load=None,
         )
         for name in presets
@@ -2265,6 +2349,15 @@ def _common_training_arguments(parser: argparse.ArgumentParser) -> None:
         help="save a recoverable periodic checkpoint every N epochs (final suite)",
     )
     parser.add_argument(
+        "--asic-qat-epochs",
+        type=int,
+        default=DEFAULT_ASIC_QAT_EPOCHS,
+        help=(
+            "number of final-suite epochs that emulate deployed fixed-point "
+            "arithmetic (default: 3; use 0 to disable)"
+        ),
+    )
+    parser.add_argument(
         "--amp",
         action="store_true",
         help="enable CUDA automatic mixed precision (FP16 autocast + GradScaler)",
@@ -2421,6 +2514,7 @@ def main() -> None:
             resume_lr=args.resume_lr,
             load_weights_only=args.load_weights_only,
             disable_custom_mechanisms=args.disable_custom_mechanisms,
+            asic_qat_epochs=args.asic_qat_epochs,
             load=args.load,
         )
     elif args.command == "benchmark":

@@ -54,17 +54,13 @@ def _parameter_literal(
         return _packed_literal(
             export_dir / str(rom_path), word_bits=word_bits, expected_words=count
         )
-    parameters = json.loads(
-        (export_dir / str(layer["parameter_file"])).read_text(encoding="utf-8")
-    )
+    parameters = json.loads((export_dir / str(layer["parameter_file"])).read_text(encoding="utf-8"))
     values = parameters[key]
     if len(values) != count:
         raise ValueError(f"{layer['name']} {key} count does not match out_channels")
     mask = (1 << word_bits) - 1
     digits = (word_bits + 3) // 4
-    packed = "".join(
-        f"{int(value) & mask:0{digits}x}" for value in reversed(values)
-    )
+    packed = "".join(f"{int(value) & mask:0{digits}x}" for value in reversed(values))
     return f"{count * word_bits}'h{packed}"
 
 
@@ -90,9 +86,7 @@ def _mechanism_parameters(export_dir: Path, layer: dict[str, Any]) -> dict[str, 
 
     return {
         "inhibition_enabled": int(bool(values.get("inhibition_enabled", False))),
-        "adaptation_enabled": int(
-            bool(values.get("threshold_adaptation_enabled", False))
-        ),
+        "adaptation_enabled": int(bool(values.get("threshold_adaptation_enabled", False))),
         "inhibition_strength": scalar("inhibition_strength_q"),
         "adaptation_strength": scalar("threshold_adaptation_strength_q"),
         "adaptation_duration": scalar("adaptation_duration_q"),
@@ -170,8 +164,7 @@ def _generate_legacy_top(
         unknown_actors = set(lane_config) - set(actors)
         if unknown_actors:
             raise ValueError(
-                "lane configuration contains unknown actors: "
-                + ", ".join(sorted(unknown_actors))
+                "lane configuration contains unknown actors: " + ", ".join(sorted(unknown_actors))
             )
 
     all_edges = [dict(edge) for edge in graph["edges"]]
@@ -191,8 +184,7 @@ def _generate_legacy_top(
     lines = [
         "`timescale 1ns/1ps",
         "// Generated file: do not hand edit. Source is model_spec.yaml graph + ROM images.",
-        "// Lane configuration SHA256: "
-        + (lane_config_sha256 or "none_single_lane_reference"),
+        "// Lane configuration SHA256: " + (lane_config_sha256 or "none_single_lane_reference"),
         f"module {module_name} #(",
         "  parameter integer PAYLOAD_WIDTH = 32,",
         "  parameter integer TAG_WIDTH = 24,",
@@ -216,9 +208,7 @@ def _generate_legacy_top(
     ]
 
     stream_nodes = {
-        name
-        for name in node_kinds
-        if name not in {"input", readout_name, "prediction"}
+        name for name in node_kinds if name not in {"input", readout_name, "prediction"}
     }
     _declare_stream(lines, "ingress")
     lines.extend(
@@ -236,12 +226,8 @@ def _generate_legacy_top(
     for index, _edge in enumerate(edges):
         _declare_stream(lines, f"r_{index}")
         _declare_stream(lines, f"e_{index}")
-        lines.append(
-            f"  logic [EDGE_FIFO_COUNT_WIDTH-1:0] edge_{index}_occupancy;"
-        )
-        lines.append(
-            f"  logic [EDGE_FIFO_COUNT_WIDTH-1:0] edge_{index}_high_watermark;"
-        )
+        lines.append(f"  logic [EDGE_FIFO_COUNT_WIDTH-1:0] edge_{index}_occupancy;")
+        lines.append(f"  logic [EDGE_FIFO_COUNT_WIDTH-1:0] edge_{index}_high_watermark;")
 
     for index, _edge in enumerate(edges):
         _instance(
@@ -294,18 +280,18 @@ def _generate_legacy_top(
         weight_count = int(layer["weight_count"])
         weights = _packed_literal(
             export_dir / str(layer["weight_rom"]),
-            word_bits=8,
+            word_bits=24,
             expected_words=weight_count,
         )
         betas = _parameter_literal(
-            export_dir, layer, key="beta_q", rom_key="beta_rom", word_bits=16
+            export_dir, layer, key="beta_q", rom_key="beta_rom", word_bits=24
         )
         thresholds = _parameter_literal(
             export_dir,
             layer,
             key="threshold_q",
             rom_key="threshold_rom",
-            word_bits=16,
+            word_bits=24,
         )
         mechanisms = _mechanism_parameters(export_dir, layer)
         kernel_h, kernel_w = (int(value) for value in layer["kernel"])
@@ -320,9 +306,7 @@ def _generate_legacy_top(
         fault_signals.append(error)
         initialization_signals.append(initialized)
         actor_lanes = dict(lane_config.get(actor_name, {}))
-        use_parallel_banks = int(
-            bool(actor_lanes.get("use_parallel_banked_state", False))
-        )
+        use_parallel_banks = int(bool(actor_lanes.get("use_parallel_banked_state", False)))
         channel_lanes = int(actor_lanes.get("channel_lanes", 1))
         spatial_lanes = int(actor_lanes.get("spatial_lanes", 1))
         output_channels = int(layer["out_channels"])
@@ -347,26 +331,33 @@ def _generate_legacy_top(
             f".INPUT_CHANNELS({int(layer['in_channels'])})",
             f".OUTPUT_CHANNELS({int(layer['out_channels'])})",
             f".GROUPS({int(layer['groups'])})",
-            f".KERNEL_WIDTH({kernel_w})", f".KERNEL_HEIGHT({kernel_h})",
-            f".STRIDE_X({stride_x})", f".STRIDE_Y({stride_y})",
-            f".DILATION_X({dilation_x})", f".DILATION_Y({dilation_y})",
-            f".PAD_X({pad_x})", f".PAD_Y({pad_y})",
-            f".OUTPUT_WIDTH({output_w})", f".OUTPUT_HEIGHT({output_h})",
-            f".KERNEL_WEIGHTS({weights})", f".CHANNEL_BETAS({betas})",
+            f".KERNEL_WIDTH({kernel_w})",
+            f".KERNEL_HEIGHT({kernel_h})",
+            f".STRIDE_X({stride_x})",
+            f".STRIDE_Y({stride_y})",
+            f".DILATION_X({dilation_x})",
+            f".DILATION_Y({dilation_y})",
+            f".PAD_X({pad_x})",
+            f".PAD_Y({pad_y})",
+            f".OUTPUT_WIDTH({output_w})",
+            f".OUTPUT_HEIGHT({output_h})",
+            f".KERNEL_WEIGHTS({weights})",
+            f".CHANNEL_BETAS({betas})",
             f".CHANNEL_THRESHOLDS({thresholds})",
             f".ENABLE_INHIBITION({mechanisms['inhibition_enabled']})",
             f".ENABLE_ADAPTATION({mechanisms['adaptation_enabled']})",
-            f".INHIBITION_STRENGTH(16'h{mechanisms['inhibition_strength'] & 0xFFFF:04x})",
-            f".ADAPTATION_STRENGTH(16'h{mechanisms['adaptation_strength'] & 0xFFFF:04x})",
-            f".ADAPTATION_DURATION(16'h{mechanisms['adaptation_duration'] & 0xFFFF:04x})",
+            f".INHIBITION_STRENGTH(24'h{mechanisms['inhibition_strength'] & 0xFFFFFF:06x})",
+            f".ADAPTATION_STRENGTH(19'h{mechanisms['adaptation_strength'] & 0x7FFFF:05x})",
+            f".ADAPTATION_DURATION(21'h{mechanisms['adaptation_duration'] & 0x1FFFFF:06x})",
         ]
         ports = [".clk", ".reset", *_ports(edge_base, "in"), *_ports(output_base, "out")]
         ports.append(f".actor_error_o({error})")
         ports.append(f".initialization_done_o({initialized})")
         _instance(
             lines,
-            "streaming_channelized_plif_actor #(\n    " + ",\n    ".join(params) +
-            f"\n  ) actor_{_identifier(actor_name)}",
+            "streaming_channelized_plif_actor #(\n    "
+            + ",\n    ".join(params)
+            + f"\n  ) actor_{_identifier(actor_name)}",
             ports,
         )
 
@@ -381,8 +372,13 @@ def _generate_legacy_top(
             _instance(
                 lines,
                 f"event_upsample2x upsample_{_identifier(node_name)}",
-                [".clk", ".reset", *_ports(f"e_{node_inputs[0][0]}", "in"),
-                 *_ports(output_base, "out"), ".coordinate_overflow_o()"],
+                [
+                    ".clk",
+                    ".reset",
+                    *_ports(f"e_{node_inputs[0][0]}", "in"),
+                    *_ports(output_base, "out"),
+                    ".coordinate_overflow_o()",
+                ],
             )
             continue
         if node_name not in join_contracts or len(node_inputs) != 2:
@@ -402,8 +398,11 @@ def _generate_legacy_top(
                     lines,
                     f"event_channel_offset #(.CHANNEL_OFFSET({offset})) "
                     f"offset_{_identifier(node_name)}_{input_number}",
-                    [*_ports(edge_base, "in"), *_ports(mapped, "out"),
-                     f".channel_overflow_o({overflow})"],
+                    [
+                        *_ports(edge_base, "in"),
+                        *_ports(mapped, "out"),
+                        f".channel_overflow_o({overflow})",
+                    ],
                 )
                 prepared.append(mapped)
             else:
@@ -411,8 +410,13 @@ def _generate_legacy_top(
         mismatch = f"error_tag_{_identifier(node_name)}"
         lines.append(f"  logic {mismatch};")
         fault_signals.append(mismatch)
-        common_ports = [".clk", ".reset", *_ports(prepared[0], "in0"),
-                        *_ports(prepared[1], "in1"), *_ports(output_base, "out")]
+        common_ports = [
+            ".clk",
+            ".reset",
+            *_ports(prepared[0], "in0"),
+            *_ports(prepared[1], "in1"),
+            *_ports(output_base, "out"),
+        ]
         if str(contract["kind"]) == "binary_residual_or":
             overflow = f"error_union_{_identifier(node_name)}"
             lines.append(f"  logic {overflow};")
@@ -435,7 +439,7 @@ def _generate_legacy_top(
     readout = layers[readout_name]
     readout_weights = _packed_literal(
         export_dir / str(readout["weight_rom"]),
-        word_bits=8,
+        word_bits=24,
         expected_words=int(readout["weight_count"]),
     )
     readout_h, readout_w = (int(value) for value in readout["output_hw"])
@@ -449,20 +453,31 @@ def _generate_legacy_top(
         ".USE_STATE_MACRO(USE_STATE_MACRO)",
         f".INPUT_CHANNELS({int(readout['in_channels'])})",
         f".CLASS_COUNT({int(readout['out_channels'])})",
-        f".OUTPUT_WIDTH({readout_w})", f".OUTPUT_HEIGHT({readout_h})",
+        f".OUTPUT_WIDTH({readout_w})",
+        f".OUTPUT_HEIGHT({readout_h})",
         f".PREDICTION_BINS({int(spec['timing_contract']['prediction_bins_default'])})",
         f".READOUT_WEIGHTS({readout_weights})",
     ]
     _instance(
         lines,
-        "temporal_class_readout #(\n    " + ",\n    ".join(readout_params) +
-        "\n  ) temporal_readout",
-        [".clk", ".reset", *_ports(f"e_{readout_inputs[0][0]}", "in"),
-         ".prediction_valid", ".prediction_ready", ".prediction_x_o",
-         ".prediction_y_o", ".prediction_class_o", ".frame_done_valid",
-         ".frame_done_ready", ".frame_bin_tag_o",
-         f".address_error_o({readout_error})",
-         f".initialization_done_o({readout_initialized})"],
+        "temporal_class_readout #(\n    "
+        + ",\n    ".join(readout_params)
+        + "\n  ) temporal_readout",
+        [
+            ".clk",
+            ".reset",
+            *_ports(f"e_{readout_inputs[0][0]}", "in"),
+            ".prediction_valid",
+            ".prediction_ready",
+            ".prediction_x_o",
+            ".prediction_y_o",
+            ".prediction_class_o",
+            ".frame_done_valid",
+            ".frame_done_ready",
+            ".frame_bin_tag_o",
+            f".address_error_o({readout_error})",
+            f".initialization_done_o({readout_initialized})",
+        ],
     )
     lines.append(
         "  assign all_memories_initialized = "
@@ -563,11 +578,7 @@ def _generate_resident_top(
     layers = {str(layer["name"]): layer for layer in spec["layers"]}
     readout_name = str(graph["current_readout"])
     shapes = _resident_shapes(graph, layers)
-    edges = [
-        dict(edge)
-        for edge in graph["edges"]
-        if str(edge["destination"]) != "prediction"
-    ]
+    edges = [dict(edge) for edge in graph["edges"] if str(edge["destination"]) != "prediction"]
     incoming: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
     outgoing: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
     for index, edge in enumerate(edges):
@@ -595,7 +606,7 @@ def _generate_resident_top(
         "  input logic [TAG_WIDTH-1:0] input_bin_tag,",
         "  output logic prediction_valid, input logic prediction_ready,",
         "  output logic [9:0] prediction_x_o, output logic [8:0] prediction_y_o,",
-        f"  output logic [{class_width-1}:0] prediction_class_o,",
+        f"  output logic [{class_width - 1}:0] prediction_class_o,",
         "  output logic frame_done_valid, input logic frame_done_ready,",
         "  output logic [TAG_WIDTH-1:0] frame_bin_tag_o,",
         "  output logic fault_o",
@@ -612,17 +623,17 @@ def _generate_resident_top(
         ]
     )
     stream_nodes = {
-        name
-        for name in node_kinds
-        if name not in {"input", readout_name, "prediction"}
+        name for name in node_kinds if name not in {"input", readout_name, "prediction"}
     }
     for name in sorted(stream_nodes):
         width = shapes[name][0] * shapes[name][1] * shapes[name][2]
         _declare_sized_stream(lines, f"n_{_identifier(name)}", width)
     for index, edge in enumerate(edges):
         source = str(edge["source"])
-        width: int | str = "PAYLOAD_WIDTH" if source == "input" else (
-            shapes[source][0] * shapes[source][1] * shapes[source][2]
+        width: int | str = (
+            "PAYLOAD_WIDTH"
+            if source == "input"
+            else (shapes[source][0] * shapes[source][1] * shapes[source][2])
         )
         _declare_sized_stream(lines, f"r_{index}", width)
 
@@ -638,25 +649,44 @@ def _generate_resident_top(
             _instance(
                 lines,
                 "event_fork2 #(.PAYLOAD_WIDTH(PAYLOAD_WIDTH), .TAG_WIDTH(TAG_WIDTH)) ingress_fork",
-                [".clk", ".reset", *_ports(base, "in"),
-                 *_ports(f"r_{first[0]}", "out0"),
-                 *_ports(f"r_{second[0]}", "out1")],
+                [
+                    ".clk",
+                    ".reset",
+                    *_ports(base, "in"),
+                    *_ports(f"r_{first[0]}", "out0"),
+                    *_ports(f"r_{second[0]}", "out1"),
+                ],
             )
         else:
             first, second = source_edges
             width = shapes[source][0] * shapes[source][1] * shapes[source][2]
+            fork_module = (
+                "resident_spike_vector_fork2 #("
+                f".VECTOR_WIDTH({width}), .TAG_WIDTH(TAG_WIDTH)) "
+                f"fork_{_identifier(source)}"
+            )
             _instance(
                 lines,
-                f"resident_spike_vector_fork2 #(.VECTOR_WIDTH({width}), .TAG_WIDTH(TAG_WIDTH)) fork_{_identifier(source)}",
-                [".clk", ".reset", f".in_valid_i({base}_valid)",
-                 f".in_ready_o({base}_ready)", f".in_vector_i({base}_payload)",
-                 f".in_completion_i({base}_completion)", f".in_tag_i({base}_bin_tag)",
-                 f".out0_valid_o(r_{first[0]}_valid)", f".out0_ready_i(r_{first[0]}_ready)",
-                 f".out0_vector_o(r_{first[0]}_payload)", f".out0_completion_o(r_{first[0]}_completion)",
-                 f".out0_tag_o(r_{first[0]}_bin_tag)",
-                 f".out1_valid_o(r_{second[0]}_valid)", f".out1_ready_i(r_{second[0]}_ready)",
-                 f".out1_vector_o(r_{second[0]}_payload)", f".out1_completion_o(r_{second[0]}_completion)",
-                 f".out1_tag_o(r_{second[0]}_bin_tag)"],
+                fork_module,
+                [
+                    ".clk",
+                    ".reset",
+                    f".in_valid_i({base}_valid)",
+                    f".in_ready_o({base}_ready)",
+                    f".in_vector_i({base}_payload)",
+                    f".in_completion_i({base}_completion)",
+                    f".in_tag_i({base}_bin_tag)",
+                    f".out0_valid_o(r_{first[0]}_valid)",
+                    f".out0_ready_i(r_{first[0]}_ready)",
+                    f".out0_vector_o(r_{first[0]}_payload)",
+                    f".out0_completion_o(r_{first[0]}_completion)",
+                    f".out0_tag_o(r_{first[0]}_bin_tag)",
+                    f".out1_valid_o(r_{second[0]}_valid)",
+                    f".out1_ready_i(r_{second[0]}_ready)",
+                    f".out1_vector_o(r_{second[0]}_payload)",
+                    f".out1_completion_o(r_{second[0]}_completion)",
+                    f".out1_tag_o(r_{second[0]}_bin_tag)",
+                ],
             )
 
     faults: list[str] = []
@@ -677,15 +707,28 @@ def _generate_resident_top(
             ingress_error = f"error_ingress_{_identifier(actor_name)}"
             lines.append(f"  logic {ingress_error};")
             faults.append(ingress_error)
+            ingress_module = (
+                "resident_event_ingress_adapter #("
+                f".INPUT_CHANNELS({input_channels}), .INPUT_WIDTH({input_w}), "
+                f".INPUT_HEIGHT({input_h}), .TAG_WIDTH(TAG_WIDTH)) "
+                f"ingress_{_identifier(actor_name)}"
+            )
             _instance(
                 lines,
-                f"resident_event_ingress_adapter #(.INPUT_CHANNELS({input_channels}), .INPUT_WIDTH({input_w}), .INPUT_HEIGHT({input_h}), .TAG_WIDTH(TAG_WIDTH)) ingress_{_identifier(actor_name)}",
-                [f".in_valid_i({actor_input}_valid)", f".in_ready_o({actor_input}_ready)",
-                 f".in_payload_i({actor_input}_payload)", f".in_completion_i({actor_input}_completion)",
-                 f".in_tag_i({actor_input}_bin_tag)", f".out_valid_o({adapted}_valid)",
-                 f".out_ready_i({adapted}_ready)", f".out_spike_vector_o({adapted}_payload)",
-                 f".out_completion_o({adapted}_completion)", f".out_tag_o({adapted}_bin_tag)",
-                 f".coordinate_error_o({ingress_error})"],
+                ingress_module,
+                [
+                    f".in_valid_i({actor_input}_valid)",
+                    f".in_ready_o({actor_input}_ready)",
+                    f".in_payload_i({actor_input}_payload)",
+                    f".in_completion_i({actor_input}_completion)",
+                    f".in_tag_i({actor_input}_bin_tag)",
+                    f".out_valid_o({adapted}_valid)",
+                    f".out_ready_i({adapted}_ready)",
+                    f".out_spike_vector_o({adapted}_payload)",
+                    f".out_completion_o({adapted}_completion)",
+                    f".out_tag_o({adapted}_bin_tag)",
+                    f".coordinate_error_o({ingress_error})",
+                ],
             )
             actor_input = adapted
         kernel_h, kernel_w = (int(value) for value in layer["kernel"])
@@ -694,48 +737,68 @@ def _generate_resident_top(
         dilation_y, dilation_x = (int(value) for value in layer["dilation"])
         weights = _packed_literal(
             export_dir / str(layer["weight_rom"]),
-            word_bits=8,
+            word_bits=24,
             expected_words=int(layer["weight_count"]),
         )
         betas = _parameter_literal(
-            export_dir, layer, key="beta_q", rom_key="beta_rom", word_bits=16
+            export_dir, layer, key="beta_q", rom_key="beta_rom", word_bits=24
         )
         thresholds = _parameter_literal(
-            export_dir, layer, key="threshold_q", rom_key="threshold_rom", word_bits=16
+            export_dir, layer, key="threshold_q", rom_key="threshold_rom", word_bits=24
         )
         mechanism = _mechanism_parameters(export_dir, layer)
         error = f"error_actor_{_identifier(actor_name)}"
         lines.append(f"  logic {error};")
         faults.append(error)
         params = [
-            f".INPUT_CHANNELS({input_channels})", f".INPUT_WIDTH({input_w})",
-            f".INPUT_HEIGHT({input_h})", f".OUTPUT_CHANNELS({output_channels})",
-            f".OUTPUT_WIDTH({output_w})", f".OUTPUT_HEIGHT({output_h})",
+            f".INPUT_CHANNELS({input_channels})",
+            f".INPUT_WIDTH({input_w})",
+            f".INPUT_HEIGHT({input_h})",
+            f".OUTPUT_CHANNELS({output_channels})",
+            f".OUTPUT_WIDTH({output_w})",
+            f".OUTPUT_HEIGHT({output_h})",
             f".SPATIAL_TILE_WIDTH({min(tile_width, output_w)})",
             f".SPATIAL_TILE_HEIGHT({min(tile_height, output_h)})",
-            f".GROUPS({int(layer['groups'])})", f".KERNEL_WIDTH({kernel_w})",
-            f".KERNEL_HEIGHT({kernel_h})", f".STRIDE_X({stride_x})",
-            f".STRIDE_Y({stride_y})", f".DILATION_X({dilation_x})",
-            f".DILATION_Y({dilation_y})", f".PAD_X({pad_x})", f".PAD_Y({pad_y})",
-            f".TAG_WIDTH(TAG_WIDTH)", f".KERNEL_WEIGHTS({weights})",
-            f".CHANNEL_BETAS({betas})", f".CHANNEL_THRESHOLDS({thresholds})",
+            f".GROUPS({int(layer['groups'])})",
+            f".KERNEL_WIDTH({kernel_w})",
+            f".KERNEL_HEIGHT({kernel_h})",
+            f".STRIDE_X({stride_x})",
+            f".STRIDE_Y({stride_y})",
+            f".DILATION_X({dilation_x})",
+            f".DILATION_Y({dilation_y})",
+            f".PAD_X({pad_x})",
+            f".PAD_Y({pad_y})",
+            ".TAG_WIDTH(TAG_WIDTH)",
+            f".KERNEL_WEIGHTS({weights})",
+            f".CHANNEL_BETAS({betas})",
+            f".CHANNEL_THRESHOLDS({thresholds})",
             f".ENABLE_INHIBITION({mechanism['inhibition_enabled']})",
             f".ENABLE_ADAPTATION({mechanism['adaptation_enabled']})",
-            f".INHIBITION_STRENGTH(16'h{mechanism['inhibition_strength'] & 0xFFFF:04x})",
-            f".ADAPTATION_STRENGTH(16'h{mechanism['adaptation_strength'] & 0xFFFF:04x})",
-            f".ADAPTATION_DURATION(16'h{mechanism['adaptation_duration'] & 0xFFFF:04x})",
+            f".INHIBITION_STRENGTH(24'h{mechanism['inhibition_strength'] & 0xFFFFFF:06x})",
+            f".ADAPTATION_STRENGTH(19'h{mechanism['adaptation_strength'] & 0x7FFFF:05x})",
+            f".ADAPTATION_DURATION(21'h{mechanism['adaptation_duration'] & 0x1FFFFF:06x})",
         ]
         output = f"n_{_identifier(actor_name)}"
         _instance(
             lines,
-            "streaming_resident_channelized_plif_actor #(\n    " +
-            ",\n    ".join(params) + f"\n  ) actor_{_identifier(actor_name)}",
-            [".clk", ".reset", f".in_valid_i({actor_input}_valid)",
-             f".in_ready_o({actor_input}_ready)", f".in_spike_vector_i({actor_input}_payload)",
-             f".in_completion_i({actor_input}_completion)", f".in_tag_i({actor_input}_bin_tag)",
-             f".out_valid_o({output}_valid)", f".out_ready_i({output}_ready)",
-             f".out_spike_vector_o({output}_payload)", f".out_completion_o({output}_completion)",
-             f".out_tag_o({output}_bin_tag)", f".error_o({error})"],
+            "streaming_resident_channelized_plif_actor #(\n    "
+            + ",\n    ".join(params)
+            + f"\n  ) actor_{_identifier(actor_name)}",
+            [
+                ".clk",
+                ".reset",
+                f".in_valid_i({actor_input}_valid)",
+                f".in_ready_o({actor_input}_ready)",
+                f".in_spike_vector_i({actor_input}_payload)",
+                f".in_completion_i({actor_input}_completion)",
+                f".in_tag_i({actor_input}_bin_tag)",
+                f".out_valid_o({output}_valid)",
+                f".out_ready_i({output}_ready)",
+                f".out_spike_vector_o({output}_payload)",
+                f".out_completion_o({output}_completion)",
+                f".out_tag_o({output}_bin_tag)",
+                f".error_o({error})",
+            ],
         )
 
     for node_name, kind in node_kinds.items():
@@ -749,14 +812,27 @@ def _generate_resident_top(
             edge_index, edge = node_inputs[0]
             in_channels, in_h, in_w = shapes[str(edge["source"])]
             base = f"r_{edge_index}"
+            upsample_module = (
+                "resident_spike_vector_upsample2x #("
+                f".CHANNELS({in_channels}), .INPUT_WIDTH({in_w}), "
+                f".INPUT_HEIGHT({in_h}), .TAG_WIDTH(TAG_WIDTH)) "
+                f"upsample_{_identifier(node_name)}"
+            )
             _instance(
                 lines,
-                f"resident_spike_vector_upsample2x #(.CHANNELS({in_channels}), .INPUT_WIDTH({in_w}), .INPUT_HEIGHT({in_h}), .TAG_WIDTH(TAG_WIDTH)) upsample_{_identifier(node_name)}",
-                [f".in_valid_i({base}_valid)", f".in_ready_o({base}_ready)",
-                 f".in_vector_i({base}_payload)", f".in_completion_i({base}_completion)",
-                 f".in_tag_i({base}_bin_tag)", f".out_valid_o({output}_valid)",
-                 f".out_ready_i({output}_ready)", f".out_vector_o({output}_payload)",
-                 f".out_completion_o({output}_completion)", f".out_tag_o({output}_bin_tag)"],
+                upsample_module,
+                [
+                    f".in_valid_i({base}_valid)",
+                    f".in_ready_o({base}_ready)",
+                    f".in_vector_i({base}_payload)",
+                    f".in_completion_i({base}_completion)",
+                    f".in_tag_i({base}_bin_tag)",
+                    f".out_valid_o({output}_valid)",
+                    f".out_ready_i({output}_ready)",
+                    f".out_vector_o({output}_payload)",
+                    f".out_completion_o({output}_completion)",
+                    f".out_tag_o({output}_bin_tag)",
+                ],
             )
             continue
         if len(node_inputs) != 2:
@@ -771,15 +847,30 @@ def _generate_resident_top(
                 map_error = f"error_map_{_identifier(node_name)}_{input_number}"
                 lines.append(f"  logic {map_error};")
                 faults.append(map_error)
+                offset_module = (
+                    "resident_spike_vector_channel_offset #("
+                    f".INPUT_CHANNELS({source_shape[0]}), "
+                    f".OUTPUT_CHANNELS({out_channels}), "
+                    f".SPATIAL_COUNT({out_h * out_w}), "
+                    f".CHANNEL_OFFSET({int(edge.get('channel_offset', 0))}), "
+                    f".TAG_WIDTH(TAG_WIDTH)) map_{_identifier(node_name)}_{input_number}"
+                )
                 _instance(
                     lines,
-                    f"resident_spike_vector_channel_offset #(.INPUT_CHANNELS({source_shape[0]}), .OUTPUT_CHANNELS({out_channels}), .SPATIAL_COUNT({out_h*out_w}), .CHANNEL_OFFSET({int(edge.get('channel_offset', 0))}), .TAG_WIDTH(TAG_WIDTH)) map_{_identifier(node_name)}_{input_number}",
-                    [f".in_valid_i({base}_valid)", f".in_ready_o({base}_ready)",
-                     f".in_vector_i({base}_payload)", f".in_completion_i({base}_completion)",
-                     f".in_tag_i({base}_bin_tag)", f".out_valid_o({mapped}_valid)",
-                     f".out_ready_i({mapped}_ready)", f".out_vector_o({mapped}_payload)",
-                     f".out_completion_o({mapped}_completion)", f".out_tag_o({mapped}_bin_tag)",
-                     f".configuration_error_o({map_error})"],
+                    offset_module,
+                    [
+                        f".in_valid_i({base}_valid)",
+                        f".in_ready_o({base}_ready)",
+                        f".in_vector_i({base}_payload)",
+                        f".in_completion_i({base}_completion)",
+                        f".in_tag_i({base}_bin_tag)",
+                        f".out_valid_o({mapped}_valid)",
+                        f".out_ready_i({mapped}_ready)",
+                        f".out_vector_o({mapped}_payload)",
+                        f".out_completion_o({mapped}_completion)",
+                        f".out_tag_o({mapped}_bin_tag)",
+                        f".configuration_error_o({map_error})",
+                    ],
                 )
                 prepared.append(mapped)
             else:
@@ -788,26 +879,52 @@ def _generate_resident_top(
         lines.append(f"  logic {mismatch};")
         faults.append(mismatch)
         if kind == "binary_residual_or":
+            union_module = (
+                "resident_spike_vector_union2 #("
+                f".VECTOR_WIDTH({out_count}), .TAG_WIDTH(TAG_WIDTH)) "
+                f"union_{_identifier(node_name)}"
+            )
             _instance(
                 lines,
-                f"resident_spike_vector_union2 #(.VECTOR_WIDTH({out_count}), .TAG_WIDTH(TAG_WIDTH)) union_{_identifier(node_name)}",
-                [".clk", ".reset", f".in0_valid_i({prepared[0]}_valid)",
-                 f".in0_ready_o({prepared[0]}_ready)", f".in0_vector_i({prepared[0]}_payload)",
-                 f".in0_completion_i({prepared[0]}_completion)", f".in0_tag_i({prepared[0]}_bin_tag)",
-                 f".in1_valid_i({prepared[1]}_valid)", f".in1_ready_o({prepared[1]}_ready)",
-                 f".in1_vector_i({prepared[1]}_payload)", f".in1_completion_i({prepared[1]}_completion)",
-                 f".in1_tag_i({prepared[1]}_bin_tag)", f".out_valid_o({output}_valid)",
-                 f".out_ready_i({output}_ready)", f".out_vector_o({output}_payload)",
-                 f".out_completion_o({output}_completion)", f".out_tag_o({output}_bin_tag)",
-                 f".tag_mismatch_o({mismatch})"],
+                union_module,
+                [
+                    ".clk",
+                    ".reset",
+                    f".in0_valid_i({prepared[0]}_valid)",
+                    f".in0_ready_o({prepared[0]}_ready)",
+                    f".in0_vector_i({prepared[0]}_payload)",
+                    f".in0_completion_i({prepared[0]}_completion)",
+                    f".in0_tag_i({prepared[0]}_bin_tag)",
+                    f".in1_valid_i({prepared[1]}_valid)",
+                    f".in1_ready_o({prepared[1]}_ready)",
+                    f".in1_vector_i({prepared[1]}_payload)",
+                    f".in1_completion_i({prepared[1]}_completion)",
+                    f".in1_tag_i({prepared[1]}_bin_tag)",
+                    f".out_valid_o({output}_valid)",
+                    f".out_ready_i({output}_ready)",
+                    f".out_vector_o({output}_payload)",
+                    f".out_completion_o({output}_completion)",
+                    f".out_tag_o({output}_bin_tag)",
+                    f".tag_mismatch_o({mismatch})",
+                ],
             )
         else:
+            join_module = (
+                "event_join2 #("
+                f".PAYLOAD_WIDTH({out_count}), .TAG_WIDTH(TAG_WIDTH)) "
+                f"join_{_identifier(node_name)}"
+            )
             _instance(
                 lines,
-                f"event_join2 #(.PAYLOAD_WIDTH({out_count}), .TAG_WIDTH(TAG_WIDTH)) join_{_identifier(node_name)}",
-                [".clk", ".reset", *_ports(prepared[0], "in0"),
-                 *_ports(prepared[1], "in1"), *_ports(output, "out"),
-                 f".tag_mismatch_o({mismatch})"],
+                join_module,
+                [
+                    ".clk",
+                    ".reset",
+                    *_ports(prepared[0], "in0"),
+                    *_ports(prepared[1], "in1"),
+                    *_ports(output, "out"),
+                    f".tag_mismatch_o({mismatch})",
+                ],
             )
 
     readout_input = incoming[readout_name]
@@ -817,27 +934,41 @@ def _generate_resident_top(
     readout_h, readout_w = (int(value) for value in readout["output_hw"])
     readout_weights = _packed_literal(
         export_dir / str(readout["weight_rom"]),
-        word_bits=8,
+        word_bits=24,
         expected_words=int(readout["weight_count"]),
     )
     _instance(
         lines,
-        "resident_temporal_class_readout #(\n    " + ",\n    ".join(
-            [f".INPUT_CHANNELS({int(readout['in_channels'])})",
-             f".CLASS_COUNT({class_count})", f".OUTPUT_WIDTH({readout_w})",
-             f".OUTPUT_HEIGHT({readout_h})",
-             f".PREDICTION_BINS({int(spec['timing_contract']['prediction_bins_default'])})",
-             f".TAG_WIDTH(TAG_WIDTH)", f".READOUT_WEIGHTS({readout_weights})"]
-        ) + "\n  ) temporal_readout",
-        [".clk", ".reset", f".in_valid_i({readout_base}_valid)",
-         f".in_ready_o({readout_base}_ready)",
-         f".in_spike_vector_i({readout_base}_payload)",
-         f".in_completion_i({readout_base}_completion)", f".in_tag_i({readout_base}_bin_tag)",
-         ".prediction_valid_o(prediction_valid)", ".prediction_ready_i(prediction_ready)",
-         ".prediction_x_o(prediction_x_o)", ".prediction_y_o(prediction_y_o)",
-         ".prediction_class_o(prediction_class_o)",
-         ".frame_done_valid_o(frame_done_valid)", ".frame_done_ready_i(frame_done_ready)",
-         ".frame_tag_o(frame_bin_tag_o)"],
+        "resident_temporal_class_readout #(\n    "
+        + ",\n    ".join(
+            [
+                f".INPUT_CHANNELS({int(readout['in_channels'])})",
+                f".CLASS_COUNT({class_count})",
+                f".OUTPUT_WIDTH({readout_w})",
+                f".OUTPUT_HEIGHT({readout_h})",
+                f".PREDICTION_BINS({int(spec['timing_contract']['prediction_bins_default'])})",
+                ".TAG_WIDTH(TAG_WIDTH)",
+                f".READOUT_WEIGHTS({readout_weights})",
+            ]
+        )
+        + "\n  ) temporal_readout",
+        [
+            ".clk",
+            ".reset",
+            f".in_valid_i({readout_base}_valid)",
+            f".in_ready_o({readout_base}_ready)",
+            f".in_spike_vector_i({readout_base}_payload)",
+            f".in_completion_i({readout_base}_completion)",
+            f".in_tag_i({readout_base}_bin_tag)",
+            ".prediction_valid_o(prediction_valid)",
+            ".prediction_ready_i(prediction_ready)",
+            ".prediction_x_o(prediction_x_o)",
+            ".prediction_y_o(prediction_y_o)",
+            ".prediction_class_o(prediction_class_o)",
+            ".frame_done_valid_o(frame_done_valid)",
+            ".frame_done_ready_i(frame_done_ready)",
+            ".frame_tag_o(frame_bin_tag_o)",
+        ],
     )
     lines.append("  assign fault_o = " + (" | ".join(faults) or "1'b0") + ";")
     lines.append("endmodule")
@@ -882,9 +1013,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--module-name", default="eventspikeseg140k_dag_top")
     parser.add_argument("--lane-config", type=Path)
-    parser.add_argument(
-        "--architecture", choices=("resident", "legacy_sram"), default="resident"
-    )
+    parser.add_argument("--architecture", choices=("resident", "legacy_sram"), default="resident")
     parser.add_argument("--resident-tile-width", type=int, default=8)
     parser.add_argument("--resident-tile-height", type=int, default=8)
     args = parser.parse_args()

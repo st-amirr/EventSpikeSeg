@@ -3,11 +3,13 @@
   "canonical_addition_membrane_states": 20275200,
   "checkpoint": {
     "architecture": "EventSpikeSeg140k",
+    "asic_qat_enabled": null,
+    "asic_qat_epochs": null,
     "dataset": "dsec",
-    "epoch": 40,
+    "epoch": 80,
     "seed": 17,
     "temporal_protocol_version": "dsec-six-class-fixed-time-counts-async-v1",
-    "training_strategy_version": "dsec-ce-dice-aux-boundary-v12"
+    "training_strategy_version": "dsec-balanced-ce-dice-aux-boundary-v13"
   },
   "class_count": 6,
   "class_mapping_file": "class_mapping.json",
@@ -1401,7 +1403,8 @@
     "runtime_layer_reconfiguration": false,
     "state_memory": "characterized_actor_local_SRAM_macro_required",
     "state_ownership": "actor_local_direct_indexed_SRAM",
-    "state_record_last_bin_tag_bits": 24,
+    "state_record": "combined_int32_q15_16_accumulator_with_preapplied_next_bin_leak",
+    "state_record_last_bin_tag_bits": 0,
     "state_record_timestamp_field": false,
     "weight_memory": "actor_local_mask_ROM_or_compiled_ROM"
   },
@@ -2557,69 +2560,109 @@
     "signoff": false
   },
   "quantization": {
-    "adaptation": {
-      "bits": 16,
-      "fractional_bits": 10,
-      "maximum_integer": 32767,
-      "minimum_integer": -32768,
-      "name": "adaptation_q5_10",
+    "adaptation_age": {
+      "bits": 6,
+      "fractional_bits": 0,
+      "maximum_integer": 63,
+      "minimum_integer": 0,
+      "name": "adaptation_age_bins_u6",
       "overflow": "saturate",
       "rounding": "round_to_nearest_ties_to_even_on_float_export",
-      "signed": true
+      "signed": false
+    },
+    "adaptation_amplitude": {
+      "bits": 19,
+      "fractional_bits": 16,
+      "maximum_integer": 524287,
+      "minimum_integer": 0,
+      "name": "adaptation_amplitude_uq3_16",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": false
+    },
+    "adaptation_duration": {
+      "bits": 21,
+      "fractional_bits": 16,
+      "maximum_integer": 2097151,
+      "minimum_integer": 0,
+      "name": "adaptation_duration_uq5_16",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": false
+    },
+    "adaptation_strength": {
+      "bits": 19,
+      "fractional_bits": 16,
+      "maximum_integer": 524287,
+      "minimum_integer": 0,
+      "name": "adaptation_strength_uq3_16",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": false
     },
     "beta": {
-      "bits": 16,
-      "fractional_bits": 15,
-      "maximum_integer": 65535,
+      "bits": 24,
+      "fractional_bits": 23,
+      "maximum_integer": 16777215,
       "minimum_integer": 0,
-      "name": "beta_uq1_15",
+      "name": "beta_uq1_23",
       "overflow": "saturate",
       "rounding": "round_to_nearest_ties_to_even_on_float_export",
       "signed": false
     },
     "current": {
-      "bits": 24,
-      "fractional_bits": 10,
-      "maximum_integer": 8388607,
-      "minimum_integer": -8388608,
-      "name": "current_q13_10",
+      "bits": 32,
+      "fractional_bits": 16,
+      "maximum_integer": 2147483647,
+      "minimum_integer": -2147483648,
+      "name": "combined_accumulator_q15_16",
       "overflow": "saturate",
       "rounding": "round_to_nearest_ties_to_even_on_float_export",
       "signed": true
     },
+    "inhibition_strength": {
+      "bits": 19,
+      "fractional_bits": 16,
+      "maximum_integer": 524287,
+      "minimum_integer": 0,
+      "name": "inhibition_strength_uq3_16",
+      "overflow": "saturate",
+      "rounding": "round_to_nearest_ties_to_even_on_float_export",
+      "signed": false
+    },
     "membrane": {
-      "bits": 16,
-      "fractional_bits": 10,
-      "maximum_integer": 32767,
-      "minimum_integer": -32768,
-      "name": "membrane_q5_10",
+      "bits": 24,
+      "fractional_bits": 16,
+      "maximum_integer": 8388607,
+      "minimum_integer": -8388608,
+      "name": "membrane_q7_16",
       "overflow": "saturate",
       "rounding": "round_to_nearest_ties_to_even_on_float_export",
       "signed": true
     },
     "threshold": {
-      "bits": 16,
-      "fractional_bits": 10,
-      "maximum_integer": 32767,
-      "minimum_integer": -32768,
-      "name": "threshold_q5_10",
+      "bits": 24,
+      "fractional_bits": 16,
+      "maximum_integer": 8388607,
+      "minimum_integer": -8388608,
+      "name": "threshold_q7_16",
       "overflow": "saturate",
       "rounding": "round_to_nearest_ties_to_even_on_float_export",
       "signed": true
     },
     "weight": {
-      "bits": 8,
-      "fractional_bits": 6,
-      "maximum_integer": 127,
-      "minimum_integer": -128,
-      "name": "weight_q1_6",
+      "bits": 24,
+      "fractional_bits": 16,
+      "maximum_integer": 8388607,
+      "minimum_integer": -8388608,
+      "name": "weight_q7_16",
       "overflow": "saturate",
       "rounding": "round_to_nearest_ties_to_even_on_float_export",
       "signed": true
     }
   },
   "registered_parameters": 149835,
-  "schema_version": "2.1.0",
+  "schema_version": "2.2.0",
   "spatial_shapes": {
     "eighth": [
       55,
@@ -2639,23 +2682,25 @@
     ]
   },
   "state_capacity": {
-    "adaptation_bytes_two_int16": 43929600,
+    "adaptation_age_bits_per_enabled_neuron": 6,
+    "adaptation_amplitude_bits_per_enabled_neuron": 19,
     "adaptation_enabled_neurons": 10982400,
-    "dense_exact_state_bytes": 198809600,
-    "dense_exact_state_mib": 189.599609375,
+    "adaptation_state_bits": 274560000,
+    "combined_accumulator_bytes_int32": 123904000,
+    "dense_exact_state_bytes": 158224000,
+    "dense_exact_state_mib": 150.8941650390625,
     "full_chip_PPA_gate": "characterized_actor_local_SRAM_macros_required",
-    "last_bin_tag_bytes_24": 92928000,
+    "last_bin_tag_bytes": 0,
     "logical_membranes": 30976000,
-    "membrane_bytes_int16": 61952000,
-    "weight_bytes_int8": 143824
+    "weight_bytes_int24": 431472
   },
   "timing_contract": {
     "bin_us": 5000,
-    "commit_rule": "one_PLIF_update_per_touched_destination_after_completion",
+    "commit_rule": "one_clocked_PLIF_update_per_resident_destination_after_completion",
     "epoch_boundary": "ordered_completion_token",
     "global_actor_scheduler": false,
-    "last_bin_tag_width_bits": 24,
-    "per_neuron_last_bin_tag_required": true,
+    "last_bin_tag_width_bits": 0,
+    "per_neuron_last_bin_tag_required": false,
     "per_neuron_timestamp_required": false,
     "prediction_bins_default": 10,
     "prediction_period_us_default": 50000,

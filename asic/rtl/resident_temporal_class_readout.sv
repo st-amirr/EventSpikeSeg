@@ -10,7 +10,7 @@ module resident_temporal_class_readout #(
   parameter integer SPATIAL_COUNT = OUTPUT_WIDTH*OUTPUT_HEIGHT,
   parameter integer INPUT_COUNT = INPUT_CHANNELS*SPATIAL_COUNT,
   parameter integer SCORE_COUNT = CLASS_COUNT*SPATIAL_COUNT,
-  parameter integer WEIGHT_WIDTH = 8,
+  parameter integer WEIGHT_WIDTH = 24,
   parameter integer ACC_WIDTH = 32,
   parameter integer TAG_WIDTH = 24,
   parameter integer PREDICTION_BINS = 10,

@@ -58,30 +58,22 @@ def generate_tile_top(
         # child tiles exercise the production global-to-halo coordinate mapping.
         input_width = max(
             1,
-            (output_width - 1) * stride_x
-            - 2 * padding_x
-            + (kernel_width - 1) * dilation_x
-            + 1,
+            (output_width - 1) * stride_x - 2 * padding_x + (kernel_width - 1) * dilation_x + 1,
         )
         input_height = max(
             1,
-            (output_height - 1) * stride_y
-            - 2 * padding_y
-            + (kernel_height - 1) * dilation_y
-            + 1,
+            (output_height - 1) * stride_y - 2 * padding_y + (kernel_height - 1) * dilation_y + 1,
         )
     input_count = input_channels * input_width * input_height
     output_count = output_channels * output_width * output_height
     weights = _packed_literal(
         export / str(layer["weight_rom"]),
-        word_bits=8,
+        word_bits=24,
         expected_words=int(layer["weight_count"]),
     )
-    betas = _parameter_literal(
-        export, layer, key="beta_q", rom_key="beta_rom", word_bits=16
-    )
+    betas = _parameter_literal(export, layer, key="beta_q", rom_key="beta_rom", word_bits=24)
     thresholds = _parameter_literal(
-        export, layer, key="threshold_q", rom_key="threshold_rom", word_bits=16
+        export, layer, key="threshold_q", rom_key="threshold_rom", word_bits=24
     )
     mechanism = _mechanism_parameters(export, layer)
     lines = [
@@ -94,15 +86,16 @@ def generate_tile_top(
         f"module {module_name} (",
         "  input logic clk, input logic reset,",
         "  input logic presynaptic_valid_i, output logic presynaptic_ready_o,",
-        f"  input logic [{input_count-1}:0] presynaptic_spike_vector_i,",
+        f"  input logic [{input_count - 1}:0] presynaptic_spike_vector_i,",
         "  input logic completion_valid_i, output logic completion_ready_o,",
         "  input logic [23:0] completion_tag_i,",
         "  output logic result_valid_o, input logic result_ready_i,",
-        f"  output logic [{output_count-1}:0] spike_vector_o,",
+        f"  output logic [{output_count - 1}:0] spike_vector_o,",
         "  output logic [23:0] completion_tag_o, output logic error_o",
         ");",
         (
-            "  resident_channelized_plif_actor #(" if tile_columns == 1 and tile_rows == 1
+            "  resident_channelized_plif_actor #("
+            if tile_columns == 1 and tile_rows == 1
             else "  tiled_resident_channelized_plif_actor #("
         ),
         f"    .INPUT_CHANNELS({input_channels}), .INPUT_WIDTH({input_width}),",
@@ -117,7 +110,10 @@ def generate_tile_top(
         (
             f"    .KERNEL_HEIGHT({kernel_height}), .STRIDE_X(1), .STRIDE_Y(1),"
             if tile_columns == 1 and tile_rows == 1
-            else f"    .KERNEL_HEIGHT({kernel_height}), .STRIDE_X({stride_x}), .STRIDE_Y({stride_y}),"
+            else (
+                f"    .KERNEL_HEIGHT({kernel_height}), .STRIDE_X({stride_x}), "
+                f".STRIDE_Y({stride_y}),"
+            )
         ),
         f"    .DILATION_X({dilation_x}), .DILATION_Y({dilation_y}),",
         (
@@ -129,9 +125,9 @@ def generate_tile_top(
         f"    .CHANNEL_BETAS({betas}), .CHANNEL_THRESHOLDS({thresholds}),",
         f"    .ENABLE_INHIBITION({mechanism['inhibition_enabled']}),",
         f"    .ENABLE_ADAPTATION({mechanism['adaptation_enabled']}),",
-        f"    .INHIBITION_STRENGTH(16'h{mechanism['inhibition_strength'] & 0xFFFF:04x}),",
-        f"    .ADAPTATION_STRENGTH(16'h{mechanism['adaptation_strength'] & 0xFFFF:04x}),",
-        f"    .ADAPTATION_DURATION(16'h{mechanism['adaptation_duration'] & 0xFFFF:04x})",
+        f"    .INHIBITION_STRENGTH(24'h{mechanism['inhibition_strength'] & 0xFFFFFF:06x}),",
+        f"    .ADAPTATION_STRENGTH(19'h{mechanism['adaptation_strength'] & 0x7FFFF:05x}),",
+        f"    .ADAPTATION_DURATION(21'h{mechanism['adaptation_duration'] & 0x1FFFFF:06x})",
         "  ) actor (.*);",
         "endmodule",
     ]

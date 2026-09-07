@@ -24,10 +24,9 @@ def plan_tiles(
     *,
     tile_width: int = 8,
     tile_height: int = 8,
-    current_width: int = 24,
-    membrane_width: int = 16,
-    adaptation_age_width: int = 16,
-    adaptation_amplitude_width: int = 16,
+    current_width: int = 32,
+    adaptation_age_width: int = 6,
+    adaptation_amplitude_width: int = 19,
 ) -> dict[str, Any]:
     if tile_width < 1 or tile_height < 1:
         raise ValueError("tile dimensions must be positive")
@@ -35,7 +34,7 @@ def plan_tiles(
     export = (model_spec_path.parent / str(spec.get("artifact_root", "."))).resolve()
     actors = set(spec["graph"]["actor_topological_order"])
     layers = [layer for layer in spec["layers"] if layer["name"] in actors]
-    state_bits_per_plif = current_width + membrane_width
+    state_bits_per_plif = current_width
     adaptation_bits_per_plif = adaptation_age_width + adaptation_amplitude_width
     actor_plans: list[dict[str, Any]] = []
 
@@ -106,7 +105,7 @@ def plan_tiles(
                 "logical_plifs": logical_plifs,
                 "adaptation_enabled": adaptation_enabled,
                 "resident_state_bits": tile_state_bits,
-                "static_weight_bits": int(layer["weight_count"]) * 8,
+                "static_weight_bits": int(layer["weight_count"]) * 24,
                 "receptive_halo_shape_counts": receptive_halo_shapes,
                 "receptive_halo_input_bits": receptive_halo_input_bits,
                 "full_bitmap_broadcast_input_bits": (
@@ -132,8 +131,7 @@ def plan_tiles(
         "checkpoint_metadata": spec.get("checkpoint", {}),
         "tile_nominal_hw": [tile_height, tile_width],
         "state_widths": {
-            "current": current_width,
-            "membrane": membrane_width,
+            "combined_accumulator": current_width,
             "adaptation_age": adaptation_age_width,
             "adaptation_amplitude": adaptation_amplitude_width,
         },
@@ -152,7 +150,7 @@ def plan_tiles(
             ),
         },
         "invariant": (
-            "Tiling changes hierarchy only: every PLIF current/membrane/adaptation value "
+            "Tiling changes hierarchy only: every PLIF combined accumulator/adaptation value "
             "remains a dedicated local state element; no addressed runtime state memory is added."
         ),
     }

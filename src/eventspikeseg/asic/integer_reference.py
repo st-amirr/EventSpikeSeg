@@ -39,6 +39,16 @@ class PLIFResult:
     retention_q: int
 
 
+@dataclass(frozen=True)
+class CombinedAccumulatorResult:
+    """One clocked resident commit with beta pre-applied for the next bin."""
+
+    candidate: int
+    membrane: int
+    spike: int
+    next_accumulator: int
+
+
 class IntegerPLIF:
     """Fixed-point touched-neuron PLIF matching the trained 5 ms lazy-time rule."""
 
@@ -136,6 +146,41 @@ class IntegerPLIF:
             candidate=candidate,
             elapsed_bins=int(elapsed_bins),
             retention_q=retention_q,
+        )
+
+    def commit_combined_accumulator(
+        self,
+        *,
+        accumulator_q: int,
+        beta_q: int,
+        threshold_q: int,
+    ) -> CombinedAccumulatorResult:
+        """Commit one pre-leaked int32 Q15.16 accumulator and prepare the next bin.
+
+        ``accumulator_q`` already contains ``beta * previous_membrane`` plus
+        this bin's signed contributions. The returned ``next_accumulator`` is
+        the threshold/reset membrane after one beta step, matching the resident
+        RTL's single-state-element clocked schedule.
+        """
+
+        accumulator_format = ASIC_FORMATS["current"]
+        accumulator = accumulator_format.saturate(accumulator_q)
+        candidate = self.membrane_format.saturate(accumulator)
+        spike = int(candidate >= int(threshold_q))
+        membrane = self.membrane_format.saturate(
+            candidate - (int(threshold_q) if spike else 0)
+        )
+        next_accumulator = accumulator_format.saturate(
+            round_shift_ties_away(
+                membrane * self.beta_format.saturate(beta_q),
+                self.beta_format.fractional_bits,
+            )
+        )
+        return CombinedAccumulatorResult(
+            candidate=candidate,
+            membrane=membrane,
+            spike=spike,
+            next_accumulator=next_accumulator,
         )
 
     def touch_state(

@@ -23,7 +23,7 @@ async def resident_state_updates_without_memory_fetch(dut) -> None:
     # Two simultaneous static-synapse contributions target neurons 0 and 3.
     dut.contribution_valid_i.value = 0b11
     dut.destination_i.value = 0 | (3 << 2)
-    dut.weight_i.value = 6 | (12 << 8)
+    dut.weight_i.value = 6 | (12 << 24)
     assert int(dut.contribution_ready_o.value) == 1
     await RisingEdge(dut.clk)
     await FallingEdge(dut.clk)

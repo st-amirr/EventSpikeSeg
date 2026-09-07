@@ -17,4 +17,4 @@ async def spatial_tile_only_forms_its_local_destination_currents(dut) -> None:
     # still owns global output x=2,3 and must translate before indexing it.
     dut.spike_vector_i.value = 0b11
     await Timer(1, units="ns")
-    assert signed_words(int(dut.current_delta_o.value), 24, 2) == [3, 3]
+    assert signed_words(int(dut.current_delta_o.value), 32, 2) == [3, 3]

@@ -108,7 +108,7 @@ framework:
     primary_goal: >-
       Instantiate all 25 trained PLIF populations permanently as nodes in the fixed EventSpikeSeg140k v8 DAG, not as a
       linear 25-stage pipeline. A convolution actor uses parallel kernel-tap projection cells and one canonical
-      current/membrane state per postsynaptic channel and spatial address. Weighted spike events accumulate locally.
+      combined signed 32-bit Q15.16 accumulator/state per postsynaptic channel and spatial address. Weighted 24-bit Q7.16 spike events accumulate locally.
       Completion tokens fork with every fanout path and rendezvous at residual/skip/concat joins before downstream commit;
       no layer is loaded or reconfigured at runtime.
     software_reference: SpikingJelly_float_plus_bit_exact_integer_reference
@@ -343,14 +343,19 @@ input_and_time:
     - Rectify and route each raw camera event in timestamp order as it arrives; do not materialize a dense input tensor or preload a complete 5 ms bin.
     - Each input event is losslessly multicast to the fixed ingress actors `detail_stem` and `stem`; each branch immediately triggers only its connected static-weight additions.
     - At each 5 ms boundary, inject a completion token after the final raw event assigned to that semantic epoch.
-    - Each actor routes valid nonzero static-synapse contributions directly into the resident current element of each postsynaptic channel/spatial PLIF.
-    - On the upstream completion token, every resident PLIF applies one beta step and commits in parallel without an addressed state fetch; retinotopic peers apply inhibition/adaptation atomically.
-    - Retain membrane and enabled adaptation state in the PLIF population and emit the resulting spike bitmap through fixed downstream synapses.
+    - Each actor routes valid nonzero static-synapse contributions directly into the resident combined int32 Q15.16 accumulator/state element of each postsynaptic channel/spatial PLIF.
+    - On the upstream completion token, clamp and threshold/reset every accumulator in parallel, apply retinotopic inhibition/adaptation atomically, then pre-apply one learned-beta step so that the same element is ready for the next fixed 5 ms bin.
+    - Retain the pre-leaked combined accumulator and enabled compact adaptation state in the PLIF population and emit the resulting spike bitmap through fixed downstream synapses.
     - Accumulate signed final class current across prediction_window_bins and emit argmax when the window 
       completes; default is ten bins / 50 ms.
     state_persistence: 
       PLIF_and_adaptation_state_persists_across_bins_and_predictions_reset_only_at_sequence_or_gap_boundaries
     resident_state_last_bin_tag_bits: 0
+    resident_state_formats:
+      combined_accumulator: signed_int32_q15_16
+      adaptation_age: unsigned_6bit_integer_5ms_bins_with_63_inactive_sentinel
+      adaptation_amplitude: unsigned_19bit_q3_16
+      adaptation_duration_parameter: unsigned_21bit_q5_16
     realtime:
       hard_condition: U = C_bin/(f_clk*0.005) <= 1.0
       target_condition: U <= 0.8
@@ -393,7 +398,7 @@ runtime_batching_decision:
     default_rate_hz: 20
     configurable: true
   graph_order: events_and_completion_tokens_follow_explicit_static_DAG_edges; actor_list_is_topological_export_order_only
-  state_rule: every_logical_PLIF_owns_resident_current_membrane_and_enabled_adaptation_elements; all_destinations_commit_once_per_bin
+  state_rule: every_logical_PLIF_owns_one_resident_combined_accumulator_and_enabled_compact_adaptation_elements; all_destinations_commit_once_per_bin
   decay: one_learned_beta_step_per_resident_PLIF_per_5ms_completion_without_last_bin_tag
   double_buffering: optional_ingress_FIFO_or_pingpong_capture_may_overlap_bin_k_plus_1_with_graph_processing_of_bin_k
   realtime_utilization:
@@ -481,6 +486,12 @@ architecture_family:
     semantic_stem: learned_5x5_stride2_to_32_channels
     inference_membrane_count_native_dsec: 78707200
     adaptation_enabled_neuron_count_native_dsec: 15910400
+    future_hardware_state_contract:
+      status: architecture_contract_only_export_remains_rejected
+      combined_accumulator_bits: 32
+      adaptation_age_bits: 6
+      adaptation_amplitude_bits: 19
+      calculated_resident_state_MiB: 347.66082763671875
     capacity_policy: narrow_native_detail_plus_full_3x3_eighth_scale_context
     hardware_export: rejected_software_only
   design_principles:
@@ -850,29 +861,37 @@ metrics:
 
 quantization:
   objective: Match the addition, multiplication, comparison, saturation, and address-generation ASIC datapath.
-  initial_formats:
-    weights: signed_int8_Q1_6
-    membrane: signed_int16_Q5_10
-    current_accumulator: signed_int24_Q13_10
-    beta: unsigned_int16_UQ1_15
-    base_threshold: signed_int16_Q5_10
-    adaptive_threshold: signed_int16_Q5_10
+  active_formats:
+    weights: signed_int24_Q7_16
+    membrane: signed_int24_Q7_16
+    current_accumulator: signed_int32_Q15_16
+    beta: unsigned_int24_UQ1_23
+    base_threshold: signed_int24_Q7_16
+    adaptive_threshold_amplitude_and_strength: unsigned_int19_UQ3_16
+    adaptive_threshold_duration: unsigned_int21_UQ5_16
+    adaptive_threshold_age: unsigned_int6_integer_bins
     spike: 1_bit
-    pixel_class: unsigned_3_bit_for_6_classes
+    pixel_class: unsigned_3_bit_for_6_class_140k_unsigned_4_bit_for_11_class_XL
     coordinate_x: unsigned_width_dependent
     coordinate_y: unsigned_height_dependent
     timestamp_us: unsigned_int32
   mandatory_rules:
   - Prefer bias-free convolutions.
-  - Preserve learned per-channel beta with the exported UQ1.15 coefficient.
+  - Preserve learned per-channel beta with the exported UQ1.23 coefficient.
   - Fold per-channel affine and BatchNorm before hardware export.
   - Use deterministic rounding and saturating arithmetic.
   - Freeze clipping and overflow behavior.
   - Quantize after architecture and timestep selection.
+  final_training_stage:
+    applies_to: [EventSpikeSeg140k, EventSpikeSegXL]
+    default_last_epochs: 3
+    master_parameter_and_gradient_precision: float32
+    forward_arithmetic: active_formats_with_straight_through_fake_quantization
+    trainability: all_model_parameters_unfrozen_including_semantic_backbone_and_neuron_dynamics
+    best_checkpoint_rule: restart_selection_at_QAT_entry
+    disable_override: --asic-qat-epochs_0
   experiments:
-    weight_bits: [4, 6, 8]
-    membrane_bits: [12, 16, 20]
-    accumulator_guard_bits: sweep
+    lower_precision_variants: optional_only_after_accuracy_comparison
     process:
     - floating_point_baseline
     - post_training_quantization
@@ -898,7 +917,7 @@ asic_implementation:
       pointwise_1x1: one_spatial_tap_with_output_channel_fanout
       dilated_3x3: nine_taps_with_dilated_coordinate_offsets
       standard_5x5: twenty_five_parallel_tap_projection_cells
-    state_ownership: one_canonical_current_and_membrane_entry_per_layer_channel_y_x_destination
+    state_ownership: one_canonical_combined_accumulator_entry_per_layer_channel_y_x_destination
     invariant: kernel_taps_never_own_or_duplicate_membrane_state
     firing_rule: commit_every_resident_PLIF_once_after_upstream_epoch_completion
   RTL:
@@ -930,10 +949,10 @@ asic_implementation:
     - asic/rtl/event_upsample2x.sv
     - asic/rtl/temporal_class_readout.sv
     superseded_reference_blocks: scalar_scatter_banked_actor_and_addressed_SRAM_RTL_pending_removal_after_resident_full_graph_equivalence
-    current_memory_model: register_or_latch_resident_per_neuron_current_membrane_and_enabled_adaptation_state
+    current_memory_model: register_or_latch_resident_per_neuron_combined_int32_q15_16_accumulator_and_enabled_compact_adaptation_state
     superseded_memory_model: addressed_actor_local_state_SRAM_and_touched_queue
     active_actor: asic/rtl/resident_channelized_plif_actor.sv
-    active_synapse_fabric: compile_time_int8_weights_gated_by_spike_bitmaps_without_runtime_weight_fetch
+    active_synapse_fabric: compile_time_int24_q7_16_weights_gated_by_spike_bitmaps_without_runtime_weight_fetch
     runtime_parallelism_requirement: direct_static_synapse_contributions_and_parallel_resident_PLIF_commit
     latency_scaling_rule: exact_native_reprofile_must_pass_both_busiest_bank_service_and_completion_token_commit_critical_path_gates
     link_scaling_rule: exact_per_edge_packet_volume_over_physical_link_width_must_pass_hard_and_target_bin_cycle_gates
@@ -951,9 +970,11 @@ asic_implementation:
     power_method: post_route_parasitics_plus_representative_DSEC_VCD_or_SAIF
     vectorless_power_label: preliminary_only
   scale_gate:
-    weights_int8_MiB: 0.137237548828125
+    weights_int24_MiB: 0.411712646484375
     logical_membranes: 30976000
-    dense_exact_state_MiB: 189.599609375
+    prior_separate_current_membrane_adaptation_state_MiB: 189.599609375
+    combined_accumulator_compact_adaptation_state_MiB: 150.8941650390625
+    saved_state_MiB: 38.7054443359375
     final_storage_architecture: dense_register_or_latch_resident_state_without_last_bin_tags_or_touched_queues
     conclusion: full_chip_synthesis_and_place_route_must_measure_dense_resident_state_area_clock_and_power
     tapeout_target: pending_access_to_22nm_or_better_PDK_with_suitable_dense_latch_or_register_cells

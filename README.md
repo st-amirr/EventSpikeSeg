@@ -110,6 +110,9 @@ complete-record prediction without an activation graph, then replay chronologica
 with that one objective's output gradients. This releases each chunk graph without ever
 applying the complete target to a partial history. The replay state snapshot is kept in
 host RAM so it does not duplicate the model's large persistent neuron state on the GPU.
+Validation uses the same `K` chronological chunks under `no_grad`, preventing its
+temporal feature tensors from exceeding the chunked training geometry while preserving
+the same complete-record prediction.
 
 For the active DSEC path, PLIF time advances on the same fixed grid used by hardware: ten explicit 5 ms updates per 50 ms record. Training presents one accumulated synaptic current per PLIF per update. The sparse ASIC reaches the same result lazily: a touched state uses its 24-bit bin tag to apply learned `beta` once per elapsed 5 ms interval, while untouched states incur no access. No microsecond timestamp is required. Logits and activity rates remain normalized to the complete physical record. The final 1×1 class
 synapse accumulates continuous current over all ten updates rather than quantizing
@@ -136,11 +139,17 @@ N_mem = 32*H*W + 128*H2*W2 + 416*H4*W4 + 1280*H8*W8
       = 30,976,000 membrane values
 ```
 
-Triangular threshold adaptation is enabled on **10,982,400** neurons and stores age plus amplitude. The active touched-neuron runtime uses a compact **24-bit `last_bin_tag`** instead of a microsecond timestamp. A hypothetical dense exact representation is **189.60 MiB**: 59.08 MiB membrane + 41.90 MiB adaptation + 88.62 MiB bin tags. This requires characterized high-density local SRAM macros; expanding it into standard-cell registers is not a valid full-chip implementation or PPA estimate.
+Triangular threshold adaptation is enabled on **10,982,400** neurons. The active clocked
+resident runtime stores one signed 32-bit Q15.16 combined accumulator/state per PLIF, a 6-bit
+integer age and 19-bit unsigned Q3.16 amplitude where adaptation is enabled, and no per-neuron
+time tag. Synaptic weights use signed 24-bit Q7.16. Its exact logical resident state is
+**150.89 MiB-equivalent**, down from 189.60 MiB for
+separate int24 current, int16 membrane, and two-int16 adaptation fields. This is a logical
+bit inventory, not a characterized full-chip area or power result.
 
 - **static/shared:** convolution weights, per-channel beta, per-channel base threshold;
-- **persistent per-neuron:** membrane, compact 24-bit `last_bin_tag`, and enabled threshold-adaptation state;
-- **temporary:** touched-event synaptic current and sparse spike FIFOs.
+- **persistent per-neuron:** combined pre-leaked int32 Q15.16 accumulator/state and enabled compact threshold-adaptation state;
+- **temporary/interconnect:** sparse spike and completion-token FIFOs.
 
 The ASIC instantiates a permanent actor for every executed PLIF population, but the 25
 actors are **not a linear chain**. They form the fixed EventSpikeSeg140k v8 DAG: input forks
@@ -185,6 +194,20 @@ six-class 140k run; `train-dsec-xl` is an optional 11-class software capacity co
 Both DSEC replay services deliberately train in FP32. Do not add `--amp`: FP16
 autocast is incompatible with the memory-bounded temporal surrogate-gradient
 replay and can reject every optimizer update while leaving the scalar loss finite.
+For both final models, the last three epochs enable quantization-aware training by default:
+FP32 master parameters and gradients are retained, while the forward path uses the exact
+range-matched ASIC fixed-point formats. QAT explicitly unfreezes the semantic backbone and
+all PLIF/mechanism parameters so every deployed parameter can compensate for fixed-point
+rounding. Set `--asic-qat-epochs 0` only for a deliberate floating-point diagnostic run.
+
+The completed 140k epoch-80 checkpoint predates this QAT rule. Its exact 80-epoch correction
+starts from `EventSpikeSeg140k_seed17_epoch077.pt` and reruns epochs 78--80 with
+`--epochs 80 --asic-qat-epochs 3`; it does not restart from epoch 1. Keep `--resume-lr 0.001`
+so the restored cosine scheduler is evaluated at epoch 77 on the original 80-epoch horizon.
+The old epoch-80 export remains a valid pre-QAT hardware artifact until the corrected QAT
+checkpoint is produced and validated. The existing `train-dsec` service is configured for this
+epoch-77 to epoch-80 resume; run `docker compose run --rm train-dsec` after XL releases the GPU,
+then regenerate `artifacts/ASIC` from the QAT-selected best checkpoint.
 
 ## Measured architecture-search evidence
 
@@ -297,9 +320,9 @@ protocol numbers remain architecture-search evidence only.
 Training remains PyTorch + SpikingJelly with fixed physical-time divisions. Deployment
 uses native SystemVerilog, Yosys technology mapping, and OpenROAD physical design.
 Convolution kernels remain shared synaptic weights, feature-map positions remain
-logical PLIF states, and hidden communication remains binary spike events. Membrane and
-adaptation state stays in the owning actor's local memory. The values are fixed-point numerical
-membrane/current states—not physical voltages or
+logical PLIF states, and hidden communication remains binary spike events. Combined accumulator
+and adaptation state stays in the owning actor's local memory. The values are fixed-point numerical
+states—not physical voltages or
 currents.
 
 The canonical inference path has no softmax, ReLU/GELU, BatchNorm, or dense count-domain
@@ -310,12 +333,12 @@ and temporal class-current accumulation/argmax uses signed accumulators and a co
 The implementation uses **25 permanent PLIF actors in a compile-time static DAG plus one
 class-current readout**. The actor tuple exported by software is a deterministic topological
 listing only, not runtime `actor0 -> ... -> actor24` order. Every actor owns convolution
-addressing, accumulator lanes, PLIF/mechanism logic, queues, local weight ROM, and local
-state SRAM; there is no cross-layer compute sharing or reconfiguration. Dedicated fixed
+addressing, combined accumulator/PLIF logic, queues, local weight ROM, and local
+state elements; there is no cross-layer compute sharing or reconfiguration. Dedicated fixed
 routes implement fanout, residual OR/dedup, channel concatenation, upsample fanout, and the
-multiplicity-preserving `project2 + x1` skip. Within an actor, event sparsity is fundamental:
-touched-address queues, active-neuron lists, lazy fixed-step state advancement, and
-clock-enable suppress idle work.
+multiplicity-preserving `project2 + x1` skip. Contributions add into the combined accumulator
+during one fixed 5 ms bin; completion performs one threshold/reset/mechanism commit and pre-applies
+beta for the next bin. There is no per-neuron timestamp or lazy time update.
 This trades processing-element count for latency and memory bandwidth without
 changing the trained SNN semantics.
 
@@ -365,10 +388,14 @@ The ASIC ingress does not load a dense 5 ms tensor or store a complete input bin
 camera events arrive in timestamp order and immediately perform only their connected signed
 weight additions. At the 5 ms boundary, the ingress sends an epoch-completion token. Thus
 event ingestion and synaptic accumulation are sequential and sparse, while PLIF
-leak/threshold/reset remains one commit per touched destination per 5 ms epoch so it stays
-equivalent to the trained model.
+leak/threshold/reset remains one clocked commit per resident destination per 5 ms epoch so it
+stays equivalent to the trained model.
 
-Only touched neurons are accessed. Each live sparse entry contains its logical address, int16 membrane, a compact 24-bit `last_bin_tag`, and adaptation age/amplitude where enabled. If a neuron is touched after `delta_bins` intervals, the baseline applies learned beta `delta_bins` times before adding the current bin's accumulated synaptic current. There is no microsecond timestamp and no dense idle-state sweep.
+Every resident neuron owns one signed int32 Q15.16 combined accumulator. It begins a bin with the
+pre-leaked prior membrane, receives that bin's signed contributions, and at completion is
+clamped, thresholded/reset, processed by optional mechanisms, and pre-leaked for the next bin.
+Adaptation age advances as an integer count of 5 ms bins. There is no per-neuron timestamp,
+last-bin tag, or touched-state lookup.
 
 The prediction window is configurable; start with **10 bins = 50 ms = 20 Hz** to match training/readout. PLIF state persists across prediction boundaries; only signed class-current accumulation resets after prediction.
 

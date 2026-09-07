@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 // Fully resident mechanism-enabled PLIF population. Every channel/spatial
-// neuron owns its current, membrane, adaptation age, and adaptation amplitude
-// state. At completion all spatial peer groups commit in parallel; no addressed
+// neuron owns one combined accumulator/state plus compact adaptation age and
+// amplitude state. At completion all spatial peer groups commit in parallel; no addressed
 // state memory, touched bitmap, touched queue, or last-bin tag is required.
 module resident_retinotopic_plif_population #(
   parameter integer DEST_COUNT = 8,
@@ -9,20 +9,22 @@ module resident_retinotopic_plif_population #(
   parameter integer CHANNEL_COUNT = 2,
   parameter integer SPATIAL_DEST_COUNT = DEST_COUNT/CHANNEL_COUNT,
   parameter integer CONTRIBUTION_LANES = 1,
-  parameter integer WEIGHT_WIDTH = 8,
-  parameter integer CURRENT_WIDTH = 24,
-  parameter integer MEM_WIDTH = 16,
-  parameter integer BETA_WIDTH = 16,
-  parameter integer BETA_FRAC_BITS = 15,
+  parameter integer WEIGHT_WIDTH = 24,
+  parameter integer CURRENT_WIDTH = 32,
+  parameter integer MEM_WIDTH = 24,
+  parameter integer BETA_WIDTH = 24,
+  parameter integer BETA_FRAC_BITS = 23,
   parameter integer TAG_WIDTH = 24,
-  parameter integer AGE_WIDTH = 16,
+  parameter integer AGE_WIDTH = 6,
+  parameter integer AMPLITUDE_WIDTH = 19,
+  parameter integer DURATION_WIDTH = 21,
   parameter integer ENABLE_INHIBITION = 0,
   parameter integer ENABLE_ADAPTATION = 0,
   parameter logic [CHANNEL_COUNT*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
   parameter logic signed [CHANNEL_COUNT*MEM_WIDTH-1:0] CHANNEL_THRESHOLDS = '0,
   parameter logic [MEM_WIDTH-1:0] INHIBITION_STRENGTH = '0,
-  parameter logic [MEM_WIDTH-1:0] ADAPTATION_STRENGTH = '0,
-  parameter logic [AGE_WIDTH-1:0] ADAPTATION_DURATION = '0
+  parameter logic [AMPLITUDE_WIDTH-1:0] ADAPTATION_STRENGTH = '0,
+  parameter logic [DURATION_WIDTH-1:0] ADAPTATION_DURATION = '0
 ) (
   input logic clk, input logic reset,
   input logic [CONTRIBUTION_LANES-1:0] contribution_valid_i,
@@ -38,23 +40,24 @@ module resident_retinotopic_plif_population #(
   output logic [TAG_WIDTH-1:0] completion_tag_o,
   output logic address_error_o
 );
-  localparam integer MAX_CURRENT = (1 << (CURRENT_WIDTH-1))-1;
-  localparam integer MIN_CURRENT = -(1 << (CURRENT_WIDTH-1));
+  localparam logic signed [CURRENT_WIDTH-1:0] MAX_CURRENT =
+    {1'b0, {(CURRENT_WIDTH-1){1'b1}}};
+  localparam logic signed [CURRENT_WIDTH-1:0] MIN_CURRENT =
+    {1'b1, {(CURRENT_WIDTH-1){1'b0}}};
   localparam integer MAX_MEM = (1 << (MEM_WIDTH-1))-1;
   localparam integer MIN_MEM = -(1 << (MEM_WIDTH-1));
   localparam logic [AGE_WIDTH-1:0] INACTIVE_AGE = {AGE_WIDTH{1'b1}};
 
-  logic signed [CURRENT_WIDTH-1:0] current_reg [0:DEST_COUNT-1];
-  logic signed [MEM_WIDTH-1:0] membrane_reg [0:DEST_COUNT-1];
+  logic signed [CURRENT_WIDTH-1:0] accumulator_reg [0:DEST_COUNT-1];
   logic [AGE_WIDTH-1:0] age_reg [0:DEST_COUNT-1];
-  logic [MEM_WIDTH-1:0] amplitude_reg [0:DEST_COUNT-1];
+  logic [AMPLITUDE_WIDTH-1:0] amplitude_reg [0:DEST_COUNT-1];
   logic signed [CHANNEL_COUNT*MEM_WIDTH-1:0] candidates [0:SPATIAL_DEST_COUNT-1];
   logic signed [CHANNEL_COUNT*MEM_WIDTH-1:0] mechanism_membranes [0:SPATIAL_DEST_COUNT-1];
   logic [CHANNEL_COUNT-1:0] mechanism_spikes [0:SPATIAL_DEST_COUNT-1];
   logic [CHANNEL_COUNT*AGE_WIDTH-1:0] mechanism_ages [0:SPATIAL_DEST_COUNT-1];
-  logic [CHANNEL_COUNT*MEM_WIDTH-1:0] mechanism_amplitudes [0:SPATIAL_DEST_COUNT-1];
+  logic [CHANNEL_COUNT*AMPLITUDE_WIDTH-1:0] mechanism_amplitudes [0:SPATIAL_DEST_COUNT-1];
   logic [CHANNEL_COUNT*AGE_WIDTH-1:0] resident_ages [0:SPATIAL_DEST_COUNT-1];
-  logic [CHANNEL_COUNT*MEM_WIDTH-1:0] resident_amplitudes [0:SPATIAL_DEST_COUNT-1];
+  logic [CHANNEL_COUNT*AMPLITUDE_WIDTH-1:0] resident_amplitudes [0:SPATIAL_DEST_COUNT-1];
   logic [CHANNEL_COUNT*TAG_WIDTH-1:0] one_elapsed_bin [0:SPATIAL_DEST_COUNT-1];
   logic holding_result_reg;
   integer destination;
@@ -85,20 +88,14 @@ module resident_retinotopic_plif_population #(
       one_elapsed_bin[spatial] = '0;
       for (channel = 0; channel < CHANNEL_COUNT; channel = channel+1) begin
         destination = channel*SPATIAL_DEST_COUNT+spatial;
-        product = $signed(membrane_reg[destination]) *
-                  $signed({1'b0, CHANNEL_BETAS[channel*BETA_WIDTH +: BETA_WIDTH]});
-        if (product >= 0)
-          leaked = (product + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS;
-        else
-          leaked = -(((-product) + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS);
-        candidate = leaked + $signed(current_reg[destination]);
+        candidate = $signed(accumulator_reg[destination]);
         if (candidate > MAX_MEM) candidate = MAX_MEM;
         else if (candidate < MIN_MEM) candidate = MIN_MEM;
         candidates[spatial][channel*MEM_WIDTH +: MEM_WIDTH] =
           candidate[MEM_WIDTH-1:0];
         resident_ages[spatial][channel*AGE_WIDTH +: AGE_WIDTH] =
           age_reg[destination];
-        resident_amplitudes[spatial][channel*MEM_WIDTH +: MEM_WIDTH] =
+        resident_amplitudes[spatial][channel*AMPLITUDE_WIDTH +: AMPLITUDE_WIDTH] =
           amplitude_reg[destination];
         one_elapsed_bin[spatial][channel*TAG_WIDTH +: TAG_WIDTH] =
           {{(TAG_WIDTH-1){1'b0}}, 1'b1};
@@ -112,7 +109,8 @@ module resident_retinotopic_plif_population #(
                 generated_spatial = generated_spatial+1) begin : peer_groups
     retinotopic_mechanism_update #(
       .CHANNELS(CHANNEL_COUNT), .MEM_WIDTH(MEM_WIDTH), .AGE_WIDTH(AGE_WIDTH),
-      .ELAPSED_WIDTH(TAG_WIDTH)
+      .AMPLITUDE_WIDTH(AMPLITUDE_WIDTH), .DURATION_WIDTH(DURATION_WIDTH),
+      .FRAC_BITS(16), .AGE_FRAC_BITS(0), .ELAPSED_WIDTH(TAG_WIDTH)
     ) mechanism (
       .candidates_i(candidates[generated_spatial]),
       .base_thresholds_i(CHANNEL_THRESHOLDS),
@@ -140,8 +138,7 @@ module resident_retinotopic_plif_population #(
       completion_tag_o <= '0;
       address_error_o <= 1'b0;
       for (destination = 0; destination < DEST_COUNT; destination = destination+1) begin
-        current_reg[destination] <= '0;
-        membrane_reg[destination] <= '0;
+        accumulator_reg[destination] <= '0;
         age_reg[destination] <= INACTIVE_AGE;
         amplitude_reg[destination] <= '0;
       end
@@ -157,17 +154,23 @@ module resident_retinotopic_plif_population #(
         for (channel = 0; channel < CHANNEL_COUNT; channel = channel+1) begin
           destination = channel*SPATIAL_DEST_COUNT+spatial;
           spike_vector_o[destination] <= mechanism_spikes[spatial][channel];
-          membrane_reg[destination] <= mechanism_membranes[spatial][
-            channel*MEM_WIDTH +: MEM_WIDTH];
+          candidate = $signed(mechanism_membranes[spatial][
+            channel*MEM_WIDTH +: MEM_WIDTH]);
+          product = candidate *
+                    $signed({1'b0, CHANNEL_BETAS[channel*BETA_WIDTH +: BETA_WIDTH]});
+          if (product >= 0)
+            leaked = (product + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS;
+          else
+            leaked = -(((-product) + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS);
+          accumulator_reg[destination] <= leaked[CURRENT_WIDTH-1:0];
           age_reg[destination] <= mechanism_ages[spatial][
             channel*AGE_WIDTH +: AGE_WIDTH];
           amplitude_reg[destination] <= mechanism_amplitudes[spatial][
-            channel*MEM_WIDTH +: MEM_WIDTH];
-          current_reg[destination] <= '0;
+            channel*AMPLITUDE_WIDTH +: AMPLITUDE_WIDTH];
         end
     end else begin
       for (destination = 0; destination < DEST_COUNT; destination = destination+1) begin
-        accumulated = $signed(current_reg[destination]);
+        accumulated = $signed(accumulator_reg[destination]);
         if (dense_current_valid_i)
           accumulated = accumulated + $signed(dense_current_delta_i[
             destination*CURRENT_WIDTH +: CURRENT_WIDTH]);
@@ -181,9 +184,9 @@ module resident_retinotopic_plif_population #(
               accumulated = accumulated + $signed(weight_i[
                 lane*WEIGHT_WIDTH +: WEIGHT_WIDTH]);
           end
-        if (accumulated > MAX_CURRENT) current_reg[destination] <= MAX_CURRENT;
-        else if (accumulated < MIN_CURRENT) current_reg[destination] <= MIN_CURRENT;
-        else current_reg[destination] <= accumulated[CURRENT_WIDTH-1:0];
+        if (accumulated > MAX_CURRENT) accumulator_reg[destination] <= MAX_CURRENT;
+        else if (accumulated < MIN_CURRENT) accumulator_reg[destination] <= MIN_CURRENT;
+        else accumulator_reg[destination] <= accumulated[CURRENT_WIDTH-1:0];
       end
     end
   end

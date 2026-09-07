@@ -2,14 +2,16 @@
   "schema_version": "1.0.0",
   "source": {
     "model_spec": "artifacts/ASIC/model_spec.yaml",
-    "model_spec_sha256": "71d13a5a451561796428169cd015aac78561ae1898d6fdf7ba15ffcd3006c0e2",
+    "model_spec_sha256": "5201dccf83a1c34bf638815e51d593cd0578a88e75909ba33a30a4c55a9b6d3d",
     "checkpoint": {
       "architecture": "EventSpikeSeg140k",
+      "asic_qat_enabled": null,
+      "asic_qat_epochs": null,
       "dataset": "dsec",
-      "epoch": 40,
+      "epoch": 80,
       "seed": 17,
       "temporal_protocol_version": "dsec-six-class-fixed-time-counts-async-v1",
-      "training_strategy_version": "dsec-ce-dice-aux-boundary-v12"
+      "training_strategy_version": "dsec-balanced-ce-dice-aux-boundary-v13"
     }
   },
   "memory_contract": {
@@ -18,7 +20,7 @@
     "ownership": "one_permanent_PLIF_actor_owns_its_local_banks",
     "runtime_reconfiguration": false,
     "inter_actor_membrane_access": false,
-    "sequence_start_initialization": "all_actor_banks_zeroized_in_parallel",
+    "sequence_start_initialization": "clocked_resident_state_reset",
     "events_accepted_during_initialization": false
   },
   "actors": [
@@ -35,17 +37,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 90112000
+        "logical_bits": 72089600
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -54,29 +55,25 @@
         "tail_bank_depth": 24576
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 148684800,
+        "width_bits": 32,
+        "logical_bits": 72089600,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 2252800,
-        "width_bits": 22,
-        "logical_bits": 49561600,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 35,
-          "full_bank_count": 34,
-          "tail_bank_depth": 24576
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 144
+      "weight_rom_words_int24": 144
     },
     {
       "id": 1,
@@ -91,17 +88,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 90112000
+        "logical_bits": 72089600
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -110,29 +106,25 @@
         "tail_bank_depth": 24576
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 148684800,
+        "width_bits": 32,
+        "logical_bits": 72089600,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 2252800,
-        "width_bits": 22,
-        "logical_bits": 49561600,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 35,
-          "full_bank_count": 34,
-          "tail_bank_depth": 24576
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 576
+      "weight_rom_words_int24": 576
     },
     {
       "id": 2,
@@ -147,17 +139,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": true,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 90112000
+        "logical_bits": 72089600
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -166,40 +157,30 @@
         "tail_bank_depth": 24576
       },
       "rtl_packed_state": {
-        "width_bits": 68,
-        "logical_bits": 153190400,
+        "width_bits": 32,
+        "logical_bits": 72089600,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "unused_adaptation_placeholders": 2
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 70400,
-        "width_bits": 17,
-        "logical_bits": 1196800,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 2,
-          "full_bank_count": 1,
-          "tail_bank_depth": 4864
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 70400,
         "width_bits": 1,
-        "logical_bits": 70400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 2,
-          "full_bank_count": 1,
-          "tail_bank_depth": 4864
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 1600
+      "weight_rom_words_int24": 1600
     },
     {
       "id": 3,
@@ -214,17 +195,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 90112000
+        "logical_bits": 72089600
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -233,29 +213,25 @@
         "tail_bank_depth": 24576
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 148684800,
+        "width_bits": 32,
+        "logical_bits": 72089600,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 2252800,
-        "width_bits": 22,
-        "logical_bits": 49561600,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 35,
-          "full_bank_count": 34,
-          "tail_bank_depth": 24576
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 9216
+      "weight_rom_words_int24": 9216
     },
     {
       "id": 4,
@@ -270,17 +246,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 90112000
+        "logical_bits": 72089600
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -289,29 +264,25 @@
         "tail_bank_depth": 24576
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 148684800,
+        "width_bits": 32,
+        "logical_bits": 72089600,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 2252800,
-        "width_bits": 22,
-        "logical_bits": 49561600,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 35,
-          "full_bank_count": 34,
-          "tail_bank_depth": 24576
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 288
+      "weight_rom_words_int24": 288
     },
     {
       "id": 5,
@@ -326,17 +297,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 90112000
+        "logical_bits": 72089600
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -345,29 +315,25 @@
         "tail_bank_depth": 24576
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 148684800,
+        "width_bits": 32,
+        "logical_bits": 72089600,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 2252800,
-        "width_bits": 22,
-        "logical_bits": 49561600,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 35,
-          "full_bank_count": 34,
-          "tail_bank_depth": 24576
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 1024
+      "weight_rom_words_int24": 1024
     },
     {
       "id": 6,
@@ -382,19 +348,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 81100800
+        "logical_bits": 64204800
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -403,41 +368,32 @@
         "tail_bank_depth": 12288
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 110387200,
+        "width_bits": 57,
+        "logical_bits": 64204800,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 17600,
-        "width_bits": 15,
-        "logical_bits": 264000,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 17600
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 17600,
         "width_bits": 1,
-        "logical_bits": 17600,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 17600
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 18432
+      "weight_rom_words_int24": 18432
     },
     {
       "id": 7,
@@ -452,19 +408,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 81100800
+        "logical_bits": 64204800
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -473,41 +428,32 @@
         "tail_bank_depth": 12288
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 110387200,
+        "width_bits": 57,
+        "logical_bits": 64204800,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 17600,
-        "width_bits": 15,
-        "logical_bits": 264000,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 17600
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 17600,
         "width_bits": 1,
-        "logical_bits": 17600,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 17600
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 576
+      "weight_rom_words_int24": 576
     },
     {
       "id": 8,
@@ -522,19 +468,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 81100800
+        "logical_bits": 64204800
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -543,41 +488,32 @@
         "tail_bank_depth": 12288
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 110387200,
+        "width_bits": 57,
+        "logical_bits": 64204800,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 17600,
-        "width_bits": 15,
-        "logical_bits": 264000,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 17600
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 17600,
         "width_bits": 1,
-        "logical_bits": 17600,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 17600
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 4096
+      "weight_rom_words_int24": 4096
     },
     {
       "id": 9,
@@ -592,19 +528,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 81100800
+        "logical_bits": 64204800
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -613,41 +548,32 @@
         "tail_bank_depth": 12288
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 110387200,
+        "width_bits": 57,
+        "logical_bits": 64204800,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 17600,
-        "width_bits": 15,
-        "logical_bits": 264000,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 17600
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 17600,
         "width_bits": 1,
-        "logical_bits": 17600,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 17600
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 576
+      "weight_rom_words_int24": 576
     },
     {
       "id": 10,
@@ -662,19 +588,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 81100800
+        "logical_bits": 64204800
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -683,41 +608,32 @@
         "tail_bank_depth": 12288
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 110387200,
+        "width_bits": 57,
+        "logical_bits": 64204800,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 17600,
-        "width_bits": 15,
-        "logical_bits": 264000,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 17600
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 17600,
         "width_bits": 1,
-        "logical_bits": 17600,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 17600
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 4096
+      "weight_rom_words_int24": 4096
     },
     {
       "id": 11,
@@ -732,19 +648,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 20275200
+        "logical_bits": 16051200
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -753,41 +668,32 @@
         "tail_bank_depth": 19456
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 27596800,
+        "width_bits": 57,
+        "logical_bits": 16051200,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 576
+      "weight_rom_words_int24": 576
     },
     {
       "id": 12,
@@ -802,19 +708,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -823,41 +728,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 8192
+      "weight_rom_words_int24": 8192
     },
     {
       "id": 13,
@@ -872,19 +768,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -893,41 +788,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 1152
+      "weight_rom_words_int24": 1152
     },
     {
       "id": 14,
@@ -942,19 +828,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -963,41 +848,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 16384
+      "weight_rom_words_int24": 16384
     },
     {
       "id": 15,
@@ -1012,19 +888,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1033,41 +908,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 1152
+      "weight_rom_words_int24": 1152
     },
     {
       "id": 16,
@@ -1082,19 +948,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1103,41 +968,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 16384
+      "weight_rom_words_int24": 16384
     },
     {
       "id": 17,
@@ -1152,19 +1008,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1173,41 +1028,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 1152
+      "weight_rom_words_int24": 1152
     },
     {
       "id": 18,
@@ -1222,19 +1068,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1243,41 +1088,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 16384
+      "weight_rom_words_int24": 16384
     },
     {
       "id": 19,
@@ -1292,19 +1128,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1313,41 +1148,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 1152
+      "weight_rom_words_int24": 1152
     },
     {
       "id": 20,
@@ -1362,19 +1188,18 @@
       "adaptation_enabled": true,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 72,
+        "width_bits": 57,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         },
-        "logical_bits": 40550400
+        "logical_bits": 32102400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1383,41 +1208,32 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 98,
-        "logical_bits": 55193600,
+        "width_bits": 57,
+        "logical_bits": 32102400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1,
-          "adaptation_age": 16,
-          "adaptation_amplitude": 16
+          "combined_accumulator": 32,
+          "adaptation_age_bins": 6,
+          "adaptation_amplitude": 19
         }
       },
       "touched_queue": {
-        "depth": 4400,
-        "width_bits": 13,
-        "logical_bits": 57200,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 1,
+          "bank_count": 0,
           "full_bank_count": 0,
-          "tail_bank_depth": 4400
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": {
         "depth": 4400,
         "width_bits": 1,
-        "logical_bits": 4400,
-        "banking": {
-          "maximum_bank_depth": 65536,
-          "bank_count": 1,
-          "full_bank_count": 0,
-          "tail_bank_depth": 4400
-        }
+        "logical_bits": 0,
+        "banking": null
       },
-      "weight_rom_words_int8": 16384
+      "weight_rom_words_int24": 16384
     },
     {
       "id": 21,
@@ -1432,17 +1248,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 11264000
+        "logical_bits": 9011200
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1451,29 +1266,25 @@
         "tail_bank_depth": 19456
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 18585600,
+        "width_bits": 32,
+        "logical_bits": 9011200,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 281600,
-        "width_bits": 19,
-        "logical_bits": 5350400,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 5,
-          "full_bank_count": 4,
-          "tail_bank_depth": 19456
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 8192
+      "weight_rom_words_int24": 8192
     },
     {
       "id": 22,
@@ -1488,17 +1299,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 45056000
+        "logical_bits": 36044800
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1507,29 +1317,25 @@
         "tail_bank_depth": 12288
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 74342400,
+        "width_bits": 32,
+        "logical_bits": 36044800,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 1126400,
-        "width_bits": 21,
-        "logical_bits": 23654400,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 18,
-          "full_bank_count": 17,
-          "tail_bank_depth": 12288
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 8192
+      "weight_rom_words_int24": 8192
     },
     {
       "id": 23,
@@ -1544,17 +1350,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 22528000
+        "logical_bits": 18022400
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1563,29 +1368,25 @@
         "tail_bank_depth": 38912
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 37171200,
+        "width_bits": 32,
+        "logical_bits": 18022400,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 563200,
-        "width_bits": 20,
-        "logical_bits": 11264000,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 9,
-          "full_bank_count": 8,
-          "tail_bank_depth": 38912
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 2048
+      "weight_rom_words_int24": 2048
     },
     {
       "id": 24,
@@ -1600,17 +1401,16 @@
       "adaptation_enabled": false,
       "inhibition_enabled": false,
       "persistent_record": {
-        "width_bits": 40,
+        "width_bits": 32,
         "fields": {
-          "membrane": 16,
-          "last_bin_tag": 24
+          "combined_accumulator": 32
         },
-        "logical_bits": 180224000
+        "logical_bits": 144179200
       },
       "collection_record": {
-        "current_bits": 24,
-        "touched_bits": 1,
-        "semantics": "transient_same_bin_synaptic_sum_before_one_PLIF_commit"
+        "current_bits": 0,
+        "touched_bits": 0,
+        "semantics": "folded_into_combined_accumulator"
       },
       "banking": {
         "maximum_bank_depth": 65536,
@@ -1619,29 +1419,25 @@
         "tail_bank_depth": 49152
       },
       "rtl_packed_state": {
-        "width_bits": 66,
-        "logical_bits": 297369600,
+        "width_bits": 32,
+        "logical_bits": 144179200,
         "fields": {
-          "current": 24,
-          "membrane": 16,
-          "last_bin_tag": 24,
-          "live": 1,
-          "touched": 1
+          "combined_accumulator": 32
         }
       },
       "touched_queue": {
-        "depth": 4505600,
-        "width_bits": 23,
-        "logical_bits": 103628800,
+        "depth": 0,
+        "width_bits": 1,
+        "logical_bits": 0,
         "banking": {
           "maximum_bank_depth": 65536,
-          "bank_count": 69,
-          "full_bank_count": 68,
-          "tail_bank_depth": 49152
+          "bank_count": 0,
+          "full_bank_count": 0,
+          "tail_bank_depth": 0
         }
       },
       "retinotopic_touched_marker": null,
-      "weight_rom_words_int8": 5760
+      "weight_rom_words_int24": 5760
     }
   ],
   "totals": {
@@ -1649,33 +1445,33 @@
     "logical_bank_count": 487,
     "logical_neurons": 30976000,
     "adaptation_enabled_neurons": 10982400,
-    "persistent_state_bits": 1590476800,
-    "persistent_state_bytes": 198809600,
-    "persistent_state_mib": 189.599609375,
-    "collection_current_bits": 743424000,
-    "collection_current_bytes": 92928000,
-    "touched_bitmap_bits": 30976000,
-    "touched_bitmap_bytes": 3872000,
-    "direct_index_exact_bits_excluding_queue": 2364876800,
-    "direct_index_exact_bytes_excluding_queue": 295609600,
-    "direct_index_exact_mib_excluding_queue": 281.915283203125,
-    "worst_case_touched_queue_bits": 666265600,
-    "worst_case_touched_queue_bytes": 83283200,
-    "weight_rom_bits": 1150592,
-    "weight_rom_bytes": 143824,
-    "parallel_bank_scrub_cycles": 65536,
-    "parallel_bank_scrub_time_us_at_200MHz": 327.68,
-    "rtl_actor_packed_state_bits": 2400358400,
-    "rtl_touched_queue_bits": 394794400,
-    "rtl_retinotopic_marker_bits": 202400,
+    "persistent_state_bits": 1265792000,
+    "persistent_state_bytes": 158224000,
+    "persistent_state_mib": 150.8941650390625,
+    "collection_current_bits": 0,
+    "collection_current_bytes": 0,
+    "touched_bitmap_bits": 0,
+    "touched_bitmap_bytes": 0,
+    "direct_index_exact_bits_excluding_queue": 1265792000,
+    "direct_index_exact_bytes_excluding_queue": 158224000,
+    "direct_index_exact_mib_excluding_queue": 150.8941650390625,
+    "worst_case_touched_queue_bits": 0,
+    "worst_case_touched_queue_bytes": 0,
+    "weight_rom_bits": 3451776,
+    "weight_rom_bytes": 431472,
+    "parallel_bank_scrub_cycles": 0,
+    "parallel_bank_scrub_time_us_at_200MHz": 0.0,
+    "rtl_actor_packed_state_bits": 1265792000,
+    "rtl_touched_queue_bits": 0,
+    "rtl_retinotopic_marker_bits": 0,
     "rtl_temporal_readout_bits": 40550400,
     "rtl_residual_union_bits_at_default_capacity": 18432,
-    "rtl_sram_bits_excluding_weight_rom": 2835924032,
-    "rtl_sram_bytes_excluding_weight_rom": 354490504,
-    "rtl_sram_mib_excluding_weight_rom": 338.06848907470703,
+    "rtl_sram_bits_excluding_weight_rom": 1306360832,
+    "rtl_sram_bytes_excluding_weight_rom": 163295104,
+    "rtl_sram_mib_excluding_weight_rom": 155.7303466796875,
     "rtl_state_bank_count": 487,
-    "rtl_queue_bank_count": 293,
-    "rtl_retinotopic_marker_bank_count": 17,
+    "rtl_queue_bank_count": 0,
+    "rtl_retinotopic_marker_bank_count": 0,
     "rtl_readout_bank_count": 5
   },
   "shared_state": {

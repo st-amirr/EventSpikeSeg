@@ -33,8 +33,10 @@ from dataclasses import replace
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from .data import DEFAULT_INTERNAL_UPDATES, EVSEG_INTEGRATION_WINDOW_US
+from .deployment_quantization import fake_quantize_ste
 from .model_components import (
     EventSpikeSegBase,
     LIFConfig,
@@ -99,14 +101,25 @@ class TemporalCurrentReadout(nn.Module):
         super().__init__()
         self.synapse = nn.Conv2d(in_channels, out_channels, 1, bias=False)
         self.scale = float(scale)
+        self.asic_qat_enabled = False
+
+    def set_asic_qat_enabled(self, enabled: bool) -> None:
+        self.asic_qat_enabled = bool(enabled)
 
     def forward(self, sequence: Tensor) -> Tensor:
         if sequence.ndim != 5:
             raise ValueError("expected a TNCHW spike sequence")
         accumulated: Tensor | None = None
+        weight = (
+            fake_quantize_ste(self.synapse.weight, "weight")
+            if self.asic_qat_enabled
+            else self.synapse.weight
+        )
         for step in sequence:
-            current = self.synapse(step.float())
+            current = F.conv2d(step.float(), weight)
             accumulated = current if accumulated is None else accumulated + current
+            if self.asic_qat_enabled:
+                accumulated = fake_quantize_ste(accumulated, "current")
         assert accumulated is not None
         return accumulated * (self.scale / float(sequence.shape[0]))
 
@@ -198,6 +211,8 @@ class SpikeDrivenMaskAttention(nn.Module):
         coincidence = (qh * kh).sum(dim=3)
         fraction = torch.sigmoid(self.attention_threshold_logit)
         threshold = 1.0 + fraction * float(max(1, self.head_dim - 1))
+        if self.q.asic_qat_enabled:
+            threshold = fake_quantize_ste(threshold, "threshold")
         threshold = threshold.view(1, 1, self.heads, 1, 1)
 
         soft = torch.sigmoid(4.0 * (coincidence - threshold))

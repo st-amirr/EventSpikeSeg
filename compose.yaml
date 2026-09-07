@@ -121,8 +121,8 @@ services:
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2", "--data-workers", "4",
        "--internal-updates", "10", "--sequential-chunks", "2",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
-       "--resume-lr", "0.001", "--checkpoint-every", "1",
-       "--load","artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_epoch075.pt",
+       "--resume-lr", "0.001", "--asic-qat-epochs", "3", "--checkpoint-every", "1",
+       "--load","artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_epoch077.pt",
        "--checkpoint-dir", "artifacts/model_checkpoints/dsec_6class"]
 
   # One-epoch checkpoint-compatible ablation of the former FInST/FLong-derived
@@ -161,6 +161,7 @@ services:
        "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
+       "--load", "artifacts/model_checkpoints/dsec_XL/EventSpikeSegXL_seed17_epoch001.pt",
        "--checkpoint-dir", "artifacts/model_checkpoints/dsec_XL"]
 
   # Optional expanded EventSpikeSegXL comparison model.

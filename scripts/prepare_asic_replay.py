@@ -66,11 +66,13 @@ def _scaled_spec(source: Path, destination: Path) -> dict[str, object]:
         {
             "logical_membranes": logical_states,
             "adaptation_enabled_neurons": adaptation_states,
-            "membrane_bytes_int16": logical_states * 2,
-            "last_bin_tag_bytes_24": logical_states * 3,
-            "adaptation_bytes_two_int16": adaptation_states * 4,
-            "dense_exact_state_bytes": logical_states * 5 + adaptation_states * 4,
-            "dense_exact_state_mib": (logical_states * 5 + adaptation_states * 4) / 2**20,
+            "combined_accumulator_bytes_int32": logical_states * 4,
+            "last_bin_tag_bytes": 0,
+            "adaptation_age_bits_per_enabled_neuron": 6,
+            "adaptation_amplitude_bits_per_enabled_neuron": 19,
+            "adaptation_state_bits": adaptation_states * 25,
+            "dense_exact_state_bytes": (logical_states * 32 + adaptation_states * 25 + 7) // 8,
+            "dense_exact_state_mib": (logical_states * 32 + adaptation_states * 25) / 8 / 2**20,
         }
     )
     spec["replay_geometry"] = {

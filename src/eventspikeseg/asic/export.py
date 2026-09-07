@@ -15,7 +15,6 @@ from ..data import DSEC_6_CLASS_NAMES
 from ..model import EventSpikeSeg140k
 from ..model_components import ChannelAffine, ParametricLIF, SpikingStage
 from .contracts import (
-    BIN_TAG_WIDTH,
     BIN_US,
     DEFAULT_PREDICTION_BINS,
     MANUFACTURABLE_TARGET_GATE,
@@ -140,21 +139,27 @@ def _stage_parameters(stage: SpikingStage) -> dict[str, object]:
         "inhibition_strength_q": (
             None
             if inhibition_strength is None
-            else ASIC_FORMATS["adaptation"].quantize(inhibition_strength.detach().cpu()).tolist()
+            else ASIC_FORMATS["inhibition_strength"].quantize(
+                (
+                    inhibition_strength * neuron.inhibition_scale
+                ).detach().cpu()
+            ).tolist()
         ),
         "threshold_adaptation_enabled": neuron.config.threshold_adaptation_enabled,
         "adaptation_kind": neuron.config.adaptation_kind,
         "threshold_adaptation_strength_q": (
             None
             if adaptation_strength is None
-            else ASIC_FORMATS["adaptation"].quantize(
-                adaptation_strength.detach().cpu()
+            else ASIC_FORMATS["adaptation_strength"].quantize(
+                (
+                    adaptation_strength * neuron.threshold_adaptation_scale
+                ).detach().cpu()
             ).tolist()
         ),
         "adaptation_duration_q": (
             None
             if adaptation_duration is None
-            else ASIC_FORMATS["adaptation"].quantize(
+            else ASIC_FORMATS["adaptation_duration"].quantize(
                 adaptation_duration.detach().cpu()
             ).tolist()
         ),
@@ -218,12 +223,12 @@ def export_model(
         stage = named[name]
         assert isinstance(stage, SpikingStage)
         folded = _folded_weights(stage)
-        weight_q = ASIC_FORMATS["weight"].quantize(folded).to(torch.int8).numpy()
+        weight_q = ASIC_FORMATS["weight"].quantize(folded).to(torch.int32).numpy()
         safe_name = name.replace(".", "_")
         rom_name = f"{layer_id:02d}_{safe_name}.mem"
         rom_path = weights_dir / rom_name
         rom_path.write_text(
-            "".join(f"{int(value) & 0xFF:02x}\n" for value in weight_q.reshape(-1)),
+            "".join(f"{int(value) & 0xFFFFFF:06x}\n" for value in weight_q.reshape(-1)),
             encoding="ascii",
         )
         arrays[name] = weight_q
@@ -233,10 +238,10 @@ def export_model(
         threshold_rom_name = f"{layer_id:02d}_{safe_name}_threshold.mem"
         _json_write(parameters_dir / parameter_name, parameters)
         _write_word_rom(
-            parameters_dir / beta_rom_name, parameters["beta_q"], bits=16
+            parameters_dir / beta_rom_name, parameters["beta_q"], bits=24
         )
         _write_word_rom(
-            parameters_dir / threshold_rom_name, parameters["threshold_q"], bits=16
+            parameters_dir / threshold_rom_name, parameters["threshold_q"], bits=24
         )
         tier = _SPATIAL_TIERS[name]
         input_tier = _INPUT_SPATIAL_TIER.get(name, tier)
@@ -280,11 +285,11 @@ def export_model(
     assert isinstance(readout, nn.Conv2d)
     readout_q = ASIC_FORMATS["weight"].quantize(
         readout.weight.detach().cpu().float()
-    ).to(torch.int8).numpy()
+    ).to(torch.int32).numpy()
     readout_id = len(layers)
     readout_rom_name = f"{readout_id:02d}_head_synapse.mem"
     (weights_dir / readout_rom_name).write_text(
-        "".join(f"{int(value) & 0xFF:02x}\n" for value in readout_q.reshape(-1)),
+        "".join(f"{int(value) & 0xFFFFFF:06x}\n" for value in readout_q.reshape(-1)),
         encoding="ascii",
     )
     arrays[EVENTSPIKESEG140K_CURRENT_READOUT] = readout_q
@@ -370,7 +375,7 @@ def export_model(
     graph_contract = eventspikeseg140k_graph_contract()
 
     manifest: dict[str, Any] = {
-        "schema_version": "2.1.0",
+        "schema_version": "2.2.0",
         "model": "EventSpikeSeg140k",
         "dataset": "DSEC-Semantic",
         "class_count": 6,
@@ -385,10 +390,10 @@ def export_model(
             "schedule": "autonomous_static_actor_graph",
             "epoch_boundary": "ordered_completion_token",
             "global_actor_scheduler": False,
-            "commit_rule": "one_PLIF_update_per_touched_destination_after_completion",
+            "commit_rule": "one_clocked_PLIF_update_per_resident_destination_after_completion",
             "per_neuron_timestamp_required": False,
-            "per_neuron_last_bin_tag_required": True,
-            "last_bin_tag_width_bits": BIN_TAG_WIDTH,
+            "per_neuron_last_bin_tag_required": False,
+            "last_bin_tag_width_bits": 0,
         },
         "spatial_shapes": shapes,
         "registered_parameters": registered_parameters,
@@ -413,7 +418,8 @@ def export_model(
             "kernel_mapping": "parallel_presynaptic_taps_to_one_canonical_destination_state",
             "state_ownership": "actor_local_direct_indexed_SRAM",
             "state_record_timestamp_field": False,
-            "state_record_last_bin_tag_bits": BIN_TAG_WIDTH,
+            "state_record_last_bin_tag_bits": 0,
+            "state_record": "combined_int32_q15_16_accumulator_with_preapplied_next_bin_leak",
             "state_memory": "characterized_actor_local_SRAM_macro_required",
             "weight_memory": "actor_local_mask_ROM_or_compiled_ROM",
             "runtime_layer_reconfiguration": False,
@@ -470,6 +476,8 @@ def export_checkpoint(
     input_channels = int(checkpoint.get("input_channels", 2))
     model = EventSpikeSeg140k(class_count=6, input_channels=input_channels)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+    mechanism_scale = float(checkpoint.get("mechanism_scale", 1.0))
+    model.set_mechanism_scale(mechanism_scale)
     metadata = {
         key: checkpoint.get(key)
         for key in (
@@ -479,6 +487,8 @@ def export_checkpoint(
             "seed",
             "temporal_protocol_version",
             "training_strategy_version",
+            "asic_qat_enabled",
+            "asic_qat_epochs",
         )
     }
     return export_model(

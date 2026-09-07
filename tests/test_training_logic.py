@@ -18,6 +18,7 @@ from eventspikeseg.train import (
     _temporal_parts,
     _training_objective,
     architecture_presets,
+    asic_qat_enabled_for_epoch,
     checkpoint_mechanism_scale,
     dsec_colour_mask,
     dsec_event_count_image,
@@ -34,10 +35,35 @@ from eventspikeseg.train import (
     save_dsec_validation_previews,
     scale_learning_rates,
     select_winner,
+    set_all_parameters_trainable,
     set_neuron_dynamics_trainable,
     set_resume_learning_rate,
     soft_dice_loss,
 )
+
+
+def test_asic_qat_is_confined_to_last_three_final_epochs() -> None:
+    assert not asic_qat_enabled_for_epoch("final", 77, 80, 3)
+    assert asic_qat_enabled_for_epoch("final", 78, 80, 3)
+    assert asic_qat_enabled_for_epoch("final", 80, 80, 3)
+    assert not asic_qat_enabled_for_epoch("top-five", 80, 80, 3)
+    assert not asic_qat_enabled_for_epoch("final", 80, 80, 0)
+
+
+def test_asic_qat_overrides_refinement_freezing() -> None:
+    assert refinement_phase_for_epoch(
+        78, 80, (0.70, 0.90), asic_qat_enabled=True
+    ) == ("asic_qat_full_unfreeze", True)
+
+
+def test_asic_qat_can_unfreeze_every_model_parameter() -> None:
+    model = torch.nn.Sequential(torch.nn.Linear(2, 3), torch.nn.Linear(3, 1))
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+    assert set_all_parameters_trainable(model, True) == sum(
+        parameter.numel() for parameter in model.parameters()
+    )
+    assert all(parameter.requires_grad for parameter in model.parameters())
 
 
 def test_validation_preview_indices_are_random_but_reproducible() -> None:

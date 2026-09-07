@@ -40,7 +40,7 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
     manifest = export_model(model, tmp_path)
 
     assert len(EVENTSPIKESEG140K_INFERENCE_STAGES) == 25
-    assert manifest["schema_version"] == "2.1.0"
+    assert manifest["schema_version"] == "2.2.0"
     assert manifest["class_count"] == 6
     assert manifest["registered_parameters"] == 149_835
     assert manifest["executed_inference_parameters"] == 149_423
@@ -58,7 +58,8 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
     assert manifest["graph"]["linear_pipeline"] is False
     assert manifest["timing_contract"]["schedule"] == "autonomous_static_actor_graph"
     assert manifest["timing_contract"]["global_actor_scheduler"] is False
-    assert manifest["timing_contract"]["last_bin_tag_width_bits"] == BIN_TAG_WIDTH == 24
+    assert manifest["timing_contract"]["last_bin_tag_width_bits"] == 0
+    assert BIN_TAG_WIDTH == 24  # completion-token tag, not per-neuron state
     assert manifest["open_PPA_target"]["platform"] == "ASAP7"
     assert manifest["open_PPA_target"]["manufacturable"] is False
     assert manifest["manufacturable_target_gate"]["maximum_process_nm"] == 28
@@ -79,7 +80,7 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
     ).read_text().splitlines()
     assert len(beta_lines) == model_spec["layers"][2]["out_channels"]
     assert len(threshold_lines) == model_spec["layers"][2]["out_channels"]
-    assert all(len(word) == 4 for word in beta_lines + threshold_lines)
+    assert all(len(word) == 6 for word in beta_lines + threshold_lines)
 
 
 def test_export_rejects_xl() -> None:
@@ -109,10 +110,44 @@ def test_integer_plif_lazy_decay_and_subtractive_reset() -> None:
         threshold_q=512,
         elapsed_bins=2,
     )
-    assert result.retention_q == 18_432
+    assert result.retention_q == 4_718_592
     assert result.candidate == 544
     assert result.spike == 1
     assert result.membrane == 32
+
+
+def test_combined_accumulator_matches_one_bin_plif_and_prepares_next_leak() -> None:
+    plif = IntegerPLIF()
+    beta_q = int(ASIC_FORMATS["beta"].quantize(0.75))
+    leaked = plif.leak_membrane_for_bins(512, beta_q, 1)
+    conventional = plif.step(
+        membrane_q=512,
+        current_q=256,
+        beta_q=beta_q,
+        threshold_q=512,
+    )
+    combined = plif.commit_combined_accumulator(
+        accumulator_q=leaked + 256,
+        beta_q=beta_q,
+        threshold_q=512,
+    )
+    assert (combined.candidate, combined.spike, combined.membrane) == (
+        conventional.candidate,
+        conventional.spike,
+        conventional.membrane,
+    )
+    assert combined.next_accumulator == plif.leak_membrane_for_bins(
+        combined.membrane, beta_q, 1
+    )
+
+
+def test_compact_adaptation_formats_cover_configured_limits() -> None:
+    assert ASIC_FORMATS["adaptation_age"].maximum == 63
+    assert ASIC_FORMATS["weight"].bits == 24
+    assert ASIC_FORMATS["weight"].fractional_bits == 16
+    assert ASIC_FORMATS["current"].bits == 32
+    assert ASIC_FORMATS["adaptation_amplitude"].maximum >= 6 * (1 << 16)
+    assert ASIC_FORMATS["adaptation_duration"].maximum >= 16 * (1 << 16)
 
 
 def test_native_activity_event_expansion_preserves_count_multiplicity() -> None:
@@ -163,7 +198,7 @@ def test_integer_plif_rounds_membrane_after_each_lazy_decay_step() -> None:
     result = plif.step(
         membrane_q=-200,
         current_q=0,
-        beta_q=30_000,
+        beta_q=int(ASIC_FORMATS["beta"].quantize(30_000 / 32_768)),
         threshold_q=512,
         elapsed_bins=3,
     )
@@ -192,9 +227,11 @@ def test_triangular_adaptation_age_advances_by_elapsed_bins() -> None:
 
 def test_state_capacity_is_model_scale_not_parameter_scale() -> None:
     capacity = state_capacity_contract()
-    assert capacity["weight_bytes_int8"] == 143_824
+    assert capacity["weight_bytes_int24"] == 431_472
     assert capacity["logical_membranes"] == 30_976_000
-    assert capacity["dense_exact_state_mib"] == pytest.approx(189.599609375)
+    assert capacity["dense_exact_state_mib"] == pytest.approx(150.8941650390625)
+    assert capacity["adaptation_age_bits_per_enabled_neuron"] == 6
+    assert capacity["adaptation_amplitude_bits_per_enabled_neuron"] == 19
     assert capacity["full_chip_PPA_gate"] == "characterized_actor_local_SRAM_macros_required"
 
 
@@ -207,17 +244,17 @@ def test_sram_manifest_derives_exact_actor_local_storage(tmp_path) -> None:
     assert manifest["memory_contract"]["events_accepted_during_initialization"] is False
     assert manifest["totals"]["actor_count"] == 25
     assert manifest["totals"]["logical_neurons"] == 30_976_000
-    assert manifest["totals"]["persistent_state_bytes"] == 198_809_600
-    assert manifest["totals"]["collection_current_bytes"] == 92_928_000
-    assert manifest["totals"]["touched_bitmap_bytes"] == 3_872_000
-    assert manifest["totals"]["direct_index_exact_bytes_excluding_queue"] == 295_609_600
-    assert manifest["totals"]["weight_rom_bytes"] == 143_824
-    assert manifest["totals"]["parallel_bank_scrub_cycles"] == 65_536
-    assert manifest["totals"]["parallel_bank_scrub_time_us_at_200MHz"] == pytest.approx(327.68)
-    assert manifest["totals"]["rtl_sram_bytes_excluding_weight_rom"] == 354_490_504
+    assert manifest["totals"]["persistent_state_bytes"] == 158_224_000
+    assert manifest["totals"]["collection_current_bytes"] == 0
+    assert manifest["totals"]["touched_bitmap_bytes"] == 0
+    assert manifest["totals"]["direct_index_exact_bytes_excluding_queue"] == 158_224_000
+    assert manifest["totals"]["weight_rom_bytes"] == 431_472
+    assert manifest["totals"]["parallel_bank_scrub_cycles"] == 0
+    assert manifest["totals"]["parallel_bank_scrub_time_us_at_200MHz"] == 0
+    assert manifest["totals"]["rtl_sram_bytes_excluding_weight_rom"] == 163_295_104
     assert manifest["totals"]["rtl_state_bank_count"] == 487
-    assert manifest["totals"]["rtl_queue_bank_count"] == 293
-    assert manifest["totals"]["rtl_retinotopic_marker_bank_count"] == 17
+    assert manifest["totals"]["rtl_queue_bank_count"] == 0
+    assert manifest["totals"]["rtl_retinotopic_marker_bank_count"] == 0
     assert manifest["totals"]["rtl_readout_bank_count"] == 5
     assert manifest["shared_state"]["residual_unions"]["count"] == 9
     assert sum(actor["adaptation_enabled"] for actor in manifest["actors"]) == 15

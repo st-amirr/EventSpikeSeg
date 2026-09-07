@@ -25,8 +25,8 @@ module resident_convolution_synapses #(
   parameter integer DILATION_Y = 1,
   parameter integer PAD_X = 1,
   parameter integer PAD_Y = 1,
-  parameter integer WEIGHT_WIDTH = 8,
-  parameter integer CURRENT_WIDTH = 24,
+  parameter integer WEIGHT_WIDTH = 24,
+  parameter integer CURRENT_WIDTH = 32,
   parameter integer INPUT_SPATIAL_COUNT = INPUT_WIDTH*INPUT_HEIGHT,
   parameter integer OUTPUT_SPATIAL_COUNT = OUTPUT_TILE_WIDTH*OUTPUT_TILE_HEIGHT,
   parameter integer INPUT_COUNT = INPUT_CHANNELS*INPUT_SPATIAL_COUNT,
@@ -40,8 +40,10 @@ module resident_convolution_synapses #(
   input logic [INPUT_COUNT-1:0] spike_vector_i,
   output logic signed [DEST_COUNT*CURRENT_WIDTH-1:0] current_delta_o
 );
-  localparam integer MAX_CURRENT = (1 << (CURRENT_WIDTH-1))-1;
-  localparam integer MIN_CURRENT = -(1 << (CURRENT_WIDTH-1));
+  localparam logic signed [CURRENT_WIDTH-1:0] MAX_CURRENT =
+    {1'b0, {(CURRENT_WIDTH-1){1'b1}}};
+  localparam logic signed [CURRENT_WIDTH-1:0] MIN_CURRENT =
+    {1'b1, {(CURRENT_WIDTH-1){1'b0}}};
   integer output_channel;
   integer output_x;
   integer output_y;

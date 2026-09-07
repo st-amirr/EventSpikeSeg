@@ -15,11 +15,11 @@ timing, and power analysis.
   foundry PDK. That target cannot be called selected or power-signoff-ready until the complete
   resident graph is elaborated, placed, timed, and measured in an appropriate library.
 
-The distinction matters because 143,824 int8 synaptic weights consume only about
-0.137 MiB, while the frozen 440x640 graph has 30,976,000 logical PLIF states. The selected
-direct-state design allocates 59.08 MiB-equivalent of int16 membrane elements, 88.62 MiB-
-equivalent of int24 current elements, and 41.89 MiB-equivalent of adaptation state: 189.60 MiB-
-equivalent of logical resident state. These are distributed registers/latches local to the PLIFs,
+The distinction matters because the 143,824 signed 24-bit Q7.16 synaptic weights consume only
+about 0.41 MiB, while the frozen 440x640 graph has 30,976,000 logical PLIF states. The selected
+direct-state design allocates one signed 32-bit Q15.16 combined accumulator/state per PLIF plus
+a 6-bit integer age and unsigned 19-bit Q3.16 amplitude only on adaptation-enabled PLIFs:
+150.89 MiB-equivalent of logical resident state. These are distributed registers/latches local to the PLIFs,
 not a byte-addressed memory capacity or an SRAM-fetch design. The elimination of reads, writes,
 tags, touched queues, and scrub cycles is intentional; the resulting physical area, clock-tree
 load, combinational depth, and switching power remain an open full-chip implementation result.
@@ -27,11 +27,12 @@ load, combinational depth, and switching power remain an open full-chip implemen
 ## Current synthesis boundary
 
 `resident_channelized_plif_actor.sv` is the active replacement actor. Its
-`resident_convolution_synapses.sv` fabric gates compile-time int8 weights with a presynaptic
+`resident_convolution_synapses.sv` fabric gates compile-time signed 24-bit Q7.16 weights with a presynaptic
 spike bitmap and produces every postsynaptic current delta in parallel. Ordinary PLIFs use
 `resident_plif_population.sv`; layers with peer inhibition or threshold adaptation use
-`resident_retinotopic_plif_population.sv`. Every logical PLIF owns its current, membrane, and
-enabled adaptation elements for the life of the sequence. There is no addressed state fetch.
+`resident_retinotopic_plif_population.sv`. Every logical PLIF owns one combined accumulator/state
+and, where enabled, compact clocked adaptation elements for the life of the sequence. There is no
+addressed state fetch.
 
 `scripts/plan_asic_resident_tiles.py` partitions each actor spatially while preserving global
 convolution coordinates and the exact PLIF count:
@@ -62,8 +63,9 @@ OR/dedup join. The generated top instantiates these routes around all 25 actors.
 `event_upsample2x.sv` expands a spike into four nearest-neighbor addresses, and
 `channelized_convolution_scatter.sv` expands one input spike across legal standard, grouped,
 or depthwise output-channel/tap projections using exported PyTorch Conv2d weight order.
-The exporter emits matching fixed int8 synapses and 16-bit beta/threshold constants for each
-actor. `scripts/generate_asic_top.py` now defaults to the resident bitmap graph; pass
+The exporter emits matching signed 24-bit Q7.16 synapses, unsigned 24-bit UQ1.23 beta, signed
+24-bit Q7.16 thresholds, and the corresponding adaptation constants for each actor.
+`scripts/generate_asic_top.py` now defaults to the resident bitmap graph; pass
 `--architecture legacy_sram` only for the prior exact scalar replay reference.
 
 Historical addressed-SRAM reference: the generator's `legacy_sram` mode consumes an exported
@@ -85,7 +87,7 @@ residual unions, and the temporal readout; leave it at `0` for simulation and se
 only when `eventspikeseg_1rw_sram_macro` is bound to a compatible characterized macro.
 
 Generated exports are ignored build products under `artifacts/ASIC`; the checkpoint-authoritative
-six-class v4 export contains all 25 actors and exactly 143,824 int8 synaptic weights. The existing
+six-class export contains all 25 actors and exactly 143,824 signed 24-bit synaptic weights. The existing
 generated scalar/SRAM top is an executable logical reference, not the selected resident full-chip
 implementation and not a reportable PPA netlist.
 

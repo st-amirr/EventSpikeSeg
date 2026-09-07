@@ -1,18 +1,20 @@
 `timescale 1ns/1ps
-// Fully resident ordinary PLIF population. Every logical neuron owns its
-// current and membrane state element; completion updates all neurons in
-// parallel, so there is no state-memory read/write transaction or touched list.
+// Fully resident ordinary PLIF population. Every logical neuron owns one
+// combined accumulator/state element. Between completions it contains the
+// already-leaked membrane for the current 5 ms bin plus all accepted synaptic
+// contributions. Completion performs clamp/threshold/reset, then pre-applies
+// beta so the same element is ready to accumulate the next bin.
 module resident_plif_population #(
   parameter integer DEST_COUNT = 16,
   parameter integer ADDRESS_WIDTH = (DEST_COUNT <= 1) ? 1 : $clog2(DEST_COUNT),
   parameter integer CHANNEL_COUNT = 1,
   parameter integer SPATIAL_DEST_COUNT = DEST_COUNT/CHANNEL_COUNT,
   parameter integer CONTRIBUTION_LANES = 1,
-  parameter integer WEIGHT_WIDTH = 8,
-  parameter integer CURRENT_WIDTH = 24,
-  parameter integer MEM_WIDTH = 16,
-  parameter integer BETA_WIDTH = 16,
-  parameter integer BETA_FRAC_BITS = 15,
+  parameter integer WEIGHT_WIDTH = 24,
+  parameter integer CURRENT_WIDTH = 32,
+  parameter integer MEM_WIDTH = 24,
+  parameter integer BETA_WIDTH = 24,
+  parameter integer BETA_FRAC_BITS = 23,
   parameter integer TAG_WIDTH = 24,
   parameter logic [CHANNEL_COUNT*BETA_WIDTH-1:0] CHANNEL_BETAS = '0,
   parameter logic signed [CHANNEL_COUNT*MEM_WIDTH-1:0] CHANNEL_THRESHOLDS = '0
@@ -31,10 +33,11 @@ module resident_plif_population #(
   output logic [TAG_WIDTH-1:0] completion_tag_o,
   output logic address_error_o
 );
-  localparam integer MAX_CURRENT = (1 << (CURRENT_WIDTH-1))-1;
-  localparam integer MIN_CURRENT = -(1 << (CURRENT_WIDTH-1));
-  logic signed [CURRENT_WIDTH-1:0] current_reg [0:DEST_COUNT-1];
-  logic signed [MEM_WIDTH-1:0] membrane_reg [0:DEST_COUNT-1];
+  localparam logic signed [CURRENT_WIDTH-1:0] MAX_CURRENT =
+    {1'b0, {(CURRENT_WIDTH-1){1'b1}}};
+  localparam logic signed [CURRENT_WIDTH-1:0] MIN_CURRENT =
+    {1'b1, {(CURRENT_WIDTH-1){1'b0}}};
+  logic signed [CURRENT_WIDTH-1:0] accumulator_reg [0:DEST_COUNT-1];
   logic holding_result_reg;
   integer destination;
   integer lane;
@@ -43,6 +46,7 @@ module resident_plif_population #(
   integer signed product;
   integer signed leaked;
   integer signed candidate;
+  integer signed committed_membrane;
   integer signed threshold;
 
   assign contribution_ready_o = !holding_result_reg && !completion_valid_i;
@@ -57,8 +61,7 @@ module resident_plif_population #(
       completion_tag_o <= '0;
       address_error_o <= 1'b0;
       for (destination = 0; destination < DEST_COUNT; destination = destination+1) begin
-        current_reg[destination] <= '0;
-        membrane_reg[destination] <= '0;
+        accumulator_reg[destination] <= '0;
       end
     end else if (holding_result_reg) begin
       if (spike_ready_i) begin
@@ -70,26 +73,28 @@ module resident_plif_population #(
       holding_result_reg <= 1'b1;
       for (destination = 0; destination < DEST_COUNT; destination = destination+1) begin
         channel = destination/SPATIAL_DEST_COUNT;
-        product = $signed(membrane_reg[destination]) *
-                  $signed({1'b0, CHANNEL_BETAS[channel*BETA_WIDTH +: BETA_WIDTH]});
-        if (product >= 0) leaked = (product + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS;
-        else leaked = -(((-product) + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS);
-        candidate = leaked + $signed(current_reg[destination]);
+        candidate = $signed(accumulator_reg[destination]);
         if (candidate > ((1 << (MEM_WIDTH-1))-1)) candidate = (1 << (MEM_WIDTH-1))-1;
         else if (candidate < -(1 << (MEM_WIDTH-1))) candidate = -(1 << (MEM_WIDTH-1));
         threshold = $signed(CHANNEL_THRESHOLDS[channel*MEM_WIDTH +: MEM_WIDTH]);
         if (candidate >= threshold) begin
           spike_vector_o[destination] <= 1'b1;
-          membrane_reg[destination] <= candidate-threshold;
+          committed_membrane = candidate-threshold;
         end else begin
           spike_vector_o[destination] <= 1'b0;
-          membrane_reg[destination] <= candidate;
+          committed_membrane = candidate;
         end
-        current_reg[destination] <= '0;
+        product = committed_membrane *
+                  $signed({1'b0, CHANNEL_BETAS[channel*BETA_WIDTH +: BETA_WIDTH]});
+        if (product >= 0)
+          leaked = (product + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS;
+        else
+          leaked = -(((-product) + (1 << (BETA_FRAC_BITS-1))) >>> BETA_FRAC_BITS);
+        accumulator_reg[destination] <= leaked[CURRENT_WIDTH-1:0];
       end
     end else begin
       for (destination = 0; destination < DEST_COUNT; destination = destination+1) begin
-        accumulated = $signed(current_reg[destination]);
+        accumulated = $signed(accumulator_reg[destination]);
         if (dense_current_valid_i)
           accumulated = accumulated + $signed(dense_current_delta_i[
             destination*CURRENT_WIDTH +: CURRENT_WIDTH]);
@@ -102,9 +107,9 @@ module resident_plif_population #(
               accumulated = accumulated + $signed(weight_i[
                 lane*WEIGHT_WIDTH +: WEIGHT_WIDTH]);
           end
-        if (accumulated > MAX_CURRENT) current_reg[destination] <= MAX_CURRENT;
-        else if (accumulated < MIN_CURRENT) current_reg[destination] <= MIN_CURRENT;
-        else current_reg[destination] <= accumulated[CURRENT_WIDTH-1:0];
+        if (accumulated > MAX_CURRENT) accumulator_reg[destination] <= MAX_CURRENT;
+        else if (accumulated < MIN_CURRENT) accumulator_reg[destination] <= MIN_CURRENT;
+        else accumulator_reg[destination] <= accumulated[CURRENT_WIDTH-1:0];
       end
     end
   end

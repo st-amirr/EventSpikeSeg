@@ -36,7 +36,7 @@ async def resident_peer_groups_commit_without_state_fetch(dut) -> None:
     # their contributions concurrently and commit atomically at completion.
     dut.contribution_valid_i.value = 0b11
     dut.destination_i.value = 0 | (2 << 2)
-    dut.weight_i.value = 12 | (6 << 8)
+    dut.weight_i.value = 12 | (6 << 24)
     assert int(dut.contribution_ready_o.value) == 1
     await RisingEdge(dut.clk)
     assert await finish_bin(dut, 3) == 0b0001
