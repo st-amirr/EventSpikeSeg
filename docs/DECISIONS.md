@@ -1,3 +1,14 @@
+## 2026-09-07 — Schedule final-model loss by completed epoch fraction
+
+Use one direct `progress = current_epoch / --epochs` loss calculation for both
+`EventSpikeSeg140k` and `EventSpikeSegXL`, with no phase table or anchor lookup. Preserve
+a total CE coefficient of 1.0 using `macro=0.45+0.25*progress` and
+`pixel=0.55-0.25*progress`. Calculate Dice as `0.10+0.55*progress`, boundary BCE as
+`0.02*progress`, and auxiliary CE as `0.20-0.15*progress`.
+Keep focal, static class weights, and neighbor consistency disabled. XL's deep auxiliary
+CE remains one half of the scheduled mid auxiliary coefficient. Save the active loss
+profile in every checkpoint and report it in each epoch summary.
+
 ## 2026-09-07 — Expand XL below one million parameters without widening native tensors
 
 Increase the software-only `EventSpikeSegXL` from roughly 236k to 978,559 parameters

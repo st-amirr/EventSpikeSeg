@@ -651,13 +651,17 @@ training:
     ignore_index: 255
     class_balancing: no_static_class_weights_for_final_suite
     focal_balancing: macro_average_over_target_present_classes_where_focal_is_enabled
-    final_pixel_cross_entropy_weight: 0.5
-    final_macro_cross_entropy_weight: 0.5
-    final_dice_weight: 0.4
+    final_dynamic_curriculum:
+      progress: current_epoch / configured_total_epochs
+      macro_ce: 0.45 + 0.25 * progress
+      pixel_ce: 0.55 - 0.25 * progress
+      dice: 0.10 + 0.55 * progress
+      auxiliary_ce: 0.20 - 0.15 * progress
+      boundary: 0.02 * progress
+      invariant: macro_ce_plus_pixel_ce_equals_1
     final_same_class_neighbor_consistency_weight: 0.0
     region_consistency: disabled_for_final_suite
-    final_auxiliary_pixel_ce_weight: 0.1
-    final_boundary_weight: 0.01
+    deep_auxiliary_multiplier: 0.5
     backbone_refinement:
       joint_training_fraction: [0.0, 0.9]
       decoder_detail_only_fraction: [0.9, 1.0]

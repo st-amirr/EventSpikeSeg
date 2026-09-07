@@ -25,6 +25,7 @@ from eventspikeseg.train import (
     fixed_validation_preview_indices,
     format_class_validation_report,
     infer_model_suite,
+    loss_profile_for_epoch,
     loss_profile_for_suite,
     macro_class_cross_entropy,
     refinement_phase_for_epoch,
@@ -362,6 +363,32 @@ def test_loss_profiles_remain_explicit() -> None:
         auxiliary_ce=0.10,
         auxiliary_focal=0.0,
         boundary=0.01,
+    )
+
+
+def test_final_loss_curriculum_tracks_epoch_fraction() -> None:
+    quarter = loss_profile_for_epoch("final", 20, 80)
+    assert quarter.cross_entropy == pytest.approx(0.5125)
+    assert quarter.pixel_cross_entropy == pytest.approx(0.4875)
+    assert quarter.dice == pytest.approx(0.2375)
+    assert quarter.auxiliary_ce == pytest.approx(0.1625)
+    assert quarter.boundary == pytest.approx(0.005)
+
+    final = loss_profile_for_epoch("final", 80, 80)
+    assert final.cross_entropy == pytest.approx(0.70)
+    assert final.pixel_cross_entropy == pytest.approx(0.30)
+    assert final.dice == pytest.approx(0.65)
+    assert final.auxiliary_ce == pytest.approx(0.05)
+    assert final.boundary == pytest.approx(0.02)
+
+    for epoch in range(1, 81):
+        profile = loss_profile_for_epoch("final", epoch, 80)
+        assert profile.cross_entropy + profile.pixel_cross_entropy == pytest.approx(1.0)
+        assert profile.focal == 0.0
+        assert profile.region_consistency == 0.0
+
+    assert loss_profile_for_epoch("top-ten", 1, 80) == loss_profile_for_suite(
+        "top-ten"
     )
 
 

@@ -133,7 +133,7 @@ Performance improves with more timesteps up to T=12, after which gains diminish 
 
 ## Reproducibility note
 
-The top-ten, top-five, and top-three registries are all trained through `eventspikeseg.train`. Historical suites are pinned to the objective used for the recorded architecture-search results (`0.5 CE + 0.5 focal + 0.75 Dice`, plus historical auxiliary supervision). The final suite intentionally uses CE coefficient `1.0`, validation-on-train-holdout best-checkpoint selection, and the canonical refinement schedule. The old standalone `benchmark_top_three.py` runner is retired; its unique protocol has been represented in the shared trainer/launch configuration.
+The top-ten, top-five, and top-three registries are all trained through `eventspikeseg.train`. Historical suites are pinned to the objective used for the recorded architecture-search results (`0.5 CE + 0.5 focal + 0.75 Dice`, plus historical auxiliary supervision). The final suite keeps total CE coefficient 1.0 but dynamically transfers weight from pixel CE to equal target-present-class macro CE, ramps Dice/boundary supervision up, and ramps auxiliary CE down by completed epoch fraction. Validation-on-train-holdout best-checkpoint selection and the canonical refinement schedule remain active. The old standalone `benchmark_top_three.py` runner is retired; its unique protocol has been represented in the shared trainer/launch configuration.
 
 
 ## 2026-08-14 — Temporal-v2 implementation validation

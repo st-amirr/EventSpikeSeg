@@ -280,7 +280,7 @@ FINAL_LOSS_PROFILE = LossProfile(
     boundary=0.01,
 )
 
-STABLE_TRAINING_STRATEGY_VERSION = "dsec-balanced-ce-dice-aux-boundary-v13"
+STABLE_TRAINING_STRATEGY_VERSION = "dsec-dynamic-loss-curriculum-v14"
 FINAL_MECHANISM_START_FRACTION = 0.10
 FINAL_MECHANISM_FULL_FRACTION = 0.20
 FINAL_MECHANISM_MAX_SCALE = 0.0625
@@ -361,6 +361,26 @@ def loss_profile_for_suite(suite: str) -> LossProfile:
     if suite == "final":
         return FINAL_LOSS_PROFILE
     raise ValueError(f"unknown model suite {suite!r}")
+
+
+def loss_profile_for_epoch(suite: str, epoch: int, epochs: int) -> LossProfile:
+    """Calculate the final loss mixture directly from epoch / total epochs."""
+    base = loss_profile_for_suite(suite)
+    if suite != "final":
+        return base
+    if epoch < 1 or epochs < 1 or epoch > epochs:
+        raise ValueError("epoch must be within the configured training horizon")
+    progress = epoch / float(epochs)
+    return LossProfile(
+        cross_entropy=0.45 + 0.25 * progress,
+        pixel_cross_entropy=0.55 - 0.25 * progress,
+        focal=0.0,
+        dice=0.10 + 0.55 * progress,
+        region_consistency=0.0,
+        auxiliary_ce=0.20 - 0.15 * progress,
+        auxiliary_focal=0.0,
+        boundary=0.02 * progress,
+    )
 
 
 def seed_everything(seed: int) -> None:
@@ -1308,6 +1328,7 @@ def train_architecture(
     current_competition_enabled = True
     current_hidden_inhibition_enabled = True
     current_neuron_dynamics_trainable = True
+    current_loss_profile = loss_profile
     def save_training_checkpoint(
         path: Path,
         *,
@@ -1353,10 +1374,11 @@ def train_architecture(
                 "training_phase": training_phase_name,
                 "training_strategy_version": STABLE_TRAINING_STRATEGY_VERSION,
                 "training_objective": (
-                    "full-window-0.5-pixel-ce-plus-0.5-present-class-macro-ce-plus-0.4-present-dice-plus-0.1-aux-ce-plus-0.01-boundary"
+                    "full-window-dynamic-pixel-macro-ce-dice-aux-boundary-curriculum"
                     if is_final_run
                     else "macro-present-class-historical-compound"
                 ),
+                "loss_profile": asdict(current_loss_profile),
                 "class_weights": None,
                 "training_augmentation": (
                     {
@@ -1651,8 +1673,7 @@ def train_architecture(
     if is_final_run:
         print(
             f"Stable strategy={STABLE_TRAINING_STRATEGY_VERSION} | "
-            "objective=0.5-pixel-CE+0.5-present-class-macro-CE"
-            "+0.4-present-Dice+0.1-aux-CE+0.01-boundary | "
+            "objective=dynamic pixel-CE/present-class-macro-CE/Dice/aux/boundary | "
             "focal=off activity=on | "
             f"mechanism_scale_max={FINAL_MECHANISM_MAX_SCALE:.4f} | "
             f"neuron_freeze={FINAL_NEURON_FREEZE_FRACTION:.0%} | "
@@ -1673,6 +1694,7 @@ def train_architecture(
 
     for epoch in range(start_epoch, epochs + 1):
         model.train()
+        current_loss_profile = loss_profile_for_epoch(resolved_suite, epoch, epochs)
         epoch_train_dataset = _epoch_train_dataset(
             train_pool,
             train_samples=train_samples,
@@ -1773,12 +1795,15 @@ def train_architecture(
                     scaler=scaler,
                     loss_scale=1.0 / accumulate_steps,
                     objective=(
-                        lambda outputs, target=target, phase=training_phase: (
+                        lambda outputs,
+                        target=target,
+                        phase=training_phase,
+                        profile=current_loss_profile: (
                             _training_objective(
                                 outputs,
                                 target,
                                 class_count=class_count,
-                                loss_profile=loss_profile,
+                                loss_profile=profile,
                                 is_final_run=is_final_run,
                                 training_phase=phase,
                             )
@@ -1844,6 +1869,12 @@ def train_architecture(
             f"Epoch {epoch:02d}/{epochs:02d} complete | "
             f"loss={mean_epoch_loss:.4f} | phase={training_phase} | "
             f"mechanism_scale={mechanism_scale:.2f} | "
+            "loss_mix="
+            f"macro_ce={current_loss_profile.cross_entropy:.3f},"
+            f"pixel_ce={current_loss_profile.pixel_cross_entropy:.3f},"
+            f"dice={current_loss_profile.dice:.3f},"
+            f"aux={current_loss_profile.auxiliary_ce:.3f},"
+            f"boundary={current_loss_profile.boundary:.3f} | "
             f"optimizer_steps={successful_optimizer_steps} | "
             f"amp_skips={skipped_optimizer_steps} | "
             "dice_loss="

@@ -100,7 +100,12 @@ coloured semantic prediction on the right. The predictions are captured during t
 normal chronological validation pass, so this adds no extra forward passes and does not
 disturb recurrent stream state.
 
-The trainer consumes every packet before forming one complete-record semantic objective: 0.5 pixel-mean CE + 0.5 target-present-class macro CE + 0.4 present-class Dice + 0.1 semantic auxiliary CE + 0.01 boundary supervision. Static class weights and same-class region-consistency are inactive. `--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
+The trainer consumes every packet before forming one complete-record semantic objective.
+Final-model loss coefficients follow a smooth epoch-fraction curriculum: pixel CE starts
+stronger while predictions are unstructured; equal target-present-class macro CE, Dice,
+and boundary supervision rise later; auxiliary CE declines as the main decoder matures.
+Static class weights, focal loss, and same-class region consistency remain inactive.
+`--sequential-chunks K` uses a memory-bounded two-pass replay: first form the
 complete-record prediction without an activation graph, then replay chronological chunks
 with that one objective's output gradients. This releases each chunk graph without ever
 applying the complete target to a partial history. The replay state snapshot is kept in
