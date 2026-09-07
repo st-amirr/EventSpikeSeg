@@ -85,7 +85,7 @@ services:
        "--seed", "17", "--epochs", "1", "--batch-size", "1",
        "--height", "32", "--width", "32", "--internal-updates", "10",
        "--train-samples", "2", "--validation-fraction", "0.10",
-       "--checkpoint-dir", "artifacts/checkpoints"]
+       "--checkpoint-dir", "artifacts/model_checkpoints"]
 
   # Canonical EventSpikeSeg140k (~140k) with timestamp-scheduled continuous input.
   train-ddd17:
@@ -103,8 +103,8 @@ services:
        # Add "--no-continuous-state" here only for the stateless-record ablation.
        "--train-samples", "0.7", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--load", "artifacts/checkpoints/EventSpikeSeg140k_seed17_epoch006.pt",
-       "--checkpoint-dir", "artifacts/checkpoints"]
+       "--load", "artifacts/model_checkpoints/EventSpikeSeg140k_seed17_epoch006.pt",
+       "--checkpoint-dir", "artifacts/model_checkpoints"]
 
   # Canonical EventSpikeSeg140k with six broad classes and exact DSEC raw-event clocks.
   train-dsec:
@@ -153,17 +153,15 @@ services:
       ["python", "-m", "eventspikeseg.train", "single",
        "--dataset", "dsec", "--root", "/datasets/DSEC",
        "--architecture", "EventSpikeSegXL", "--suite", "final",
-       "--input-mode", "raw-events",
-       "--dsec-classes", "11",
-       # Keep the replayed surrogate-gradient graph in FP32 (see train-dsec).
+       "--input-mode", "raw-events","--dsec-classes", "11",
        "--device", "auto",
       #  "--height", "275", "--width", "400", ## Original size is 640 × 440
-       "--height", "241", "--width", "351", ## Original size is 640 × 440
-       "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2",
-       "--internal-updates", "10", "--sequential-chunks", "10",
+       "--height", "440", "--width", "640",
+       "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2", "--data-workers", "4",
+       "--internal-updates", "10", "--sequential-chunks", "5",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
-       "--learning-rate", "0.0005", "--checkpoint-every", "1",
-       "--checkpoint-dir", "artifacts/checkpointsV3/dsec"]
+       "--learning-rate", "0.001", "--checkpoint-every", "1",
+       "--checkpoint-dir", "artifacts/model_checkpoints/dsec_XL"]
 
   # Optional expanded EventSpikeSegXL comparison model.
   train-ddd17-xl:
@@ -180,7 +178,7 @@ services:
        "--accumulate-steps", "4", "--internal-updates", "10",
        "--train-samples", "0", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
-       "--checkpoint-dir", "artifacts/checkpoints"]
+       "--checkpoint-dir", "artifacts/model_checkpoints"]
   benchmark-top-ten:
       <<: *ddd17
       command:
@@ -222,4 +220,4 @@ services:
       <<: *app
       command:
         ["python", "-m", "eventspikeseg.train", "promote", "--summary", "artifacts/ablation/top_three/summary.json",
-        "--destination", "artifacts/checkpoints/top_three_winner.pt"]
+        "--destination", "artifacts/model_checkpoints/top_three_winner.pt"]

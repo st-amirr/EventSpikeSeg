@@ -2,6 +2,9 @@
 
 ## Working now
 
+- software-only XL expanded to 978,559 parameters for six classes and 979,179 for
+  eleven, with capacity concentrated in full quarter-resolution semantic and decoder
+  fusion convolutions; this has not yet produced a measured mIoU result
 - active DSEC target merged from eleven source labels into six broad semantic classes
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
 - `model.py` exposes the sole ASIC target `EventSpikeSeg140k` and optional XL software comparison

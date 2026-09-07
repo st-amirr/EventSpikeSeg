@@ -1,3 +1,21 @@
+## 2026-09-07 — Expand XL below one million parameters without widening native tensors
+
+Increase the software-only `EventSpikeSegXL` from roughly 236k to 978,559 parameters
+for six classes and 979,179 for eleven. Keep the 32/64/128 widths so the already
+memory-bound native-resolution activations do not grow. Use full 3x3 spiking
+convolutions in the deepest encoder refinement, both serial context blocks, two new
+quarter-resolution capacity blocks, and both decoder fusion points. Remove the binary
+96-channel selector before final fusion because it can suppress weak evidence; the full
+3x3 fusion now learns spatial and channel selection jointly. This is a capacity
+experiment, not evidence or a guarantee of 50% mIoU, and it does not change the frozen
+140k ASIC graph. Use the same continuous temporal class-current readout as the 140k
+model so ten class-spike counts do not quantize away final evidence magnitude. Balance
+localization and state by retaining a multi-stage 16-channel native detail path and a
+24-channel native final refinement, while placing the 32-channel semantic stem at
+220x320 and the added full-convolution capacity at 55x80. This reduces inference
+membranes from 215,705,600 for the wide-everywhere layout to 78,707,200 without relying
+on the 55x80 representation alone for small-object localization.
+
 ## 2026-09-06 — Add a checkpoint-compatible no-custom-mechanism ablation
 
 Test the completed epoch-80 140k model without the mechanisms formerly described

@@ -4,26 +4,26 @@
 primary architecture for accuracy evaluation and digital neuromorphic deployment. Its
 hidden feature path is spike-native; the final classifier accumulates continuous class
 current over the complete temporal record.
-``EventSpikeSegXL`` is the larger ~236k expansion retained as an
+``EventSpikeSegXL`` is the larger ~1M expansion retained as an
 optional high-capacity comparison. The XL variant adds features beyond the canonical
 model:
 
-* 32/64/128 semantic encoder with residual depthwise/pointwise refinement;
-* persistent 32-channel high-resolution detail stream;
-* serial dilation-2 semantic context plus a residual d1/d2/d4 parallel context branch;
+* 32/64/128 semantic encoder with full 3x3 mixing in the deepest refinement;
+* memory-balanced 16-channel high-resolution detail stream;
+* four full 3x3 bottleneck transformations, including two dilation-2 stages,
+  plus a residual d1/d2/d4 parallel context branch;
 * one bottlenecked spike-mask attention residual at the deepest scale;
 * projected residual bridges across 32->64 and 64->128 encoder transitions;
 * concatenative mid-level decoder fusion instead of destructive addition;
-* late semantic + shallow + detail concatenation followed by PLIF 1x1 cross-channel spike
-  selection and depthwise/pointwise spiking fusion;
+* late semantic + shallow + detail concatenation followed by full 3x3 spiking fusion;
 * asymmetric high-resolution detail refinement;
 * deep and mid-level auxiliary semantic supervision;
-* independent spiking class neurons with final temporal spike-count argmax;
+* continuous class-current accumulation from the final hidden spike stream;
 * PLIF + learnable thresholds + stem-only peer-membrane inhibition +
   encoder/context triangular threshold adaptation.
 
 The training engine may call ``set_semantic_backbone_trainable`` during the late
-refinement phase.  The detail path, decoder, selector, auxiliary head, and final head
+refinement phase.  The detail path, decoder, fusion, auxiliary head, and final head
 remain trainable while the semantic backbone is frozen.
 """
 
@@ -45,7 +45,7 @@ from .model_components import (
     TimestampEventInput,
 )
 
-# Selectable finals: canonical EventSpikeSeg140k (~150k) and EventSpikeSegXL (~236k).
+# Selectable finals: canonical EventSpikeSeg140k (~150k) and EventSpikeSegXL (~1M).
 FINAL_ARCHITECTURE = SegmentationArchitecture(
     name="EventSpikeSeg140k",
     channel_schedule=(32, 64, 128),
@@ -109,49 +109,6 @@ class TemporalCurrentReadout(nn.Module):
             accumulated = current if accumulated is None else accumulated + current
         assert accumulated is not None
         return accumulated * (self.scale / float(sequence.shape[0]))
-
-
-class PLIFChannelSelector(nn.Module):
-    """Spike-native cross-channel selector using a 1x1 synaptic projection + PLIF.
-
-    The T2 selector learned cross-channel relationships from accumulated activity
-    with a small dense count-domain network.  This replacement preserves the
-    cross-channel learned decision while keeping the inference path spiking:
-
-        fused spikes -> 1x1 synaptic mixing -> local PLIF selector spikes
-                     -> per-neuron binary enable -> gate fused spikes
-
-    The 1x1 operation is a normal spike-driven synaptic fan-out: an active input
-    channel contributes its stored weight to selector-neuron membrane current.
-    No dense multi-bit count-domain MLP, sigmoid attention, softmax, or global
-    spatial reduction is needed at inference. Each selector spike gates only the
-    corresponding retinotopic feature, so event-driven hardware can propagate it immediately
-    without waiting for a complete frame.
-    """
-
-    def __init__(
-        self,
-        channels: int,
-        *,
-        lif: LIFConfig,
-        norm: str = "affine",
-    ) -> None:
-        super().__init__()
-        self.selector = SpikingStage(
-            channels,
-            channels,
-            kernel_size=1,
-            norm=norm,
-            lif=lif,
-            neuron_kind="plif",
-        )
-
-    def reset(self) -> None:
-        self.selector.reset()
-
-    def forward(self, sequence: Tensor) -> Tensor:
-        selector_spikes = self.selector(sequence)
-        return sequence * selector_spikes
 
 
 class ParallelDilatedResidualContext(nn.Module):
@@ -313,7 +270,7 @@ class DeepAuxiliaryHead(nn.Module):
 
 
 class EventSpikeSegXL(EventSpikeSegBase):
-    """Expanded ~236k fully-spiking model retained as the XL comparison."""
+    """Expanded ~1M fully-spiking model retained as the XL comparison."""
 
     refinement_schedule = (
         FINAL_REFINEMENT_FREEZE_START,
@@ -351,10 +308,37 @@ class EventSpikeSegXL(EventSpikeSegBase):
             else nn.Identity()
         )
         architecture = self.architecture
+        stem_lif = self.stem.neuron.config
         encoder_lif = _block_lif(self.enc1)
         context_lif = _block_lif(self.enc3)
         decoder_lif = self.project3.neuron.config
         highres_lif = replace(encoder_lif, threshold_adaptation_enabled=False)
+        native_lif = replace(
+            decoder_lif,
+            inhibition_enabled=False,
+            threshold_adaptation_enabled=False,
+        )
+
+        # Hybrid input geometry: a learned stride-2 semantic stem controls the
+        # large 32-channel membrane maps, while a narrower but multi-stage native
+        # detail stream preserves signs, people, poles, and object boundaries.
+        self.stem = SpikingStage(
+            2,
+            32,
+            kernel_size=5,
+            stride=2,
+            norm=architecture.norm,
+            lif=stem_lif,
+            neuron_kind=architecture.neuron_kind,
+        )
+        self.detail_stem = SpikingStage(
+            2,
+            16,
+            kernel_size=3,
+            norm=architecture.norm,
+            lif=native_lif,
+            neuron_kind=architecture.neuron_kind,
+        )
 
         # Keep triangular threshold adaptation from the first downsampled
         # semantic scale onward.
@@ -368,8 +352,9 @@ class EventSpikeSegXL(EventSpikeSegBase):
         )
 
         # The base encoder already contributes one residual block at each scale.
-        # One additional block gives two residual DW/PW transformations per scale
-        # without introducing a fourth spatial downsampling level.
+        # One additional block gives two residual transformations per scale
+        # without introducing a fourth spatial downsampling level. The deepest
+        # extra block uses full convolution for richer semantic mixing.
         self.enc1_extra = SpikingConvBlock(
             32, 32, depthwise=True, norm=architecture.norm,
             lif=highres_lif, neuron_kind=architecture.neuron_kind, residual=True,
@@ -379,7 +364,7 @@ class EventSpikeSegXL(EventSpikeSegBase):
             lif=encoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
         self.enc3_extra = SpikingConvBlock(
-            128, 128, depthwise=True, norm=architecture.norm,
+            128, 128, depthwise=False, norm=architecture.norm,
             lif=encoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
 
@@ -400,12 +385,31 @@ class EventSpikeSegXL(EventSpikeSegBase):
         # path as the semantic backbone; the later parallel d1/d2/d4 module is a
         # residual branch-concatenation addition rather than a replacement/average.
         self.context1 = SpikingConvBlock(
-            128, 128, dilation=2, depthwise=True, norm=architecture.norm,
+            128, 128, dilation=2, depthwise=False, norm=architecture.norm,
             lif=context_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
         self.context2 = SpikingConvBlock(
-            128, 128, dilation=2, depthwise=True, norm=architecture.norm,
+            128, 128, dilation=2, depthwise=False, norm=architecture.norm,
             lif=context_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+
+        # Put most of the XL capacity at quarter resolution. Full 3x3 channel
+        # mixing here is substantially cheaper in activation memory than widening
+        # the native-resolution stem/detail tensors, and it avoids relying on
+        # depthwise filtering for all of the deepest semantic transformations.
+        self.semantic_capacity = nn.ModuleList(
+            [
+                SpikingConvBlock(
+                    128,
+                    128,
+                    depthwise=False,
+                    norm=architecture.norm,
+                    lif=context_lif,
+                    neuron_kind=architecture.neuron_kind,
+                    residual=True,
+                )
+                for _ in range(2)
+            ]
         )
 
         self.parallel_context = ParallelDilatedResidualContext(
@@ -424,43 +428,40 @@ class EventSpikeSegXL(EventSpikeSegBase):
             128, class_count, lif=decoder_lif, norm=architecture.norm
         )
 
-        # Persistent high-resolution path: the strongest new feature from T2.
-        # High-resolution detail refinement is PLIF-only. Reusing encoder_lif
-        # here unintentionally enabled per-pixel triangular adaptation state on every
-        # detail stage, which is outside the intended scope and is very
-        # expensive at native DDD17 resolution. decoder_lif preserves PLIF and
-        # learned thresholds without inhibition or threshold adaptation.
+        # The detail stream remains spatially sophisticated without replicating
+        # the 32-channel semantic trunk at native resolution.
         self.detail1 = SpikingConvBlock(
-            32, 32, depthwise=True, norm=architecture.norm,
-            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+            16, 16, depthwise=True, norm=architecture.norm,
+            lif=native_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
         self.detail2 = AsymmetricDetailResidual(
-            32, lif=decoder_lif, norm=architecture.norm,
+            16, lif=native_lif, norm=architecture.norm,
         )
-        self.detail3 = SpikingConvBlock(
-            32, 32, depthwise=True, norm=architecture.norm,
-            lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
-        )
+        self.detail3 = nn.Identity()
 
         # Preserve decoder and encoder identities until learned spiking fusion.
         self.decoder2_fuse = SpikingConvBlock(
-            128, 64, depthwise=True, norm=architecture.norm,
+            128, 64, depthwise=False, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind,
         )
         self.decoder2_extra = SpikingConvBlock(
             64, 64, depthwise=True, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
         )
-        self.final_selector = PLIFChannelSelector(
-            96, lif=decoder_lif, norm=architecture.norm
-        )
+        # A separate binary selector can discard weak rare-object evidence before
+        # decoding. The full 3x3 fusion below now learns spatial/channel selection
+        # directly and keeps the XL DSEC model below the one-million-parameter cap.
+        self.final_selector = nn.Identity()
         self.final_fuse = SpikingConvBlock(
-            96, 32, depthwise=True, norm=architecture.norm,
+            48, 24, depthwise=False, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind,
         )
         self.decoder1_extra = SpikingConvBlock(
-            32, 32, depthwise=True, norm=architecture.norm,
+            24, 24, depthwise=True, norm=architecture.norm,
             lif=decoder_lif, neuron_kind=architecture.neuron_kind, residual=True,
+        )
+        self.head = TemporalCurrentReadout(
+            24, class_count, scale=architecture.output_rate_scale
         )
 
         # Base modules ``context`` and ``refine1`` are intentionally bypassed by the
@@ -472,8 +473,8 @@ class EventSpikeSegXL(EventSpikeSegBase):
     def set_semantic_backbone_trainable(self, trainable: bool) -> None:
         """Freeze/unfreeze only the semantic feature extractor for late refinement.
 
-        The high-resolution detail stream, decoder projections/refinement, channel
-        selector, auxiliary head, and final class head deliberately remain trainable.
+        The high-resolution detail stream, decoder projections/refinement and fusion,
+        auxiliary head, and final class head deliberately remain trainable.
         """
         semantic_modules: tuple[nn.Module, ...] = (
             self.stem,
@@ -489,6 +490,7 @@ class EventSpikeSegXL(EventSpikeSegBase):
             self.bridge23,
             self.context1,
             self.context2,
+            self.semantic_capacity,
             self.parallel_context,
             self.deep_attention,
         )
@@ -498,8 +500,9 @@ class EventSpikeSegXL(EventSpikeSegBase):
 
     def forward(self, source: Tensor) -> dict[str, Tensor]:
         sequence = self.timestamp_input(source)
+        native_size = sequence.shape[-2:]
         x1 = self.enc1_extra(self.enc1(self.stem(sequence)))
-        detail = self.detail3(self.detail2(self.detail1(x1)))
+        detail = self.detail3(self.detail2(self.detail1(self.detail_stem(sequence))))
 
         x2_main = self.down2(x1)
         x2 = torch.clamp(x2_main + self.bridge12(x1), 0.0, 1.0)
@@ -510,6 +513,8 @@ class EventSpikeSegXL(EventSpikeSegBase):
         x3 = self.enc3_extra(self.enc3(x3))
 
         deepest = self.context2(self.context1(x3))
+        for capacity_block in self.semantic_capacity:
+            deepest = capacity_block(deepest)
         deepest = self.parallel_context(deepest)
         deepest = self.deep_attention(deepest)
         # Auxiliary branches optimize training only. Skipping them in eval/inference
@@ -526,31 +531,25 @@ class EventSpikeSegXL(EventSpikeSegBase):
         )
 
         semantic = self._upsample(self.project2(d2), x1.shape[-2:])
-        merged = torch.cat((semantic, x1, detail), dim=2)
+        semantic = self._upsample(semantic + x1, native_size)
+        merged = torch.cat((semantic, detail), dim=2)
         d1 = self.final_fuse(self.final_selector(merged))
         d1 = self.decoder1_extra(d1)
 
-        class_spikes = self.head(d1)
         normalization = self.temporal_normalization_steps(sequence)
-        logits = class_spikes.sum(dim=0) * (
-            self.architecture.output_rate_scale / normalization
-        )
+        logits = self.head(d1)
         # Return exact scalar activity means instead of pinning full TNCHW
         # hidden sequences in the output dictionary until backward completes.
         # The activity regularizer depends only on these means, so its math and
         # gradients are unchanged.
         result = {
             "segmentation_logits": logits,
-            "segmentation_rate": self.temporal_rate(class_spikes),
+            "segmentation_rate": self.temporal_rate(d1),
             "enc1_rate": self.temporal_rate(x1),
             "enc2_rate": self.temporal_rate(x2),
             "enc3_rate": self.temporal_rate(x3),
             "decoder_rate": self.temporal_rate(d1),
         }
-        if not self.training:
-            # Evaluation visualizations may still need the output spike raster;
-            # under no_grad this does not retain a training autograd graph.
-            result["segmentation_spikes"] = class_spikes
         if auxiliary_spikes is not None:
             result["auxiliary_logits"] = auxiliary_spikes.sum(dim=0) * (
                 self.architecture.output_rate_scale / normalization

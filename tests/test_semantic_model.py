@@ -325,7 +325,7 @@ def test_canonical_model_is_140k_and_xl_is_selectable() -> None:
     assert not model.detail1.standard.neuron.config.threshold_adaptation_enabled
     assert not model.architecture.output_competition_enabled
     assert model.parameter_count() == 149_835
-    assert xl.parameter_count() == 236_445
+    assert xl.parameter_count() == 978_559
 
 
 def test_final_140k_model_is_selectable() -> None:
@@ -368,12 +368,24 @@ def test_xl_model_richer_spiking_paths_and_residual_bridges() -> None:
     assert model.bridge12.conv.kernel_size == (1, 1)
     assert model.bridge12.conv.stride == (2, 2)
     assert model.bridge23.conv.kernel_size == (1, 1)
-    assert model.decoder2_fuse.depthwise is not None
-    assert model.decoder2_fuse.depthwise.conv.in_channels == 128
+    assert model.decoder2_fuse.standard is not None
+    assert model.decoder2_fuse.standard.conv.in_channels == 128
+    assert model.decoder2_fuse.standard.conv.out_channels == 64
+    assert model.final_fuse.standard is not None
+    assert model.final_fuse.standard.conv.in_channels == 48
+    assert model.final_fuse.standard.conv.out_channels == 24
+    assert model.decoder1_extra.depthwise is not None
+    assert isinstance(model.final_selector, torch.nn.Identity)
+    assert len(model.semantic_capacity) == 2
+    assert all(block.standard is not None for block in model.semantic_capacity)
     assert model.parallel_context.fuse.conv.in_channels == 384
     assert model.deep_attention.q.conv.out_channels == 32
+    assert model.stem.conv.stride == (2, 2)
+    assert model.stem.conv.kernel_size == (5, 5)
+    assert model.detail_stem.conv.out_channels == 16
     assert model.detail2.vertical.conv.kernel_size == (3, 1)
     assert model.detail2.horizontal.conv.kernel_size == (1, 3)
+    assert isinstance(model.detail3, torch.nn.Identity)
 
     statistics = _timestamp_statistics(64)
     outputs = model(statistics)
@@ -381,23 +393,23 @@ def test_xl_model_richer_spiking_paths_and_residual_bridges() -> None:
     assert "segmentation_spikes" not in outputs
     assert outputs["segmentation_rate"].ndim == 0
     assert outputs["enc1_rate"].ndim == 0
-    assert outputs["auxiliary_logits"].shape[-2:] == (32, 32)
-    assert outputs["deep_auxiliary_logits"].shape[-2:] == (16, 16)
-    assert model.parameter_count() == 236_445
+    assert outputs["auxiliary_logits"].shape[-2:] == (16, 16)
+    assert outputs["deep_auxiliary_logits"].shape[-2:] == (8, 8)
+    assert model.parameter_count() == 978_559
 
 
 def test_xl_dsec_parameter_accounting_matches_fpga_spec() -> None:
     model = build_model(
         architecture="EventSpikeSegXL", class_count=11, input_channels=2
     )
-    assert model.parameter_count() == 237_115
+    assert model.parameter_count() == 979_179
     omitted = ("refine2.", "aux_head.", "deep_aux_head.")
     inference_parameters = sum(
         parameter.numel()
         for name, parameter in model.named_parameters()
         if not name.startswith(omitted)
     )
-    assert inference_parameters == 226_767
+    assert inference_parameters == 968_831
 
 
 def test_final_eval_returns_native_continuous_logits_without_class_spike_raster() -> None:
@@ -423,8 +435,11 @@ def test_xl_deep_paths_receive_gradients() -> None:
     loss.backward()
     assert model.bridge12.conv.weight.grad is not None
     assert model.parallel_context.fuse.conv.weight.grad is not None
+    assert model.semantic_capacity[0].standard is not None
+    assert model.semantic_capacity[0].standard.conv.weight.grad is not None
     assert model.deep_attention.q.conv.weight.grad is not None
-    assert model.final_selector.selector.conv.weight.grad is not None
+    assert model.final_fuse.standard is not None
+    assert model.final_fuse.standard.conv.weight.grad is not None
 
 def test_plif_keeps_per_channel_retention_and_optional_spikingjelly_core() -> None:
     neuron = ParametricLIF(4, LIFConfig(learnable_threshold=True))

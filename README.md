@@ -204,7 +204,12 @@ inputs and six classes it has 149,835 registered parameters, 149,423 executed in
 parameters, 143,824 executed synaptic weights, and 25 executed PLIF populations plus
 one stateless temporal class-current readout.
 `EventSpikeSegXL` remains a software-only capacity comparison and is rejected by the
-ASIC exporter.
+ASIC exporter. Its expanded configuration stays below one million registered
+parameters: 978,559 for six classes and 979,179 for eleven. Capacity is concentrated
+at the lowest semantic resolution and in full-convolution decoder fusion so native
+resolution state is limited to a 16-channel detail path and 24-channel final refinement.
+Native 440x640 localization therefore complements the 55x80 semantic context rather
+than being replaced by it.
 
 The 140k graph keeps the 32/64/128 basis:
 

@@ -471,6 +471,18 @@ custom_spiking_dynamics:
 architecture_family:
   implementation_model: EventSpikeSeg140k
   non_target_comparison_model: EventSpikeSegXL
+  comparison_model:
+    registered_parameters_6_class: 978559
+    registered_parameters_11_class: 979179
+    dsec_training_forward_parameters: 974123
+    dsec_inference_parameters: 968831
+    native_input: [440, 640]
+    native_detail_channels: 16
+    semantic_stem: learned_5x5_stride2_to_32_channels
+    inference_membrane_count_native_dsec: 78707200
+    adaptation_enabled_neuron_count_native_dsec: 15910400
+    capacity_policy: narrow_native_detail_plus_full_3x3_eighth_scale_context
+    hardware_export: rejected_software_only
   design_principles:
   - Binary-spiking learned feature path with continuous final class-current accumulation
   - Native 440x640 input with learned stride-2 semantic stem

@@ -418,7 +418,7 @@ inserted only as an activation, and it does not threshold after every signed con
 | argmax | final semantic label | signed comparator tree / sequential maximum; first-index tie behavior |
 | DDD17 timestamp scheduler | reconstruct approximate timed deliveries | compatibility scheduler feeding the same 5 ms neural-time grid |
 
-XL-only bridges, parallel context, attention, selector, and class-spike head are documented
+XL-only bridges, parallel context, attention, and class-spike head are documented
 separately below because they are not present in the exported v8 graph.
 
 ## Primary implementation goal: digital neuromorphic ASIC
@@ -582,19 +582,25 @@ only fabricated silicon measurements may be called measured ASIC power or latenc
 
 | Configuration/graph | Parameters |
 | --- | ---: |
-| DDD17, 6 classes, registered module | 236,445 |
-| DSEC, 11 classes, registered module | 237,115 |
-| DSEC executed training forward | 232,059 |
-| DSEC executed inference/export graph | 226,767 |
+| DDD17, 6 classes, registered module | 978,559 |
+| DSEC, 11 classes, registered module | 979,179 |
+| DSEC executed training forward | 974,123 |
+| DSEC executed inference graph | 968,831 |
 | inherited dead `refine2`, omitted | 5,056 |
 | mid auxiliary head, training only | 726 |
 | deep auxiliary head, training only | 4,566 |
 
-The DSEC inference parameters split into 215,936 shared convolution weights, 3,584
-foldable affine gains, 3,595 PLIF beta values, 3,595 PLIF base thresholds, four attention
-comparison thresholds, one inhibition strength, and 26 pairs of threshold-adaptation strength/duration
-parameters. The deployed graph contains 50 PLIF populations; training adds three auxiliary
-populations, while the registered dead block contains two more populations.
+The DSEC inference parameters split into 959,824 shared convolution weights, 2,984
+foldable affine gains, 2,984 PLIF beta values, 2,984 PLIF base thresholds, four attention
+comparison thresholds, one inhibition strength, and 25 pairs of threshold-adaptation
+strength/duration parameters. The inference graph contains 44 PLIF populations; training
+adds three auxiliary populations, while the registered dead block contains two more.
+
+At native 440x640 DSEC resolution, XL owns 78,707,200 inference membrane elements:
+168 channel-populations at 440x640, 160 at 220x320, 640 at 110x160, and 2,016 at
+55x80. This is a deliberate middle ground: 63.5% fewer membrane elements than the
+wide-everywhere XL layout, while retaining a multi-stage native detail path. The
+15,910,400 adaptation-enabled neurons remain confined to semantic encoder/context scales.
 
 ### Native DSEC layer graph and dimensions
 
@@ -605,30 +611,27 @@ Raw DSEC events are accumulated into ten 5 ms slices before either model.
 | Stage | Synaptic/spiking operation | Output `T,N,C,H,W` | PLIF populations |
 | --- | --- | --- | ---: |
 | input | rectified ON/OFF counts for training | `10,1,2,440,640` | 0 |
-| stem | 3x3, 2->32, affine, PLIF | `10,1,32,440,640` | 1 |
-| encoder-1 | two residual DW3x3/PW1x1 32-ch blocks | `10,1,32,440,640` | 4 |
-| detail-1 | residual DW3x3/PW1x1 32-ch | `10,1,32,440,640` | 2 |
-| detail-2 | DW3x1 -> DW1x3 -> PW1x1, residual | `10,1,32,440,640` | 3 |
-| detail-3 | residual DW3x3/PW1x1 32-ch | `10,1,32,440,640` | 2 |
-| down2 main | stride-2 DW32 -> PW64 | `10,1,64,220,320` | 2 |
-| bridge12 | stride-2 1x1, 32->64; merge with down2 | `10,1,64,220,320` | 1 |
-| encoder-2 | two residual DW/PW 64-ch blocks | `10,1,64,220,320` | 4 |
-| down3 main | stride-2 DW64 -> PW128 | `10,1,128,110,160` | 2 |
-| bridge23 | stride-2 1x1, 64->128; merge with down3 | `10,1,128,110,160` | 1 |
-| encoder-3 | two residual DW/PW 128-ch blocks | `10,1,128,110,160` | 4 |
-| serial context | two residual dilation-2 DW/PW 128-ch blocks | `10,1,128,110,160` | 4 |
-| parallel context | DW3x3 d1/d2/d4, concat 384, 1x1->128, residual | `10,1,128,110,160` | 4 |
-| local spike attention | Q/K/V 128->32, four heads x eight channels, 32->128 residual | `10,1,128,110,160` | 4 |
-| project3 | 1x1 128->64, then nearest upsample | `10,1,64,220,320` | 1 |
-| decoder-2 fusion | concat project3+x2=128; DW128 -> PW64 | `10,1,64,220,320` | 2 |
-| decoder-2 refine | residual DW/PW 64-ch | `10,1,64,220,320` | 2 |
-| project2 | 1x1 64->32, then nearest upsample | `10,1,32,440,640` | 1 |
-| late merge | concatenate semantic32 + shallow32 + detail32 | `10,1,96,440,640` | 0 |
-| local selector | 1x1 96->96 PLIF, retinotopic gate | `10,1,96,440,640` | 1 |
-| final fusion | DW96 -> PW32 | `10,1,32,440,640` | 2 |
-| decoder-1 refine | residual DW/PW 32-ch | `10,1,32,440,640` | 2 |
-| class head | 1x1 32->11 independent class PLIFs | `10,1,11,440,640` | 1 |
-| readout | sum class spikes over 50 ms, per-pixel argmax | `1,11,440,640` logits | 0 |
+| native detail | 2->16 stem, residual DW/PW, asymmetric DW/DW/PW | `10,1,16,440,640` | 6 |
+| semantic stem | learned 5x5 stride-2, 2->32, affine, PLIF | `10,1,32,220,320` | 1 |
+| encoder-1 | two residual DW3x3/PW1x1 32-ch blocks | `10,1,32,220,320` | 4 |
+| down2 main | stride-2 DW32 -> PW64 | `10,1,64,110,160` | 2 |
+| bridge12 | stride-2 1x1, 32->64; merge with down2 | `10,1,64,110,160` | 1 |
+| encoder-2 | two residual DW/PW 64-ch blocks | `10,1,64,110,160` | 4 |
+| down3 main | stride-2 DW64 -> PW128 | `10,1,128,55,80` | 2 |
+| bridge23 | stride-2 1x1, 64->128; merge with down3 | `10,1,128,55,80` | 1 |
+| encoder-3 | residual DW/PW then full 3x3 128-ch refinement | `10,1,128,55,80` | 3 |
+| serial context | two residual full 3x3 dilation-2 128-ch blocks | `10,1,128,55,80` | 2 |
+| semantic capacity | two residual full 3x3 128-ch blocks | `10,1,128,55,80` | 2 |
+| parallel context | DW3x3 d1/d2/d4, concat 384, 1x1->128, residual | `10,1,128,55,80` | 4 |
+| local spike attention | Q/K/V 128->32, four heads x eight channels, 32->128 residual | `10,1,128,55,80` | 4 |
+| project3 | 1x1 128->64, then nearest upsample | `10,1,64,110,160` | 1 |
+| decoder-2 fusion | concat project3+x2=128; full 3x3 ->64 | `10,1,64,110,160` | 1 |
+| decoder-2 refine | residual DW/PW 64-ch | `10,1,64,110,160` | 2 |
+| project2 | 1x1 64->32, merge x1, then upsample | `10,1,32,220,320` | 1 |
+| late merge | concatenate semantic32 + native detail16 | `10,1,48,440,640` | 0 |
+| final fusion | full 3x3 48->24 | `10,1,24,440,640` | 1 |
+| decoder-1 refine | residual DW/PW 24-ch | `10,1,24,440,640` | 2 |
+| class readout | 1x1 24->11 signed current accumulated over 50 ms | `1,11,440,640` logits | 0 |
 
 Training-only heads are `64->11` at 220x320 and `128->32->11` at 110x160. They are skipped
 by `model.eval()` and omitted from ASIC export.
