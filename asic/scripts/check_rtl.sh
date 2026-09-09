@@ -32,6 +32,7 @@ tops=(
   resident_spike_vector_union2
   resident_temporal_class_readout
   resident_spike_vector_fork2
+  resident_spike_mask_attention
   event_stream_fifo
   binary_event_union2
   event_channel_offset

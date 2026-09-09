@@ -15,15 +15,18 @@ from eventspikeseg.asic import (
     EVENTSPIKESEG140K_EDGES,
     EVENTSPIKESEG140K_INFERENCE_STAGES,
     EVENTSPIKESEG140K_JOIN_NODES,
+    EVENTSPIKESEGXL_ACTORS,
     ActorLocalStateStore,
     IntegerPLIF,
     NeuronState,
     build_sram_manifest,
     eventspikeseg140k_graph_contract,
+    eventspikesegxl_graph_contract,
     export_checkpoint,
     export_model,
     state_capacity_contract,
     validate_eventspikeseg140k_topology,
+    validate_eventspikesegxl_topology,
 )
 from eventspikeseg.asic.activity_profile import (
     CHECKPOINT_IDENTITY_FIELDS,
@@ -75,17 +78,27 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
     rom_lines = (tmp_path / model_spec["layers"][2]["weight_rom"]).read_text().splitlines()
     assert len(rom_lines) == model_spec["layers"][2]["weight_count"]
     beta_lines = (tmp_path / model_spec["layers"][2]["beta_rom"]).read_text().splitlines()
-    threshold_lines = (
-        tmp_path / model_spec["layers"][2]["threshold_rom"]
-    ).read_text().splitlines()
+    threshold_lines = (tmp_path / model_spec["layers"][2]["threshold_rom"]).read_text().splitlines()
     assert len(beta_lines) == model_spec["layers"][2]["out_channels"]
     assert len(threshold_lines) == model_spec["layers"][2]["out_channels"]
     assert all(len(word) == 6 for word in beta_lines + threshold_lines)
 
 
-def test_export_rejects_xl() -> None:
-    with pytest.raises(TypeError, match="frozen to EventSpikeSeg140k"):
-        export_model(EventSpikeSegXL(class_count=11, input_channels=2), "unused")
+def test_xl_asic_graph_contract(tmp_path) -> None:
+    manifest = export_model(EventSpikeSegXL(class_count=11, input_channels=2), tmp_path)
+    assert len(EVENTSPIKESEGXL_ACTORS) == 44
+    assert manifest["model"] == "EventSpikeSegXL"
+    assert manifest["class_count"] == 11
+    assert manifest["registered_parameters"] == 979_179
+    assert manifest["executed_inference_parameters"] == 968_831
+    assert manifest["executed_convolution_weights"] == 959_824
+    assert manifest["logical_membrane_states"] == 78_707_200
+    assert manifest["state_capacity"]["adaptation_enabled_neurons"] == 15_910_400
+    assert manifest["spike_attention"]["heads"] == 4
+    assert manifest["layers"][-1]["in_channels"] == 24
+    assert manifest["layers"][-1]["out_channels"] == 11
+    validate_eventspikesegxl_topology()
+    assert eventspikesegxl_graph_contract()["actor_count"] == 44
 
 
 def test_export_rejects_legacy_eleven_class_140k() -> None:
@@ -93,10 +106,10 @@ def test_export_rejects_legacy_eleven_class_140k() -> None:
         export_model(EventSpikeSeg140k(class_count=11, input_channels=2), "unused")
 
 
-def test_checkpoint_export_rejects_non_140k_before_loading_weights(tmp_path) -> None:
+def test_checkpoint_export_rejects_unknown_architecture_before_loading_weights(tmp_path) -> None:
     checkpoint = tmp_path / "xl.pt"
-    torch.save({"architecture": "EventSpikeSegXL"}, checkpoint)
-    with pytest.raises(ValueError, match="must be EventSpikeSeg140k"):
+    torch.save({"architecture": "UnknownNet"}, checkpoint)
+    with pytest.raises(ValueError, match="EventSpikeSeg140k or EventSpikeSegXL"):
         export_checkpoint(checkpoint, tmp_path / "export")
 
 
@@ -136,9 +149,7 @@ def test_combined_accumulator_matches_one_bin_plif_and_prepares_next_leak() -> N
         conventional.spike,
         conventional.membrane,
     )
-    assert combined.next_accumulator == plif.leak_membrane_for_bins(
-        combined.membrane, beta_q, 1
-    )
+    assert combined.next_accumulator == plif.leak_membrane_for_bins(combined.membrane, beta_q, 1)
 
 
 def test_compact_adaptation_formats_cover_configured_limits() -> None:
@@ -169,19 +180,13 @@ def test_native_event_file_short_sample_preserves_geometry_and_multiplicity(
         events.create_dataset("y", data=np.asarray([1, 1, 439, 440], dtype=np.uint16))
         events.create_dataset("p", data=np.asarray([0, 0, 1, 1], dtype=np.uint8))
         events.create_dataset("t", data=np.asarray([0, 1, 2, 3], dtype=np.uint32))
-        handle.create_dataset(
-            "ms_to_idx", data=np.asarray([0, 4, 4, 4, 4, 4], dtype=np.uint64)
-        )
+        handle.create_dataset("ms_to_idx", data=np.asarray([0, 4, 4, 4, 4, 4], dtype=np.uint64))
         handle.create_dataset("t_offset", data=np.int64(0))
 
-    bins, preprocessing = _event_file_bins(
-        event_path, start_ms=0, duration_ms=5, rectify_path=None
-    )
+    bins, preprocessing = _event_file_bins(event_path, start_ms=0, duration_ms=5, rectify_path=None)
 
     assert preprocessing.startswith("unrectified_sensor_coordinates")
-    assert bins == [
-        [SpikeEvent(0, 1, 2), SpikeEvent(0, 1, 2), SpikeEvent(1, 439, 3)]
-    ]
+    assert bins == [[SpikeEvent(0, 1, 2), SpikeEvent(0, 1, 2), SpikeEvent(1, 439, 3)]]
 
 
 def test_native_profile_rejects_stale_checkpoint_export() -> None:

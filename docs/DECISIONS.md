@@ -966,6 +966,25 @@ The selected widths cover the configured
 duration maximum of 16 bins and the worst configured amplitude bound of membrane-energy clip
 1.5 times strength maximum 4.0, rather than depending only on that checkpoint.
 
-The 140k logical resident-state inventory falls from 189.60 to 150.89 MiB-equivalent. A future
-XL mapping under the same contract calculates to 347.66 MiB instead of 436.00 MiB, but XL
-remains software-only and rejected by the exporter.
+The 140k logical resident-state inventory falls from 189.60 to 150.89 MiB-equivalent. An XL
+mapping under the same contract calculates to 347.66 MiB instead of 436.00 MiB.
+
+## 2026-09-07 — Promote EventSpikeSegXL to a prepared ASIC target
+
+Supersede the earlier software-only/export-rejection decision. The exporter now recognizes the
+exact eleven-class XL checkpoint contract: 44 inference PLIF actors, 959,824 signed Q7.16
+convolution weights, four Q7.16 spike-attention thresholds, a 24-to-11 temporal current readout,
+78,707,200 combined accumulator states, and 15,910,400 compact adaptation states. Training-only
+mid/deep auxiliary heads remain excluded.
+
+The static DAG includes both projected downsample bridges, two capacity residual blocks, the
+three-way dilated context, asymmetric detail refinement, decoder refinements, and a fully-spiking
+four-head attention primitive. Per location/head, the primitive popcounts eight Q/K spike
+coincidences, compares the learned fixed threshold, gates V spikes, then feeds the existing
+spiking output projection and binary residual join. It never creates softmax or a dense NxN map.
+
+`EventSpikeSegXL_seed17_epoch001.pt` is authorized only for architecture, shapes, constants-flow,
+and RTL-generation bring-up while training is active. It is not the final accuracy checkpoint.
+Regenerate the ignored XL export from the selected final/QAT checkpoint before equivalence or PPA.
+Preparation may run lightweight export/generation/tests, but Yosys/OpenROAD execution requires
+explicit user approval because training and synthesis compete for host memory.

@@ -1,4 +1,4 @@
-"""Export a trained EventSpikeSeg140k checkpoint for static ASIC actors."""
+"""Export a trained EventSpikeSeg140k or EventSpikeSegXL checkpoint for ASIC actors."""
 
 from __future__ import annotations
 

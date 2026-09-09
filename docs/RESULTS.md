@@ -530,6 +530,50 @@ tiles into a defensible full-chip result. Likewise, 639.636 MHz is an internal t
 not measured 25-actor DAG throughput or event latency. Full-model simulation/PPA and
 activity-annotated energy remain open.
 
+## Exact XL 50 ms integer actor-DAG run (2026-09-08)
+
+The epoch-1 structural XL export completed all 44 actors for ten chronological 5 ms bins in the
+CPU verification Docker image. This is an exact fixed-point functional/activity result for the
+exported graph, not dense RTL timing, trained-model accuracy, or ASIC power.
+
+| quantity | result |
+| --- | ---: |
+| retained input events | 428,367 |
+| bins / physical interval | 10 / 50 ms |
+| actor executions | 440 |
+| synaptic contributions | 22,175,363,899 |
+| actor output spikes | 53,988,002 |
+| summed per-actor maximum live state entries | 45,516,001 |
+| host workers | 4 |
+| host execution time | 15,308.731 s (4.252 h) |
+| final prediction | 440x640 `uint8` |
+| prediction raw-array SHA-256 | `6b5854b29c157134d43fecb998548ac1341b16e70838868525133021c2c25385` |
+
+The predicted class histogram is `{0: 29975, 1: 10306, 4: 4046, 5: 143409,
+6: 17878, 7: 17804, 8: 44122, 9: 14060}`. Classes 2, 3, and 10 receive no winning pixels in
+this epoch-1 sample. The source used an unrectified sensor-coordinate crop because no rectify map
+or aligned label accompanied the sample, so no mIoU/pixel-accuracy claim is possible. The JSON
+sets `cycle_latency_available`, `power_activity_available`, and `capacity_claim` to false.
+
+## Revised current-precision two-tile ASAP7 result (2026-09-08)
+
+| routed quantity | result |
+| --- | ---: |
+| precision | Q7.16 weights, int32 Q15.16 combined accumulator |
+| resident PLIFs / child tiles | 64 / two 2x2 tiles |
+| standard-cell area | 18,018.2 um^2 |
+| core area / utilization | 52,373.2 um^2 / 34.4034% |
+| reported internal fmax | 589.378 MHz |
+| setup / hold slack at 5 ns | +3,303.3 ps / +38.2417 ps |
+| setup/hold/slew/cap/fanout/DRC violations | 0 / 0 / 0 / 0 / 0 / 0 |
+| vectorless power at 0.77 V, 200 MHz | 700.516 mW |
+| worst VDD drop | 49.2562 mV |
+
+This supersedes the earlier lower-precision two-tile result for current implementation decisions.
+Its default-toggle power cannot be treated as event-driven energy or extrapolated to the complete
+140k/XL graph. The retained reproducibility bundle contains final ODB, GDS, DEF, SPEF, Verilog,
+SDC, and reports; regenerable stage databases and the duplicate merged GDS were removed.
+
 ## Exact receptive-halo wiring inventory (2026-09-02)
 
 The production 8x8 resident wrapper now statically connects each tile only to input locations that

@@ -2,12 +2,12 @@
 
 ## Working now
 
-- software-only XL expanded to 978,559 parameters for six classes and 979,179 for
-  eleven, with capacity concentrated in full quarter-resolution semantic and decoder
-  fusion convolutions; this has not yet produced a measured mIoU result
+- XL training continues at 979,179 registered parameters for eleven classes; epoch 1 now
+  supplies a structural ASIC export and generated 44-actor RTL bring-up target, but no final
+  QAT accuracy or synthesis result is claimed
 - active DSEC target merged from eleven source labels into six broad semantic classes
 - manifest-backed DDD17 temporal loading: consecutive two-channel histogram bins or six-channel windows
-- `model.py` exposes the sole ASIC target `EventSpikeSeg140k` and optional XL software comparison
+- `model.py` exposes dual ASIC targets: baseline `EventSpikeSeg140k` and expanded `EventSpikeSegXL`
 - frozen completed ten-model structural benchmark in `top_ten_models.py`
 - completed structural top-five registry in `top_five_models.py`
 - completed/frozen accuracy-oriented top-three registry in `top_three_models.py`
@@ -25,6 +25,8 @@
 - active 140k resident RTL now uses one signed int32 Q15.16 combined accumulator/state per PLIF
   and signed int24 Q7.16 weights; clocked adaptation uses 6-bit integer-bin age plus
   19-bit Q3.16 amplitude
+- XL exporter/topology/RTL support now covers 44 PLIF actors, 11-class readout, projected
+  bridges, three-branch context, and fully-spiking four-head Q/K-coincidence V-gating attention
 
 ## Completed evidence
 
@@ -994,3 +996,41 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   resident spike-vector graph, then record routed resources, timing, activity-based power, and
   latency on a scale-suitable ASIC platform. Do not substitute additional per-layer samples for
   this project-specification milestone or extrapolate any tile result to full-chip PPA.
+
+### 2026-09-08 — exact XL 10-bin actor-DAG simulation completes
+
+- exported the epoch-1 `EventSpikeSegXL` structure as `artifacts/ASIC_XL` and executed its exact
+  44-actor integer DAG in Docker over ten consecutive 5 ms bins from
+  `zurich_city_13_a/events.h5`; 428,367 retained input events produced one 440x640 `uint8`
+  prediction after the complete 50 ms window;
+- every actor output is routed to its documented successors within each bin, while membrane,
+  adaptation, and temporal class-current state persist between bins. Four workers parallelize
+  disjoint output-channel ranges without changing event/contribution order; a full-graph
+  serial-versus-parallel equality gate passes;
+- replaced Python-object neuron dictionaries with fixed-width NumPy state planes holding the
+  same int32 membrane, int8 age, int32 amplitude, int32 bin tag, and valid bit. Four-worker
+  Docker memory fell from an unsafe 28.84/30.61 GiB to about 1.98 GiB at the measured encoder
+  point. Atomic per-bin checkpoints made the run restartable and were removed after success;
+- total CPU-oracle time was 15,308.731 s (4.252 h), with 22,175,363,899 synaptic contributions,
+  53,988,002 actor output spikes, and 45,516,001 summed per-actor maximum live entries. The final
+  prediction and profile are
+  `artifacts/RTL/profile/xl_epoch001_zurich_city_13_a_native_50ms_prediction.npy` and
+  `artifacts/RTL/profile/xl_epoch001_zurich_city_13_a_native_50ms.json`;
+- the prediction is a functional epoch-1 structural result, not an accuracy result: this sample
+  lacked its rectification map and aligned label. It is also not RTL timing or energy evidence;
+  the profile explicitly reports `power_activity_available: false`. Full RTL/gate switching
+  activity and post-route power remain required;
+- removed the obsolete GDrive prelink junctions, renamed the XL export from
+  `ASIC_XL_epoch001` to `ASIC_XL`, and pruned OpenROAD from 5.917 GB to 0.89 GB. The retained
+  revised two-tile result keeps final ODB/GDS/DEF/SPEF/netlist/SDC and compact reports/logs.
+
+### Revised Q7.16/int32 two-tile OpenROAD result
+
+- the current-precision ASAP7 `detail_stem` two-tile run is
+  `resident_detail_stem_q7_16_acc32_2x2x2`: 18,018.2 um^2 standard-cell area in a 52,373.2
+  um^2 core (34.4034%), 589.378 MHz reported fmax, +3,303.3 ps setup slack, and +38.2417 ps
+  hold slack at the 5 ns constraint;
+- setup/hold, max-slew, max-capacitance, max-fanout, detailed-route, and flow-error counts are
+  zero. Default vectorless power is 700.516 mW at 0.77 V/200 MHz and worst VDD drop is
+  49.2562 mV. These values supersede the old-precision two-tile implementation but remain a
+  small-block default-toggle characterization, not XL/full-model power or inference energy.

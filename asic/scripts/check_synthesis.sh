@@ -88,6 +88,14 @@ yosys -q -p '
   proc; memory; opt; check
 '
 
+printf 'Synthesizing XL spike-mask attention primitive...\n'
+yosys -q -p '
+  read_verilog -sv asic/rtl/resident_spike_mask_attention.sv;
+  chparam -set HEADS 2 -set HEAD_DIM 2 -set SPATIAL_COUNT 2 resident_spike_mask_attention;
+  hierarchy -top resident_spike_mask_attention;
+  proc; opt; check
+'
+
 printf 'Synthesizing SRAM-backed residual union...\n'
 yosys -q -p '
   read_verilog -sv asic/rtl/actor_local_state_sram.sv asic/rtl/binary_event_union2.sv;

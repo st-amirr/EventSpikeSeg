@@ -2,11 +2,13 @@
 
 ## Active implementation model
 
-`EventSpikeSeg140k` is the only six-class DSEC/ASIC implementation target. Revision v8
+`EventSpikeSeg140k` is the six-class baseline DSEC/ASIC implementation target. Revision v8
 uses the native **440x640** semantic plane and has **149,835 registered parameters**,
 **149,423 executed inference parameters**, **143,824 executed synaptic weights**, and
 **25 executed PLIF populations plus one stateless temporal class-current readout**.
-`EventSpikeSegXL` remains a software comparison and hardware export rejects it.
+`EventSpikeSegXL` is also an eleven-class ASIC target. Its epoch-1 checkpoint is used only
+for structural export/RTL bring-up while training continues; final constants must come from
+the selected trained/QAT checkpoint before accuracy or PPA claims.
 
 The input loader no longer scales rectified event coordinates to 241x351. It schedules
 ten chronological two-polarity 440x640 count maps. A learned standard 5x5 stride-2 PLIF
@@ -585,7 +587,7 @@ achieved routed clock. Power uses representative DSEC switching activity (SAIF/V
 parasitics, and characterized cells/macros. ASAP7 results are predictive research estimates;
 only fabricated silicon measurements may be called measured ASIC power or latency.
 
-## EventSpikeSegXL software comparison (not an ASIC target)
+## EventSpikeSegXL ASIC target and software comparison
 
 ### Exact parameter accounting
 
@@ -611,43 +613,54 @@ At native 440x640 DSEC resolution, XL owns 78,707,200 inference membrane element
 wide-everywhere XL layout, while retaining a multi-stage native detail path. The
 15,910,400 adaptation-enabled neurons remain confined to semantic encoder/context scales.
 
-Any future XL ASIC must use the same clocked combined-state contract: signed int32 Q15.16 accumulator,
+The XL ASIC uses the same clocked combined-state contract: signed int32 Q15.16 accumulator,
 6-bit integer age, and unsigned 19-bit Q3.16 amplitude. This calculates to **347.66
 MiB-equivalent** for XL, compared with 436.00 MiB under the former separate int24-current,
-int16-membrane, and two-int16-adaptation representation. XL export remains rejected until the
-140k implementation is fully validated and an explicit XL export/RTL verification project is approved.
+int16-membrane, and two-int16-adaptation representation. The exporter, exact DAG, spike-mask
+attention RTL, capacity/tile manifests, and generated resident top now support XL; synthesis
+and final-checkpoint equivalence remain gated.
 
 ### XL ASIC migration procedure
 
 XL is not a parameter-only replacement for the 140k netlist. Most arithmetic actors are reusable,
 but its graph and one operation class are different. Promotion requires these gates in order:
 
-1. Complete XL training and epochs 78--80 QAT, then select the best checkpoint using fixed-point
-   validation. Do not freeze an RTL graph from an epoch-1 or floating-point-only checkpoint.
-2. Generalize the exporter from the hard-coded six-class/25-actor 140k contract to an explicit
+1. Complete XL training and the final three-epoch QAT stage, then select the best checkpoint using
+   fixed-point validation. Epoch 1 freezes architecture/shape plumbing only, never final constants.
+2. **Implemented:** generalize the exporter from the hard-coded six-class/25-actor 140k contract to an explicit
    XL contract with 44 inference PLIF actors, 11 classes, 959,824 shared convolution weights,
    24-to-11 temporal readout, and training-only auxiliary heads omitted.
-3. Write and validate the exact XL DAG: projected `bridge12`/`bridge23` residual joins, two semantic
+3. **Implemented:** write and validate the exact XL DAG: projected `bridge12`/`bridge23` residual joins, two semantic
    capacity blocks, three-way parallel dilated context, asymmetric detail kernels, decoder refinement,
    fanout, concatenation, binary residual joins, and completion-token rendezvous.
-4. Reuse the existing fixed convolution/PLIF/tile/readout RTL for ordinary 1x1, 3x3, rectangular
+4. **Implemented and compile-checked:** reuse the existing fixed convolution/PLIF/tile/readout RTL for ordinary 1x1, 3x3, rectangular
    depthwise, strided, and dilated actors. Add one new spike-attention primitive: per spatial location,
    form Q/K coincidence popcounts for four eight-channel heads, compare each count with its exported
    fixed threshold, gate V spikes, and rendezvous before the existing 1x1 output actor and residual join.
-5. Extend the integer reference, capacity manifest, tile planner, top generator, and replay tooling so
-   none assumes 25 actors, six classes, a 16-channel readout, or the 140k-only topology module.
-6. Prove layerwise FP32/QAT -> integer -> RTL equivalence, followed by the complete 5 ms event interval
-   and ten-bin/50 ms prediction. Only then attempt full-graph elaboration and activity-annotated PPA.
+5. **Implemented for export/capacity/tile/top generation:** remove 25-actor, six-class,
+   16-channel-readout, and 140k-only topology assumptions. XL layerwise/full replay remains part
+   of the equivalence gate below.
+6. **Integer actor-DAG portion implemented:** the exported epoch-1 graph completed a real-event
+   ten-bin/50 ms run actor by actor and emitted a 440x640 prediction. Serial and parallel integer
+   execution are state/output equivalent. Layerwise final-checkpoint FP32/QAT -> integer -> RTL
+   equivalence, cycle-accurate RTL execution, and activity-annotated PPA remain open.
 
 The software/export work is moderate, the attention/rendezvous RTL is moderate-to-hard, and the
 physical implementation is hard. XL has about 2.30 times the resident state of 140k (347.66 versus
 150.89 MiB-equivalent), 44 versus 25 PLIF actors, and about 2.75 MiB of signed 24-bit convolution
 weights. The state/routing/clock-tree scale—not weight ROM size—is the main feasibility risk.
 
+The completed integer oracle stores these same logical fields in dense typed host arrays solely
+to avoid Python-object overhead; this does not change the ASIC's resident-state count or precision.
+Its four-worker Docker run processes disjoint output-channel ranges and deterministically merges
+them in original event/tap order. Ten chronological bins took 15,308.731 host seconds. This host
+runtime is not an ASIC latency estimate, and its activity counters are not energy without an
+RTL/gate VCD/SAIF and characterized post-route power model.
+
 ### Native DSEC layer graph and dimensions
 
-`T=10` below is the current software timing schedule. XL is not an ASIC export target; the
-geometry is shown only to keep the software comparison accurate under the native 440x640 DSEC loader.
+`T=10` below is the shared software/ASIC timing schedule. The geometry is the exact native
+440x640 XL export contract.
 Raw DSEC events are accumulated into ten 5 ms slices before either model.
 
 | Stage | Synaptic/spiking operation | Output `T,N,C,H,W` | PLIF populations |
@@ -721,8 +734,10 @@ operation.
   operations with completion-token rendezvous;
 - `asic/rtl/streaming_resident_channelized_plif_actor.sv`: vector/completion interface used by
   generated DAG wiring;
-- `asic/rtl/resident_temporal_class_readout.sv`: resident signed non-spiking 16-to-6 temporal
-  current accumulation and argmax.
+- `asic/rtl/resident_temporal_class_readout.sv`: parameterized resident signed non-spiking
+  16-to-6 (140k) or 24-to-11 (XL) temporal current accumulation and argmax;
+- `asic/rtl/resident_spike_mask_attention.sv`: XL four-head Q/K spike-coincidence threshold
+  and V-gating primitive.
 
 The scalar scatter, banked, and SRAM blocks remain tracked only as historical/equivalence
 references. They are not the active physical implementation or PPA target.
@@ -756,8 +771,9 @@ state continues across predictions until a sequence/gap reset.
 
 ## Canonical naming
 
-- `EventSpikeSeg140k`: only six-class DSEC/ASIC implementation target.
-- `EventSpikeSegXL`: software-only capacity comparison; rejected by ASIC export.
+- `EventSpikeSeg140k`: six-class baseline DSEC/ASIC implementation target.
+- `EventSpikeSegXL`: eleven-class expanded ASIC target, structurally prepared from epoch 1
+  while final trained/QAT constants and synthesis are pending.
 
 Historical top-ten/top-five/top-three architecture-search results retain their original
 names and measured values.

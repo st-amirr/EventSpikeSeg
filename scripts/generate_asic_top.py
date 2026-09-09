@@ -549,6 +549,12 @@ def _resident_shapes(
                 if any(item != source_shapes[0] for item in source_shapes[1:]):
                     raise ValueError(f"merge node {name} has incompatible vector shapes")
                 shape = source_shapes[0]
+            elif kind == "spike_mask_attention":
+                if len(source_shapes) != 3 or any(
+                    item != source_shapes[0] for item in source_shapes[1:]
+                ):
+                    raise ValueError(f"attention node {name} requires equal Q/K/V shapes")
+                shape = source_shapes[0]
             else:
                 raise ValueError(f"unsupported resident route node {name} ({kind})")
             shapes[name] = shape
@@ -573,8 +579,11 @@ def _generate_resident_top(
     export_dir = (model_spec_path.parent / str(spec.get("artifact_root", "."))).resolve()
     graph = spec["graph"]
     actors = list(graph["actor_topological_order"])
-    if len(actors) != 25 or graph.get("linear_pipeline") is not False:
-        raise ValueError("resident generation requires the exact non-linear 25-actor graph")
+    if (
+        len(actors) != int(graph.get("actor_count", -1))
+        or graph.get("linear_pipeline") is not False
+    ):
+        raise ValueError("resident generation requires an exact non-linear actor graph")
     layers = {str(layer["name"]): layer for layer in spec["layers"]}
     readout_name = str(graph["current_readout"])
     shapes = _resident_shapes(graph, layers)
@@ -584,10 +593,6 @@ def _generate_resident_top(
     for index, edge in enumerate(edges):
         incoming[str(edge["destination"])].append((index, edge))
         outgoing[str(edge["source"])].append((index, edge))
-    if any(len(items) > 2 for items in incoming.values()) or any(
-        len(items) > 2 for items in outgoing.values()
-    ):
-        raise ValueError("resident generator supports graph degree <= 2")
     node_kinds = {str(node["name"]): str(node["kind"]) for node in graph["nodes"]}
     readout = layers[readout_name]
     class_count = int(readout["out_channels"])
@@ -645,6 +650,8 @@ def _generate_resident_top(
         if len(source_edges) == 1:
             _connect_stream(lines, base, f"r_{source_edges[0][0]}")
         elif source == "input":
+            if len(source_edges) != 2:
+                raise ValueError("packed event ingress currently requires exactly two branches")
             first, second = source_edges
             _instance(
                 lines,
@@ -658,36 +665,43 @@ def _generate_resident_top(
                 ],
             )
         else:
-            first, second = source_edges
             width = shapes[source][0] * shapes[source][1] * shapes[source][2]
-            fork_module = (
-                "resident_spike_vector_fork2 #("
-                f".VECTOR_WIDTH({width}), .TAG_WIDTH(TAG_WIDTH)) "
-                f"fork_{_identifier(source)}"
-            )
-            _instance(
-                lines,
-                fork_module,
-                [
-                    ".clk",
-                    ".reset",
-                    f".in_valid_i({base}_valid)",
-                    f".in_ready_o({base}_ready)",
-                    f".in_vector_i({base}_payload)",
-                    f".in_completion_i({base}_completion)",
-                    f".in_tag_i({base}_bin_tag)",
-                    f".out0_valid_o(r_{first[0]}_valid)",
-                    f".out0_ready_i(r_{first[0]}_ready)",
-                    f".out0_vector_o(r_{first[0]}_payload)",
-                    f".out0_completion_o(r_{first[0]}_completion)",
-                    f".out0_tag_o(r_{first[0]}_bin_tag)",
-                    f".out1_valid_o(r_{second[0]}_valid)",
-                    f".out1_ready_i(r_{second[0]}_ready)",
-                    f".out1_vector_o(r_{second[0]}_payload)",
-                    f".out1_completion_o(r_{second[0]}_completion)",
-                    f".out1_tag_o(r_{second[0]}_bin_tag)",
-                ],
-            )
+            current = base
+            for branch_index, first in enumerate(source_edges[:-1]):
+                is_last = branch_index == len(source_edges) - 2
+                second_base = (
+                    f"r_{source_edges[-1][0]}"
+                    if is_last
+                    else f"f_{_identifier(source)}_{branch_index}"
+                )
+                if not is_last:
+                    _declare_sized_stream(lines, second_base, width)
+                _instance(
+                    lines,
+                    "resident_spike_vector_fork2 #("
+                    f".VECTOR_WIDTH({width}), .TAG_WIDTH(TAG_WIDTH)) "
+                    f"fork_{_identifier(source)}_{branch_index}",
+                    [
+                        ".clk",
+                        ".reset",
+                        f".in_valid_i({current}_valid)",
+                        f".in_ready_o({current}_ready)",
+                        f".in_vector_i({current}_payload)",
+                        f".in_completion_i({current}_completion)",
+                        f".in_tag_i({current}_bin_tag)",
+                        f".out0_valid_o(r_{first[0]}_valid)",
+                        f".out0_ready_i(r_{first[0]}_ready)",
+                        f".out0_vector_o(r_{first[0]}_payload)",
+                        f".out0_completion_o(r_{first[0]}_completion)",
+                        f".out0_tag_o(r_{first[0]}_bin_tag)",
+                        f".out1_valid_o({second_base}_valid)",
+                        f".out1_ready_i({second_base}_ready)",
+                        f".out1_vector_o({second_base}_payload)",
+                        f".out1_completion_o({second_base}_completion)",
+                        f".out1_tag_o({second_base}_bin_tag)",
+                    ],
+                )
+                current = second_base
 
     faults: list[str] = []
     for actor_name in actors:
@@ -834,6 +848,58 @@ def _generate_resident_top(
                     f".out_tag_o({output}_bin_tag)",
                 ],
             )
+            continue
+        if kind == "spike_mask_attention":
+            if len(node_inputs) != 3:
+                raise ValueError("spike mask attention requires Q, K, and V inputs")
+            attention = spec.get("spike_attention")
+            if not isinstance(attention, dict):
+                raise ValueError("model spec is missing spike_attention parameters")
+            by_transform = {str(edge["transform"]): index for index, edge in node_inputs}
+            required = {"attention_q", "attention_k", "attention_v"}
+            if set(by_transform) != required:
+                raise ValueError("spike mask attention inputs must be identified as Q/K/V")
+            thresholds = _packed_literal(
+                export_dir / str(attention["threshold_rom"]),
+                word_bits=24,
+                expected_words=int(attention["heads"]),
+            )
+            _instance(
+                lines,
+                "resident_spike_mask_attention #(\n    "
+                + ",\n    ".join(
+                    [
+                        f".HEADS({int(attention['heads'])})",
+                        f".HEAD_DIM({int(attention['head_dim'])})",
+                    f".SPATIAL_COUNT({out_h * out_w})",
+                        ".TAG_WIDTH(TAG_WIDTH)",
+                        f".HEAD_THRESHOLDS({thresholds})",
+                    ]
+                )
+                + f"\n  ) attention_{_identifier(node_name)}",
+                [
+                    ".clk", ".reset",
+                    *[
+                        port
+                        for role in ("q", "k", "v")
+                        for port in (
+                            f".in_{role}_valid_i(r_{by_transform[f'attention_{role}']}_valid)",
+                            f".in_{role}_ready_o(r_{by_transform[f'attention_{role}']}_ready)",
+                            f".in_{role}_vector_i(r_{by_transform[f'attention_{role}']}_payload)",
+                            f".in_{role}_completion_i(r_{by_transform[f'attention_{role}']}_completion)",
+                            f".in_{role}_tag_i(r_{by_transform[f'attention_{role}']}_bin_tag)",
+                        )
+                    ],
+                    f".out_valid_o({output}_valid)",
+                    f".out_ready_i({output}_ready)",
+                    f".out_v_vector_o({output}_payload)",
+                    f".out_completion_o({output}_completion)",
+                    f".out_tag_o({output}_bin_tag)",
+                    f".tag_mismatch_o(error_tag_{_identifier(node_name)})",
+                ],
+            )
+            lines.append(f"  logic error_tag_{_identifier(node_name)};")
+            faults.append(f"error_tag_{_identifier(node_name)}")
             continue
         if len(node_inputs) != 2:
             raise ValueError(f"resident join {node_name} requires two inputs")

@@ -160,7 +160,7 @@ def build_sram_manifest(
             }
         )
 
-    persistent_bytes = persistent_bits // 8
+    persistent_bytes = math.ceil(persistent_bits / 8)
     capacity = spec["state_capacity"]
     if persistent_bytes != int(capacity["dense_exact_state_bytes"]):
         raise ValueError(

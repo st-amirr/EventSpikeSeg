@@ -44,19 +44,32 @@ MANUFACTURABLE_TARGET_GATE = {
 }
 
 
-def state_capacity_contract() -> dict[str, object]:
+def state_capacity_contract(
+    *,
+    logical_membranes: int = LOGICAL_MEMBRANES,
+    adaptation_enabled_neurons: int = ADAPTATION_ENABLED_NEURONS,
+    executed_synaptic_weights: int = EXECUTED_SYNAPTIC_WEIGHTS,
+) -> dict[str, object]:
     """Return exact logical storage totals without pretending a RAM macro is selected."""
 
+    weight_bytes = executed_synaptic_weights * 3
+    accumulator_bytes = logical_membranes * 4
+    adaptation_bits = adaptation_enabled_neurons * (
+        ADAPTATION_AGE_BITS + ADAPTATION_AMPLITUDE_BITS
+    )
+    dense_bits = logical_membranes * 32 + adaptation_bits
+    dense_bytes = (dense_bits + 7) // 8
+
     return {
-        "logical_membranes": LOGICAL_MEMBRANES,
-        "adaptation_enabled_neurons": ADAPTATION_ENABLED_NEURONS,
-        "weight_bytes_int24": WEIGHT_BYTES_INT24,
-        "combined_accumulator_bytes_int32": COMBINED_ACCUMULATOR_BYTES_INT32,
+        "logical_membranes": logical_membranes,
+        "adaptation_enabled_neurons": adaptation_enabled_neurons,
+        "weight_bytes_int24": weight_bytes,
+        "combined_accumulator_bytes_int32": accumulator_bytes,
         "adaptation_age_bits_per_enabled_neuron": ADAPTATION_AGE_BITS,
         "adaptation_amplitude_bits_per_enabled_neuron": ADAPTATION_AMPLITUDE_BITS,
-        "adaptation_state_bits": ADAPTATION_STATE_BITS,
+        "adaptation_state_bits": adaptation_bits,
         "last_bin_tag_bytes": 0,
-        "dense_exact_state_bytes": DENSE_EXACT_STATE_BYTES,
-        "dense_exact_state_mib": DENSE_EXACT_STATE_BYTES / 2**20,
+        "dense_exact_state_bytes": dense_bytes,
+        "dense_exact_state_mib": dense_bytes / 2**20,
         "full_chip_PPA_gate": "characterized_actor_local_SRAM_macros_required",
     }

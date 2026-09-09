@@ -106,8 +106,9 @@ framework:
     primary_type: custom_SystemVerilog_digital_neuromorphic_ASIC
     primary_target: technology_agnostic_actor_array_with_register_or_latch_resident_PLIF_state
     primary_goal: >-
-      Instantiate all 25 trained PLIF populations permanently as nodes in the fixed EventSpikeSeg140k v8 DAG, not as a
-      linear 25-stage pipeline. A convolution actor uses parallel kernel-tap projection cells and one canonical
+      Instantiate every trained inference PLIF population permanently as nodes in the selected fixed DAG: 25 for
+      EventSpikeSeg140k or 44 for EventSpikeSegXL. Neither target is a linear pipeline. A convolution actor uses
+      parallel kernel-tap projection cells and one canonical
       combined signed 32-bit Q15.16 accumulator/state per postsynaptic channel and spatial address. Weighted 24-bit Q7.16 spike events accumulate locally.
       Completion tokens fork with every fanout path and rendezvous at residual/skip/concat joins before downstream commit;
       no layer is loaded or reconfigured at runtime.
@@ -474,8 +475,9 @@ custom_spiking_dynamics:
     limitation: The age and amplitude maps are material resident ASIC state elements and are not negligible.
 
 architecture_family:
-  implementation_model: EventSpikeSeg140k
-  non_target_comparison_model: EventSpikeSegXL
+  implementation_models: [EventSpikeSeg140k, EventSpikeSegXL]
+  baseline_ASIC_model: EventSpikeSeg140k
+  XL_ASIC_status: epoch001_exact_10bin_integer_DAG_complete_pending_final_trained_QAT_RTL_equivalence_and_synthesis
   comparison_model:
     registered_parameters_6_class: 978559
     registered_parameters_11_class: 979179
@@ -486,14 +488,28 @@ architecture_family:
     semantic_stem: learned_5x5_stride2_to_32_channels
     inference_membrane_count_native_dsec: 78707200
     adaptation_enabled_neuron_count_native_dsec: 15910400
-    future_hardware_state_contract:
-      status: architecture_contract_only_export_remains_rejected
+    hardware_state_contract:
+      status: implemented_in_export_manifest_and_resident_RTL_pending_synthesis
       combined_accumulator_bits: 32
       adaptation_age_bits: 6
       adaptation_amplitude_bits: 19
       calculated_resident_state_MiB: 347.66082763671875
     capacity_policy: narrow_native_detail_plus_full_3x3_eighth_scale_context
-    hardware_export: rejected_software_only
+    hardware_export: epoch001_structural_export_and_exact_10bin_integer_activity_complete_replace_constants_after_final_QAT
+    exact_integer_activity_run:
+      status: complete
+      container: eventspikeseg_torch2_2_2_cpu_verification
+      actors: 44
+      bins: 10
+      interval_ms: 50
+      input_events: 428367
+      synaptic_contributions: 22175363899
+      actor_output_spikes: 53988002
+      host_workers: 4
+      host_seconds: 15308.730534041
+      prediction_shape: [440, 640]
+      prediction_sha256: 6b5854b29c157134d43fecb998548ac1341b16e70838868525133021c2c25385
+      limitation: unrectified_epoch001_functional_activity_only_no_aligned_label_no_cycle_timing_or_power
   design_principles:
   - Binary-spiking learned feature path with continuous final class-current accumulation
   - Native 440x640 input with learned stride-2 semantic stem
@@ -1150,12 +1166,19 @@ export_contract:
   version_control: entire_artifacts_root_is_gitignored_local_only_checkpoint_and_outputs
   artifact_roots:
     ASIC: artifacts/ASIC
+    ASIC_XL: artifacts/ASIC_XL
     RTL: artifacts/RTL
   active_checkpoint:
     path: artifacts/checkpointsV4/dsec_6class/EventSpikeSeg140k_seed17_best.pt
     architecture: EventSpikeSeg140k
     dataset: DSEC_Semantic
     classes: 6
+  XL_structural_checkpoint:
+    path: artifacts/model_checkpoints/dsec_XL/EventSpikeSegXL_seed17_epoch001.pt
+    architecture: EventSpikeSegXL
+    dataset: DSEC_Semantic
+    classes: 11
+    use: architecture_shape_constant_export_bringup_only_replace_after_training_and_QAT
   ASIC_artifacts:
   - model_spec.yaml
   - layer_graph.json
@@ -1164,6 +1187,9 @@ export_contract:
   - parameters/*.json
   - class_mapping.json
   - eventspikeseg140k_dag_top.sv
+  - generated_eventspikesegxl_dag_top.sv
+  - deep_attention_mask_thresholds.mem
+  - resident_tile_plan.json
   - sram_manifest.json
   RTL_artifacts:
     profile: artifacts/RTL/profile
@@ -1410,9 +1436,9 @@ decision_history:
 experiment_code_layout:
   canonical_model_file:
     path: src/eventspikeseg/model.py
-    rule: Contains public final models; the ASIC exporter selects only EventSpikeSeg140k.
-    current_architecture: EventSpikeSeg140k
-    status: active_training_and_ASIC_implementation_target
+    rule: Contains public final models; the ASIC exporter selects exact EventSpikeSeg140k or EventSpikeSegXL contracts.
+    current_architectures: [EventSpikeSeg140k, EventSpikeSegXL]
+    status: active_training_and_dual_ASIC_implementation_targets
   shared_components_file:
     path: src/eventspikeseg/model_components.py
     contents:

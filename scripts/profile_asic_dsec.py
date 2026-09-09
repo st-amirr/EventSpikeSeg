@@ -31,6 +31,22 @@ def main() -> None:
     parser.add_argument("--start-ms", type=int, default=0)
     parser.add_argument("--duration-ms", type=int, default=50)
     parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="print one timing/output line after every actor in every 5 ms bin",
+    )
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--resume-checkpoint",
+        type=Path,
+        help="atomically save and resume exact temporal state after each 5 ms bin",
+    )
+    parser.add_argument(
+        "--prediction-output",
+        type=Path,
+        help="write the final dense class map as an exact uint8 NumPy array",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("artifacts/RTL/profile/native_activity_profile.json"),
@@ -39,6 +55,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.maximum_records < 0:
         parser.error("--maximum-records must be non-negative")
+    if args.workers < 1:
+        parser.error("--workers must be positive")
     if args.event_file is not None:
         if args.maximum_records:
             parser.error("--maximum-records applies only to --dataset-root")
@@ -50,6 +68,10 @@ def main() -> None:
             duration_ms=args.duration_ms,
             rectify_path=args.rectify_map,
             lane_config_path=args.lane_config,
+            report_progress=args.progress,
+            workers=args.workers,
+            resume_checkpoint_path=args.resume_checkpoint,
+            prediction_output_path=args.prediction_output,
         )
     else:
         profile = profile_native_dsec(
@@ -60,6 +82,8 @@ def main() -> None:
         )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+    if args.resume_checkpoint is not None:
+        args.resume_checkpoint.unlink(missing_ok=True)
     print(json.dumps(profile, indent=2))
 
 

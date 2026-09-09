@@ -15,14 +15,33 @@ timing, and power analysis.
   foundry PDK. That target cannot be called selected or power-signoff-ready until the complete
   resident graph is elaborated, placed, timed, and measured in an appropriate library.
 
-The distinction matters because the 143,824 signed 24-bit Q7.16 synaptic weights consume only
-about 0.41 MiB, while the frozen 440x640 graph has 30,976,000 logical PLIF states. The selected
+The distinction matters because the 140k target's 143,824 signed 24-bit Q7.16 synaptic weights
+consume only about 0.41 MiB, while its frozen 440x640 graph has 30,976,000 logical PLIF states. The selected
 direct-state design allocates one signed 32-bit Q15.16 combined accumulator/state per PLIF plus
 a 6-bit integer age and unsigned 19-bit Q3.16 amplitude only on adaptation-enabled PLIFs:
 150.89 MiB-equivalent of logical resident state. These are distributed registers/latches local to the PLIFs,
 not a byte-addressed memory capacity or an SRAM-fetch design. The elimination of reads, writes,
 tags, touched queues, and scrub cycles is intentional; the resulting physical area, clock-tree
 load, combinational depth, and switching power remain an open full-chip implementation result.
+
+The XL target uses the same precision and resident-state rules with 44 PLIF actors,
+959,824 convolution weights, 78,707,200 logical PLIF states, and 15,910,400 adaptive
+states (347.66 MiB-equivalent). `resident_spike_mask_attention.sv` implements its four-head,
+eight-channel-per-head Q/K coincidence popcount and V-spike gate without softmax or an NxN map.
+The epoch-1 XL export is structural bring-up only; replace its constants with the selected final
+trained/QAT checkpoint before equivalence, accuracy, or PPA reporting.
+
+The exact actor-DAG CPU oracle can run one complete XL label interval in Docker with:
+
+```bash
+bash asic/scripts/run_xl_native_integer_simulation.sh
+```
+
+It routes each actor's output to the next graph nodes for ten chronological 5 ms bins, preserves
+all temporal state, parallelizes disjoint output-channel ranges with four workers, and writes an
+atomic resume checkpoint after every bin. On success it emits the JSON profile and exact 440x640
+`uint8` prediction under `artifacts/RTL/profile/` and removes the temporary checkpoint. This is
+functional/activity simulation; it does not generate VCD/SAIF or report energy.
 
 ## Current synthesis boundary
 
@@ -67,6 +86,19 @@ The exporter emits matching signed 24-bit Q7.16 synapses, unsigned 24-bit UQ1.23
 24-bit Q7.16 thresholds, and the corresponding adaptation constants for each actor.
 `scripts/generate_asic_top.py` now defaults to the resident bitmap graph; pass
 `--architecture legacy_sram` only for the prior exact scalar replay reference.
+
+Prepare the complete XL export, graph top, tile plan, and logical memory manifest without
+starting Yosys/OpenROAD:
+
+```bash
+docker compose -f compose_ASIC.yaml run --rm test \
+  bash asic/scripts/prepare_xl_asic.sh
+```
+
+The separately gated full structural elaboration command is
+`bash asic/scripts/run_xl_synthesis.sh`. Do not launch it while training is using host memory.
+It writes `xl_full_synthesis.log` inside the selected ignored XL export directory and is an
+elaboration/synthesis check, not full-chip PPA.
 
 Historical addressed-SRAM reference: the generator's `legacy_sram` mode consumes an exported
 `model_spec.yaml` and emits the exact
@@ -226,7 +258,8 @@ Run the checkpoint-exact resident `detail_stem` characterization unit separately
 bash asic/scripts/run_orfs_resident_tile.sh
 ```
 
-Run the checkpoint-exact two-tile receptive-halo boundary characterization on a larger-memory
+Run the checkpoint-exact Q7.16-weight/Q15.16-combined-state two-tile receptive-halo boundary
+characterization on a larger-memory
 machine with:
 
 ```bash

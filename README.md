@@ -7,7 +7,7 @@ ASIC with fixed-point PLIF state, sparse spike routing, and event-driven synapti
 ## Repository layout
 
 ```text
-src/eventspikeseg/model.py              EventSpikeSeg140k ASIC target plus optional XL software comparison
+src/eventspikeseg/model.py              EventSpikeSeg140k and EventSpikeSegXL ASIC model definitions
 src/eventspikeseg/model_components.py   shared PLIF/SNN/convolution primitives
 src/eventspikeseg/asic/                 fixed-point export, capacity, and integer event reference
 src/eventspikeseg/top_ten_models.py     frozen round-one model registry
@@ -227,12 +227,13 @@ Full rankings and per-class evidence are in `docs/RESULTS.md`; chronological int
 
 ## EventSpikeSeg models
 
-`EventSpikeSeg140k` is the only DSEC/ASIC implementation target. With two raw-event
+`EventSpikeSeg140k` is the baseline six-class DSEC/ASIC implementation target. With two raw-event
 inputs and six classes it has 149,835 registered parameters, 149,423 executed inference
 parameters, 143,824 executed synaptic weights, and 25 executed PLIF populations plus
 one stateless temporal class-current readout.
-`EventSpikeSegXL` remains a software-only capacity comparison and is rejected by the
-ASIC exporter. Its expanded configuration stays below one million registered
+`EventSpikeSegXL` is the expanded eleven-class ASIC target. Its epoch-1 checkpoint currently
+drives structural export/RTL bring-up only; final constants must be regenerated from the
+selected trained/QAT checkpoint. Its configuration stays below one million registered
 parameters: 978,559 for six classes and 979,179 for eleven. Capacity is concentrated
 at the lowest semantic resolution and in full-convolution decoder fusion so native
 resolution state is limited to a 16-channel detail path and 24-channel final refinement.
@@ -363,13 +364,30 @@ python scripts/export_asic_model.py \
   --output artifacts/ASIC
 ```
 
+Prepare the structurally exact XL epoch-1 export and generated resident RTL without synthesis:
+
+```bash
+docker compose -f compose_ASIC.yaml run --rm test \
+  bash asic/scripts/prepare_xl_asic.sh
+```
+
+Set `XL_CHECKPOINT` and `XL_ASIC_EXPORT` when replacing epoch 1 with the selected final/QAT
+checkpoint. Full XL Yosys elaboration is a separate explicitly launched
+`asic/scripts/run_xl_synthesis.sh` because it competes heavily for host memory.
+
+Run the exact epoch-1 44-actor integer graph over one ten-bin/50 ms DSEC sample in the CPU
+verification Docker image with `bash asic/scripts/run_xl_native_integer_simulation.sh`. The
+default export is `artifacts/ASIC_XL`; the run checkpoints at each bin and writes both an activity
+JSON and the final 440x640 `uint8` prediction under `artifacts/RTL/profile/`. This validates
+fixed-point graph execution, not trained accuracy, RTL cycles, or ASIC energy.
+
 The complete `artifacts/` directory is intentionally ignored by Git. Checkpoints, exported
 weights, generated tops, replay vectors, metrics, and physical-design outputs remain local and
 must be retained or backed up outside Git; derived exports are regenerated from the retained
 checkpoint using the tracked source and scripts.
 
-The exporter hard-rejects XL and emits the exact 25-PLIF-actor plus current-readout manifest,
-affine-folded int8 ROMs, per-actor quantized neuron parameters, the fixed-point contract,
+The exporter emits either the exact 25-actor 140k or 44-actor XL manifest,
+affine-folded signed 24-bit Q7.16 ROMs, per-actor quantized neuron parameters, the fixed-point contract,
 and an explicit `layer_graph.json` containing DAG nodes, directed edges, channel-remap/fanout
 operations, residual/skip join semantics, and same-bin completion-token rendezvous rules.
 

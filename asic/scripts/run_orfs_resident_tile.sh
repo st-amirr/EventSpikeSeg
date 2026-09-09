@@ -4,7 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-docker compose -f "${PROJECT_DIR}/compose_ASIC.yaml" run --rm rtl \
+docker run --rm --platform linux/amd64 \
+  --workdir /workspace \
+  --env PYTHONPATH=/workspace/src \
+  --volume "${PROJECT_DIR}:/workspace:ro" \
+  --volume "${PROJECT_DIR}/artifacts:/workspace/artifacts" \
+  "${ASIC_CPU_IMAGE:-eventspikeseg:torch2.2.2-cpu-verification}" \
   python scripts/generate_resident_tile_pnr_top.py \
   artifacts/ASIC/model_spec.yaml \
   artifacts/ASIC/PPA/resident_detail_stem_2x2.sv \

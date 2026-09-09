@@ -328,6 +328,17 @@ ROOT = Path(__file__).resolve().parents[2]
             },
         ),
         (
+            "resident_spike_mask_attention",
+            ["asic/rtl/resident_spike_mask_attention.sv"],
+            "test_resident_spike_mask_attention",
+            {
+                "HEADS": 1,
+                "HEAD_DIM": 2,
+                "SPATIAL_COUNT": 2,
+                "HEAD_THRESHOLDS": 0x020000,
+            },
+        ),
+        (
             "resident_spike_vector_fork2",
             ["asic/rtl/resident_spike_vector_fork2.sv"],
             "test_resident_spike_vector_fork2",
@@ -754,6 +765,7 @@ ROOT = Path(__file__).resolve().parents[2]
         "resident_spike_vector_channel_offset",
         "resident_spike_vector_union2",
         "resident_temporal_class_readout",
+        "resident_spike_mask_attention",
         "resident_spike_vector_fork2",
         "event_stream_fifo",
         "binary_event_union2",

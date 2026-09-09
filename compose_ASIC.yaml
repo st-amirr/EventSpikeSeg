@@ -18,7 +18,7 @@ x-cpu-verification: &cpu-verification
       target: /workspace
       read_only: true
     - type: bind
-      source: ./artifacts
+      source: ${EVENTSPIKESEG_ARTIFACTS_DIR}
       target: /workspace/artifacts
 
 services:

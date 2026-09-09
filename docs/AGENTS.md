@@ -2,8 +2,9 @@
 
 ## Mission
 
-Build and validate only `EventSpikeSeg140k` for six-class DSEC at native `440x640`, then map its
-spike-native PLIF inference graph to a custom static digital-neuromorphic accelerator.
+Build and validate `EventSpikeSeg140k` for six-class DSEC and `EventSpikeSegXL` for native
+eleven-class DSEC at `440x640`, then map their spike-native PLIF inference graphs to a custom
+static digital-neuromorphic accelerator.
 Training remains PyTorch + SpikingJelly; deployment is a custom ASIC described directly in
 synthesizable SystemVerilog, with Icarus/cocotb and Yosys/OpenROAD as the open verification
 and PPA path.
@@ -20,13 +21,18 @@ Python constructors/forward methods remain authoritative if older diagrams disag
 
 ## Canonical naming and frozen graph
 
-- `EventSpikeSeg140k`: the only ASIC target; 149,835 registered parameters for
+- `EventSpikeSeg140k`: validated baseline ASIC target; 149,835 registered parameters for
   six-class, two-polarity DSEC.
-- `EventSpikeSegXL`: software-only comparison; ASIC export must reject it.
+- `EventSpikeSegXL`: second ASIC target; 979,179 registered parameters for eleven-class,
+  two-polarity DSEC. Epoch 1 is a structural/constants bring-up checkpoint, not a final
+  accuracy checkpoint; regenerate its constants from the selected trained/QAT checkpoint.
 - Deployable 140k inference: 149,423 executed parameters, 143,824 synaptic weights,
   25 Conv/ChannelAffine/PLIF populations, and one temporal class-current readout.
-- Omit dead `refine2`, training-only `aux_head`/`boundary_head`, surrogate gradients,
-  and all XL modules.
+- The 140k export omits dead `refine2`, training-only `aux_head`/`boundary_head`,
+  surrogate gradients, and XL-only modules.
+- XL deployable inference has 968,831 executed parameters, 959,824 convolution weights,
+  44 PLIF populations, four learned attention thresholds, and one 24-to-11 current readout.
+  Omit `aux_head`, `deep_aux_head`, and surrogate-gradient-only behavior.
 
 ## Exact inference semantics
 
@@ -45,7 +51,7 @@ Per output channel, `beta=sigmoid(beta_logit)` and threshold are learned. Spatia
 neurons keep individual membrane state. Software charge is equivalent to
 `candidate = beta * membrane + current` before dynamic threshold/reset effects.
 
-ASIC values are fixed-point numerical SNN states, not physical volts/amps. Freeze the
+ASIC values are fixed-point numerical SNN states, not physical volts/amps. Both targets use
 weight, beta, threshold, membrane, accumulator, adaptation, rounding, saturation, and
 overflow formats in the integer export contract. The baseline must preserve the learned
 per-channel beta with a quantized coefficient. Shift-only/power-of-two leak is an
@@ -63,6 +69,8 @@ threshold use signed Q7.16 in 24 bits, and beta uses unsigned UQ1.23. Enabled ad
 logical state, but it is
 distributed register/latch state rather than an addressed byte store. There is no last-bin tag,
 touched queue, SRAM fetch, or writeback. Full-chip PPA must measure this resident design.
+The 44-population XL graph has 78,707,200 logical membranes and 15,910,400
+adaptation-enabled states, totaling 347.66 MiB-equivalent under the same widths.
 
 Each actor owns resident local state across its spatial/channel destinations and may
 not lend that state or compute identity to another layer. It must never alias logical
@@ -84,9 +92,8 @@ The primary runtime is fully digital but must preserve neuromorphic/SNN executio
 
 ### Static actor execution rule
 
-Instantiate one permanent actor for each of the 25 executed PLIF populations. **These actors
-form the exact EventSpikeSeg140k v8 DAG; the actor tuple is only a topological export order,
-not a linear actor0->actor24 pipeline.** Each actor owns its convolution address generator,
+Instantiate one permanent actor for every executed PLIF population (25 for 140k, 44 for XL).
+**Each actor tuple is only a topological export order, never a linear pipeline.** Each actor owns its convolution address generator,
 accumulator lanes, PLIF/mechanism unit, output FIFO, and initialized local weight ROM.
 Cross-layer compute sharing, layer reconfiguration, and partial reconfiguration are forbidden.
 The interconnect is compile-time fixed: input/detail-semantic forks, residual binary-OR joins,
@@ -131,7 +138,9 @@ not a dense sliding scan.
 
 - stem peer-membrane inhibition uses retinotopic cross-channel membrane energy;
 - encoder/context triangular threshold adaptation uses age/amplitude and a dynamic threshold;
-- final readout is a 16->6 signed current accumulator over all ten updates;
+- final readout is 16->6 for 140k and 24->11 for XL, using signed current accumulation over all ten updates;
+- XL attention is fully spiking: four eight-channel Q/K coincidence popcounts compare
+  exported Q7.16 thresholds, gate V spikes, and feed a spiking 1x1 output actor plus residual OR;
 - DSEC PLIF decay advances in fixed 5 ms steps, with 5 ms as the
   learned-beta reference interval;
 - every resident PLIF receives exactly one learned-beta update at each 5 ms completion, so no
@@ -185,5 +194,5 @@ banked, and SRAM actors are temporary equivalence references pending resident gr
 The resident baseline has no sparse-state entry, state address, or timestamp. Each PLIF consumes
 its exported learned per-channel beta once per 5 ms completion. Do not reintroduce a fixed-record
 25-layer controller: runtime is the autonomous static DAG with ordered completion-token
-rendezvous. The final 16->6 resident readout uses signed current accumulation across the configured
+rendezvous. The parameterized final resident readout uses signed current accumulation across the configured
 prediction window plus first-index-tie argmax; do not create output PLIFs or class-spike counting.

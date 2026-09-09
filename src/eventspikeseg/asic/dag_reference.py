@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import math
+import multiprocessing as mp
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,10 @@ import numpy as np
 from .contracts import BIN_TAG_MODULUS
 from .fixed_point import ASIC_FORMATS
 from .integer_reference import IntegerPLIF, NeuronState
+
+_PARALLEL_SCATTER_CONTEXT: tuple[
+    dict[str, Any], np.ndarray, list[SpikeEvent]
+] | None = None
 
 
 @dataclass(frozen=True, order=True)
@@ -37,6 +43,148 @@ class Prediction:
 
     bin_tag: int
     classes: np.ndarray
+
+
+class DenseNeuronStateStore:
+    """Exact typed state for one actor without per-neuron Python objects."""
+
+    def __init__(self, channels: int, height: int, width: int) -> None:
+        shape = (int(channels), int(height), int(width))
+        self.membrane = np.zeros(shape, dtype=np.int32)
+        self.adaptation_age = np.full(shape, -1, dtype=np.int8)
+        self.adaptation_amplitude = np.zeros(shape, dtype=np.int32)
+        self.last_bin_tag = np.full(shape, -1, dtype=np.int32)
+        self.valid = np.zeros(shape, dtype=np.bool_)
+        self._live_count = 0
+
+    @staticmethod
+    def _index(event: SpikeEvent) -> tuple[int, int, int]:
+        return (event.channel, event.y, event.x)
+
+    def get(self, event: SpikeEvent, default: NeuronState) -> NeuronState:
+        index = self._index(event)
+        if not bool(self.valid[index]):
+            return default
+        return NeuronState(
+            membrane=int(self.membrane[index]),
+            adaptation_age=int(self.adaptation_age[index]),
+            adaptation_amplitude=int(self.adaptation_amplitude[index]),
+            last_bin_tag=int(self.last_bin_tag[index]),
+        )
+
+    def __setitem__(self, event: SpikeEvent, state: NeuronState) -> None:
+        index = self._index(event)
+        if not bool(self.valid[index]):
+            self._live_count += 1
+        self.membrane[index] = state.membrane
+        self.adaptation_age[index] = state.adaptation_age
+        self.adaptation_amplitude[index] = state.adaptation_amplitude
+        self.last_bin_tag[index] = state.last_bin_tag
+        self.valid[index] = True
+
+    def pop(self, event: SpikeEvent, default: object = None) -> object:
+        index = self._index(event)
+        if not bool(self.valid[index]):
+            return default
+        state = self.get(event, NeuronState())
+        self.membrane[index] = 0
+        self.adaptation_age[index] = -1
+        self.adaptation_amplitude[index] = 0
+        self.last_bin_tag[index] = -1
+        self.valid[index] = False
+        self._live_count -= 1
+        return state
+
+    def clear(self) -> None:
+        self.membrane.fill(0)
+        self.adaptation_age.fill(-1)
+        self.adaptation_amplitude.fill(0)
+        self.last_bin_tag.fill(-1)
+        self.valid.fill(False)
+        self._live_count = 0
+
+    def __len__(self) -> int:
+        return self._live_count
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DenseNeuronStateStore):
+            return NotImplemented
+        return (
+            self._live_count == other._live_count
+            and np.array_equal(self.valid, other.valid)
+            and np.array_equal(self.membrane, other.membrane)
+            and np.array_equal(self.adaptation_age, other.adaptation_age)
+            and np.array_equal(
+                self.adaptation_amplitude, other.adaptation_amplitude
+            )
+            and np.array_equal(self.last_bin_tag, other.last_bin_tag)
+        )
+
+
+def _scatter_channel_range(
+    channel_range: tuple[int, int],
+) -> tuple[list[tuple[SpikeEvent, int, tuple[int, int, int, int]]], int]:
+    """Scatter to a disjoint output-channel range in original event order."""
+
+    if _PARALLEL_SCATTER_CONTEXT is None:
+        raise RuntimeError("parallel scatter worker was not initialized")
+    layer, weights, events = _PARALLEL_SCATTER_CONTEXT
+    first_channel_limit, last_channel_limit = channel_range
+    input_channels = int(layer["in_channels"])
+    output_channels = int(layer["out_channels"])
+    groups = int(layer["groups"])
+    input_h, input_w = (int(value) for value in layer["input_hw"])
+    output_h, output_w = (int(value) for value in layer["output_hw"])
+    kernel_h, kernel_w = (int(value) for value in layer["kernel"])
+    stride_y, stride_x = (int(value) for value in layer["stride"])
+    pad_y, pad_x = (int(value) for value in layer["padding"])
+    dilation_y, dilation_x = (int(value) for value in layer["dilation"])
+    inputs_per_group = input_channels // groups
+    outputs_per_group = output_channels // groups
+    current_format = ASIC_FORMATS["current"]
+    currents: dict[SpikeEvent, int] = {}
+    first_keys: dict[SpikeEvent, tuple[int, int, int, int]] = {}
+    contribution_count = 0
+    for event_index, event in enumerate(events):
+        group = event.channel // inputs_per_group
+        input_local = event.channel % inputs_per_group
+        group_first = group * outputs_per_group
+        first_output = max(group_first, first_channel_limit)
+        last_output = min(group_first + outputs_per_group, last_channel_limit)
+        for output_channel in range(first_output, last_output):
+            for kernel_y in range(kernel_h):
+                numerator_y = event.y + pad_y - kernel_y * dilation_y
+                if numerator_y < 0 or numerator_y % stride_y:
+                    continue
+                output_y = numerator_y // stride_y
+                if output_y >= output_h:
+                    continue
+                for kernel_x in range(kernel_w):
+                    numerator_x = event.x + pad_x - kernel_x * dilation_x
+                    if numerator_x < 0 or numerator_x % stride_x:
+                        continue
+                    output_x = numerator_x // stride_x
+                    if output_x >= output_w:
+                        continue
+                    weight = int(weights[output_channel, input_local, kernel_y, kernel_x])
+                    if weight == 0:
+                        continue
+                    contribution_count += 1
+                    destination = SpikeEvent(output_channel, output_y, output_x)
+                    if destination not in currents:
+                        first_keys[destination] = (
+                            event_index,
+                            output_channel,
+                            kernel_y,
+                            kernel_x,
+                        )
+                    currents[destination] = current_format.saturate(
+                        currents.get(destination, 0) + weight
+                    )
+    return [
+        (destination, current, first_keys[destination])
+        for destination, current in currents.items()
+    ], contribution_count
 
 
 def _sat(value: int, bits: int) -> int:
@@ -62,6 +210,8 @@ class IntegerDAGReference:
         *,
         capture_trace: bool = True,
         lane_config: dict[str, dict[str, Any]] | None = None,
+        workers: int = 1,
+        parallel_min_work: int = 2_000_000,
     ) -> None:
         self.model_spec_path = Path(model_spec)
         self.spec = json.loads(self.model_spec_path.read_text(encoding="utf-8"))
@@ -69,8 +219,13 @@ class IntegerDAGReference:
             self.model_spec_path.parent / str(self.spec.get("artifact_root", "."))
         ).resolve()
         self.graph = self.spec["graph"]
-        if self.graph.get("actor_count") != 25 or self.graph.get("linear_pipeline") is not False:
-            raise ValueError("integer DAG reference requires the exact 25-actor graph")
+        actor_order = self.graph.get("actor_topological_order")
+        if (
+            not isinstance(actor_order, list)
+            or self.graph.get("actor_count") != len(actor_order)
+            or self.graph.get("linear_pipeline") is not False
+        ):
+            raise ValueError("integer DAG reference requires an exact non-linear actor graph")
         self.layers = {str(layer["name"]): layer for layer in self.spec["layers"]}
         self.actors = set(self.graph["actor_topological_order"])
         self.node_kinds = {
@@ -91,9 +246,13 @@ class IntegerDAGReference:
                 )
             )
 
-        self.states: dict[str, dict[SpikeEvent, NeuronState]] = {
-            name: {} for name in self.actors
-        }
+        self.states: dict[str, DenseNeuronStateStore] = {}
+        for name in self.actors:
+            layer = self.layers[name]
+            output_h, output_w = (int(value) for value in layer["output_hw"])
+            self.states[name] = DenseNeuronStateStore(
+                int(layer["out_channels"]), output_h, output_w
+            )
         self.class_scores: dict[tuple[int, int], list[int]] = {}
         self.prediction_bin_count = 0
         self.prediction_bins = int(
@@ -104,6 +263,12 @@ class IntegerDAGReference:
         self.last_trace: dict[str, dict[str, list[tuple[int, ...]]]] = {}
         self.last_actor_activity: dict[str, dict[str, int]] = {}
         self.lane_config = lane_config or {}
+        if workers < 1:
+            raise ValueError("workers must be positive")
+        self.workers = int(workers)
+        if parallel_min_work < 0:
+            raise ValueError("parallel_min_work must be non-negative")
+        self.parallel_min_work = int(parallel_min_work)
         self.last_actor_bank_activity: dict[str, dict[str, list[int]]] = {}
         self._scatter_bank_contributions: dict[str, list[int]] = {}
         self._scatter_collection_cycles: dict[str, int] = {}
@@ -136,7 +301,8 @@ class IntegerDAGReference:
     def _route_node(
         self, name: str, streams: dict[str, list[SpikeEvent]]
     ) -> list[SpikeEvent]:
-        inputs = [self._edge_events(edge, streams) for edge in self.incoming[name]]
+        incoming = self.incoming[name]
+        inputs = [self._edge_events(edge, streams) for edge in incoming]
         kind = self.node_kinds[name]
         if kind == "nearest_event_fanout_2x":
             result: list[SpikeEvent] = []
@@ -151,6 +317,38 @@ class IntegerDAGReference:
             return list(dict.fromkeys(event for group in inputs for event in group))
         if kind in {"channel_concat", "multiplicity_preserving_sum"}:
             return [event for group in inputs for event in group]
+        if kind == "spike_mask_attention":
+            by_role = {
+                str(edge.get("transform", "")): set(events)
+                for edge, events in zip(incoming, inputs)
+            }
+            q_events = by_role.get("attention_q")
+            k_events = by_role.get("attention_k")
+            v_events = by_role.get("attention_v")
+            if q_events is None or k_events is None or v_events is None:
+                raise ValueError("spike attention requires Q, K, and V inputs")
+            attention = self.spec.get("spike_attention")
+            if not isinstance(attention, dict):
+                raise ValueError("model specification lacks spike-attention parameters")
+            heads = int(attention["heads"])
+            head_dim = int(attention["head_dim"])
+            thresholds = [int(value) for value in attention["threshold_q"]]
+            if len(thresholds) != heads:
+                raise ValueError("spike-attention threshold count does not match heads")
+            result: list[SpikeEvent] = []
+            for event in sorted(v_events):
+                head = event.channel // head_dim
+                if not 0 <= head < heads:
+                    raise ValueError(f"attention V channel out of range: {event}")
+                first_channel = head * head_dim
+                coincidences = sum(
+                    SpikeEvent(channel, event.y, event.x) in q_events
+                    and SpikeEvent(channel, event.y, event.x) in k_events
+                    for channel in range(first_channel, first_channel + head_dim)
+                )
+                if (coincidences << 16) >= thresholds[head]:
+                    result.append(event)
+            return result
         raise ValueError(f"unsupported integer-reference route node {name!r}: {kind}")
 
     def _scatter(
@@ -196,6 +394,39 @@ class IntegerDAGReference:
         mechanism = bool(parameters.get("inhibition_enabled", False)) or bool(
             parameters.get("threshold_adaptation_enabled", False)
         )
+
+        estimated_work = len(events) * outputs_per_group * kernel_h * kernel_w
+        if (
+            self.workers > 1
+            and not self.capture_trace
+            and bank_config is None
+            and output_channels > 1
+            and estimated_work >= self.parallel_min_work
+        ):
+            worker_count = min(self.workers, output_channels)
+            boundaries = [
+                (index * output_channels // worker_count,
+                 (index + 1) * output_channels // worker_count)
+                for index in range(worker_count)
+            ]
+            global _PARALLEL_SCATTER_CONTEXT
+            _PARALLEL_SCATTER_CONTEXT = (layer, weights, events)
+            try:
+                context = mp.get_context("fork")
+                with context.Pool(worker_count) as pool:
+                    results = pool.map(_scatter_channel_range, boundaries)
+            finally:
+                _PARALLEL_SCATTER_CONTEXT = None
+            entries = [entry for result, _ in results for entry in result]
+            entries.sort(key=lambda entry: entry[2])
+            ordered_currents = {
+                destination: current for destination, current, _ in entries
+            }
+            return (
+                ordered_currents,
+                [],
+                sum(count for _, count in results),
+            )
 
         for event in events:
             event_bank_spatials: dict[int, list[int]] = defaultdict(list)
@@ -372,49 +603,52 @@ class IntegerDAGReference:
             for channel, state in enumerate(previous):
                 effective_age = state.adaptation_age
                 if effective_age >= 0 and channel in update_channels:
-                    effective_age += elapsed[channel] << 10
+                    effective_age += elapsed[channel]
+                effective_age_q = max(effective_age, 0) << 16
                 phase = 0
                 if adaptation and state.adaptation_age >= 0 and adaptation_duration:
-                    if effective_age <= adaptation_duration:
-                        phase = effective_age
-                    elif effective_age < 2 * adaptation_duration:
-                        phase = 2 * adaptation_duration - effective_age
+                    if effective_age_q <= adaptation_duration:
+                        phase = effective_age_q
+                    elif effective_age_q < 2 * adaptation_duration:
+                        phase = 2 * adaptation_duration - effective_age_q
                 if adaptation_duration:
                     penalty_sum += state.adaptation_amplitude * phase // adaptation_duration
-            shared_penalty = min(penalty_sum, 0xFFFF) & 0x7FFF
+            shared_penalty = min(penalty_sum, 0xFFFFFF) & 0x7FFFFF
             adjusted = [candidate - shared_penalty for candidate in candidates]
             energy = math.isqrt(sum(abs(value) ** 2 for value in adjusted) // channels)
-            energy = min(energy, 0xFFFF)
+            energy = min(energy, 0xFFFFFF)
 
             output_membranes = list(candidates)
             channel_spikes = [False] * channels
             new_ages = [state.adaptation_age for state in previous]
             new_amplitudes = [state.adaptation_amplitude for state in previous]
             for channel in range(channels):
-                threshold = _sat(thresholds[channel] + shared_penalty, 16)
+                threshold = _sat(thresholds[channel] + shared_penalty, 24)
                 if channel in update_channels and candidates[channel] >= threshold:
                     channel_spikes[channel] = True
-                    output_membranes[channel] = _sat(candidates[channel] - threshold, 16)
+                    output_membranes[channel] = _sat(candidates[channel] - threshold, 24)
                 if adaptation and channel in update_channels:
-                    effective_age = previous[channel].adaptation_age + (elapsed[channel] << 10)
+                    effective_age = previous[channel].adaptation_age + elapsed[channel]
+                    effective_age_q = max(effective_age, 0) << 16
                     if channel_spikes[channel]:
                         new_ages[channel] = 0
                         new_amplitudes[channel] = min(
-                            (energy * adaptation_strength + 512) >> 10, 0xFFFF
+                            (energy * adaptation_strength + (1 << 15)) >> 16,
+                            ASIC_FORMATS["adaptation_amplitude"].maximum,
                         )
                     elif previous[channel].adaptation_age >= 0:
-                        if effective_age >= 2 * adaptation_duration:
+                        if effective_age_q >= 2 * adaptation_duration:
                             new_ages[channel] = -1
                             new_amplitudes[channel] = 0
                         else:
-                            new_ages[channel] = effective_age & 0xFFFF
+                            new_ages[channel] = effective_age & 0x3F
 
             if inhibition and any(channel_spikes):
-                decrement = (energy * inhibition_strength + 512) >> 10
+                decrement = (energy * inhibition_strength + (1 << 15)) >> 16
                 for channel in range(channels):
                     if not channel_spikes[channel]:
                         output_membranes[channel] = _sat(
-                            output_membranes[channel] - decrement, 16
+                            output_membranes[channel] - decrement, 24
                         )
 
             for channel in update_channels:
@@ -523,7 +757,7 @@ class IntegerDAGReference:
             for class_index in range(class_count):
                 scores[class_index] = _sat(
                     scores[class_index] + int(weights[class_index, event.channel, 0, 0]),
-                    24,
+                    32,
                 )
         self.prediction_bin_count += 1
         if self.prediction_bin_count < self.prediction_bins:
@@ -536,7 +770,11 @@ class IntegerDAGReference:
         return Prediction(bin_tag=bin_tag, classes=classes)
 
     def process_bin(
-        self, events: list[SpikeEvent], *, bin_tag: int
+        self,
+        events: list[SpikeEvent],
+        *,
+        bin_tag: int,
+        progress_callback: Callable[[str, int, int, int], None] | None = None,
     ) -> Prediction | None:
         """Process data events followed by one same-tag completion token."""
 
@@ -558,6 +796,8 @@ class IntegerDAGReference:
         self.last_route_event_counts = {}
         self._scatter_collection_cycles = {}
         readout_name = str(self.graph["current_readout"])
+        actor_index = 0
+        actor_count = len(self.actors)
         for name in self.graph["node_topological_order"]:
             if name in {"input", "prediction"}:
                 continue
@@ -567,6 +807,11 @@ class IntegerDAGReference:
                     raise ValueError(f"actor {name} does not have exactly one input")
                 actor_events = self._edge_events(incoming[0], streams)
                 streams[name] = self._actor(name, int(bin_tag), actor_events)
+                actor_index += 1
+                if progress_callback is not None:
+                    progress_callback(
+                        name, actor_index, actor_count, len(streams[name])
+                    )
             elif name == readout_name:
                 incoming = self.incoming[name]
                 readout_events = self._edge_events(incoming[0], streams)

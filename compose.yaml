@@ -18,7 +18,7 @@ x-app: &app
       target: /workspace
       read_only: true
     - type: bind
-      source: ./artifacts
+      source: ${EVENTSPIKESEG_ARTIFACTS_DIR}
       target: /workspace/artifacts
 
 x-ddd17: &ddd17
@@ -29,7 +29,7 @@ x-ddd17: &ddd17
       target: /workspace
       read_only: true
     - type: bind
-      source: ./artifacts
+      source: ${EVENTSPIKESEG_ARTIFACTS_DIR}
       target: /workspace/artifacts
     - type: bind
       source: C:/Users/stamir/Desktop/Dataset/DDD17
@@ -46,7 +46,7 @@ x-dsec: &dsec
       target: /workspace
       read_only: true
     - type: bind
-      source: ./artifacts
+      source: ${EVENTSPIKESEG_ARTIFACTS_DIR}
       target: /workspace/artifacts
     - type: bind
       source: C:/Users/stamir/Desktop/Dataset/DSEC
@@ -158,7 +158,7 @@ services:
       #  "--height", "275", "--width", "400", ## Original size is 640 × 440
        "--height", "440", "--width", "640",
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2", "--data-workers", "4",
-       "--internal-updates", "10", "--sequential-chunks", "5",
+       "--internal-updates", "10", "--sequential-chunks", "10",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
        "--learning-rate", "0.001", "--checkpoint-every", "1",
        "--load", "artifacts/model_checkpoints/dsec_XL/EventSpikeSegXL_seed17_epoch001.pt",

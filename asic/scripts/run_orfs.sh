@@ -4,7 +4,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-bash "${SCRIPT_DIR}/check_rtl.sh"
+if command -v iverilog >/dev/null 2>&1; then
+  bash "${SCRIPT_DIR}/check_rtl.sh"
+else
+  docker run --rm --platform linux/amd64 \
+    --workdir /workspace \
+    --env PYTHONPATH=/workspace/src \
+    --volume "${PROJECT_DIR}:/workspace:ro" \
+    --volume "${PROJECT_DIR}/artifacts:/workspace/artifacts" \
+    "${ASIC_CPU_IMAGE:-eventspikeseg:torch2.2.2-cpu-verification}" \
+    bash asic/scripts/check_rtl.sh
+fi
 
 DESIGN_CONFIG="${ORFS_DESIGN_CONFIG:-${PROJECT_DIR}/asic/orfs_asap7_config.mk}"
 REPORT_PLATFORM="${ORFS_REPORT_PLATFORM:-asap7}"

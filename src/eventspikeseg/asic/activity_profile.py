@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import hashlib
 import json
+import os
+import pickle
 import time
 from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -278,8 +283,12 @@ def profile_native_event_sample(
     duration_ms: int = 50,
     rectify_path: Path | None = None,
     lane_config_path: Path | None = None,
+    report_progress: bool = False,
+    workers: int = 1,
+    resume_checkpoint_path: Path | None = None,
+    prediction_output_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Run a short real-event interval through the full native 25-actor DAG."""
+    """Run a real-event interval through the full native integer actor DAG."""
 
     spec = json.loads(model_spec.read_text(encoding="utf-8"))
     if spec.get("input_size") != [440, 640]:
@@ -301,7 +310,7 @@ def profile_native_event_sample(
             for name, values in dict(lane_document.get("actors", {})).items()
         }
     reference = IntegerDAGReference(
-        model_spec, capture_trace=False, lane_config=lane_config
+        model_spec, capture_trace=False, lane_config=lane_config, workers=workers
     )
     actor_names: Sequence[str] = reference.graph["actor_topological_order"]
     residual_names = {
@@ -329,12 +338,84 @@ def profile_native_event_sample(
             maximum_isolated_collection_cycles[name] = 0
     host_seconds_per_bin: list[float] = []
     prediction_emitted = False
+    final_prediction: np.ndarray | None = None
+    first_bin = 0
+    resume_identity = {
+        "model_spec_sha256": _sha256(model_spec),
+        "checkpoint_sha256": _sha256(checkpoint_path),
+        "event_file_sha256": _sha256(event_path),
+        "start_ms": int(start_ms),
+        "duration_ms": int(duration_ms),
+        "rectify_map": str(rectify_path) if rectify_path is not None else None,
+        "lane_config": str(lane_config_path) if lane_config_path is not None else None,
+    }
+    if resume_checkpoint_path is not None and resume_checkpoint_path.exists():
+        with resume_checkpoint_path.open("rb") as stream:
+            saved = pickle.load(stream)
+        if saved.get("identity") != resume_identity:
+            raise ValueError("native simulation resume checkpoint belongs to another run")
+        first_bin = int(saved["completed_bins"])
+        if not 0 <= first_bin <= len(bins):
+            raise ValueError("native simulation resume checkpoint has invalid bin count")
+        reference.states = saved["states"]
+        reference.class_scores = saved["class_scores"]
+        reference.prediction_bin_count = int(saved["prediction_bin_count"])
+        maximum_live = saved["maximum_live"]
+        maximum_touched = saved["maximum_touched"]
+        maximum_residual = saved["maximum_residual"]
+        actor_spikes = saved["actor_spikes"]
+        actor_input_events = saved["actor_input_events"]
+        actor_synaptic_contributions = saved["actor_synaptic_contributions"]
+        bank_contributions = saved["bank_contributions"]
+        maximum_bank_touched = saved["maximum_bank_touched"]
+        bank_spikes = saved["bank_spikes"]
+        maximum_isolated_collection_cycles = saved[
+            "maximum_isolated_collection_cycles"
+        ]
+        host_seconds_per_bin = saved["host_seconds_per_bin"]
+        prediction_emitted = bool(saved["prediction_emitted"])
+        final_prediction = saved.get("final_prediction")
+        del saved
+        gc.collect()
+        with suppress(OSError):
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        if report_progress:
+            print(
+                f"resuming exact native simulation after {first_bin}/{len(bins)} bins",
+                flush=True,
+            )
 
-    for offset, events in enumerate(bins):
+    for offset in range(first_bin, len(bins)):
+        events = bins[offset]
         started = time.perf_counter()
-        prediction = reference.process_bin(events, bin_tag=offset + 1)
+        last_actor_finished = started
+
+        def actor_progress(
+            name: str,
+            actor_index: int,
+            actor_count: int,
+            output_spikes: int,
+            bin_number: int = offset + 1,
+        ) -> None:
+            nonlocal last_actor_finished
+            now = time.perf_counter()
+            print(
+                f"bin {bin_number}/{len(bins)} actor {actor_index}/{actor_count} "
+                f"{name}: {output_spikes} output spikes, "
+                f"{now - last_actor_finished:.3f} s",
+                flush=True,
+            )
+            last_actor_finished = now
+
+        prediction = reference.process_bin(
+            events,
+            bin_tag=offset + 1,
+            progress_callback=actor_progress if report_progress else None,
+        )
         host_seconds_per_bin.append(time.perf_counter() - started)
         prediction_emitted |= prediction is not None
+        if prediction is not None:
+            final_prediction = prediction.classes.copy()
         for name in actor_names:
             activity = reference.last_actor_activity[name]
             actor_input_events[name] += activity["input_events"]
@@ -367,11 +448,52 @@ def profile_native_event_sample(
             )
         for name, count in reference.state_profile().items():
             maximum_live[name] = max(maximum_live[name], count)
+        if resume_checkpoint_path is not None:
+            saved = {
+                "identity": resume_identity,
+                "completed_bins": offset + 1,
+                "states": reference.states,
+                "class_scores": reference.class_scores,
+                "prediction_bin_count": reference.prediction_bin_count,
+                "maximum_live": maximum_live,
+                "maximum_touched": maximum_touched,
+                "maximum_residual": maximum_residual,
+                "actor_spikes": actor_spikes,
+                "actor_input_events": actor_input_events,
+                "actor_synaptic_contributions": actor_synaptic_contributions,
+                "bank_contributions": bank_contributions,
+                "maximum_bank_touched": maximum_bank_touched,
+                "bank_spikes": bank_spikes,
+                "maximum_isolated_collection_cycles": (
+                    maximum_isolated_collection_cycles
+                ),
+                "host_seconds_per_bin": host_seconds_per_bin,
+                "prediction_emitted": prediction_emitted,
+                "final_prediction": final_prediction,
+            }
+            resume_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = resume_checkpoint_path.with_suffix(
+                resume_checkpoint_path.suffix + ".tmp"
+            )
+            with temporary.open("wb") as stream:
+                pickle.dump(saved, stream, protocol=pickle.HIGHEST_PROTOCOL)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, resume_checkpoint_path)
+            if report_progress:
+                print(
+                    f"saved exact state after bin {offset + 1}/{len(bins)}: "
+                    f"{resume_checkpoint_path}",
+                    flush=True,
+                )
 
     event_counts = np.asarray([len(events) for events in bins], dtype=np.int64)
     result = {
         "schema_version": "1.0.0",
-        "scope": "short_real_event_interval_full_25_actor_native_440x640_integer_DAG",
+        "scope": (
+            f"real_event_interval_full_{len(actor_names)}_actor_"
+            "native_440x640_integer_DAG"
+        ),
         "checkpoint_sha256": _sha256(checkpoint_path),
         "checkpoint_identity": checkpoint_identity,
         "model_spec_sha256": _sha256(model_spec),
@@ -380,6 +502,7 @@ def profile_native_event_sample(
         "start_ms": start_ms,
         "duration_ms": duration_ms,
         "bins_profiled": len(bins),
+        "simulation_workers": int(workers),
         "spatial_preprocessing": preprocessing,
         "input_events_per_bin": event_counts.tolist(),
         "input_events": int(event_counts.sum()),
@@ -404,6 +527,18 @@ def profile_native_event_sample(
             "capacity or publication-grade activity power"
         ),
     }
+    if final_prediction is not None:
+        prediction_bytes = final_prediction.tobytes(order="C")
+        result["prediction_shape"] = list(final_prediction.shape)
+        result["prediction_sha256"] = hashlib.sha256(prediction_bytes).hexdigest()
+        values, counts = np.unique(final_prediction, return_counts=True)
+        result["prediction_class_histogram"] = {
+            str(int(value)): int(count) for value, count in zip(values, counts)
+        }
+        if prediction_output_path is not None:
+            prediction_output_path.parent.mkdir(parents=True, exist_ok=True)
+            np.save(prediction_output_path, final_prediction, allow_pickle=False)
+            result["prediction_output"] = str(prediction_output_path)
     if lane_config_path is not None:
         result["lane_config_sha256"] = _sha256(lane_config_path)
         result["bank_activity"] = {
