@@ -21,6 +21,89 @@ except ModuleNotFoundError:  # Direct execution adds scripts/, not the repositor
     )
 
 
+def exact_tile_geometry(
+    layer: dict[str, object],
+    *,
+    tile_width: int,
+    tile_height: int,
+    tile_column: int,
+    tile_row: int,
+) -> dict[str, int]:
+    """Return the clipped global geometry for one nominal output tile."""
+    if tile_width < 1 or tile_height < 1:
+        raise ValueError("tile dimensions must be positive")
+    if tile_column < 0 or tile_row < 0:
+        raise ValueError("tile coordinates must be nonnegative")
+    actor_input_height, actor_input_width = (
+        int(value) for value in layer["input_hw"]  # type: ignore[index]
+    )
+    actor_output_height, actor_output_width = (
+        int(value) for value in layer["output_hw"]  # type: ignore[index]
+    )
+    kernel_height, kernel_width = (
+        int(value) for value in layer["kernel"]  # type: ignore[index]
+    )
+    stride_y, stride_x = (
+        int(value) for value in layer["stride"]  # type: ignore[index]
+    )
+    padding_y, padding_x = (
+        int(value) for value in layer.get("padding", [0, 0])  # type: ignore[union-attr]
+    )
+    dilation_y, dilation_x = (
+        int(value) for value in layer["dilation"]  # type: ignore[index]
+    )
+    output_origin_x = tile_column * tile_width
+    output_origin_y = tile_row * tile_height
+    if output_origin_x >= actor_output_width or output_origin_y >= actor_output_height:
+        raise ValueError("tile coordinates are outside the actor output")
+    local_output_width = min(tile_width, actor_output_width - output_origin_x)
+    local_output_height = min(tile_height, actor_output_height - output_origin_y)
+    raw_input_min_x = output_origin_x * stride_x - padding_x
+    raw_input_min_y = output_origin_y * stride_y - padding_y
+    raw_input_max_x = (
+        (output_origin_x + local_output_width - 1) * stride_x
+        - padding_x
+        + (kernel_width - 1) * dilation_x
+    )
+    raw_input_max_y = (
+        (output_origin_y + local_output_height - 1) * stride_y
+        - padding_y
+        + (kernel_height - 1) * dilation_y
+    )
+    input_origin_x = max(0, raw_input_min_x)
+    input_origin_y = max(0, raw_input_min_y)
+    input_end_x = min(actor_input_width - 1, raw_input_max_x)
+    input_end_y = min(actor_input_height - 1, raw_input_max_y)
+    input_width = input_end_x - input_origin_x + 1
+    input_height = input_end_y - input_origin_y + 1
+    if input_width < 1 or input_height < 1:
+        raise ValueError("tile has an empty input receptive halo")
+    return {
+        "actor_input_width": actor_input_width,
+        "actor_input_height": actor_input_height,
+        "actor_output_width": actor_output_width,
+        "actor_output_height": actor_output_height,
+        "output_origin_x": output_origin_x,
+        "output_origin_y": output_origin_y,
+        "output_width": local_output_width,
+        "output_height": local_output_height,
+        "input_origin_x": input_origin_x,
+        "input_origin_y": input_origin_y,
+        "input_width": input_width,
+        "input_height": input_height,
+        "input_offset_x": raw_input_min_x - input_origin_x,
+        "input_offset_y": raw_input_min_y - input_origin_y,
+    }
+
+
+def exact_tile_variant_key(geometry: dict[str, int]) -> str:
+    return (
+        f"out_{geometry['output_height']}x{geometry['output_width']}__"
+        f"halo_{geometry['input_height']}x{geometry['input_width']}__"
+        f"offset_{geometry['input_offset_y']}_{geometry['input_offset_x']}"
+    )
+
+
 def generate_tile_top(
     model_spec_path: Path,
     output_path: Path,
@@ -30,6 +113,8 @@ def generate_tile_top(
     tile_height: int = 8,
     tile_columns: int = 1,
     tile_rows: int = 1,
+    tile_column: int | None = None,
+    tile_row: int | None = None,
     module_name: str = "resident_actor_tile_pnr_top",
 ) -> None:
     if tile_width < 1 or tile_height < 1 or tile_columns < 1 or tile_rows < 1:
@@ -46,11 +131,45 @@ def generate_tile_top(
     stride_y, stride_x = (int(value) for value in layer["stride"])
     dilation_y, dilation_x = (int(value) for value in layer["dilation"])
     padding_y, padding_x = (int(value) for value in layer.get("padding", [0, 0]))
+    if (tile_column is None) != (tile_row is None):
+        raise ValueError("tile_column and tile_row must be specified together")
+    exact_tile = tile_column is not None
+    if exact_tile and (tile_columns != 1 or tile_rows != 1):
+        raise ValueError("an exact tile cannot also contain multiple child tiles")
+    if exact_tile and (tile_column < 0 or tile_row < 0):
+        raise ValueError("tile coordinates must be nonnegative")
+
     output_width = tile_width * tile_columns
     output_height = tile_height * tile_rows
+    input_origin_x = 0
+    input_origin_y = 0
+    output_origin_x = 0
+    output_origin_y = 0
+    actor_output_width = output_width
+    actor_output_height = output_height
+    local_output_width = output_width
+    local_output_height = output_height
+    if exact_tile:
+        geometry = exact_tile_geometry(
+            layer,
+            tile_width=tile_width,
+            tile_height=tile_height,
+            tile_column=tile_column,
+            tile_row=tile_row,
+        )
+        actor_output_width = geometry["actor_output_width"]
+        actor_output_height = geometry["actor_output_height"]
+        output_origin_x = geometry["output_origin_x"]
+        output_origin_y = geometry["output_origin_y"]
+        local_output_width = geometry["output_width"]
+        local_output_height = geometry["output_height"]
+        input_origin_x = geometry["input_origin_x"]
+        input_origin_y = geometry["input_origin_y"]
+        input_width = geometry["input_width"]
+        input_height = geometry["input_height"]
     # An interior output tile needs this exact local receptive-field halo. Using
     # PAD=0 translates global coordinates without changing cell structure.
-    if tile_columns == 1 and tile_rows == 1:
+    elif tile_columns == 1 and tile_rows == 1:
         input_width = (tile_width - 1) * stride_x + (kernel_width - 1) * dilation_x + 1
         input_height = (tile_height - 1) * stride_y + (kernel_height - 1) * dilation_y + 1
     else:
@@ -65,7 +184,7 @@ def generate_tile_top(
             (output_height - 1) * stride_y - 2 * padding_y + (kernel_height - 1) * dilation_y + 1,
         )
     input_count = input_channels * input_width * input_height
-    output_count = output_channels * output_width * output_height
+    output_count = output_channels * local_output_width * local_output_height
     weights = _packed_literal(
         export / str(layer["weight_rom"]),
         word_bits=24,
@@ -80,7 +199,7 @@ def generate_tile_top(
         "`timescale 1ns/1ps",
         "// Generated from the checkpoint export; do not hand edit.",
         (
-            f"// Source actor: {actor_name}; output: {output_height}x{output_width}; "
+            f"// Source actor: {actor_name}; output: {local_output_height}x{local_output_width}; "
             f"child tile: {tile_height}x{tile_width}."
         ),
         f"module {module_name} (",
@@ -100,7 +219,17 @@ def generate_tile_top(
         ),
         f"    .INPUT_CHANNELS({input_channels}), .INPUT_WIDTH({input_width}),",
         f"    .INPUT_HEIGHT({input_height}), .OUTPUT_CHANNELS({output_channels}),",
-        f"    .OUTPUT_WIDTH({output_width}), .OUTPUT_HEIGHT({output_height}),",
+        f"    .OUTPUT_WIDTH({actor_output_width}), .OUTPUT_HEIGHT({actor_output_height}),",
+        *(
+            [
+                f"    .INPUT_TILE_X({input_origin_x}), .INPUT_TILE_Y({input_origin_y}),",
+                f"    .OUTPUT_TILE_X({output_origin_x}), .OUTPUT_TILE_Y({output_origin_y}),",
+                f"    .OUTPUT_TILE_WIDTH({local_output_width}),",
+                f"    .OUTPUT_TILE_HEIGHT({local_output_height}),",
+            ]
+            if exact_tile
+            else []
+        ),
         *(
             [f"    .TILE_WIDTH({tile_width}), .TILE_HEIGHT({tile_height}),"]
             if tile_columns > 1 or tile_rows > 1
@@ -108,7 +237,10 @@ def generate_tile_top(
         ),
         f"    .GROUPS({int(layer['groups'])}), .KERNEL_WIDTH({kernel_width}),",
         (
-            f"    .KERNEL_HEIGHT({kernel_height}), .STRIDE_X(1), .STRIDE_Y(1),"
+            f"    .KERNEL_HEIGHT({kernel_height}), .STRIDE_X({stride_x}), "
+            f".STRIDE_Y({stride_y}),"
+            if exact_tile
+            else f"    .KERNEL_HEIGHT({kernel_height}), .STRIDE_X(1), .STRIDE_Y(1),"
             if tile_columns == 1 and tile_rows == 1
             else (
                 f"    .KERNEL_HEIGHT({kernel_height}), .STRIDE_X({stride_x}), "
@@ -117,7 +249,9 @@ def generate_tile_top(
         ),
         f"    .DILATION_X({dilation_x}), .DILATION_Y({dilation_y}),",
         (
-            "    .PAD_X(0), .PAD_Y(0),"
+            f"    .PAD_X({padding_x}), .PAD_Y({padding_y}),"
+            if exact_tile
+            else "    .PAD_X(0), .PAD_Y(0),"
             if tile_columns == 1 and tile_rows == 1
             else f"    .PAD_X({padding_x}), .PAD_Y({padding_y}),"
         ),
@@ -144,6 +278,9 @@ def main() -> None:
     parser.add_argument("--tile-height", type=int, default=8)
     parser.add_argument("--tile-columns", type=int, default=1)
     parser.add_argument("--tile-rows", type=int, default=1)
+    parser.add_argument("--tile-column", type=int)
+    parser.add_argument("--tile-row", type=int)
+    parser.add_argument("--module-name", default="resident_actor_tile_pnr_top")
     args = parser.parse_args()
     generate_tile_top(
         args.model_spec,
@@ -153,6 +290,9 @@ def main() -> None:
         tile_height=args.tile_height,
         tile_columns=args.tile_columns,
         tile_rows=args.tile_rows,
+        tile_column=args.tile_column,
+        tile_row=args.tile_row,
+        module_name=args.module_name,
     )
 
 

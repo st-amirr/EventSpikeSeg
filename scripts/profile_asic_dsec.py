@@ -47,6 +47,15 @@ def main() -> None:
         help="write the final dense class map as an exact uint8 NumPy array",
     )
     parser.add_argument(
+        "--actor-trace",
+        help="capture exact input/output vectors for one pointwise actor",
+    )
+    parser.add_argument(
+        "--actor-trace-output",
+        type=Path,
+        help="write the selected-coordinate actor trace as provenance-bearing JSON",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("artifacts/RTL/profile/native_activity_profile.json"),
@@ -57,6 +66,8 @@ def main() -> None:
         parser.error("--maximum-records must be non-negative")
     if args.workers < 1:
         parser.error("--workers must be positive")
+    if (args.actor_trace is None) != (args.actor_trace_output is None):
+        parser.error("--actor-trace and --actor-trace-output must be supplied together")
     if args.event_file is not None:
         if args.maximum_records:
             parser.error("--maximum-records applies only to --dataset-root")
@@ -72,8 +83,12 @@ def main() -> None:
             workers=args.workers,
             resume_checkpoint_path=args.resume_checkpoint,
             prediction_output_path=args.prediction_output,
+            actor_trace_name=args.actor_trace,
+            actor_trace_output_path=args.actor_trace_output,
         )
     else:
+        if args.actor_trace is not None:
+            parser.error("actor trace capture currently requires --event-file")
         profile = profile_native_dsec(
             model_spec=args.export / "model_spec.yaml",
             checkpoint_path=args.checkpoint,

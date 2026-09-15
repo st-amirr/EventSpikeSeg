@@ -84,6 +84,16 @@ The installed `events/train` folder has 2,887 NumPy tensors while `labels/train`
 
 ## Full-chip ASIC integration still incomplete
 
+**Current XL status (2026-09-13): blocked by full-top elaboration memory.**
+
+The checkpoint-bound beta48 XL preflight passes and the 1x1 partition journal contains
+45 PASS rows. Guarded complete-top Yosys attempts at 8, 16, and 24 GiB all exited 137
+while deriving the native hierarchy; the 24 GiB attempt reached 23.97 GiB and produced
+no complete netlist. OpenROAD full-chip placement/routing, extracted timing, and
+activity power have not started. The machine-readable record is
+`artifacts/ASIC_XL/full_chip_layout/capacity_gate.json`, and the exact resume order is
+`docs/ACTIVE_TASKS.md`. This is a host-capacity failure, not an RTL functional mismatch.
+
 Native SystemVerilog now covers channel-aware standard/grouped/depthwise kernel scatter, actor-local current/membrane/tag storage, exact PLIF commit, completion/spike backpressure, inhibition, adaptation, class-current/argmax primitives, lossless two-way event/token fanout, fixed concat channel remap, nearest-neighbor 2x event expansion, same-bin completion rendezvous, and a correctness-reference residual binary-OR/dedup join. The Python exporter now owns an explicit v8 **non-linear DAG** contract; the 25-actor list is only a deterministic topological/export order.
 
 The active six-class trained-v4 generated channelized convolution/PLIF graph includes all 25 actors, exact static routes, grouped retinotopic mechanism commits, 143,824 exported synaptic weights, and the temporal readout. Model-scale memories now cross bounded banked 1RW interfaces, and the SRAM-integrated reduced-geometry full-DAG replay passes final-output plus per-actor current, candidate/membrane, spike, and adaptation age/amplitude comparison. A reduced 4x4 actor now also reaches clean routed SKY130 GDS with two characterized 80x64 macros, closing the interface experiment only. Full-model macro selection/banking, native residual-dedup capacity, native-resolution activity/latency, and routed activity-based PPA remain open. Do not report native real-time or power results until those paths are measured.
@@ -164,3 +174,62 @@ integer loop index in the result-tag comparator was assigned only when results w
 inferred unintended storage even though the comparator output itself had a default. The index now
 has an unconditional combinational assignment. The same two-tile synthesis and cocotb regression
 pass, and the tiled wrapper is now part of the representative synthesis gate.
+
+## 2026-09-14 — Resolved: native activity profiler retained consumed streams
+
+The complete XL integer simulator kept every upstream multi-million-event list
+until the end of each 5 ms bin and copied zero-offset edge lists. Dense epoch-11
+activity therefore exceeded 8 and 14 GiB before the first resume checkpoint.
+The graph now counts remaining consumers, releases a stream after its final
+consumer, and reuses immutable zero-offset lists. Arithmetic, event order,
+actor state, and prediction semantics are unchanged. The exact 16 GiB run
+completed all ten bins with exit zero and no OOM; its audited profile and
+prediction are retained under `artifacts/RTL/profile`.
+
+## 2026-09-14 — Resolved: readout score array caused Yosys priority explosion
+
+The resident temporal readout stored scores in an unpacked array written by
+large procedural loops. Yosys treated it as a multiwrite memory and consumed
+more than 12 GiB in `OPT_MEM_PRIORITY` for one 8x8 tile. Scores now occupy a
+packed register vector with one generated constant writer per score. Focused
+readout cocotb passes, Yosys reports zero memories, and the exact 8x8 structural
+run completes with a 3649.98 MB peak.
+
+## 2026-09-14 — Open: full hard-macro physical views
+
+The exact catalog contains 236 unique checkpoint-bound masters, 54,010 nominal
+tiles, and 120,010 physical instances after exact 2x2 readout subdivision.
+Before native top-level placement, every master needs routed GDS, abstract LEF,
+and extracted timing-model Liberty. The macroized native assembly is generated
+and passes its conservation preflight. The exact-name 4x4 readout master also
+OOM-killed during ABC at 20 GiB, so no view was staged. The next ORFS target is
+xl_hm_readout__out_2x2, with 70,400 physical instances grouped sixteen per logical tile.
+No full-chip PPA claim is valid until all views, assembly, routing, timing,
+physical checks, and full-graph activity power complete.
+
+## 2026-09-15 — Resolved: readout ORFS top-cell identity differed from catalog
+
+The first 20 GiB external readout retry used the generic ORFS top-cell name
+`resident_readout_tile_pnr_top`, while the hard-macro catalog and macroized
+assembly require `xl_hm_readout__out_4x4`. A clean result from that run could not
+be published as the catalog macro, so it was stopped and journaled. The readout
+generator, catalog master RTL, ORFS `DESIGN_NAME`, blackbox, and normalized port
+contract now agree on the exact catalog name. The corrected run uses the
+resumable hard-macro driver and stages views only after route/DRC validation.
+
+
+## 2026-09-15 — Resolved by subdivision: exact 4x4 readout exceeded 20 GiB
+
+The catalog-identity-correct 4x4 readout still exhausted its 20 GiB ORFS limit during ABC. It produced no accepted physical view. The physical readout master is now an exact 2x2 leaf with 96 input bits and four output pixels. This changes physical hierarchy only: 70,400 leaves cover all 281,600 native pixels, and sixteen leaves compose each of the unchanged 4,400 logical 8x8 tiles. The regenerated wrapper uses a 17-bit leaf selector, and its conservation preflight passes. Full-chip PPA remains gated by all 708 required views.
+
+## 2026-09-15 — Resolved by adaptive subdivision: exact 8x8 actor exceeded 20 GiB
+
+The lowest-complexity exact 8x8 actor master, a clipped `detail2.vertical`
+boundary, exhausted its 20 GiB ORFS limit during technology mapping and produced
+no accepted view. Uniform 4x4 actor leaves are also unsafe for dense 128-channel
+3x3 actors whose exact 1x1 synthesis already approaches 14 GiB. The hard hierarchy
+now chooses exact 4x4 leaves only for light depthwise actors, 2x2 for moderate
+actors, and 1x1 for dense actors. This physical subdivision preserves the logical
+8x8 plan, global convolution coordinates and halos, all 78,707,200 PLIF identities,
+and the 440x640 output. The new catalog contains 274 actor masters plus the accepted
+2x2 readout master; full-chip PPA remains gated by all 825 required views.

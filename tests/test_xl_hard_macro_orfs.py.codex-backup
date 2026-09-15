@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+import csv
+import importlib.util
+import json
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_runner():
+    spec = importlib.util.spec_from_file_location(
+        "eventspikeseg_xl_hard_macro_orfs",
+        ROOT / "scripts/run_xl_hard_macro_orfs.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_completed_views_require_matching_hashes_and_logical_names(
+    tmp_path: Path,
+) -> None:
+    runner = _load_runner()
+    view_dir = tmp_path / "views"
+    view_dir.mkdir()
+    (view_dir / "macro.lef").write_text("MACRO macro\nEND macro\n", encoding="utf-8")
+    (view_dir / "macro.lib").write_text(
+        "library(test) { cell (macro) {} }\n", encoding="utf-8"
+    )
+    (view_dir / "macro.gds").write_bytes(bytes(range(100)))
+    master = {
+        "views": {
+            kind: f"views/macro.{kind}" for kind in ("lef", "gds", "lib")
+        }
+    }
+    hashes = {
+        kind: runner._sha256(view_dir / f"macro.{kind}")
+        for kind in ("lef", "gds", "lib")
+    }
+    entry = {"status": "complete", "view_sha256": hashes}
+    assert runner._completed_view_hashes(tmp_path, "macro", master, entry) == hashes
+    (view_dir / "macro.gds").write_bytes(b"changed" * 20)
+    assert runner._completed_view_hashes(tmp_path, "macro", master, entry) is None
+
+
+def test_generated_orfs_config_keeps_exact_actor_sources() -> None:
+    runner = _load_runner()
+    config = runner._config_text(
+        "macro", "actor_tile", "artifacts/exact.sv", "hard_macro_exact"
+    )
+    assert "export DESIGN_NAME = macro" in config
+    assert "resident_convolution_synapses.sv" in config
+    assert "resident_retinotopic_plif_population.sv" in config
+    assert "$(PROJECT_DIR)/artifacts/exact.sv" in config
+    assert "FLOW_VARIANT = hard_macro_exact" in config
+
+
+def test_orfs_config_identity_is_read_for_safe_adoption(tmp_path: Path) -> None:
+    runner = _load_runner()
+    config = tmp_path / "config.mk"
+    config.write_text(
+        "export DESIGN_NAME = physical_macro\n"
+        "export FLOW_VARIANT := routed_variant # comment\n",
+        encoding="utf-8",
+    )
+    assert runner._orfs_config_value(config, "DESIGN_NAME") == "physical_macro"
+    assert runner._orfs_config_value(config, "FLOW_VARIANT") == "routed_variant"
+
+
+def test_exact_readout_master_identity_matches_catalog_and_orfs_config() -> None:
+    runner = _load_runner()
+    module = "xl_hm_readout__out_4x4"
+    catalog_path = (
+        ROOT / "artifacts/ASIC_XL/hard_hierarchy/hard_macro_catalog.json"
+    )
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    master = next(item for item in catalog["masters"] if item["module"] == module)
+    with (
+        ROOT
+        / "artifacts/ASIC_XL/hard_hierarchy/hard_macro_master_generation.tsv"
+    ).open(encoding="utf-8", newline="") as stream:
+        generation = next(
+            row for row in csv.DictReader(stream, delimiter="\t")
+            if row["module"] == module
+        )
+    config = ROOT / "asic/orfs_asap7_xl_readout_4x4_config.mk"
+    assert runner._orfs_config_value(config, "DESIGN_NAME") == module
+    assert runner._orfs_config_value(config, "FLOW_VARIANT") == "hard_macro_exact"
+    assert generation["implementation_rtl"] in config.read_text(encoding="utf-8")
+    assert f"--module-name {module}" in generation["generation_command"]
+    implementation = ROOT / generation["implementation_rtl"]
+    blackboxes = (
+        ROOT / "artifacts/ASIC_XL/hard_hierarchy/hard_macro_blackboxes.sv"
+    )
+
+    def interface(path: Path) -> str:
+        text = path.read_text(encoding="utf-8")
+        match = re.search(
+            rf"\bmodule\s+{re.escape(module)}\s*\((.*?)\);",
+            text,
+            flags=re.DOTALL,
+        )
+        assert match is not None
+        return re.sub(r"\s+", "", match.group(1))
+
+    assert master["input_bits"] == 384
+    assert interface(implementation) == interface(blackboxes)
+
+
+def test_adopted_status_distinguishes_running_success_failure_and_oom() -> None:
+    runner = _load_runner()
+    assert runner._adopted_status(
+        {"docker_state": {"Running": True}, "oom_killed": False}
+    ) == "running_external"
+    assert runner._adopted_status(
+        {
+            "docker_state": {"Running": False, "Status": "exited", "ExitCode": 0},
+            "oom_killed": False,
+        }
+    ) == "ready_to_finalize"
+    assert runner._adopted_status(
+        {
+            "docker_state": {"Running": False, "Status": "exited", "ExitCode": 2},
+            "oom_killed": False,
+        }
+    ) == "failed"
+    assert runner._adopted_status(
+        {
+            "docker_state": {"Running": False, "Status": "exited", "ExitCode": 137},
+            "oom_killed": True,
+        }
+    ) == "oom"
+
+
+def test_stage_views_replaces_complete_view_directory_atomically(
+    tmp_path: Path,
+) -> None:
+    runner = _load_runner()
+    result_dir = tmp_path / "results"
+    result_dir.mkdir()
+    (result_dir / "6_final.lef").write_text(
+        "MACRO macro\nEND macro\n", encoding="utf-8"
+    )
+    (result_dir / "6_final.lib").write_text(
+        "library(test) { cell (macro) {} }\n", encoding="utf-8"
+    )
+    (result_dir / "6_final.gds").write_bytes(bytes(range(100)))
+    view_dir = tmp_path / "views" / "macro"
+    view_dir.mkdir(parents=True)
+    (view_dir / "stale.txt").write_text("stale", encoding="utf-8")
+    master = {
+        "views": {
+            kind: f"views/macro/macro.{kind}" for kind in ("lef", "gds", "lib")
+        }
+    }
+    hashes = runner._stage_views(tmp_path, "macro", master, result_dir)
+    assert set(hashes) == {"lef", "gds", "lib"}
+    assert not (view_dir / "stale.txt").exists()
+    assert all((view_dir / f"macro.{kind}").is_file() for kind in hashes)

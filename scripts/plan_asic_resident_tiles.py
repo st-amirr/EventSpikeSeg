@@ -55,6 +55,7 @@ def plan_tiles(
         tile_state_bits = 0
         receptive_halo_input_bits = 0
         receptive_halo_shapes: dict[str, int] = {}
+        exact_macro_variants: dict[str, int] = {}
         for y in range(0, height, tile_height):
             for x in range(0, width, tile_width):
                 local_width = min(tile_width, width - x)
@@ -90,6 +91,20 @@ def plan_tiles(
                 receptive_halo_shapes[halo_shape] = (
                     receptive_halo_shapes.get(halo_shape, 0) + 1
                 )
+                # The halo dimensions alone do not identify a reusable hard
+                # macro. A clipped top/left boundary shifts the first live tap
+                # relative to the local halo, so preserve that offset jointly
+                # with the output and halo shapes.
+                local_input_offset_x = x * stride_x - padding_x - input_min_x
+                local_input_offset_y = y * stride_y - padding_y - input_min_y
+                variant = (
+                    f"out_{local_height}x{local_width}__"
+                    f"halo_{halo_height}x{halo_width}__"
+                    f"offset_{local_input_offset_y}_{local_input_offset_x}"
+                )
+                exact_macro_variants[variant] = (
+                    exact_macro_variants.get(variant, 0) + 1
+                )
                 receptive_halo_input_bits += input_channels * halo_height * halo_width
         logical_plifs = channels * height * width
         if tile_plifs != logical_plifs:
@@ -107,6 +122,7 @@ def plan_tiles(
                 "resident_state_bits": tile_state_bits,
                 "static_weight_bits": int(layer["weight_count"]) * 24,
                 "receptive_halo_shape_counts": receptive_halo_shapes,
+                "exact_macro_variant_counts": exact_macro_variants,
                 "receptive_halo_input_bits": receptive_halo_input_bits,
                 "full_bitmap_broadcast_input_bits": (
                     input_channels * input_height * input_width

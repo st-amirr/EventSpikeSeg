@@ -21,6 +21,7 @@ import torch
 
 from eventspikeseg.data import DSECRawEventDataset, discover_dsec_records
 
+from .activity_trace import build_pointwise_actor_trace, write_actor_trace
 from .contracts import BIN_TAG_MODULUS
 from .dag_reference import IntegerDAGReference, SpikeEvent
 
@@ -287,6 +288,8 @@ def profile_native_event_sample(
     workers: int = 1,
     resume_checkpoint_path: Path | None = None,
     prediction_output_path: Path | None = None,
+    actor_trace_name: str | None = None,
+    actor_trace_output_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run a real-event interval through the full native integer actor DAG."""
 
@@ -309,8 +312,14 @@ def profile_native_event_sample(
             str(name): dict(values)
             for name, values in dict(lane_document.get("actors", {})).items()
         }
+    if (actor_trace_name is None) != (actor_trace_output_path is None):
+        raise ValueError("actor trace name and output path must be supplied together")
     reference = IntegerDAGReference(
-        model_spec, capture_trace=False, lane_config=lane_config, workers=workers
+        model_spec,
+        capture_trace=False,
+        event_trace_actors=(() if actor_trace_name is None else (actor_trace_name,)),
+        lane_config=lane_config,
+        workers=workers,
     )
     actor_names: Sequence[str] = reference.graph["actor_topological_order"]
     residual_names = {
@@ -339,6 +348,7 @@ def profile_native_event_sample(
     host_seconds_per_bin: list[float] = []
     prediction_emitted = False
     final_prediction: np.ndarray | None = None
+    actor_event_bins: list[dict[str, list[tuple[int, int, int]]]] = []
     first_bin = 0
     resume_identity = {
         "model_spec_sha256": _sha256(model_spec),
@@ -348,6 +358,7 @@ def profile_native_event_sample(
         "duration_ms": int(duration_ms),
         "rectify_map": str(rectify_path) if rectify_path is not None else None,
         "lane_config": str(lane_config_path) if lane_config_path is not None else None,
+        "actor_trace": actor_trace_name,
     }
     if resume_checkpoint_path is not None and resume_checkpoint_path.exists():
         with resume_checkpoint_path.open("rb") as stream:
@@ -375,6 +386,7 @@ def profile_native_event_sample(
         host_seconds_per_bin = saved["host_seconds_per_bin"]
         prediction_emitted = bool(saved["prediction_emitted"])
         final_prediction = saved.get("final_prediction")
+        actor_event_bins = saved.get("actor_event_bins", [])
         del saved
         gc.collect()
         with suppress(OSError):
@@ -414,6 +426,8 @@ def profile_native_event_sample(
         )
         host_seconds_per_bin.append(time.perf_counter() - started)
         prediction_emitted |= prediction is not None
+        if actor_trace_name is not None:
+            actor_event_bins.append(reference.last_actor_event_trace[actor_trace_name])
         if prediction is not None:
             final_prediction = prediction.classes.copy()
         for name in actor_names:
@@ -470,6 +484,7 @@ def profile_native_event_sample(
                 "host_seconds_per_bin": host_seconds_per_bin,
                 "prediction_emitted": prediction_emitted,
                 "final_prediction": final_prediction,
+                "actor_event_bins": actor_event_bins,
             }
             resume_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = resume_checkpoint_path.with_suffix(
@@ -554,4 +569,20 @@ def profile_native_event_sample(
         result["maximum_isolated_saturated_collection_cycles_by_actor"] = (
             maximum_isolated_collection_cycles
         )
+    if actor_trace_name is not None and actor_trace_output_path is not None:
+        trace = build_pointwise_actor_trace(
+            actor_name=actor_trace_name,
+            layer=reference.layers[actor_trace_name],
+            bins=actor_event_bins,
+            checkpoint_sha256=result["checkpoint_sha256"],
+            model_spec_sha256=result["model_spec_sha256"],
+            event_file_sha256=result["event_file_sha256"],
+        )
+        write_actor_trace(actor_trace_output_path, trace)
+        result["actor_event_trace"] = {
+            "actor": actor_trace_name,
+            "path": str(actor_trace_output_path),
+            "trace_payload_sha256": trace["trace_payload_sha256"],
+            "scope": trace["scope"],
+        }
     return result

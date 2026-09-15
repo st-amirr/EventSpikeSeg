@@ -41,3 +41,30 @@ async def resident_state_updates_without_memory_fetch(dut) -> None:
     await RisingEdge(dut.clk)
     await FallingEdge(dut.clk)
     assert int(dut.spike_valid_o.value) == 0
+
+    # Exercise a checkpoint-scale 24x24-bit beta product.  The retained
+    # membrane is deliberately large enough that a 32-bit product would wrap.
+    dut.spike_ready_i.value = 0
+    dut.dense_current_delta_i.value = 65536
+    dut.dense_current_valid_i.value = 1
+    await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
+    dut.dense_current_valid_i.value = 0
+    dut.dense_current_delta_i.value = 0
+    dut.completion_tag_i.value = 8
+    dut.completion_valid_i.value = 1
+    await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
+    dut.completion_valid_i.value = 0
+    assert int(dut.spike_vector_o.value) & 1
+
+    dut.spike_ready_i.value = 1
+    await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
+    dut.spike_ready_i.value = 0
+    dut.completion_tag_i.value = 9
+    dut.completion_valid_i.value = 1
+    await RisingEdge(dut.clk)
+    await FallingEdge(dut.clk)
+    dut.completion_valid_i.value = 0
+    assert int(dut.spike_vector_o.value) & 1

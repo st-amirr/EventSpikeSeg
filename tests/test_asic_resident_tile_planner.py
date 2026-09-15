@@ -63,6 +63,12 @@ def test_tile_plan_preserves_every_resident_state_bit(tmp_path: Path) -> None:
         "2x5": 1,
         "2x2": 1,
     }
+    assert actor["exact_macro_variant_counts"] == {
+        "out_2x4__halo_3x5__offset_-1_-1": 1,
+        "out_2x1__halo_3x2__offset_-1_0": 1,
+        "out_1x4__halo_2x5__offset_0_-1": 1,
+        "out_1x1__halo_2x2__offset_0_0": 1,
+    }
     assert actor["receptive_halo_input_bits"] == 2 * (15 + 6 + 10 + 4)
     assert actor["full_bitmap_broadcast_input_bits"] == 2 * 3 * 5 * 4
     assert result["totals"]["input_wiring_reduction_fraction"] == 1 - 70 / 120

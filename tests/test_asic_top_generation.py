@@ -293,7 +293,7 @@ endmodule
     assert resident_text.count(".SPATIAL_TILE_HEIGHT(") == 25
     assert resident_text.count("resident_spike_vector_union2 #(") == 9
     assert resident_text.count("resident_spike_vector_upsample2x #(") == 3
-    assert "resident_temporal_class_readout #(\n" in resident_text
+    assert "tiled_resident_temporal_class_readout #(\n" in resident_text
     assert "actor_local_state_sram" not in resident_text
     assert "USE_STATE_MACRO" not in resident_text
 
@@ -319,6 +319,7 @@ endmodule
         ROOT / "asic/rtl/resident_spike_vector_union2.sv",
         ROOT / "asic/rtl/resident_spike_vector_upsample2x.sv",
         ROOT / "asic/rtl/resident_temporal_class_readout.sv",
+        ROOT / "asic/rtl/tiled_resident_temporal_class_readout.sv",
         ROOT / "asic/rtl/tiled_resident_channelized_plif_actor.sv",
         ROOT / "asic/rtl/retinotopic_mechanism_update.sv",
         ROOT / "asic/rtl/streaming_resident_channelized_plif_actor.sv",

@@ -339,6 +339,25 @@ ROOT = Path(__file__).resolve().parents[2]
             },
         ),
         (
+            "tiled_resident_temporal_class_readout",
+            [
+                "asic/rtl/resident_temporal_class_readout.sv",
+                "asic/rtl/tiled_resident_temporal_class_readout.sv",
+            ],
+            "test_resident_temporal_class_readout",
+            {
+                "INPUT_CHANNELS": 2,
+                "CLASS_COUNT": 3,
+                "OUTPUT_WIDTH": 2,
+                "OUTPUT_HEIGHT": 1,
+                "TILE_WIDTH": 1,
+                "TILE_HEIGHT": 1,
+                "PREDICTION_BINS": 2,
+                "READOUT_WEIGHTS":
+                    (0xFFFFFF << 120) | (0xFFFFFF << 96) | (2 << 72) | 1,
+            },
+        ),
+        (
             "resident_spike_vector_fork2",
             ["asic/rtl/resident_spike_vector_fork2.sv"],
             "test_resident_spike_vector_fork2",
@@ -765,6 +784,7 @@ ROOT = Path(__file__).resolve().parents[2]
         "resident_spike_vector_channel_offset",
         "resident_spike_vector_union2",
         "resident_temporal_class_readout",
+        "tiled_resident_temporal_class_readout",
         "resident_spike_mask_attention",
         "resident_spike_vector_fork2",
         "event_stream_fifo",

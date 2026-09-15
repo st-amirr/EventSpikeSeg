@@ -45,6 +45,13 @@ functional/activity simulation; it does not generate VCD/SAIF or report energy.
 
 ## Current synthesis boundary
 
+The current operational status and ordered full-chip resume procedure are maintained in
+`docs/ACTIVE_TASKS.md`. As of 2026-09-13, the beta48 XL preflight and all 45 current 1x1
+partition rows pass, but complete-top Yosys elaboration has exited 137 at 8, 16, and
+24 GiB. OpenROAD full-chip placement has therefore not started. Reuse the completed
+partition and `enc1.depthwise` gate-power artifacts; the next valid full-chip action is
+complete native elaboration on a larger-memory host.
+
 `resident_channelized_plif_actor.sv` is the active replacement actor. Its
 `resident_convolution_synapses.sv` fabric gates compile-time signed 24-bit Q7.16 weights with a presynaptic
 spike bitmap and produces every postsynaptic current delta in parallel. Ordinary PLIFs use
@@ -94,6 +101,49 @@ starting Yosys/OpenROAD:
 docker compose -f compose_ASIC.yaml run --rm test \
   bash asic/scripts/prepare_xl_asic.sh
 ```
+
+Build the guarded CPU verification image once, then run the resumable partition synthesis:
+
+```bash
+docker build --pull=false \
+  -t eventspikeseg:torch2.2.2-cpu-verification-guarded \
+  -f asic/tools/Dockerfile.synthesis_guard asic/tools
+bash asic/scripts/run_xl_partitioned_synthesis.sh
+```
+
+The runner defaults to checkpoint-exact 1x1 spatial partitions, three 8 GiB
+virtual-address-space workers, and serial 16 GiB retries for memory-limited actors. A 1x1
+partition retains the complete channel group at one spatial coordinate while avoiding the
+fourfold elaboration cost of a 2x2 partition for dense 128-channel convolutions. Per-actor
+signatures and status journals make completed work
+reusable. Summary writes are atomic and transient storage errors are retried. The guarded image
+sets each synthesis process non-dumpable after `exec`; this is required on WSL because its piped
+crash handler can capture multi-gigabyte dumps even when the ordinary core-size limit is zero.
+
+After the XL structural partitions pass, route the representative 128-to-128 pointwise
+partition with:
+
+```bash
+bash asic/scripts/run_orfs_xl_enc3_pointwise_1x1.sh
+```
+
+This produces an ASAP7 GDS/DEF/SPEF/netlist, extracted timing and DRC reports, and OpenROAD's
+vectorless power estimate for one checkpoint-exact XL 1x1 actor partition. It is neither a
+full-chip layout nor representative-event power; activity-annotated power still requires a
+cycle-accurate VCD or SAIF.
+
+Capture the exact ten-bin `enc3.pointwise` trajectory and verify its RTL VCD with:
+
+```bash
+bash asic/scripts/run_xl_enc3_activity_capture.sh
+```
+
+This reruns the integer DAG only because the earlier completed profile retained aggregate event
+counts rather than ordered actor vectors. The capture has an atomic per-bin resume checkpoint,
+binds the trace to the checkpoint, model specification, and event-file SHA-256 digests, selects
+the busiest real spatial coordinate deterministically, and checks every RTL output vector. The
+result is single-coordinate actor activity; post-route gate-net annotation is still required
+before reporting activity-based power.
 
 The separately gated full structural elaboration command is
 `bash asic/scripts/run_xl_synthesis.sh`. Do not launch it while training is using host memory.
@@ -306,3 +356,68 @@ PPA requires the exported DAG top level, characterized SRAM macros, all merge/fa
 and representative full-sequence activity. Activity-based power requires a representative
 VCD/SAIF from the exported DSEC event stream; vectorless default-toggle power must be labeled
 preliminary.
+
+For the corrected XL `enc1.depthwise` beta48 representative partition, run:
+
+```bash
+bash asic/scripts/run_xl_enc1_gate_power.sh
+```
+
+The launcher requires a passing ten-bin RTL JUnit result and validates trace/checkpoint/event plus
+routed ODB/SPEF/SDC/netlist hashes. It generates OpenSTA SDF as timing evidence, runs exact
+post-route functional gate equivalence for the activity VCD, and then requires complete OpenROAD
+VCD pin annotation before accepting power. Icarus cannot reproduce all ASAP7/OpenSTA SDF forms,
+so extracted OpenSTA timing reports remain authoritative for setup and hold.
+
+### XL native hard hierarchy
+
+Generate the checkpoint-bound hard-macro inventory and assembly map without elaborating the
+native RTL hierarchy:
+
+```bash
+python scripts/prepare_xl_hard_hierarchy.py \
+  --model-spec artifacts/ASIC_XL/model_spec.yaml \
+  --tile-plan artifacts/ASIC_XL/resident_tile_plan.json \
+  --output-dir artifacts/ASIC_XL/hard_hierarchy
+```
+
+The catalog conserves all 44 actors, 49,610 logical 8x8 actor tiles, 4,400 logical 8x8 readout tiles,
+and the 440x640 geometry. The packed-register 8x8 readout leaf passes structural synthesis at
+3,649.98 MB peak, but its ORFS technology mapping reached 11.99/12 GiB and was stopped before
+OOM while full simulation and training were active. The active physical hierarchy therefore
+groups each logical readout tile from sixteen exact 2x2 hard masters: 70,400 physical readout
+macros. The first exact 8x8 actor master also exceeded 20 GiB during technology mapping.
+The actor hierarchy therefore uses deterministic adaptive leaves: 4x4 for seven light
+depthwise actors, 2x2 for fourteen moderate actors, and 1x1 for twenty-three dense actors.
+Its 952,720 actor leaves give 1,023,120 physical macros overall while preserving all
+78,707,200 PLIF identities. Exact-name 4x4 readout ORFS still OOM-killed at a 20 GiB
+limit, so it remains structural/capacity evidence rather than an active physical master. The preparation emits parameter-free logical
+blackboxes, one deterministic row per physical
+instance, commands for generating each unique checkpoint-exact master RTL, and explicit ORFS
+LEF/GDS/Liberty bindings. `hard_macro_view_readiness.json` is a hard gate: native assembly must
+not start until every listed view exists and its module/port contract matches the generated
+blackbox. The assembly replaces only tiled leaves; graph routing, joins, completion-token
+rendezvous, prediction order, and dedicated resident state remain in the native top.
+
+Generate the fixed native assembly after preparing the catalog:
+
+```bash
+python scripts/generate_xl_macroized_native_top.py \
+  --model-spec artifacts/ASIC_XL/model_spec.yaml \
+  --tile-plan artifacts/ASIC_XL/resident_tile_plan.json \
+  --catalog artifacts/ASIC_XL/hard_hierarchy/hard_macro_catalog.json \
+  --instances artifacts/ASIC_XL/hard_hierarchy/hard_macro_instances.tsv \
+  --source-top artifacts/ASIC_XL/generated_eventspikesegxl_dag_top.sv \
+  --output-top artifacts/ASIC_XL/hard_hierarchy/generated_eventspikesegxl_macroized_top.sv \
+  --output-wrappers artifacts/ASIC_XL/hard_hierarchy/generated_xl_macro_wrappers.sv \
+  --output-preflight artifacts/ASIC_XL/hard_hierarchy/macroized_assembly_preflight.json
+```
+
+The actor wrappers retain complete-vector ready/valid and completion-token behavior, broadcast
+accepted transactions only when every physical leaf is ready, wire each clipped receptive halo,
+group adaptive leaves beneath the unchanged logical 8x8 boundaries, and reconstruct each global
+channel-major result. The readout wrapper preserves lockstep input,
+global row-major prediction arbitration, frame completion, and same-tag checking across all
+70,400 physical leaves. The digest-bound preflight checks every instance geometry and conserves
+the full actor state, readout pixels, soft routing, joins, and attention. Top-level ORFS remains
+gated on all 825 catalogued LEF/GDS/Liberty views.

@@ -20,6 +20,18 @@ def _load_generator():
     return module
 
 
+def _load_variant_generator():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location(
+        "eventspikeseg_resident_macro_variant_generator",
+        ROOT / "scripts/generate_asic_resident_macro_variants.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_pnr_tile_uses_exported_nonzero_parameters(tmp_path: Path) -> None:
     (tmp_path / "weights.mem").write_text("01\nfe\n", encoding="utf-8")
     (tmp_path / "beta.mem").write_text("7fff\n", encoding="utf-8")
@@ -132,3 +144,91 @@ def test_pnr_multi_tile_top_uses_production_halo_wrapper(tmp_path: Path) -> None
     assert ".TILE_WIDTH(2), .TILE_HEIGHT(1)" in text
     assert ".PAD_X(1), .PAD_Y(0)" in text
     assert "input logic [3:0] presynaptic_spike_vector_i" in text
+
+
+def test_pnr_exact_tile_preserves_stride_and_clipped_boundary(tmp_path: Path) -> None:
+    (tmp_path / "weights.mem").write_text("01\n01\n01\n", encoding="utf-8")
+    (tmp_path / "beta.mem").write_text("7fff\n", encoding="utf-8")
+    (tmp_path / "threshold.mem").write_text("0001\n", encoding="utf-8")
+    (tmp_path / "parameters.json").write_text(
+        json.dumps(
+            {
+                "inhibition_enabled": False,
+                "threshold_adaptation_enabled": False,
+                "inhibition_strength_q": None,
+                "threshold_adaptation_strength_q": None,
+                "adaptation_duration_q": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    model_spec = tmp_path / "model_spec.yaml"
+    model_spec.write_text(
+        json.dumps(
+            {
+                "artifact_root": ".",
+                "graph": {"actor_topological_order": ["actor"]},
+                "layers": [
+                    {
+                        "name": "actor",
+                        "in_channels": 1,
+                        "out_channels": 1,
+                        "input_hw": [1, 5],
+                        "output_hw": [1, 3],
+                        "groups": 1,
+                        "kernel": [1, 3],
+                        "stride": [1, 2],
+                        "padding": [0, 1],
+                        "dilation": [1, 1],
+                        "weight_count": 3,
+                        "weight_rom": "weights.mem",
+                        "beta_rom": "beta.mem",
+                        "threshold_rom": "threshold.mem",
+                        "parameter_file": "parameters.json",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "right_boundary_tile.sv"
+    _load_generator().generate_tile_top(
+        model_spec,
+        output,
+        actor_name="actor",
+        tile_width=2,
+        tile_height=1,
+        tile_column=1,
+        tile_row=0,
+    )
+    text = output.read_text(encoding="utf-8")
+    assert "input logic [1:0] presynaptic_spike_vector_i" in text
+    assert "output logic [0:0] spike_vector_o" in text
+    assert ".INPUT_WIDTH(2)" in text
+    assert ".INPUT_TILE_X(3), .INPUT_TILE_Y(0)" in text
+    assert ".OUTPUT_WIDTH(3), .OUTPUT_HEIGHT(1)" in text
+    assert ".OUTPUT_TILE_X(2), .OUTPUT_TILE_Y(0)" in text
+    assert ".OUTPUT_TILE_WIDTH(1)" in text
+    assert ".STRIDE_X(2), .STRIDE_Y(1)" in text
+    assert ".PAD_X(1), .PAD_Y(0)" in text
+
+    variant_output = tmp_path / "variants"
+    variant_generator = _load_variant_generator()
+    first = variant_generator.generate_variants(
+        model_spec,
+        variant_output,
+        tile_width=2,
+        tile_height=1,
+    )
+    second = variant_generator.generate_variants(
+        model_spec,
+        variant_output,
+        tile_width=2,
+        tile_height=1,
+    )
+    assert first["macro_variant_count"] == 2
+    assert first["logical_tile_instance_count"] == 2
+    assert first["generated_rtl_count"] == 2
+    assert second["generated_rtl_count"] == 0
+    assert second["reused_rtl_count"] == 2
+    assert len(list(variant_output.rglob("*.sv"))) == 2

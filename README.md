@@ -21,9 +21,14 @@ docs/ARCHITECTURE.md                    current architecture and runtime contrac
 docs/DECISIONS.md                       chronological design decisions
 docs/RESULTS.md                         measured experiment results
 docs/PROGRESS.md                        current implementation/validation state
+docs/ACTIVE_TASKS.md                    active processes, blockers, and exact resume order
 docs/BUGS.md                            open limitations and resolved failures
 asic/                                   native SystemVerilog RTL and OpenROAD flow setup
 ```
+
+Before resuming training or ASIC implementation, read `docs/ACTIVE_TASKS.md`. It records
+the live process inventory, completed work that should be reused, current blockers, and
+the ordered next stages.
 
 The historical model registries remain importable for reproducibility, but there is only one training engine. `train.py` handles `top-ten`, `top-five`, `top-three`, and `final`; the old standalone top-three benchmark runner is retired.
 

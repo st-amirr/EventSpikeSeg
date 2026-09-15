@@ -1,0 +1,6 @@
+FROM openroad/orfs:latest AS guard_build
+COPY no_core_dump.c /tmp/no_core_dump.c
+RUN cc -shared -fPIC -O2 -o /tmp/no_core_dump.so /tmp/no_core_dump.c
+FROM eventspikeseg:torch2.2.2-cpu-verification
+COPY --from=guard_build /tmp/no_core_dump.so /opt/eventspikeseg/no_core_dump.so
+ENV SYNTHESIS_NO_CORE_LIBRARY=/opt/eventspikeseg/no_core_dump.so

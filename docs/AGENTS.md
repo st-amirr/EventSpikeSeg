@@ -17,6 +17,11 @@ and PPA path.
 4. `docs/DECISIONS.md`
 5. tests and executable code
 
+For operational state and task handoff, read `docs/ACTIVE_TASKS.md` after the sources
+above, then inspect `docs/PROGRESS.md` and the referenced machine-readable status files.
+Update `docs/ACTIVE_TASKS.md` whenever a long-running process starts, completes, fails,
+or changes the next valid stage. Do not infer active work from container names alone.
+
 Python constructors/forward methods remain authoritative if older diagrams disagree.
 
 ## Canonical naming and frozen graph

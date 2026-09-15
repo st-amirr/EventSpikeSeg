@@ -1,0 +1,7 @@
+FROM openroad/orfs:latest AS guard_builder
+COPY no_core_dump.c /tmp/no_core_dump.c
+RUN cc -shared -fPIC -O2 -o /tmp/no_core_dump.so /tmp/no_core_dump.c
+
+FROM openroad/orfs:latest
+COPY --from=guard_builder /tmp/no_core_dump.so /usr/local/lib/no_core_dump.so
+ENV LD_PRELOAD=/usr/local/lib/no_core_dump.so

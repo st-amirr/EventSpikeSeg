@@ -43,16 +43,10 @@ module resident_temporal_class_readout #(
   logic [1:0] state_reg;
   logic [BIN_COUNT_WIDTH-1:0] bin_count_reg;
   logic [SPATIAL_WIDTH-1:0] spatial_reg;
-  logic signed [ACC_WIDTH-1:0] score_reg [0:SCORE_COUNT-1];
-  integer score_index;
+  logic [SCORE_COUNT*ACC_WIDTH-1:0] score_reg;
   integer selection_score_index;
-  integer spatial;
-  integer class_index;
   integer selection_class_index;
-  integer input_channel;
-  integer weight_index;
   integer signed selected_class;
-  longint signed sum_value;
   longint signed best_score;
   longint signed candidate_score;
 
@@ -64,14 +58,16 @@ module resident_temporal_class_readout #(
 
   always_comb begin
     selected_class = 0;
-    best_score = $signed(score_reg[$unsigned(spatial_reg)]);
+    best_score = $signed(score_reg[
+      $unsigned(spatial_reg)*ACC_WIDTH +: ACC_WIDTH]);
     candidate_score = 0;
     selection_score_index = 0;
     for (selection_class_index = 1; selection_class_index < CLASS_COUNT;
          selection_class_index = selection_class_index+1) begin
       selection_score_index = selection_class_index*SPATIAL_COUNT+
                               $unsigned(spatial_reg);
-      candidate_score = $signed(score_reg[selection_score_index]);
+      candidate_score = $signed(score_reg[
+        selection_score_index*ACC_WIDTH +: ACC_WIDTH]);
       if (candidate_score > best_score) begin
         best_score = candidate_score;
         selected_class = selection_class_index;
@@ -80,14 +76,59 @@ module resident_temporal_class_readout #(
     prediction_class_o = selected_class[CLASS_WIDTH-1:0];
   end
 
+  generate
+    for (genvar generated_score_index = 0;
+         generated_score_index < SCORE_COUNT;
+         generated_score_index = generated_score_index+1) begin : generated_score
+      localparam integer GENERATED_CLASS = generated_score_index/SPATIAL_COUNT;
+      localparam integer GENERATED_SPATIAL = generated_score_index%SPATIAL_COUNT;
+      localparam integer GENERATED_SCORE_LSB = generated_score_index*ACC_WIDTH;
+      longint signed generated_sum_value;
+      integer generated_input_channel;
+      integer generated_weight_index;
+
+      always_comb begin
+        generated_sum_value = $signed(score_reg[
+          GENERATED_SCORE_LSB +: ACC_WIDTH]);
+        for (generated_input_channel = 0;
+             generated_input_channel < INPUT_CHANNELS;
+             generated_input_channel = generated_input_channel+1) begin
+          generated_weight_index = GENERATED_CLASS*INPUT_CHANNELS+
+                                   generated_input_channel;
+          if (in_spike_vector_i[
+                generated_input_channel*SPATIAL_COUNT+GENERATED_SPATIAL])
+            generated_sum_value = generated_sum_value +
+              $signed(READOUT_WEIGHTS[
+                generated_weight_index*WEIGHT_WIDTH +: WEIGHT_WIDTH]);
+        end
+      end
+
+      always_ff @(posedge clk) begin
+        if (reset)
+          score_reg[GENERATED_SCORE_LSB +: ACC_WIDTH] <= '0;
+        else if (state_reg == COLLECT && in_valid_i && in_ready_o &&
+                 !in_completion_i) begin
+          if (generated_sum_value > MAX_ACC)
+            score_reg[GENERATED_SCORE_LSB +: ACC_WIDTH] <= MAX_ACC;
+          else if (generated_sum_value < MIN_ACC)
+            score_reg[GENERATED_SCORE_LSB +: ACC_WIDTH] <= MIN_ACC;
+          else
+            score_reg[GENERATED_SCORE_LSB +: ACC_WIDTH] <=
+              generated_sum_value[ACC_WIDTH-1:0];
+        end else if (state_reg == EMIT && prediction_valid_o &&
+                     prediction_ready_i &&
+                     $unsigned(spatial_reg) == GENERATED_SPATIAL)
+          score_reg[GENERATED_SCORE_LSB +: ACC_WIDTH] <= '0;
+      end
+    end
+  endgenerate
+
   always_ff @(posedge clk) begin
     if (reset) begin
       state_reg <= COLLECT;
       bin_count_reg <= '0;
       spatial_reg <= '0;
       frame_tag_o <= '0;
-      for (score_index = 0; score_index < SCORE_COUNT; score_index = score_index+1)
-        score_reg[score_index] <= '0;
     end else case (state_reg)
       COLLECT: if (in_valid_i && in_ready_o) begin
         if (in_completion_i) begin
@@ -96,28 +137,9 @@ module resident_temporal_class_readout #(
             spatial_reg <= '0;
             state_reg <= EMIT;
           end else bin_count_reg <= bin_count_reg+1'b1;
-        end else begin
-          for (class_index = 0; class_index < CLASS_COUNT;
-               class_index = class_index+1)
-            for (spatial = 0; spatial < SPATIAL_COUNT; spatial = spatial+1) begin
-              score_index = class_index*SPATIAL_COUNT+spatial;
-              sum_value = $signed(score_reg[score_index]);
-              for (input_channel = 0; input_channel < INPUT_CHANNELS;
-                   input_channel = input_channel+1) begin
-                weight_index = class_index*INPUT_CHANNELS+input_channel;
-                if (in_spike_vector_i[input_channel*SPATIAL_COUNT+spatial])
-                  sum_value = sum_value + $signed(READOUT_WEIGHTS[
-                    weight_index*WEIGHT_WIDTH +: WEIGHT_WIDTH]);
-              end
-              if (sum_value > MAX_ACC) score_reg[score_index] <= MAX_ACC;
-              else if (sum_value < MIN_ACC) score_reg[score_index] <= MIN_ACC;
-              else score_reg[score_index] <= sum_value[ACC_WIDTH-1:0];
-            end
         end
       end
       EMIT: if (prediction_valid_o && prediction_ready_i) begin
-        for (class_index = 0; class_index < CLASS_COUNT; class_index = class_index+1)
-          score_reg[class_index*SPATIAL_COUNT+$unsigned(spatial_reg)] <= '0;
         if (spatial_reg+1 >= SPATIAL_COUNT) state_reg <= HOLD_DONE;
         else spatial_reg <= spatial_reg+1'b1;
       end

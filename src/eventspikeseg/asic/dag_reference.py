@@ -12,7 +12,7 @@ import json
 import math
 import multiprocessing as mp
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -209,6 +209,7 @@ class IntegerDAGReference:
         model_spec: str | Path,
         *,
         capture_trace: bool = True,
+        event_trace_actors: Sequence[str] = (),
         lane_config: dict[str, dict[str, Any]] | None = None,
         workers: int = 1,
         parallel_min_work: int = 2_000_000,
@@ -260,6 +261,16 @@ class IntegerDAGReference:
         )
         self.plif = IntegerPLIF()
         self.capture_trace = bool(capture_trace)
+        self.event_trace_actors = {str(name) for name in event_trace_actors}
+        unknown_trace_actors = self.event_trace_actors - self.actors
+        if unknown_trace_actors:
+            raise ValueError(
+                "event trace requested for unknown actors: "
+                + ", ".join(sorted(unknown_trace_actors))
+            )
+        self.last_actor_event_trace: dict[
+            str, dict[str, list[tuple[int, int, int]]]
+        ] = {}
         self.last_trace: dict[str, dict[str, list[tuple[int, ...]]]] = {}
         self.last_actor_activity: dict[str, dict[str, int]] = {}
         self.lane_config = lane_config or {}
@@ -282,6 +293,7 @@ class IntegerDAGReference:
         self.class_scores.clear()
         self.prediction_bin_count = 0
         self.last_trace = {}
+        self.last_actor_event_trace = {}
         self.last_actor_activity = {}
         self.last_actor_bank_activity = {}
         self._scatter_bank_contributions = {}
@@ -296,7 +308,9 @@ class IntegerDAGReference:
         offset = int(edge.get("channel_offset", 0))
         if offset:
             return [SpikeEvent(event.channel + offset, event.y, event.x) for event in events]
-        return list(events)
+        # Consumers treat edge events as immutable. Reusing the list avoids a second
+        # multi-million-entry reference array while the source stream is still live.
+        return events
 
     def _route_node(
         self, name: str, streams: dict[str, list[SpikeEvent]]
@@ -775,11 +789,25 @@ class IntegerDAGReference:
         *,
         bin_tag: int,
         progress_callback: Callable[[str, int, int, int], None] | None = None,
+        stop_after_actor: str | None = None,
     ) -> Prediction | None:
         """Process data events followed by one same-tag completion token."""
 
         if not 0 <= int(bin_tag) < BIN_TAG_MODULUS:
             raise ValueError("bin_tag must fit the exported 24-bit contract")
+        if stop_after_actor is not None and stop_after_actor not in self.actors:
+            raise ValueError(f"unknown stop-after actor: {stop_after_actor}")
+        required_nodes: set[str] | None = None
+        if stop_after_actor is not None:
+            required_nodes = {stop_after_actor}
+            pending = [stop_after_actor]
+            while pending:
+                destination = pending.pop()
+                for edge in self.incoming[destination]:
+                    source = str(edge["source"])
+                    if source not in required_nodes:
+                        required_nodes.add(source)
+                        pending.append(source)
         input_h, input_w = (int(value) for value in self.spec["input_size"])
         input_channels = int(self.spec["input_channels"])
         for event in events:
@@ -792,14 +820,39 @@ class IntegerDAGReference:
 
         streams: dict[str, list[SpikeEvent]] = {"input": list(events)}
         self.last_trace = {}
+        self.last_actor_event_trace = {}
         self.last_actor_activity = {}
         self.last_route_event_counts = {}
         self._scatter_collection_cycles = {}
         readout_name = str(self.graph["current_readout"])
         actor_index = 0
-        actor_count = len(self.actors)
+        actor_count = (
+            len(self.actors)
+            if required_nodes is None
+            else len(required_nodes & self.actors)
+        )
+        active_nodes = {
+            str(name)
+            for name in self.graph["node_topological_order"]
+            if name not in {"input", "prediction"}
+            and (required_nodes is None or name in required_nodes)
+        }
+        remaining_consumers: dict[str, int] = defaultdict(int)
+        for destination in active_nodes:
+            for edge in self.incoming[destination]:
+                remaining_consumers[str(edge["source"])] += 1
+
+        def release_consumed_inputs(destination: str) -> None:
+            for edge in self.incoming[destination]:
+                source = str(edge["source"])
+                remaining_consumers[source] -= 1
+                if remaining_consumers[source] == 0 and source != readout_name:
+                    streams.pop(source, None)
+
         for name in self.graph["node_topological_order"]:
             if name in {"input", "prediction"}:
+                continue
+            if required_nodes is not None and name not in required_nodes:
                 continue
             if name in self.actors:
                 incoming = self.incoming[name]
@@ -807,11 +860,22 @@ class IntegerDAGReference:
                     raise ValueError(f"actor {name} does not have exactly one input")
                 actor_events = self._edge_events(incoming[0], streams)
                 streams[name] = self._actor(name, int(bin_tag), actor_events)
+                if name in self.event_trace_actors:
+                    self.last_actor_event_trace[name] = {
+                        "inputs": [
+                            (event.channel, event.y, event.x) for event in actor_events
+                        ],
+                        "outputs": [
+                            (event.channel, event.y, event.x) for event in streams[name]
+                        ],
+                    }
                 actor_index += 1
                 if progress_callback is not None:
                     progress_callback(
                         name, actor_index, actor_count, len(streams[name])
                     )
+                if name == stop_after_actor:
+                    return None
             elif name == readout_name:
                 incoming = self.incoming[name]
                 readout_events = self._edge_events(incoming[0], streams)
@@ -819,6 +883,9 @@ class IntegerDAGReference:
             else:
                 streams[name] = self._route_node(name, streams)
                 self.last_route_event_counts[name] = len(streams[name])
+            release_consumed_inputs(name)
+            if remaining_consumers[name] == 0 and name != readout_name:
+                streams.pop(name, None)
         return self._readout(streams[readout_name], int(bin_tag))
 
     def state_profile(self) -> dict[str, int]:

@@ -1034,3 +1034,336 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   zero. Default vectorless power is 700.516 mW at 0.77 V/200 MHz and worst VDD drop is
   49.2562 mV. These values supersede the old-precision two-tile implementation but remain a
   small-block default-toggle characterization, not XL/full-model power or inference energy.
+
+### 2026-09-09 — XL synthesis continuation after ASIC_sol interruption
+
+- At this continuation point, the active source was
+  `C:\Users\stamir\Desktop\EventSpikeSeg` and its artifact junction resolved to the external
+  `C:\Users\stamir\Desktop\EventSpikeSeg-artifacts` store. This was later migrated into the
+  project-local `artifacts` directory as recorded below.
+- Recovered six completed actor partitions plus attention. The interrupted `stem` log ended
+  in Yosys `PROC_MUX`, expanding packed bitselwrite assignments; no synthesis process survived.
+- Refactored the resident retinotopic population into constant-index generated neuron blocks.
+  Each neuron retains its distinct accumulator, age and amplitude registers, with the same
+  parallel completion, arithmetic widths, routing and handshake behavior. This does not
+  serialize the mechanism, reduce the model, or establish new numeric accuracy claims.
+- Validation: all 16 resident cocotb runner cases pass; all 41 ASIC RTL tops and the external
+  SRAM actor compile. A saved old/new comparison passes 2,000 deterministic randomized cycles
+  at production state widths, checking every output and all accumulator/age/amplitude state.
+  It exercises dense and sparse contributions, invalid destinations, reset, completion and
+  backpressure. Evidence is in `artifacts/ASIC_XL/resident_codegen_validation`.
+- Resumed the exact existing 44-actor 2x2 partition synthesis procedure in named Docker
+  container `eventspikeseg-xl-partitioned-resume`. Its source-signature gate invalidates actor
+  logs affected by the RTL change. The container is retained on exit for status/log inspection.
+  Completion remains to be verified in `ASIC_XL/partitioned_synthesis_2x2/summary.tsv`.
+- This is an actor-tile structural synthesis gate, not full-native RTL simulation, technology
+  mapping, full-chip PPA, or activity-based inference energy. The completed ten-bin integer
+  profile remains functional reference evidence only.
+
+### 2026-09-09 — bounded parallel XL synthesis enabled
+
+- The generated-neuron stem completed with zero structural problems: 953.12 user CPU seconds,
+  7.91 system seconds, 7256.65 MB peak memory. Eight actor partitions passed before switching
+  from the sequential runner; only the incomplete `enc1.pointwise` work was restarted.
+- Added `scripts/synthesize_asic_partitions.py` for prepared exports. Three independent Yosys
+  jobs run concurrently with an 8 GiB per-process address-space limit. Failed jobs retry
+  sequentially at 24 GiB after all parallel jobs exit. The Docker container has a 26 GiB
+  memory/swap-total cap. These limits bound aggregate use; the larger retries may use one CPU.
+- Existing source signatures are compatible: the three-actor reuse smoke test passed without
+  resynthesis. Each job owns distinct files; one coordinator atomically rewrites summary.tsv.
+  A file lock prevents simultaneous parallel-runner instances from owning this export.
+- Active container: `eventspikeseg-xl-parallel`; previous sequential container is stopped.
+  Invocation inside the verification image: `python -u scripts/synthesize_asic_partitions.py
+  /workspace/artifacts/ASIC_XL --workers 3 --worker-memory-gib 8 --retry-memory-gib 24`.
+- A task heartbeat checks every ten minutes and reports verified completion or actionable
+  failure. Parallel-pass FAIL rows may be awaiting the scheduled sequential retry.
+
+### 2026-09-09 — XL partition synthesis stopped by artifact I/O failure
+
+- Container `eventspikeseg-xl-parallel` exited with code 1 at 19:19:31 UTC. After the
+  24 GiB `bridge23` retry failed, the coordinator could not write `summary.tmp`:
+  `OSError: [Errno 5] Input/output error`. Docker reports no container OOM kill.
+- Audited all 45 distinct summary rows. Nineteen actor PASS results plus attention have
+  matching source/top SHA-256 signatures and successful Yosys completion markers, with
+  no ERROR lines. No recorded PASS failed this audit. Twenty-five actors remain unresolved;
+  FAIL rows include both exhausted retries and actors whose larger-memory retry never ran.
+- Confirmed completed 24 GiB failures include enc2.pointwise, enc2_extra.pointwise,
+  down3.pointwise and bridge23. Previous errors were allocation failures, separate from
+  the final status-file I/O exception. The host C drive had about 8.06 GB free when checked;
+  the root cause of the I/O failure has not been established.
+- The automatic monitor is paused because this run has exited. Preserve completed results.
+  Before another run, diagnose Docker bind-mount/storage writes and reduce synthesis memory
+  demand or provide a larger-memory host for failed actors. No full-chip PPA or XL energy
+  result was produced by this structural tile synthesis run.
+
+### 2026-09-10 — synthesis storage and elaboration failures fixed
+
+- Diagnosed the status-file I/O failure as host disk exhaustion caused by WSL crash capture.
+  Ten `_usr_bin_yosys-6.dmp` files occupied 142,669,914,104 bytes (132.9 GiB); the final
+  20.47 GB dump completed one second before the failed `summary.tmp` write. Removed exactly
+  those ten dumps after recording their paths, sizes, and timestamps in
+  `artifacts/ASIC_XL/yosys-crash-dump-cleanup-20260910.json`. Free C-drive space increased
+  from about 7.5 GiB to about 140 GiB, and an artifact create/read/rename/remove probe passed.
+- Added a guarded verification image whose post-exec preload constructor applies
+  `PR_SET_DUMPABLE=0` inside Yosys. This is necessary because WSL's piped crash handler ignored
+  `RLIMIT_CORE=0` in a controlled probe. A guarded SIGABRT probe reported no core and created
+  no WSL dump. The ordinary zero core-size limit remains enabled as a second boundary.
+- Reworked resident convolution current formation into constant-index elaboration-time tap
+  chains and split ordinary/retinotopic resident state into constant-index neuron processes.
+  The actor remains fully parallel, keeps every physical neuron state distinct, and preserves
+  the original signed 32-bit contribution order and fixed-point commit arithmetic.
+- Validation passes: 16 resident cocotb cases, all 41 ASIC tops plus the external-SRAM actor,
+  27 runner recovery tests, and lint. Saved old/new tests covered 10,000 randomized ordinary
+  population cycles and 2,000 convolution vectors across five standard/grouped/depthwise,
+  boundary, stride/dilation, and saturation configurations. The prior retinotopic comparison
+  covered 2,000 randomized cycles including all resident state words.
+- `enc2.pointwise`, which previously exhausted a 24 GiB virtual-address-space limit, now
+  completes at the 8 GiB limit in 158.6 seconds wall time with a 1,730.54 MB Yosys peak and
+  zero structural problems. This validates the elaboration-memory fix on the known blocker.
+- Started full guarded recovery in `eventspikeseg-xl-recovery` with three 8 GiB workers and
+  serial 24 GiB fallback. Source-bound journals, completion markers, atomic summary writes,
+  bounded storage retries, and final failure classification protect resumability. A ten-minute
+  heartbeat verifies progress, crash-dump absence, and final signatures before reporting.
+
+### 2026-09-10 — XL synthesis resumed as 1x1 spatial partitions
+
+- Stopped the first guarded recovery intentionally when the 2x2 `enc3_extra.standard` serial
+  retry reached about 22.6 GiB while Yosys was still deriving the convolution. No new WSL crash
+  dump or artifact-storage failure occurred.
+- Confirmed the remaining pressure is inherent elaboration scale: the dense 128-to-128 3x3
+  actor creates 512 destinations and 589,824 conditional 32-bit addition stages in a 2x2
+  partition. Packing the intermediate sum vector removed inferred-memory lowering but could
+  not remove those nodes. The 8 GiB 2x2 and 1x1 probes both stopped cleanly at their address-space
+  boundary.
+- Switched the standard recovery configuration to 1x1 spatial partitions. This retains all
+  channels and the complete retinotopic peer group at one coordinate while reducing the worst
+  convolution to 147,456 stages. Three 8 GiB workers handle ordinary actors in parallel;
+  memory-limited actors retry one at a time at 16 GiB inside a 26 GiB guarded container.
+- Started `eventspikeseg-xl-recovery-v2`. The early live summary reached 20 PASS rows (attention
+  plus 19 actors), with no failures or storage errors. Completion must be audited from
+  `ASIC_XL/partitioned_synthesis_1x1/summary.tsv`; these results are spatial-partition synthesis
+  evidence and must not be reported as full-chip PPA or exact full-model energy.
+- `eventspikeseg-xl-recovery-v2` completed with exit code 0. All 44 distinct actors plus the
+  attention block report PASS; five dense actors that exceeded the 8 GiB parallel limit passed
+  their serial 16 GiB retries.
+- A fresh guarded resume audit regenerated every 1x1 top and reported REUSE for all 44 actors,
+  proving that each saved log has the current source/top signature, an `End of script` marker,
+  and no `ERROR:` line. The audited summary contains 45 PASS rows and no duplicate actor, and
+  the WSL crash directory contains no Yosys dump. This is checkpoint-exact 1x1 spatial-partition
+  synthesis evidence only, not full-chip PPA or exact full-model energy.
+
+### 2026-09-11 — XL representative physical design started
+
+- Confirmed that the completed XL result stops at structural partition synthesis. Existing final
+  GDS/DEF/SPEF and OpenROAD power reports belong to earlier small `detail_stem` prototypes; their
+  power is vectorless and cannot be used as XL or representative-event power.
+- Added an ASAP7 ORFS configuration for the checkpoint-exact XL `enc3.pointwise` 128-to-128
+  pointwise actor at one spatial coordinate. This actor provides meaningful XL datapath coverage
+  while remaining substantially smaller than the 14.18 GiB structural-synthesis stress actors.
+- Started guarded container `eventspikeseg-xl-enc3-pointwise-pnr` with a 5 ns clock, 35% target
+  core utilization, extracted timing/DRC checks, and a 28 GiB container limit. The flow will emit
+  per-partition GDS/DEF/SPEF/netlist and vectorless power if routing closes. Representative-event
+  VCD/SAIF power and any full-chip composition remain separate required work.
+- Added selective `enc3.pointwise` input/output capture to the exact integer DAG, including
+  checkpoint/model/event SHA-256 provenance, deterministic busiest-coordinate selection, atomic
+  per-bin resume state, ten-bin RTL output checking, and bounded VCD scopes. Three focused trace
+  tests pass and the changed Python files are lint-clean. The capture replay is queued after
+  OpenROAD because the earlier completed profile contains aggregate counts only and cannot
+  reconstruct ordered actor vectors.
+
+### 2026-09-11 — routed XL partition and artifact-store migration
+
+- The full checkpoint-exact XL `enc3.pointwise` 1x1 actor completed structural synthesis, but
+  two ASAP7 technology-mapping attempts exceeded the 28 GiB protected container limit. The full
+  `enc3.depthwise` actor reached detailed routing; both 14-thread and 6-thread attempts exceeded
+  the same limit at about 80%, showing that the detailed-routing database, rather than thread
+  count alone, dominated memory.
+- The smaller full checkpoint-exact XL `enc1.depthwise` 1x1 actor completed ASAP7 synthesis,
+  placement, clocking, detailed routing, extraction, and stream-out. The checked report gives
+  +3656.58 ps setup slack, +45.8272 ps hold slack, 744.37 MHz reported fmax, 10159.8 um^2
+  standard-cell area, and 435.888 mW vectorless power. Final GDS, DEF, SPEF, and netlist exist.
+  These are per-partition figures, not full-chip PPA or representative-event power.
+- The user replaced the former `artifacts` junction with a real project-local directory. After
+  stopping the exact activity replay at its completed-bin checkpoint, all missing or newer files
+  from `C:\Users\stamir\Desktop\EventSpikeSeg-artifacts` were merged into
+  `C:\Users\stamir\Desktop\EventSpikeSeg\artifacts`. The synthesis launcher now defaults to
+  this project-local directory; `EVENTSPIKESEG_ARTIFACTS_DIR` remains an optional override.
+
+### 2026-09-11 — checkpoint activity verification found and repaired PLIF overflow
+
+- Exact ten-bin `enc3.pointwise` RTL replay exposed a real state-retention mismatch at bin 3.
+  Both resident PLIF implementations held the Q15.16 membrane times Q0.23 beta product in a
+  32-bit SystemVerilog `integer`, although the operation needs 48 signed bits. The product now
+  uses `longint signed` through rounding and shifting in both implementations.
+- The activity runner now removes stale JUnit output and requires a nonempty cocotb result with
+  zero failures or errors before it reports a verified VCD. Focused XML-result tests, lint, and a
+  checkpoint-scale resident-state cocotb regression pass.
+- The repaired saved-trace replay has passed the former bin-3 failure and continues in
+  `eventspikeseg-xl-enc3-vcd-verify-fix`; it reuses the completed exact DAG trace. The original
+  activity VCD is invalid evidence and must not be used.
+- The RTL change invalidates all 44 prior structural-synthesis signatures and the routed
+  `enc1.depthwise` result. Resume-mode signature checks correctly classify 0/44 actor results for
+  reuse, so the next synthesis run must rebuild all actors. The earlier layout and vectorless
+  figures remain historical pre-fix results until the corrected RTL is rerouted.
+
+### 2026-09-12 — corrected XL synthesis complete and beta48 layout started
+
+- `eventspikeseg-xl-44-synth-beta48` completed with exit code 0. All 44 corrected 1x1 actors
+  passed; five memory-heavy actors passed their bounded serial 16 GiB retries. The summary has
+  45 PASS rows including attention, every log has an `End of script` marker and no `ERROR:` line,
+  and a fresh resume audit reported REUSE for all 44 current source/top signatures.
+- Added a separate ASAP7 variant `xl_enc1_depthwise_1x1_beta48`, preserving the earlier pre-fix
+  physical result as historical evidence. Started guarded container
+  `eventspikeseg-xl-enc1-depthwise-pnr-beta48` with a 20 GiB memory limit, eight CPUs, no core
+  dumps, project-local artifacts only, a 5 ns clock, and the existing 35% utilization target.
+
+### 2026-09-12 — beta48 layout, gate equivalence, and event-activity power complete
+
+- The corrected `enc1.depthwise` beta48 route completed with final GDS/DEF/ODB/SPEF/netlist/SDC,
+  zero detailed-route DRC and antenna violations, +3366.98 ps setup WNS, +47.67 ps hold WNS,
+  612.363 MHz reported fmax, and 12,423.9 um^2 standard-cell area. Its 855.057 mW vectorless
+  result is retained only as the default-toggle comparison.
+- A saved-trace mismatch at bin 4 was an oracle defect rather than an RTL defect. The sparse DAG
+  trace omitted idle-bin firings, while the governing resident contract thresholds/resets and
+  beta-advances every destination on every 5 ms completion. The resident combined-accumulator
+  oracle now derives expected vectors from the saved input bitmaps. Exact RTL replay passes all
+  ten bins with 108 output spikes and trace digest
+  `d38500dfd912d81e49e30a80fb23698291bb88f2ab042a461c09699d4a8fa4fd`.
+- The routed standard-cell netlist passes all ten exact vectors in 33 simulated cycles with no
+  X/Z, tag, data, or error mismatch and produces a 47,978,356-byte gate-scoped VCD. Icarus cannot
+  perform a complete OpenSTA SDF replay for this ASAP7 library: it rejects interconnect,
+  conditional, escaped-instance, and timing-check constructs. The reproducible flow therefore
+  uses post-route functional gate simulation for activity and keeps extracted OpenSTA/SPEF as the
+  timing authority; simulator-only cell copies initialize unsupported timing notifiers.
+- OpenROAD mapped all 372,491 reported pin activities from that VCD with zero unannotated pins.
+  Routed activity power is 3.062088275 mW total: 1.405026997 mW internal, 1.645694370 mW
+  switching, and 0.011367122 mW leakage. This is checkpoint-exact evidence for one selected real
+  coordinate of one routed 1x1 `enc1.depthwise` partition, not full-actor or full-chip power.
+- Focused trace/power regression contains 16 passing tests, and the touched Python files are
+  Ruff-clean. All evidence is project-local under
+  `artifacts/ASIC_XL/activity/enc1_depthwise_1x1_beta48_gate`.
+
+### 2026-09-13 — native XL full-chip elaboration reaches host memory limit
+
+- A checkpoint-bound preflight verified the current beta48 model/top digests, all 44 permanent
+  actors, 49,610 resident 8x8/boundary tiles, 78,707,200 logical PLIFs,
+  2,916,390,400 resident-state bits, and all 45 PASS rows in the current 1x1 partition journal.
+- Guarded Yosys full-top hierarchy/elaboration attempts exited 137 at 8, 16, and 24 GiB. The
+  24 GiB attempt reached 23.97 GiB while still deriving the native temporal-readout/top hierarchy;
+  it did not produce a complete structural netlist.
+- OpenROAD full-chip placement/routing was not started because its required complete native
+  netlist does not exist. Starting from a reduced actor, SRAM substitute, truncated dimensions,
+  or an extrapolated tile composition would violate the active resident-state architecture and
+  full-chip PPA reporting gate.
+- Machine-readable preflight, per-tier logs/status, and the capacity decision are in
+  `artifacts/ASIC_XL/full_chip_layout`. The next valid execution needs a host that can give Yosys materially more
+  than 24 GiB, after which the flow may proceed to complete placement, routing, extraction,
+  timing, and representative-activity power.
+
+### 2026-09-14 — exact hard hierarchy and full native simulation resumed
+
+- Replaced the full native readout's monolithic elaboration with an exact 55x80
+  grid of 8x8 resident score tiles. This preserves 440x640 output, all 281,600
+  pixels, 11 class scores per pixel, ten-bin accumulation, and row-major output.
+- The first 8x8 readout leaf exposed a Yosys multiwrite-memory priority explosion.
+  Packed score storage with one constant writer per score preserves saturation,
+  strict-greater argmax ties, reset, per-pixel clear, and ready/valid behavior.
+  Focused cocotb passed; structural Yosys completed in about five minutes with
+  zero inferred memories and a 3649.98 MB peak.
+- Generated 235 exact actor hard-macro RTL variants covering all 49,610 actor
+  tiles. Variant identity includes output shape, clipped receptive halo, boundary
+  offset, true stride/padding/dilation, and tile origin. The hard-hierarchy
+  catalog conserves 49,610 actor tiles plus 4,400 logical 8x8 readout tiles:
+  54,010 nominal tiles and 281,600 readout pixels. Its active physical readout
+  implementation groups four exact 4x4 macros per logical tile, giving 17,600
+  readout macros, 67,210 physical instances overall, 236 unique masters, and
+  708 required LEF/GDS/Liberty views.
+- The exact packed-register 8x8 readout master passed structural Yosys, but its
+  ASAP7 ORFS technology mapping reached 11.99/12 GiB while full simulation and
+  training were active. The run was stopped before OOM, so it produced no routed
+  8x8 physical views. The 8x8 result remains exact structural and capacity
+  evidence; the active readout physical master is the exact packed 4x4 variant,
+  whose ORFS run was launched with a 10 GiB guard.
+- Generated the fixed macroized native assembly from the catalog and instance map. Forty-four
+  fixed actor wrappers select all 235 exact actor masters by compile-time output/halo/offset
+  geometry, preserve lockstep ready/valid and completion tags, and reconstruct every global
+  channel-major bitmap. The fixed readout wrapper instantiates 17,600 exact 4x4 leaves and retains
+  global row-major prediction and frame-completion arbitration. A digest-bound JSON preflight
+  conserves 49,610 actor macros, 78,707,200 actor PLIF outputs, 113,717,706 receptive-halo input
+  bits, 4,400 logical readout tiles, 281,600 pixels, and 67,210 physical instances. Soft routing,
+  joins, attention, and the native 440x640 interface are unchanged. Physical assembly remains
+  gated by the missing catalogued LEF/GDS/Liberty views.
+- Epoch-11 complete 50 ms native simulation initially exceeded 8 and 14 GiB
+  because consumed graph streams remained live for the whole bin. Consumer-count
+  reclamation and zero-offset list reuse preserve computation while releasing
+  intermediates. The corrected four-worker, 16 GiB run later completed all ten
+  bins; the 2026-09-15 entry below records its audited result.
+- Training remains active and reached epoch 19/80; epoch 18 is the latest complete
+  checkpoint observed. Physical work remains bound to the epoch-1 provisional
+  export until a final checkpoint is selected.
+
+### 2026-09-15 — exact 50 ms native XL simulation completed; 4x4 readout ORFS retried
+
+- The epoch-11 exact 440x640, 44-actor integer DAG completed all ten 5 ms bins
+  with exit zero and no OOM under four CPUs and a 16 GiB limit. Host runtime was
+  27,619.365 seconds. It processed 428,367 input events, 225,609,186 actor input
+  events, 102,959,737 actor output spikes, and 33,653,694,655 synaptic
+  contributions.
+- The saved uint8 prediction covers all 281,600 pixels and has SHA-256
+  `679beb38969b94bffd9c2c78f4789ca7a3eb67ffd7f59f560da0109bf9b792d7`.
+  The checkpoint, model-spec, and event digests are recorded with the profile.
+  The completed container and obsolete resume files were removed after audit.
+- The evidence is a complete 50 ms unrectified sample, not a rectified full
+  validation sequence, hardware-cycle simulation, or publication-grade power
+  result. It is retained for later full-graph activity mapping.
+- The first exact packed 4x4 readout ORFS attempt was OOM-killed at its 12 GiB
+  cgroup limit during ABC. After the native simulation released memory, the
+  unchanged target was restarted with a 20 GiB memory limit, 40 GiB swap limit,
+  and 8 CPUs. Audit then found that external retry used the generic physical
+  top-cell name `resident_readout_tile_pnr_top`, which cannot bind to the
+  catalogued macro `xl_hm_readout__out_4x4`; it was stopped and journaled before
+  wasting more route time. RTL generation, the ORFS `DESIGN_NAME`, catalog,
+  blackbox, and port contract now use the exact catalog name. The corrected
+  resumable run is active at the same resource limits. Actor-master generation
+  stays sequential after this view is validated and staged.
+
+
+### 2026-09-15 — exact readout physical hierarchy reduced to 2x2 after 4x4 OOM
+
+- The catalog-identity-correct 4x4 ASAP7 ORFS run was OOM-killed during ABC at its 20 GiB cgroup limit; no physical view was staged. The readout physical master is now `xl_hm_readout__out_2x2` while the logical model remains exact 440x640.
+- Regenerated the catalog, 120,010-row instance map, blackboxes, view bindings, master-generation table, fixed macro wrappers, macroized top, and conservation preflight. The hierarchy retains 4,400 logical 8x8 tiles, subdivides each into sixteen 2x2 leaves, instantiates 70,400 readout macros, and covers all 281,600 pixels exactly once.
+- The wrapper tile selector is now geometry-derived and 17 bits wide for 70,400 leaves. Actor counts, 78,707,200 PLIF identities, receptive halos, graph routing, frame behavior, and row-major predictions are unchanged. The 236 unique masters still require 708 LEF/GDS/Liberty files before full-chip placement.
+
+### 2026-09-15 — first exact hard-macro view accepted; actor characterization started
+
+- The exact 2x2 readout completed placement, CTS, routing, extraction, timing,
+  and GDS with zero final DRC and antenna violations. Extracted setup slack is
+  +1252.43 ps, hold slack is +48.5815 ps, and reported fmax is 266.839 MHz.
+- ORFS abstract generation initially followed a stale read-only SDC prerequisite.
+  The resumable runner now validates completed route evidence and calls
+  `do-generate_abstract` directly. It also accepts ORFS quoted Liberty cell names.
+  Hash-verified LEF, GDS, and Liberty are staged for `xl_hm_readout__out_2x2`,
+  completing the first master and 3 of 708 required view files.
+- Started the lowest-complexity exact actor master, clipped-boundary
+  `detail2.vertical` 8x8 output with a 9x8 halo, under the same 20 GiB/40 GiB/8
+  CPU limits. Hard-macro work remains sequential while training runs.
+
+### 2026-09-15 — exact actor hierarchy changed to adaptive physical leaves
+
+- The first exact 8x8 `detail2.vertical` actor master exhausted its 20 GiB ORFS
+  limit during technology mapping, so no actor view was accepted from that run.
+- Regenerated the hard hierarchy with a deterministic conservative policy tied
+  to static convolution complexity and the passing exact 1x1 synthesis inventory:
+  seven light depthwise actors use 4x4 leaves, fourteen moderate actors use 2x2
+  leaves, and twenty-three dense actors use 1x1 leaves. Boundary leaves remain
+  globally positioned and clipped with exact stride, padding, dilation, and halo.
+- The unchanged 49,610 logical 8x8 actor tiles now contain 952,720 physical actor
+  leaves: 80,320 at 4x4, 335,600 at 2x2, and 536,800 at 1x1. Together with 70,400
+  exact 2x2 readout leaves, the native hierarchy contains 1,023,120 physical
+  instances and 275 unique masters requiring 825 LEF/GDS/Liberty files.
+- Dependency-free conservation and interface preflight passes: 44 actors,
+  78,707,200 PLIF identities, 440x640 geometry, 281,600 readout pixels, every
+  logical-to-physical tile grouping, every receptive halo, all soft graph modules,
+  and the native top interface are preserved. The accepted readout contributes
+  3 of 825 views. Obsolete failed 8x8 journal entries are archived outside the
+  current master set and cannot block the resumable driver.

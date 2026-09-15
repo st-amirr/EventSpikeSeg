@@ -1003,15 +1003,18 @@ def _generate_resident_top(
         word_bits=24,
         expected_words=int(readout["weight_count"]),
     )
+    lines.append("  logic error_readout;")
     _instance(
         lines,
-        "resident_temporal_class_readout #(\n    "
+        "tiled_resident_temporal_class_readout #(\n    "
         + ",\n    ".join(
             [
                 f".INPUT_CHANNELS({int(readout['in_channels'])})",
                 f".CLASS_COUNT({class_count})",
                 f".OUTPUT_WIDTH({readout_w})",
                 f".OUTPUT_HEIGHT({readout_h})",
+                f".TILE_WIDTH({tile_width})",
+                f".TILE_HEIGHT({tile_height})",
                 f".PREDICTION_BINS({int(spec['timing_contract']['prediction_bins_default'])})",
                 ".TAG_WIDTH(TAG_WIDTH)",
                 f".READOUT_WEIGHTS({readout_weights})",
@@ -1034,8 +1037,10 @@ def _generate_resident_top(
             ".frame_done_valid_o(frame_done_valid)",
             ".frame_done_ready_i(frame_done_ready)",
             ".frame_tag_o(frame_bin_tag_o)",
+            ".error_o(error_readout)",
         ],
     )
+    faults.append("error_readout")
     lines.append("  assign fault_o = " + (" | ".join(faults) or "1'b0") + ";")
     lines.append("endmodule")
     output_path.parent.mkdir(parents=True, exist_ok=True)
