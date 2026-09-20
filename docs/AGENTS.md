@@ -177,6 +177,26 @@ accuracy, latency, and overflow/saturation behavior. ASAP7 is predictive researc
 not tapeout signoff. Full-chip PPA is invalid until the complete native resident graph—not a
 reduced actor or superseded SRAM reference—is placed, routed, timed, and activity measured.
 
+## XL physical estimation and artifact layout
+
+Keep XL checkpoint-specific exports below
+`artifacts/ASIC_XL/checkpoint_exports/<checkpoint-purpose>/`; do not create new
+top-level `artifacts/ASIC_XL_*` siblings. Preserve differing checkpoint constants
+as separate exports rather than merging or deleting them.
+
+The active exact physical hierarchy retains logical 8x8 grouping but uses 1x1
+physical leaves for every actor because 8x8 and 4x4 exceeded 20 GiB during mapping
+and 2x2 exceeded 20 GiB during detailed routing. Regenerate the catalog, instance
+map, wrappers, macroized top, and preflight together after any partition change.
+
+For early feasibility, characterize one routed, activity-measured physical instance
+of each of the 44 actors and update `asic/xl_representative_ppa.yaml` plus
+`artifacts/ASIC_XL/full_model_estimate/`. Scale only with the exact instance/activity
+inventory and report measured coverage and uncertainty. Call this a
+representative-block hierarchical full-model estimate. Full-chip routed PPA still
+requires all catalog views and top-level placement, routing, extraction, timing,
+physical checks, and activity power.
+
 
 ## Autonomous 5 ms DSEC runtime rule
 

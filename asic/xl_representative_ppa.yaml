@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.1.0",
+  "method": "representative_block_hierarchical_full_model_estimate",
+  "technology": "ASAP7_predictive",
+  "clock_hz": 200000000,
+  "sample_duration_s": 0.05,
+  "sources": {
+    "model_spec": "artifacts/ASIC_XL/model_spec.yaml",
+    "catalog": "artifacts/ASIC_XL/hard_hierarchy/hard_macro_catalog.json",
+    "instances": "artifacts/ASIC_XL/hard_hierarchy/hard_macro_instances.tsv",
+    "assembly_preflight": "artifacts/ASIC_XL/hard_hierarchy/macroized_assembly_preflight.json",
+    "activity_profile": "artifacts/RTL/profile/xl_epoch011_zurich_city_13_a_native_50ms_resident_fix.json",
+    "actor_power_report": "artifacts/ASIC_XL/activity/enc1_depthwise_1x1_beta48_gate/activity_power.rpt",
+    "actor_trace": "artifacts/ASIC_XL/activity/enc1_depthwise_1x1/exact_actor_trace.json",
+    "actor_route_report": "artifacts/OpenROAD/logs/asap7/resident_actor_tile_pnr_top/xl_enc1_depthwise_1x1_beta48/6_report.json",
+    "readout_route_report": "artifacts/OpenROAD/logs/asap7/xl_hm_readout__out_2x2/hard_macro_exact/6_report.json"
+  },
+  "calibration": {
+    "actor": "enc1.depthwise",
+    "actor_tile_hw": [1, 1],
+    "measured_trace_cycles": 10,
+    "dynamic_energy_allocation": {
+      "synaptic_contributions": 0.7,
+      "plif_commits": 0.3
+    },
+    "complexity_area_weight": {
+      "synaptic_terms": 0.9,
+      "resident_plifs": 0.1
+    },
+    "estimate_multiplier_range": [0.5, 3.0]
+  },
+  "representative_actor_routes": [
+    {
+      "actor": "enc1.depthwise",
+      "tile_pixels": 1,
+      "report": "artifacts/OpenROAD/logs/asap7/resident_actor_tile_pnr_top/xl_enc1_depthwise_1x1_beta48/6_report.json",
+      "activity_power": true
+    },
+    {
+      "actor": "detail2.vertical",
+      "tile_pixels": 1,
+      "report": "artifacts/OpenROAD/logs/asap7/xl_hm_actor__detail2_vertical__out_1x1__halo_3x1__offset_0_0/hard_macro_exact/6_report.json",
+      "activity_power": false
+    },
+    {
+      "actor": "detail2.horizontal",
+      "tile_pixels": 1,
+      "report": "artifacts/OpenROAD/logs/asap7/xl_hm_actor__detail2_horizontal__out_1x1__halo_1x3__offset_0_0/hard_macro_exact/6_report.json",
+      "activity_power": false
+    },
+    {
+      "actor": "detail1.depthwise",
+      "tile_pixels": 1,
+      "report": "artifacts/OpenROAD/logs/asap7/xl_hm_actor__detail1_depthwise__out_1x1__halo_3x3__offset_0_0/hard_macro_exact/6_report.json",
+      "activity_power": false
+    },
+    {
+      "actor": "down2.depthwise",
+      "tile_pixels": 1,
+      "report": "artifacts/OpenROAD/logs/asap7/xl_hm_actor__down2_depthwise__out_1x1__halo_3x3__offset_0_0/hard_macro_exact/6_report.json",
+      "activity_power": false
+    }
+  ],
+  "claim_boundary": "This configuration produces a provisional hierarchy-scaled estimate. It is not full-chip routed, extracted, or signoff PPA."
+}

@@ -1,8 +1,8 @@
 document:
   title: Digital Neuromorphic ASIC Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-ASIC
-  version: 2.1.0
-  status: native_SystemVerilog_ASIC_static_DAG_actor_integration
+  version: 2.2.0
+  status: native_XL_exact_hierarchy_and_representative_block_PPA
   created_date: '2026-08-06'
   supersedes:
   - EventSCNN-FPGA region-proposal, classification, and tracking specification v0.2
@@ -27,6 +27,7 @@ document:
     those semantic epochs but uses autonomous event actors: an upstream completion token
     causes each actor to commit every resident destination exactly once, emit spikes, and
     forward completion. It is not immediate thresholding after each signed contribution.
+
   preservation_policy:
     retained_from_previous_specification:
     - Hardware-compatible LIF equations and power-of-two leakage
@@ -48,6 +49,35 @@ document:
     - MEVDT as the active training dataset
     - FE108 and DSEC-MOT as active milestones
     historical_material_location: [legacy_tracking_context, legacy_fpga_history]
+
+xl_physical_estimation:
+  method: representative_block_hierarchical_full_model_estimate
+  method_config: asic/xl_representative_ppa.yaml
+  exact_inventory_sources:
+  - artifacts/ASIC_XL/hard_hierarchy/hard_macro_catalog.json
+  - artifacts/ASIC_XL/hard_hierarchy/hard_macro_instances.tsv
+  - artifacts/ASIC_XL/hard_hierarchy/macroized_assembly_preflight.json
+  activity_source: artifacts/RTL/profile/xl_epoch011_zurich_city_13_a_native_50ms_resident_fix.json
+  activity_checkpoint_export: artifacts/ASIC_XL/checkpoint_exports/epoch011_sim
+  physical_leaf_policy:
+    logical_hierarchy: 8x8
+    all_actor_leaves: 1x1
+    reason: >-
+      Exact 8x8 and 4x4 detail2.vertical implementations exceeded the 20 GiB
+      guarded ORFS limit during mapping. Its 2x2 implementation reached detailed
+      routing but was OOM-killed at a 20,980,348 KiB peak. Every actor therefore
+      uses the implementation-feasible 1x1 leaf.
+  required_outputs:
+  - exact per-actor physical instance and logical-state inventory
+  - exact graph-edge, fanout, join, completion-token, and receptive-halo inventory
+  - one routed representative physical instance for every actor population
+  - activity-scaled area, leakage, dynamic energy, average power, and efficiency
+  - sensitivity range and explicit measured-versus-proxy coverage
+  layout_gate: >-
+    Structural conservation and representative scaling may proceed before all
+    views exist. Full-chip layout and signoff PPA require every catalogued
+    LEF/GDS/Liberty view followed by top-level floorplanning, placement, CTS,
+    routing, extraction, timing, physical checks, and activity power.
 
 project_goal:
   primary_goal: >-
@@ -985,6 +1015,19 @@ asic_implementation:
     open_tile_platform: SKY130RAM
     power_method: post_route_parasitics_plus_representative_DSEC_VCD_or_SAIF
     vectorless_power_label: preliminary_only
+    primitive_multiply_method:
+      status: active_with_two_completed_primitive_classes
+      inventory: artifacts/ASIC_XL/full_model_estimate/primitive_inventory_and_capacity.json
+      completed:
+      - ordinary_resident_PLIF_cell_routed_and_ten_bin_VCD_power
+      - nine_term_hardwired_convolution_output_routed_and_128_vector_VCD_power
+      next:
+      - inhibition_only_retinotopic_PLIF_group
+      - adaptation_only_retinotopic_PLIF_group
+      - soft_graph_routing_and_attention
+      - temporal_readout_accumulator
+      multiplication_rule: multiply dynamic_energy_per_operation_by_exact_operation_rate_and_instance_count_then_add_continuous_leakage
+      layout_rule: use_primitive_multiplication_for_early_capacity_only; final_fit_requires_all_exact_macro_views_and_top_level_floorplan_route_extraction
   scale_gate:
     weights_int24_MiB: 0.411712646484375
     logical_membranes: 30976000

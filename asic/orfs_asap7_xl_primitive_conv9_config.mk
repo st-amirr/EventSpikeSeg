@@ -1,0 +1,21 @@
+export DESIGN_NAME = xl_primitive_conv9_pnr_top
+export PLATFORM = asap7
+export FLOW_VARIANT = primitive_conv9
+
+PROJECT_DIR := /workspace
+
+export VERILOG_FILES = \
+  $(PROJECT_DIR)/asic/rtl/resident_convolution_synapses.sv \
+  $(PROJECT_DIR)/asic/rtl/xl_primitive_conv9_pnr_top.sv
+export SDC_FILE = $(PROJECT_DIR)/asic/orfs_asap7_resident_tile_constraint.sdc
+export CLOCK_PORT = clk
+export CLOCK_PERIOD = 5000
+export CORE_UTILIZATION = 35
+export CORE_ASPECT_RATIO = 1
+export CORE_MARGIN = 2
+export PLACE_DENSITY = 0.60
+export SKIP_CTS_REPAIR_TIMING = 1
+export ADDER_MAP_FILE =
+export SLEW_MARGIN = 50
+export SYNTH_OPERATIONS_ARGS = -noalumacc
+export ABC_AREA = 1

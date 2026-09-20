@@ -1367,3 +1367,104 @@ before committing to the full 80 epochs. Then validate its revised fixed-point e
   and the native top interface are preserved. The accepted readout contributes
   3 of 825 views. Obsolete failed 8x8 journal entries are archived outside the
   current master set and cannot block the resumable driver.
+
+### 2026-09-15 — feasible hierarchy and representative full-model estimator
+
+- The exact `detail2.vertical` 4x4 actor subsequently exhausted its 20 GiB
+  guarded ORFS allocation during ABC. It produced no accepted netlist or physical
+  view. The layout policy now prohibits 4x4 actors and uses 2x2 leaves for all 21
+  depthwise/moderate actors and 1x1 leaves for all 23 dense actors.
+- Regenerated the catalog, 1,264,000-row instance map, master-generation table,
+  blackboxes, view bindings, wrappers, macroized top, and conservation preflight.
+  The exact hierarchy has 1,193,600 actor leaves (656,800 at 2x2 and 536,800 at
+  1x1), 70,400 readout leaves, 273 unique masters, and 819 required physical
+  views. All 44 actors, 78,707,200 PLIF identities, 2,916,390,400 state bits,
+  281,600 output pixels, and the original soft graph are conserved.
+- Added `asic/xl_representative_ppa.yaml` and
+  `scripts/estimate_xl_full_model_ppa.py`. The estimator combines exact hierarchy
+  and graph inventories, the completed native ten-bin activity profile, routed
+  `enc1.depthwise` activity power, and routed readout area/leakage. Per-actor and
+  interconnect inventories plus the aggregate result are written under
+  `artifacts/ASIC_XL/full_model_estimate/`.
+- The first central proxy is 358,175.19 mm^2 standard-cell area, 3.122 mJ actor
+  dynamic energy per 50 ms sample, and 258.26 W average power at 20 predictions/s.
+  The configured 0.5x..3.0x band is a sensitivity range. This is useful early
+  feasibility evidence, but only one actor has routed activity power and the
+  top-level clock/routing/interconnect power and wirelength are still absent.
+- The existing layout check is confirmed as a complete structural/conservation
+  preflight. Physical layout evidence is complete only for the exact 2x2 readout
+  master and a representative `enc1.depthwise` 1x1 partition; no top-level
+  floorplan, placement, routing, or extracted full-chip result exists yet.
+- Started the common-interior exact 2x2 `detail2.vertical` master
+  `xl_hm_actor__detail2_vertical__out_2x2__halo_4x2__offset_0_0` in
+  `eventspikeseg-hm-c7859b999d` with 20 GiB memory, 40 GiB swap, and 8 CPUs.
+  This is the next representative calibration and a required full-layout master.
+- The 2x2 master reached 70% of the first detailed-routing optimization, peaked
+  at 20,980,348 KiB, and was OOM-killed. Its log and journal are preserved; only
+  the stopped container was removed.
+- Regenerated the exact hierarchy with 1x1 leaves for every actor: 3,163,600
+  actor instances plus 70,400 readout instances, 3,234,000 total instances, 335
+  unique masters, and 1,005 required views. Structural/conservation preflight
+  passes and the representative estimator was refreshed. The central estimate
+  is unchanged because it scales logical work and state rather than partition
+  boundaries.
+- Moved the required 182-file epoch-11 simulation export intact from the stray
+  `artifacts/ASIC_XL_epoch011_sim` sibling to
+  `artifacts/ASIC_XL/checkpoint_exports/epoch011_sim`. The contents were not
+  deleted or merged with the different provisional epoch-1 constants.
+- Started the common-interior 1x1 `detail2.vertical` master
+  `xl_hm_actor__detail2_vertical__out_1x1__halo_3x1__offset_0_0` with the same
+  20 GiB memory, 40 GiB swap, and 8-CPU guard.
+- The common-interior 1x1 `detail2.vertical` master completed and staged valid
+  LEF/GDS/Liberty. It has +3511.53 ps setup slack, +49.886 ps hold slack,
+  671.833 MHz reported fmax, 5,478.9 um^2 standard-cell area, 193.208 mW
+  vectorless power, and zero reported timing violations.
+- The refreshed representative estimate uses routed area/leakage for
+  `enc1.depthwise` and `detail2.vertical`: 359,018.34 mm^2 central standard-cell
+  area and 258.86 W central average power at 20 predictions/s. Six of 1,005
+  required physical views are present; routed actor-population coverage is 2/44.
+- Started the common-interior 1x1 `detail2.horizontal` master
+  `xl_hm_actor__detail2_horizontal__out_1x1__halo_1x3__offset_0_0` under the
+  established 20 GiB/40 GiB/8-CPU guard.
+- The common-interior 1x1 `detail2.horizontal` master completed and staged valid
+  LEF/GDS/Liberty. It has +3399.8 ps setup slack, +48.181 ps hold slack,
+  624.923 MHz reported fmax, 5,629.28 um^2 standard-cell area, and 194.046 mW
+  vectorless power.
+- The representative estimate now uses three routed actor populations and counts
+  staged views directly. Its central proxy is 359,903.83 mm^2 and 259.49 W at
+  20 predictions/s; 9 of 1,005 physical views are present and actor-population
+  route coverage is 3/44.
+- Started the common-interior 1x1 `detail1.depthwise` master
+  `xl_hm_actor__detail1_depthwise__out_1x1__halo_3x3__offset_0_0` under the same
+  resource guard.
+- The common-interior 1x1 `detail1.depthwise` master completed with +3452.41 ps
+  setup slack, +50.7703 ps hold slack, 646.167 MHz fmax, 6,218.14 um^2 area,
+  and 439.23 mW vectorless power. The estimator now covers 4/44 routed actor
+  populations and 12/1,005 staged views.
+- The first `down2.depthwise` launch stopped immediately because the ORFS actor
+  source list omitted `retinotopic_mechanism_update.sv`. The runner now includes
+  that checked-in dependency; the same exact master was relaunched.
+
+### 2026-09-20 — isolated primitive area and activity-power characterization started
+
+- Completed a DRC-clean extracted ASAP7 route for one ordinary resident PLIF
+  cell. The design has 238.762 um^2 standard-cell area, 921.968 MHz reported
+  fmax, positive setup/hold slack, and 0.205748 uW TT leakage.
+- Generated a deterministic ten-bin cycle trace and used its VCD to drive
+  OpenSTA power through the routed netlist. Dynamic energy is 33.8188 pJ per
+  PLIF bin update. At ten bins per prediction and 20 predictions/s, multiplying
+  the exact 60,544,000 ordinary-cell count gives 0.4095 W dynamic, 12.4568 W
+  leakage, and 14,455.61 mm^2 cell area before top-level physical overhead.
+- Completed a DRC-clean extracted route and 128-vector VCD power run for one
+  fully connected 3x3 convolution output containing nine hardwired synapse
+  terms. The block has 28.7372 um^2 standard-cell area and 62.2855 uW dynamic
+  power at one new vector per 5 ns. Normalized values are 3.19302 um^2,
+  0.0346031 pJ per bin evaluation, and 2.37704 nW leakage per term.
+- Added `scripts/inventory_xl_physical_primitives.py` output fields for both
+  measurements and the exact 9,125,811,200 synapse-term and 60,544,000 ordinary
+  PLIF multipliers. These are early component totals; actor-specific routed
+  samples remain the better calibration for adder depth and local wiring.
+- Stopped and removed a partial four-channel experiment that enabled adaptation
+  and inhibition simultaneously because no model actor uses that combination.
+  The next valid isolated runs keep the inhibition-only stem and adaptation-only
+  encoder mechanisms separate.

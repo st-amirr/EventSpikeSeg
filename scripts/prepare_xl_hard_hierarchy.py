@@ -32,16 +32,8 @@ def _actor_physical_partition(layer: dict[str, Any]) -> dict[str, int | str]:
     groups = int(layer["groups"])
     kernel_h, kernel_w = (int(value) for value in layer["kernel"])
     terms = output_channels * (input_channels // groups) * kernel_h * kernel_w
-    depthwise = groups == input_channels == output_channels
-    if depthwise and output_channels <= 32:
-        leaf = 4
-        resource_class = "light_depthwise_4x4"
-    elif depthwise or terms <= 1024:
-        leaf = 2
-        resource_class = "moderate_2x2"
-    else:
-        leaf = 1
-        resource_class = "dense_1x1"
+    leaf = 1
+    resource_class = "exact_actor_1x1"
     return {
         "resource_class": resource_class,
         "physical_tile_height": leaf,
@@ -305,11 +297,12 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
         "actor_tile_instances": expected_actor_tiles,
         "logical_actor_tiles_8x8": expected_actor_tiles,
         "actor_physical_partition_policy": {
-            "name": "conservative_exact_actor_leaves_v1",
+            "name": "measured_feasible_exact_actor_leaves_v3",
             "rule": (
-                "4x4 only for depthwise actors with at most 32 channels; 2x2 for other "
-                "depthwise actors or at most 1024 synaptic terms per output location; "
-                "1x1 for denser actors. Boundary leaves are clipped exactly."
+                "1x1 for every actor. Exact detail2.vertical 8x8 and 4x4 masters "
+                "exceeded the 20 GiB implementation limit during mapping, and its 2x2 "
+                "master exceeded the same limit during detailed routing. Boundary "
+                "leaves retain their exact clipped receptive halos."
             ),
             "baseline_1x1_synthesis_evidence": synthesis_evidence.as_posix(),
             "baseline_1x1_synthesis_evidence_sha256": (

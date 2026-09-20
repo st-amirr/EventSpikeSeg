@@ -117,6 +117,7 @@ def _config_text(module: str, kind: str, rtl: str, flow_variant: str) -> str:
         sources = [
             "$(PROJECT_DIR)/asic/rtl/resident_convolution_synapses.sv",
             "$(PROJECT_DIR)/asic/rtl/resident_plif_population.sv",
+            "$(PROJECT_DIR)/asic/rtl/retinotopic_mechanism_update.sv",
             "$(PROJECT_DIR)/asic/rtl/resident_retinotopic_plif_population.sv",
             "$(PROJECT_DIR)/asic/rtl/resident_channelized_plif_actor.sv",
         ]

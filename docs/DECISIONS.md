@@ -988,3 +988,24 @@ and RTL-generation bring-up while training is active. It is not the final accura
 Regenerate the ignored XL export from the selected final/QAT checkpoint before equivalence or PPA.
 Preparation may run lightweight export/generation/tests, but Yosys/OpenROAD execution requires
 explicit user approval because training and synthesis compete for host memory.
+
+## 2026-09-15 — Use exact inventory plus representative physical characterization
+
+Estimate full-model feasibility by routing and activity-characterizing one physical
+instance for each of the 44 actor populations, then scaling those measurements with
+the exact native instance inventory and measured full-graph activity. Include the
+readout and report area, leakage, dynamic energy, average power, and efficiency with
+measured coverage and a sensitivity band. Preserve the exact graph and count its
+98 edges, fanouts, joins, completion tokens, macro receptive halos, and observed
+event traffic; do not invent wirelength before top-level placement.
+
+Use 1x1 physical leaves for every actor. Exact 8x8 and 4x4 actor trials exceeded
+the 20 GiB guarded implementation limit during mapping; the 2x2 trial reached
+detailed routing but was OOM-killed at a 20,980,348 KiB peak. This changes
+partitioning, not model semantics: the logical 8x8 hierarchy, all 44 actors, all
+78,707,200 PLIF identities, and the native 440x640 result remain exact.
+
+Call the scaled result a representative-block hierarchical full-model estimate.
+Reserve full-chip routed PPA for the completed catalog views plus top-level
+floorplanning, placement, CTS, routing, parasitic extraction, timing, DRC, GDS
+integrity, and representative-activity power.
