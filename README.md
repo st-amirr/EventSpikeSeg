@@ -380,14 +380,8 @@ Set `XL_CHECKPOINT` and `XL_ASIC_EXPORT` when replacing epoch 1 with the selecte
 checkpoint. Full XL Yosys elaboration is a separate explicitly launched
 `asic/scripts/run_xl_synthesis.sh` because it competes heavily for host memory.
 
-Run the exact epoch-1 44-actor integer graph over one ten-bin/50 ms DSEC sample in the CPU
-verification Docker image with `bash asic/scripts/run_xl_native_integer_simulation.sh`. The
-default export is `artifacts/ASIC_XL`; the run checkpoints at each bin and writes both an activity
-JSON and the final 440x640 `uint8` prediction under `artifacts/RTL/profile/`. This validates
-fixed-point graph execution, not trained accuracy, RTL cycles, or ASIC energy.
-
 The complete `artifacts/` directory is intentionally ignored by Git. Checkpoints, exported
-weights, generated tops, replay vectors, metrics, and physical-design outputs remain local and
+weights, generated tops, per-block activity vectors, metrics, and physical-design outputs remain local and
 must be retained or backed up outside Git; derived exports are regenerated from the retained
 checkpoint using the tracked source and scripts.
 
@@ -434,6 +428,5 @@ exported and the manifest-driven generator emits the complete weighted **25-acto
 including retinotopic mechanisms and the temporal readout. Model-scale state, queues,
 readout, and residual storage now use bounded banked 1RW interfaces. Remaining physical work
 is to bind characterized SRAM macros, size residual capacity from native activity, and run
-routed PPA. The SRAM-integrated real-checkpoint reduced-8x8 full-DAG replay already matches
-all 64 semantic outputs and records 12,135 steady-state cycles per ten-bin frame at the
-assumed 100 MHz simulation clock; this is behavioral verification, not native PPA.
+routed layout. Simulation and activity-power work is restricted to isolated blocks and is
+multiplied using the exact full-layout instance inventory.

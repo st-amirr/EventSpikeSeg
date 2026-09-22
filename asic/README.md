@@ -31,18 +31,6 @@ eight-channel-per-head Q/K coincidence popcount and V-spike gate without softmax
 The epoch-1 XL export is structural bring-up only; replace its constants with the selected final
 trained/QAT checkpoint before equivalence, accuracy, or PPA reporting.
 
-The exact actor-DAG CPU oracle can run one complete XL label interval in Docker with:
-
-```bash
-bash asic/scripts/run_xl_native_integer_simulation.sh
-```
-
-It routes each actor's output to the next graph nodes for ten chronological 5 ms bins, preserves
-all temporal state, parallelizes disjoint output-channel ranges with four workers, and writes an
-atomic resume checkpoint after every bin. On success it emits the JSON profile and exact 440x640
-`uint8` prediction under `artifacts/RTL/profile/` and removes the temporary checkpoint. This is
-functional/activity simulation; it does not generate VCD/SAIF or report energy.
-
 ## Current synthesis boundary
 
 The current operational status and ordered full-chip resume procedure are maintained in
@@ -132,48 +120,17 @@ vectorless power estimate for one checkpoint-exact XL 1x1 actor partition. It is
 full-chip layout nor representative-event power; activity-annotated power still requires a
 cycle-accurate VCD or SAIF.
 
-Capture the exact ten-bin `enc3.pointwise` trajectory and verify its RTL VCD with:
-
-```bash
-bash asic/scripts/run_xl_enc3_activity_capture.sh
-```
-
-This reruns the integer DAG only because the earlier completed profile retained aggregate event
-counts rather than ordered actor vectors. The capture has an atomic per-bin resume checkpoint,
-binds the trace to the checkpoint, model specification, and event-file SHA-256 digests, selects
-the busiest real spatial coordinate deterministically, and checks every RTL output vector. The
-result is single-coordinate actor activity; post-route gate-net annotation is still required
-before reporting activity-based power.
-
 The separately gated full structural elaboration command is
 `bash asic/scripts/run_xl_synthesis.sh`. Do not launch it while training is using host memory.
 It writes `xl_full_synthesis.log` inside the selected ignored XL export directory and is an
 elaboration/synthesis check, not full-chip PPA.
-
-Historical addressed-SRAM reference: the generator's `legacy_sram` mode consumes an exported
-`model_spec.yaml` and emits the exact
-25-actor structural top with fixed ROM constants and all routing primitives. The generated
-miniature-state regression exercises the complete completion-token DAG. Mechanism-enabled
-actors use grouped retinotopic commits; the final readout accumulates signed class currents
-and enumerates a dense prediction after the configured bin window. Large ROM constants are
-emitted as bounded concatenation chunks so Icarus can lex the trained top without changing
-word order. `actor_local_state_sram` defines the compiler-macro interface, and
-`initialized_actor_state_bank` partitions large logical memories into at most 65,536-row
-banks, zeroizes those banks in parallel at sequence start, and provides single-port request
-arbitration. Ordinary and mechanism-enabled actor state, touched queues, retinotopic touched
-markers, the temporal readout, and residual-union storage now cross this explicit SRAM
-boundary. Simulation still selects its behavioral branch; physical PPA requires a real SRAM
-compiler macro binding.
-The generated top-level `USE_STATE_MACRO` parameter propagates to all 25 actors, nine
-residual unions, and the temporal readout; leave it at `0` for simulation and set it to `1`
-only when `eventspikeseg_1rw_sram_macro` is bound to a compatible characterized macro.
 
 Generated exports are ignored build products under `artifacts/ASIC`; the checkpoint-authoritative
 six-class export contains all 25 actors and exactly 143,824 signed 24-bit synaptic weights. The existing
 generated scalar/SRAM top is an executable logical reference, not the selected resident full-chip
 implementation and not a reportable PPA netlist.
 
-Before full-chip PPA, complete bitmap graph generation, prove exact integer equivalence, elaborate
+Before full-chip layout, complete bitmap graph generation, prove structural conservation, elaborate
 the native dimensions without truncation, and size any boundary/result buffering without overflow.
 
 Generate the technology-independent memory manifest from the active checkpoint export:
@@ -199,95 +156,9 @@ contains Yosys. It is independent of the CUDA training image:
 docker compose -f compose_ASIC.yaml build
 docker compose -f compose_ASIC.yaml run --rm test
 docker compose -f compose_ASIC.yaml run --rm rtl
-docker compose -f compose_ASIC.yaml run --rm replay
 docker compose -f compose_ASIC.yaml run --rm synthesis
 docker compose -f compose_ASIC.yaml run --rm lint
 ```
-
-A passing full-DAG replay writes `artifacts/RTL/smoke/rtl_metrics.json` with initialization
-cycles, steady-state cycles/frame, cycles/bin, utilization, and headroom. Those values are
-explicitly reduced-8x8 verification metrics and must not be reported as native-resolution
-latency or PPA.
-
-Profile the checkpoint-authoritative complete native validation sequence after mounting DSEC:
-
-```sh
-docker compose -f compose_ASIC.yaml run --rm \
-  -v /absolute/path/to/DSEC:/datasets/DSEC:ro test \
-  python scripts/profile_asic_dsec.py --dataset-root /datasets/DSEC
-```
-
-The profiler requires all 234 records from checkpoint validation sequence
-`zurich_city_02_a`, preserves event-count multiplicity, and writes the ignored
-`artifacts/RTL/profile/native_activity_profile.json`. A run with `--maximum-records` is a
-debug-only partial profile and sets `capacity_claim` false. Integer profiling establishes
-state/queue/residual activity bounds; it does not produce cycle timing or switching power.
-
-For the supplied event-only DSEC sample, run a shortest complete hardware interval with:
-
-```sh
-docker compose -f compose_ASIC.yaml run --rm test \
-  python scripts/profile_asic_dsec.py \
-  --event-file asic/DSEC_sample/zurich_city_13_a/events.h5 \
-  --duration-ms 5 \
-  --output artifacts/RTL/profile/zurich_city_13_a_native_5ms_activity.json
-```
-
-Without a matching `rectify_map.h5`, this path labels its spatial preprocessing as an unrectified
-row crop and cannot support a publication-grade spatial/activity claim. Derive the implemented
-single-lane RTL service floor from the exact actor counts with:
-
-```sh
-docker compose -f compose_ASIC.yaml run --rm test \
-  python scripts/analyze_asic_native_profile.py \
-  --profile artifacts/RTL/profile/zurich_city_13_a_native_5ms_activity.json \
-  --output artifacts/RTL/profile/zurich_city_13_a_native_5ms_rtl_bounds.json \
-  --lane-config-output artifacts/ASIC/lane_config.json
-```
-
-Regenerate the historical banked reference with that provisional manifest, then rerun the same
-event interval with exact per-bank counters:
-
-```sh
-docker compose -f compose_ASIC.yaml run --rm test \
-  python scripts/generate_asic_top.py \
-  artifacts/ASIC/model_spec.yaml artifacts/ASIC/eventspikeseg140k_dag_top.sv \
-  --architecture legacy_sram --lane-config artifacts/ASIC/lane_config.json
-
-docker compose -f compose_ASIC.yaml run --rm test \
-  python scripts/profile_asic_dsec.py \
-  --event-file asic/DSEC_sample/zurich_city_13_a/events.h5 \
-  --duration-ms 5 \
-  --lane-config artifacts/ASIC/lane_config.json \
-  --output artifacts/RTL/profile/zurich_city_13_a_native_5ms_activity.json
-```
-
-Run the analyzer once more to report the busiest configured bank and modulo-bank imbalance. These
-analyses are conservative FSM-cycle lower bounds, not cycle-accurate full-native RTL simulation,
-and they do not produce power.
-
-The analyzer also reports the longest same-bin completion-token commit path. If actor throughput
-passes but that response-latency floor fails, generate a separate candidate rather than
-overwriting the measured manifest:
-
-```sh
-docker compose -f compose_ASIC.yaml run --rm test \
-  python scripts/plan_asic_latency_lanes.py \
-  --bounds artifacts/RTL/profile/zurich_city_13_a_native_5ms_rtl_bounds.json \
-  --lane-config artifacts/ASIC/lane_config.json \
-  --model-spec artifacts/ASIC/model_spec.yaml \
-  --output artifacts/ASIC/lane_config_latency_candidate.json
-```
-
-Rerun `profile_asic_dsec.py` with the candidate and analyze that new profile. The planner's
-imbalance-adjusted value is only a sizing projection; only the exact reprofile is accepted as a
-measured service/commit floor. Preserve the old manifest as the throughput baseline when promoting
-an accepted candidate.
-
-For the 200 MHz target, pass `--clock-mhz 200` to the analyzer. The cost-reduction workflow may use
-`--start-from-service-refinement` on the planner, but each resulting modulo map must again be
-profiled exactly. The current promoted 924-lane map passes the independent service, commit-path,
-and scalar-edge floors; it still requires timed backpressure analysis and full-chip timing closure.
 
 Run with the official OpenROAD Flow Scripts Docker image (the default is
 `openroad/orfs:latest`):

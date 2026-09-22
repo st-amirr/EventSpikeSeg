@@ -1,0 +1,17 @@
+export DESIGN_NAME = primitive_140k_adaptation_energy_reduce128_pnr_top
+export PLATFORM = asap7
+export FLOW_VARIANT = checkpoint_exact
+PROJECT_DIR := /workspace
+export VERILOG_FILES = $(PROJECT_DIR)/asic/rtl/retinotopic_adaptation_blocks.sv $(PROJECT_DIR)/asic/rtl/primitive_140k_adaptation_energy_reduce128_pnr_top.sv
+export SDC_FILE = $(PROJECT_DIR)/asic/orfs_asap7_primitive_140k_adaptation_reducer_constraint.sdc
+export CLOCK_PORT = clk
+export CLOCK_PERIOD = 20000
+export CORE_UTILIZATION = 35
+export CORE_ASPECT_RATIO = 1
+export CORE_MARGIN = 2
+export PLACE_DENSITY = 0.60
+export SKIP_CTS_REPAIR_TIMING = 1
+export ADDER_MAP_FILE =
+export SLEW_MARGIN = 50
+export SYNTH_OPERATIONS_ARGS = -noalumacc
+export ABC_AREA = 1

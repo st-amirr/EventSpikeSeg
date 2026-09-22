@@ -1,5 +1,7 @@
 # Bugs and limitations
 
+> Current scope (2026-09-21): EventSpikeSeg140k epoch-80 seed-17 is the primary ASIC layout/simulation/estimate target. Useful XL layouts and reports are preserved for secondary work; XL figures are not 140k evidence. See [target policy](AGENTS.md#current-asic-target-policy--2026-09-21). Older entries are historical where superseded.
+
 ## Dataset representation limitation
 
 **Status: explicit approximation in software.**
@@ -46,7 +48,7 @@ At native 440x640, v8 owns **30,976,000** current/membrane identities. Threshold
 age/amplitude on **10,982,400** neurons. The active direct-state design gives every identity local
 register/latch state and advances every PLIF once per 5 ms completion token; it therefore needs no
 `last_bin_tag`, addressed state SRAM, fetch, or writeback. The exact logical state inventory is
-1,590,476,800 bits, or **189.60 MiB-equivalent**, before routing and control. This is a physical
+1,265,792,000 bits, or **150.89 MiB-equivalent**, before routing and control. This is a physical
 standard-cell/latch implementation burden, not a memory-device capacity requirement.
 
 ## Open: continuous learned neuron parameters
@@ -84,7 +86,7 @@ The installed `events/train` folder has 2,887 NumPy tensors while `labels/train`
 
 ## Full-chip ASIC integration still incomplete
 
-**Current XL status (2026-09-13): blocked by full-top elaboration memory.**
+**Secondary XL history (2026-09-13): full-top elaboration exceeded memory; retained for reference. Primary 140k full-chip assembly is also unfinished.**
 
 The checkpoint-bound beta48 XL preflight passes and the 1x1 partition journal contains
 45 PASS rows. Guarded complete-top Yosys attempts at 8, 16, and 24 GiB all exited 137
@@ -96,19 +98,14 @@ activity power have not started. The machine-readable record is
 
 Native SystemVerilog now covers channel-aware standard/grouped/depthwise kernel scatter, actor-local current/membrane/tag storage, exact PLIF commit, completion/spike backpressure, inhibition, adaptation, class-current/argmax primitives, lossless two-way event/token fanout, fixed concat channel remap, nearest-neighbor 2x event expansion, same-bin completion rendezvous, and a correctness-reference residual binary-OR/dedup join. The Python exporter now owns an explicit v8 **non-linear DAG** contract; the 25-actor list is only a deterministic topological/export order.
 
-The active six-class trained-v4 generated channelized convolution/PLIF graph includes all 25 actors, exact static routes, grouped retinotopic mechanism commits, 143,824 exported synaptic weights, and the temporal readout. Model-scale memories now cross bounded banked 1RW interfaces, and the SRAM-integrated reduced-geometry full-DAG replay passes final-output plus per-actor current, candidate/membrane, spike, and adaptation age/amplitude comparison. A reduced 4x4 actor now also reaches clean routed SKY130 GDS with two characterized 80x64 macros, closing the interface experiment only. Full-model macro selection/banking, native residual-dedup capacity, native-resolution activity/latency, and routed activity-based PPA remain open. Do not report native real-time or power results until those paths are measured.
+The active six-class trained-v4 generated channelized convolution/PLIF graph includes all 25 actors, exact static routes, grouped retinotopic mechanism commits, 143,824 exported synaptic weights, and the temporal readout. A reduced 4x4 actor reaches clean routed SKY130 GDS with two characterized 80x64 macros, closing the interface experiment only. Full-model layout and routed physical checks remain open. Power is measured per block and multiplied by the exact physical inventory.
 
 The paragraph above records the superseded SRAM implementation milestone; it is not the active
 direct-state architecture. The active replacement uses resident state elements and spike-vector
 synapse fabrics. Its full 25-actor generated graph, full-scale elaboration, placement, timing, and
 power are not complete, so no resident full-model PPA claim is yet valid.
 
-The tracked native profiler still targets the checkpoint-authoritative complete 234-record
-validation sequence `zurich_city_02_a` for a capacity claim. A real `zurich_city_13_a/events.h5`
-sample is now available and its first 5 ms has completed through the full native integer DAG, but
-the sample has no matching rectification map and is not the checkpoint validation sequence. It is
-therefore preliminary implementation activity, not a full-sequence capacity or publication power
-claim. The resulting activity also proves that the present single-lane actor organization misses
+The former whole-model native profiler is retired. The present single-lane actor organization misses
 the 5 ms deadline by at least 569.9x at the isolated tile's nominal clock; parallel bank/lane design
 is now an explicit open implementation requirement.
 
@@ -175,7 +172,7 @@ inferred unintended storage even though the comparator output itself had a defau
 has an unconditional combinational assignment. The same two-tile synthesis and cocotb regression
 pass, and the tiled wrapper is now part of the representative synthesis gate.
 
-## 2026-09-14 — Resolved: native activity profiler retained consumed streams
+## 2026-09-14 — Retired history: native activity profiler retained consumed streams
 
 The complete XL integer simulator kept every upstream multi-million-event list
 until the end of each 5 ms bin and copied zero-offset edge lists. Dense epoch-11
@@ -183,8 +180,8 @@ activity therefore exceeded 8 and 14 GiB before the first resume checkpoint.
 The graph now counts remaining consumers, releases a stream after its final
 consumer, and reuses immutable zero-offset lists. Arithmetic, event order,
 actor state, and prediction semantics are unchanged. The exact 16 GiB run
-completed all ten bins with exit zero and no OOM; its audited profile and
-prediction are retained under `artifacts/RTL/profile`.
+completed all ten bins with exit zero and no OOM. The profiler and its generated
+artifacts were removed on 2026-09-21 when whole-model simulation was retired.
 
 ## 2026-09-14 — Resolved: readout score array caused Yosys priority explosion
 
@@ -204,8 +201,8 @@ and extracted timing-model Liberty. The macroized native assembly is generated
 and passes its conservation preflight. The exact-name 4x4 readout master also
 OOM-killed during ABC at 20 GiB, so no view was staged. The next ORFS target is
 xl_hm_readout__out_2x2, with 70,400 physical instances grouped sixteen per logical tile.
-No full-chip PPA claim is valid until all views, assembly, routing, timing,
-physical checks, and full-graph activity power complete.
+No full-chip layout claim is valid until all views, assembly, routing, timing,
+and physical checks complete. Power uses independently measured blocks and exact counts.
 
 ## 2026-09-15 — Resolved: readout ORFS top-cell identity differed from catalog
 

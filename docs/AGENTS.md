@@ -2,9 +2,18 @@
 
 ## Mission
 
-Build and validate `EventSpikeSeg140k` for six-class DSEC and `EventSpikeSegXL` for native
-eleven-class DSEC at `440x640`, then map their spike-native PLIF inference graphs to a custom
-static digital-neuromorphic accelerator.
+## Current ASIC target policy — 2026-09-21
+
+All primary ASIC layout, block simulation, power, area, timing, and inventory work is based on **EventSpikeSeg140k v8, epoch 80, seed 17**: six classes, 440x640, 25 permanent PLIF actors, 54 graph edges, 30,976,000 resident PLIF identities, and 143,824 deployed synaptic weights. Primary exports/results live under `artifacts/ASIC/`; the latest accepted small gate-simulation results are in `artifacts/ASIC/primitive_characterization/`.
+
+**EventSpikeSegXL is secondary/reference work.** Preserve useful accepted XL GDS/LEF/Liberty views, final routed ODB/DEF/netlist/SDC/SPEF files, checkpoint-specific constants, hierarchy catalogs/instance maps/preflight, and validation/power reports. Keep them under `artifacts/ASIC_XL/` and their existing named OpenROAD result directories. Retain the latest useful unfinished-run database and failure summaries; redundant intermediate databases and rebuildable simulation binaries need not be retained. Never relabel XL measurements or its 44-actor inventory as 140k results. Reuse an XL physical view for 140k only after proving matching RTL, constants, geometry, interfaces and constraints.
+
+XL physical expansion remains paused behind 140k work. Preserve independent XL training and checkpoints. Neither model has a completed full-chip layout; existing routed blocks and structural hierarchy data must be labeled accordingly. Current work uses small per-block simulations and extracted-layout measurements; whole-model simulation remains retired. Historical entries below retain their original model and date and do not change this priority.
+
+
+Build and validate `EventSpikeSeg140k` for six-class DSEC at `440x640` as the primary
+custom digital-neuromorphic ASIC target. Keep the eleven-class `EventSpikeSegXL`
+model and its useful physical implementation evidence for secondary work.
 Training remains PyTorch + SpikingJelly; deployment is a custom ASIC described directly in
 synthesizable SystemVerilog, with Icarus/cocotb and Yosys/OpenROAD as the open verification
 and PPA path.
@@ -177,25 +186,24 @@ accuracy, latency, and overflow/saturation behavior. ASAP7 is predictive researc
 not tapeout signoff. Full-chip PPA is invalid until the complete native resident graph—not a
 reduced actor or superseded SRAM reference—is placed, routed, timed, and activity measured.
 
-## XL physical estimation and artifact layout
+## Secondary XL physical estimation and artifact preservation
 
 Keep XL checkpoint-specific exports below
 `artifacts/ASIC_XL/checkpoint_exports/<checkpoint-purpose>/`; do not create new
 top-level `artifacts/ASIC_XL_*` siblings. Preserve differing checkpoint constants
 as separate exports rather than merging or deleting them.
 
-The active exact physical hierarchy retains logical 8x8 grouping but uses 1x1
+The retained secondary XL physical hierarchy retains logical 8x8 grouping but uses 1x1
 physical leaves for every actor because 8x8 and 4x4 exceeded 20 GiB during mapping
 and 2x2 exceeded 20 GiB during detailed routing. Regenerate the catalog, instance
 map, wrappers, macroized top, and preflight together after any partition change.
 
 For early feasibility, characterize one routed, activity-measured physical instance
-of each of the 44 actors and update `asic/xl_representative_ppa.yaml` plus
-`artifacts/ASIC_XL/full_model_estimate/`. Scale only with the exact instance/activity
-inventory and report measured coverage and uncertainty. Call this a
-representative-block hierarchical full-model estimate. Full-chip routed PPA still
-requires all catalog views and top-level placement, routing, extraction, timing,
-physical checks, and activity power.
+of each block class and write results below the target's
+`primitive_characterization/` directory. Scale only with the exact physical-instance
+inventory and report measured coverage and uncertainty. Do not run or reconstruct a
+whole-model simulation for either target. Full-chip layout still requires all catalog
+views and top-level placement, routing, extraction, timing, and physical checks.
 
 
 ## Autonomous 5 ms DSEC runtime rule

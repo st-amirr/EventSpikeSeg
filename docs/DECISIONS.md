@@ -1,3 +1,11 @@
+## Current ASIC target policy — 2026-09-21
+
+All primary ASIC layout, block simulation, power, area, timing, and inventory work is based on **EventSpikeSeg140k v8, epoch 80, seed 17**: six classes, 440x640, 25 permanent PLIF actors, 54 graph edges, 30,976,000 resident PLIF identities, and 143,824 deployed synaptic weights. Primary exports/results live under `artifacts/ASIC/`; the latest accepted small gate-simulation results are in `artifacts/ASIC/primitive_characterization/`.
+
+**EventSpikeSegXL is secondary/reference work.** Preserve useful accepted XL GDS/LEF/Liberty views, final routed ODB/DEF/netlist/SDC/SPEF files, checkpoint-specific constants, hierarchy catalogs/instance maps/preflight, and validation/power reports. Keep them under `artifacts/ASIC_XL/` and their existing named OpenROAD result directories. Retain the latest useful unfinished-run database and failure summaries; redundant intermediate databases and rebuildable simulation binaries need not be retained. Never relabel XL measurements or its 44-actor inventory as 140k results. Reuse an XL physical view for 140k only after proving matching RTL, constants, geometry, interfaces and constraints.
+
+XL physical expansion remains paused behind 140k work. Preserve independent XL training and checkpoints. Neither model has a completed full-chip layout; existing routed blocks and structural hierarchy data must be labeled accordingly. Current work uses small per-block simulations and extracted-layout measurements; whole-model simulation remains retired. Historical entries below retain their original model and date and do not change this priority.
+
 ## 2026-09-07 — Bound validation with the configured temporal chunk count
 
 Use `--sequential-chunks` for validation as well as the memory-bounded training replay.
@@ -992,12 +1000,12 @@ explicit user approval because training and synthesis compete for host memory.
 ## 2026-09-15 — Use exact inventory plus representative physical characterization
 
 Estimate full-model feasibility by routing and activity-characterizing one physical
-instance for each of the 44 actor populations, then scaling those measurements with
-the exact native instance inventory and measured full-graph activity. Include the
+instance for each block class, then scaling those measurements with
+the exact native physical-instance inventory. Include the
 readout and report area, leakage, dynamic energy, average power, and efficiency with
 measured coverage and a sensitivity band. Preserve the exact graph and count its
-98 edges, fanouts, joins, completion tokens, macro receptive halos, and observed
-event traffic; do not invent wirelength before top-level placement.
+98 edges, fanouts, joins, completion tokens, and macro receptive halos; do not
+run a whole-model simulation or invent wirelength before top-level placement.
 
 Use 1x1 physical leaves for every actor. Exact 8x8 and 4x4 actor trials exceeded
 the 20 GiB guarded implementation limit during mapping; the 2x2 trial reached

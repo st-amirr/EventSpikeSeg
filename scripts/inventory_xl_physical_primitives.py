@@ -31,7 +31,6 @@ def main() -> int:
     model = read("artifacts/ASIC_XL/model_spec.yaml")
     catalog = read("artifacts/ASIC_XL/hard_hierarchy/hard_macro_catalog.json")
     preflight = read("artifacts/ASIC_XL/hard_hierarchy/macroized_assembly_preflight.json")
-    estimate = read("artifacts/ASIC_XL/full_model_estimate/full_model_ppa_estimate.json")
     layers = [layer for layer in model["layers"] if layer.get("name") != "head.synapse"]
 
     ordinary_plifs = 0
@@ -76,9 +75,6 @@ def main() -> int:
         })
 
     measured = {}
-    for item in json.loads((ROOT / "asic/xl_representative_ppa.yaml").read_text())["representative_actor_routes"]:
-        report = read(str(item["report"]))
-        measured[str(item["actor"])] = float(report["finish__design__instance__area"])
     readout_report = read(
         "artifacts/OpenROAD/logs/asap7/xl_hm_readout__out_2x2/hard_macro_exact/6_report.json"
     )
@@ -171,16 +167,6 @@ def main() -> int:
         }
         for name, area in measured.items()
     }
-    central_area = float(estimate["provisional_estimate"]["central_standard_cell_area_mm2"])
-    model_fit = {
-        str(die): {
-            "usable_area_mm2": die * utilization,
-            "model_fraction": die * utilization / central_area,
-            "equivalent_die_count": math.ceil(central_area / (die * utilization)),
-        }
-        for die in die_areas
-    }
-
     result = {
         "schema_version": "1.0.0",
         "scope": "exact_native_xl_primitive_inventory_and_pre_floorplan_capacity",
@@ -207,12 +193,10 @@ def main() -> int:
         },
         "capacity_at_70_percent_utilization": {
             "module_instances_per_die": capacity,
-            "full_model_scenarios": model_fit,
             "die_area_mm2_options": die_areas,
         },
         "per_actor": per_actor,
         "power_characterization": {
-            "activity_power_complete": ["enc1.depthwise integrated 1x1 actor"],
             "isolated_primitive_activity_power_complete": [
                 "ordinary one-cell resident PLIF",
                 "nine-term hardwired convolution synapse block",
@@ -226,14 +210,15 @@ def main() -> int:
             ],
         },
         "claim_boundary": (
-            "Counts are exact. Capacity uses measured block standard-cell area or the current "
-            "hierarchical proxy and excludes top-level wires, clock tree, power grid, pads, "
+            "Counts are exact. Capacity uses isolated measured block standard-cell area and "
+            "excludes top-level wires, clock tree, power grid, pads, "
             "routing congestion, and floorplan whitespace beyond the stated utilization."
         ),
     }
-    output = ROOT / "artifacts/ASIC_XL/full_model_estimate/primitive_inventory_and_capacity.json"
+    output = ROOT / "artifacts/ASIC_XL/primitive_characterization/primitive_inventory_and_capacity.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"exact_counts": result["exact_counts"], "full_model_scenarios": model_fit}, indent=2))
+    print(json.dumps({"exact_counts": result["exact_counts"], "module_capacity": capacity}, indent=2))
     return 0
 
 

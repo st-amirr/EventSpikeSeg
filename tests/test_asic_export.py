@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 
-import h5py
-import numpy as np
 import pytest
 import torch
 
@@ -28,13 +26,6 @@ from eventspikeseg.asic import (
     validate_eventspikeseg140k_topology,
     validate_eventspikesegxl_topology,
 )
-from eventspikeseg.asic.activity_profile import (
-    CHECKPOINT_IDENTITY_FIELDS,
-    _event_file_bins,
-    _validate_export_checkpoint,
-    counted_events,
-)
-from eventspikeseg.asic.dag_reference import SpikeEvent
 from eventspikeseg.model import EventSpikeSeg140k, EventSpikeSegXL
 
 
@@ -51,7 +42,10 @@ def test_frozen_140k_asic_graph_contract(tmp_path) -> None:
     assert manifest["logical_membrane_states"] == 30_976_000
     assert manifest["hardware_topology"]["cross_layer_compute_sharing"] is False
     assert manifest["hardware_topology"]["runtime_layer_reconfiguration"] is False
-    assert manifest["hardware_topology"]["state_ownership"] == "actor_local_direct_indexed_SRAM"
+    assert (
+        manifest["hardware_topology"]["state_ownership"]
+        == "actor_local_direct_register_or_latch_per_PLIF"
+    )
     assert manifest["hardware_topology"]["graph_kind"] == "static_directed_acyclic_actor_graph"
     assert manifest["hardware_topology"]["linear_pipeline"] is False
     assert (
@@ -161,43 +155,6 @@ def test_compact_adaptation_formats_cover_configured_limits() -> None:
     assert ASIC_FORMATS["adaptation_duration"].maximum >= 16 * (1 << 16)
 
 
-def test_native_activity_event_expansion_preserves_count_multiplicity() -> None:
-    counts = np.zeros((2, 3, 4), dtype=np.float32)
-    counts[0, 1, 2] = 3
-    counts[1, 2, 0] = 1
-    events = counted_events(counts)
-    assert events.count(SpikeEvent(0, 1, 2)) == 3
-    assert events.count(SpikeEvent(1, 2, 0)) == 1
-
-
-def test_native_event_file_short_sample_preserves_geometry_and_multiplicity(
-    tmp_path,
-) -> None:
-    event_path = tmp_path / "events.h5"
-    with h5py.File(event_path, "w") as handle:
-        events = handle.create_group("events")
-        events.create_dataset("x", data=np.asarray([2, 2, 3, 4], dtype=np.uint16))
-        events.create_dataset("y", data=np.asarray([1, 1, 439, 440], dtype=np.uint16))
-        events.create_dataset("p", data=np.asarray([0, 0, 1, 1], dtype=np.uint8))
-        events.create_dataset("t", data=np.asarray([0, 1, 2, 3], dtype=np.uint32))
-        handle.create_dataset("ms_to_idx", data=np.asarray([0, 4, 4, 4, 4, 4], dtype=np.uint64))
-        handle.create_dataset("t_offset", data=np.int64(0))
-
-    bins, preprocessing = _event_file_bins(event_path, start_ms=0, duration_ms=5, rectify_path=None)
-
-    assert preprocessing.startswith("unrectified_sensor_coordinates")
-    assert bins == [[SpikeEvent(0, 1, 2), SpikeEvent(0, 1, 2), SpikeEvent(1, 439, 3)]]
-
-
-def test_native_profile_rejects_stale_checkpoint_export() -> None:
-    identity = {field: f"value-{field}" for field in CHECKPOINT_IDENTITY_FIELDS}
-    assert _validate_export_checkpoint({"checkpoint": identity}, identity) == identity
-    stale = dict(identity)
-    stale["epoch"] = "different"
-    with pytest.raises(ValueError, match="regenerate artifacts/ASIC"):
-        _validate_export_checkpoint({"checkpoint": stale}, identity)
-
-
 def test_integer_plif_rounds_membrane_after_each_lazy_decay_step() -> None:
     plif = IntegerPLIF()
     result = plif.step(
@@ -237,7 +194,10 @@ def test_state_capacity_is_model_scale_not_parameter_scale() -> None:
     assert capacity["dense_exact_state_mib"] == pytest.approx(150.8941650390625)
     assert capacity["adaptation_age_bits_per_enabled_neuron"] == 6
     assert capacity["adaptation_amplitude_bits_per_enabled_neuron"] == 19
-    assert capacity["full_chip_PPA_gate"] == "characterized_actor_local_SRAM_macros_required"
+    assert (
+        capacity["full_chip_PPA_gate"]
+        == "complete_direct_register_or_latch_resident_hierarchy_required"
+    )
 
 
 def test_sram_manifest_derives_exact_actor_local_storage(tmp_path) -> None:

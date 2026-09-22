@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare exact XL hard-macro declarations, view bindings, and instance map."""
+"""Prepare exact checkpoint-specific 140k or XL hard-macro declarations and inventory."""
 
 from __future__ import annotations
 
@@ -141,7 +141,7 @@ def _readout_blackbox(master: dict[str, Any]) -> str:
             "  output logic prediction_valid_o, input logic prediction_ready_i,",
             f"  output logic [{x_width - 1}:0] prediction_x_o,",
             f"  output logic [{y_width - 1}:0] prediction_y_o,",
-            "  output logic [3:0] prediction_class_o,",
+            f"  output logic [{int(master.get('class_width', 4))-1}:0] prediction_class_o,",
             "  output logic frame_done_valid_o, input logic frame_done_ready_i,",
             "  output logic [23:0] frame_tag_o",
             ");",
@@ -153,6 +153,11 @@ def _readout_blackbox(master: dict[str, Any]) -> str:
 def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, Any]:
     spec = json.loads(model_spec.read_text(encoding="utf-8"))
     plan = json.loads(tile_plan.read_text(encoding="utf-8"))
+    is_base = spec['checkpoint']['architecture'] == 'EventSpikeSeg140k'
+    model_tag = '140k' if is_base else 'xl'
+    prefix = 'base_hm' if is_base else 'xl_hm'
+    readout_leaf = 1 if is_base else 2
+    source_spec = model_spec.as_posix()
     tile_h, tile_w = (int(value) for value in plan["tile_nominal_hw"])
     actors = [str(name) for name in spec["graph"]["actor_topological_order"]]
     layers = {str(layer["name"]): layer for layer in spec["layers"]}
@@ -177,7 +182,7 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
         tiles = _actor_tiles(layer, tile_h, tile_w, actor_macro_h, actor_macro_w)
         for tile in tiles:
             variant = str(tile["variant"])
-            module = "xl_hm_actor__" + _identifier(actor) + "__" + _identifier(variant)
+            module = prefix + "_actor__" + _identifier(actor) + "__" + _identifier(variant)
             view_dir = view_root / module
             master = masters.setdefault(
                 module,
@@ -217,9 +222,9 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
 
     readout = layers[str(spec["graph"]["current_readout"])]
     readout_h, readout_w = (int(value) for value in readout["output_hw"])
-    readout_macro_h = 2
-    readout_macro_w = 2
-    readout_module = "xl_hm_readout__out_2x2"
+    readout_macro_h = readout_leaf
+    readout_macro_w = readout_leaf
+    readout_module = f"{prefix}_readout__out_{readout_leaf}x{readout_leaf}"
     readout_physical_count = 0
     for y in range(0, readout_h, readout_macro_h):
         for x in range(0, readout_w, readout_macro_w):
@@ -244,7 +249,7 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
                     "input_x": x,
                     "input_height": local_h,
                     "input_width": local_w,
-                    "variant": "out_2x2",
+                    "variant": f"out_{readout_leaf}x{readout_leaf}",
                 }
             )
             readout_physical_count += 1
@@ -253,8 +258,9 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
     masters[readout_module] = {
         "kind": "readout_tile",
         "module": readout_module,
+        "class_width": max(1,(int(spec["class_count"])-1).bit_length()),
         "actor": str(readout["name"]),
-        "variant": "out_2x2",
+        "variant": f"out_{readout_leaf}x{readout_leaf}",
         "input_bits": int(readout["in_channels"]) * readout_macro_h * readout_macro_w,
         "output_bits": 0,
         "output_height": readout_macro_h,
@@ -281,15 +287,17 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
     synthesis_evidence = model_spec.parent / "partitioned_synthesis_1x1" / "summary.tsv"
     if (
         readout_logical_count != 4400
-        or readout_physical_count != 70400
+        or readout_physical_count != 281600 // (readout_leaf*readout_leaf)
         or readout_h * readout_w != 281600
         or (readout_h, readout_w) != (440, 640)
     ):
-        raise ValueError("hard hierarchy does not conserve the native XL readout")
+        raise ValueError("hard hierarchy does not conserve the native readout")
 
     catalog = {
         "schema_version": "1.0.0",
-        "scope": "exact_native_xl_hard_hierarchy",
+        "scope": f"exact_native_{model_tag}_hard_hierarchy",
+        "model": spec["checkpoint"]["architecture"],
+        "graph_edge_count": len(spec["graph"]["edges"]),
         "model_spec_sha256": _sha256(model_spec),
         "tile_plan_sha256": _sha256(tile_plan),
         "native_dimensions_hw": [440, 640],
@@ -322,8 +330,10 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
         "actor_logical_plifs": actor_logical_plifs,
         "readout_tile_instances": readout_logical_count,
         "logical_readout_tiles_8x8": readout_logical_count,
-        "readout_physical_macro_instances_2x2": readout_physical_count,
-        "readout_physical_macros_per_logical_tile": 16,
+        "readout_physical_macro_instances": readout_physical_count,
+        "readout_physical_leaf_hw": [readout_leaf,readout_leaf],
+        **({"readout_physical_macro_instances_2x2":readout_physical_count} if not is_base else {}),
+        "readout_physical_macros_per_logical_tile": (tile_h*tile_w)//(readout_leaf*readout_leaf),
         "nominal_tile_instances": expected_actor_tiles + readout_logical_count,
         "total_hard_macro_instances": actor_physical_count + readout_physical_count,
         "native_readout_pixels": readout_h * readout_w,
@@ -335,12 +345,12 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
             "blackboxes": (output_dir / "hard_macro_blackboxes.sv").as_posix(),
             "orfs_view_bindings": (output_dir / "hard_macro_views.mk").as_posix(),
             "view_readiness": (output_dir / "hard_macro_view_readiness.json").as_posix(),
-            "macroized_top": (output_dir / "generated_eventspikesegxl_macroized_top.sv").as_posix(),
-            "macro_wrappers": (output_dir / "generated_xl_macro_wrappers.sv").as_posix(),
+            "macroized_top": (output_dir / f"generated_eventspikeseg{model_tag}_macroized_top.sv").as_posix(),
+            "macro_wrappers": (output_dir / f"generated_{model_tag}_macro_wrappers.sv").as_posix(),
             "assembly_preflight": (output_dir / "macroized_assembly_preflight.json").as_posix(),
             "rule": (
                 "Replace only each exact tiled actor/readout leaf with its named hard master; "
-                "retain generated eventspikesegxl_dag_top routing, joins, completion tokens, "
+                f"retain generated eventspikeseg{model_tag}_dag_top routing, joins, completion tokens, "
                 "global dimensions, and one dedicated resident state per logical PLIF."
             ),
         },
@@ -364,7 +374,7 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
         if master["kind"] == "actor_tile":
             command = (
                 "python scripts/generate_resident_tile_pnr_top.py "
-                f"artifacts/ASIC_XL/model_spec.yaml {source_text} "
+                f"{source_spec} {source_text} "
                 f"--actor {master['actor']} --tile-width {master['physical_tile_width']} "
                 f"--tile-height {master['physical_tile_height']} "
                 f"--tile-column {master['representative_tile_column']} "
@@ -374,7 +384,7 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
         else:
             command = (
                 "python scripts/generate_resident_readout_tile_pnr_top.py "
-                f"artifacts/ASIC_XL/model_spec.yaml {source_text} "
+                f"{source_spec} {source_text} "
                 f"--tile-width {master['output_width']} "
                 f"--tile-height {master['output_height']} "
                 f"--module-name {master['module']}"
@@ -411,8 +421,8 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
     )
 
     make_lines = [
-        "# Generated explicit ORFS bindings for every exact XL hard-macro master.",
-        "XL_HARD_MACRO_ROOT := $(PROJECT_DIR)/artifacts/ASIC_XL/hard_hierarchy/views",
+        f"# Generated explicit ORFS bindings for every exact {model_tag} hard-macro master.",
+        f"ASIC_HARD_MACRO_ROOT := {view_root.as_posix() if view_root.is_absolute() else '$(PROJECT_DIR)/' + view_root.as_posix()}",
     ]
     for variable, suffix in (
         ("ADDITIONAL_LEFS", "lef"),
@@ -420,7 +430,7 @@ def prepare(model_spec: Path, tile_plan: Path, output_dir: Path) -> dict[str, An
         ("ADDITIONAL_LIBS", "lib"),
     ):
         make_lines.append(f"export {variable} += \\")
-        paths = [f"  $(XL_HARD_MACRO_ROOT)/{name}/{name}.{suffix}" for name in masters]
+        paths = [f"  $(ASIC_HARD_MACRO_ROOT)/{name}/{name}.{suffix}" for name in masters]
         make_lines.extend(
             path + (" \\" if index + 1 < len(paths) else "")
             for index, path in enumerate(paths)
@@ -463,7 +473,7 @@ def main() -> None:
     print(json.dumps({key: catalog[key] for key in (
         "actor_count", "actor_tile_instances", "logical_actor_tiles_8x8",
         "actor_physical_macro_instances", "actor_logical_plifs", "readout_tile_instances",
-        "logical_readout_tiles_8x8", "readout_physical_macro_instances_2x2",
+        "logical_readout_tiles_8x8", "readout_physical_macro_instances",
         "nominal_tile_instances", "total_hard_macro_instances",
         "native_readout_pixels", "unique_hard_macro_masters",
     )}, indent=2))
@@ -471,3 +481,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

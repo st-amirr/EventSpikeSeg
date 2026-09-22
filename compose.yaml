@@ -160,8 +160,8 @@ services:
        "--seed", "17", "--epochs", "80", "--batch-size", "1","--accumulate-steps", "2", "--data-workers", "4",
        "--internal-updates", "10", "--sequential-chunks", "10",
        "--train-samples", "0.5", "--validation-fraction", "0.10",
-       "--resume-lr", "0.0002", "--checkpoint-every", "1",
-       "--load", "artifacts/model_checkpoints/dsec_XL/EventSpikeSegXL_seed17_epoch042.pt",
+       "--resume-lr", "0.00005", "--checkpoint-every", "1",
+       "--load", "artifacts/model_checkpoints/dsec_XL/EventSpikeSegXL_seed17_epoch052.pt",
        "--checkpoint-dir", "artifacts/model_checkpoints/dsec_XL"]
 
   # Optional expanded EventSpikeSegXL comparison model.

@@ -71,5 +71,5 @@ def state_capacity_contract(
         "last_bin_tag_bytes": 0,
         "dense_exact_state_bytes": dense_bytes,
         "dense_exact_state_mib": dense_bytes / 2**20,
-        "full_chip_PPA_gate": "characterized_actor_local_SRAM_macros_required",
+        "full_chip_PPA_gate": "complete_direct_register_or_latch_resident_hierarchy_required",
     }

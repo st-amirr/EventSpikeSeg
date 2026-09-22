@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Derive conservative RTL service bounds from a native activity profile."""
+"""Legacy offline capacity analysis for an already-supplied activity profile.
+
+This script is retained for historical physical-capacity studies. It is not
+part of the active ASIC flow and must not be used to launch or require a new
+full-model simulation/profile. Current power uses routed per-block activity.
+"""
 
 from __future__ import annotations
 

@@ -1,6 +1,59 @@
 # Progress
 
+## 2026-09-22 — Bounded 140k mechanism checks
+
+- Reused existing inhibition/adaptation physical checkpoints and existing block directories. Each activity case checks 64 midpoint samples from its checkpoint-derived synthetic pool; no whole-model simulation, new synthesis or rerouting was performed.
+- Accepted 6/9 activity cases: penalty_lane, square_lane, commit_lane, penalty_direct, penalty_lower, penalty_upper. All accepted cases have zero unannotated pins. 5 accepted activity cases use detailed-route parasitics; 1 use global-route estimated parasitics. Three penalty-reducer roles share one physical design.
+- Pending after the bounded runs: inhibition, energy64, energy128. Do not increase the 120-second per-stage limit or launch a broad retry campaign automatically. No new measured power is accepted for pending cases; existing input-trace estimates remain separately labeled historical evidence.
+- Mechanism-only scaled proxies: 0.009344 W dynamic and 39.630 W leakage at 200 bins/s, using exact 140k counts. These omit the resident state/learned-beta update circuitry around mechanism populations as well as graph/control, top-level clocks/routing, and measured spike sparsity. They are not full-chip power.
+- Report: `artifacts/ASIC/primitive_characterization/base_140k_inventory/GATE_RESULTS.md`; detailed audit: `mechanism_gate_results.json`, `mechanism_gate_manifest.json`, and `mechanism_gate_status.json` in the same directory.
+- No ASIC process remains running from this step. Original physical databases and useful XL layout/training data were unchanged. Full 25-actor layout is still incomplete; physical assembly is a separate remaining milestone.
+
+> Current scope (2026-09-21): EventSpikeSeg140k epoch-80 seed-17 is the primary ASIC layout/simulation/estimate target. Useful XL layouts and reports are preserved for secondary work; XL figures are not 140k evidence. See [target policy](AGENTS.md#current-asic-target-policy--2026-09-21). Older entries are historical where superseded.
+
+## 2026-09-21 — Simple layout/block-simulation milestone (latest)
+
+User requested small steps, storage cleanup, and reuse of layouts for per-block simulation/power rather than prolonged full-model simulation and repeated physical retries.
+
+- Removed 16.44 GiB of redundant OpenROAD database checkpoints and compiled simulation executables. Final views, all reports, latest unfinished-run databases, source RTL and training/checkpoint data are preserved; deletion manifests are under `artifacts/ASIC/`.
+- Reused the 140k ordinary-PLIF and conv9 final layouts. Post-route functional gate simulations passed 65 and 255 output-snapshot checks; extracted-SPEF power has zero unannotated pins for both.
+- Current compact results: `artifacts/ASIC/primitive_characterization/base_140k_inventory/GATE_RESULTS.md` and `gate_results.json`. These supersede the corresponding input-only power measurements for this workload, not all other blocks or the entire model.
+- Prior PLIF annotation covered 116 pins with 12,869 unannotated; the old 2.013376 W subtotal must not be presented as validated full-chip power.
+- Full 25-actor layout remains incomplete. Existing GDS files are isolated blocks. Readout now passes 49 gate-level reference checks after correcting pre-edge versus post-edge testbench sampling. Its existing layout supplied extracted power; 45,229 pins have VCD activity and only the two verified-zero coordinate outputs are unannotated. RTL and physical files were unchanged.
+- XL training was observed running in `eventspikeseg-train-dsec-xl-run-0abd58c1b591` and was not interrupted. No ASIC container remains running from this milestone.
+
 ## Working now
+
+- 2026-09-21: whole-model simulation and replay are retired for both 140k and XL.
+  Their executors, generated RTL/profile artifacts, checkpoint-purpose simulation
+  export, and activity-derived whole-model estimate were removed. Historical entries
+  below are retained only as an audit record and do not identify available artifacts
+  or an approved workflow. Current simulation is isolated per block; full-model work
+  is layout/hierarchy, with power assembled from exact instance counts.
+- 2026-09-21: the checkpoint-exact one-pixel 16-to-6 temporal readout completed
+  ASAP7 route/extraction and VCD activity power. Adding its exact 281,600-pixel
+  multiplication changes the current covered 140k dynamic subtotal to 1.922314 W;
+  inhibition and adaptation mechanism blocks remain uncovered.
+- 2026-09-21: the exact 32-channel stem-inhibition group closed synthesis,
+  placement, timing, and congestion-free global routing with zero TNS. Its
+  checkpoint-derived 128-vector VCD power multiplied over 70,400 groups adds
+  0.091062 W, raising the covered subtotal to 2.013376 W. Detailed route exceeded
+  the bounded 12 GiB limit, so this result is labeled global-route power.
+
+- 2026-09-20: the primary ASIC implementation target is the canonical six-class
+  `EventSpikeSeg140k` v8 epoch-80 seed-17 checkpoint. XL physical work is retained
+  as reference but paused.
+- checkpoint-exact isolated ordinary-PLIF and real `detail_stem` 3x3-kernel
+  primitives completed ASAP7 route/extraction with zero flow errors and zero
+  setup/hold TNS; VCD annotation produced 496.166227 pJ per ordinary PLIF bin and
+  0.207547 pJ per dense synapse-term evaluation under their synthetic traces;
+- the exact base inventory is 25 actors, 54 graph edges, 30,976,000 PLIF state
+  identities, 3,730,918,400 actor terms and 27,033,600 readout terms per dense bin;
+  the current measured dynamic subtotal is 1.916467 W at 20 fps and ten bins, with
+  the documented mechanism/interconnect/clock/activity exclusions;
+- results are generated by `scripts/inventory_140k_physical_primitives.py` under
+  `artifacts/ASIC/primitive_characterization/base_140k_inventory/`; full-chip
+  floorplanning, routing, extraction, and power remain pending.
 
 - XL training continues at 979,179 registered parameters for eleven classes; epoch 1 now
   supplies a structural ASIC export and generated 44-actor RTL bring-up target, but no final

@@ -1,5 +1,27 @@
 # Results
 
+## 2026-09-22 — Bounded 140k mechanism checks
+
+- Reused existing inhibition/adaptation physical checkpoints and existing block directories. Each activity case checks 64 midpoint samples from its checkpoint-derived synthetic pool; no whole-model simulation, new synthesis or rerouting was performed.
+- Accepted 6/9 activity cases: penalty_lane, square_lane, commit_lane, penalty_direct, penalty_lower, penalty_upper. All accepted cases have zero unannotated pins. 5 accepted activity cases use detailed-route parasitics; 1 use global-route estimated parasitics. Three penalty-reducer roles share one physical design.
+- Pending after the bounded runs: inhibition, energy64, energy128. Do not increase the 120-second per-stage limit or launch a broad retry campaign automatically. No new measured power is accepted for pending cases; existing input-trace estimates remain separately labeled historical evidence.
+- Mechanism-only scaled proxies: 0.009344 W dynamic and 39.630 W leakage at 200 bins/s, using exact 140k counts. These omit the resident state/learned-beta update circuitry around mechanism populations as well as graph/control, top-level clocks/routing, and measured spike sparsity. They are not full-chip power.
+- Report: `artifacts/ASIC/primitive_characterization/base_140k_inventory/GATE_RESULTS.md`; detailed audit: `mechanism_gate_results.json`, `mechanism_gate_manifest.json`, and `mechanism_gate_status.json` in the same directory.
+- No ASIC process remains running from this step. Original physical databases and useful XL layout/training data were unchanged. Full 25-actor layout is still incomplete; physical assembly is a separate remaining milestone.
+
+## 2026-09-21 — Existing 140k readout gate-power completion
+
+The one-pixel six-class readout passes 49 checks after fixing testbench sampling to match the pre-edge reference trace. No RTL or layout change was required. Extracted-layout dynamic energy is approximately 194.782 pJ per ten-bin pixel prediction under the synthetic trace; leakage is 1.347116 uW. VCD annotates 45,229 pins; two unannotated coordinate outputs are verified zero. PLIF, convolution and readout results and explicitly partial scaling are recorded in `artifacts/ASIC/primitive_characterization/base_140k_inventory/GATE_RESULTS.md`. Full-chip layout remains incomplete; XL physical evidence remains secondary and unchanged.
+
+> Current scope (2026-09-21): EventSpikeSeg140k epoch-80 seed-17 is the primary ASIC layout/simulation/estimate target. Useful XL layouts and reports are preserved for secondary work; XL figures are not 140k evidence. See [target policy](AGENTS.md#current-asic-target-policy--2026-09-21). Older entries are historical where superseded.
+
+> **ASIC scope notice (2026-09-21):** Earlier full-DAG replay, native-profile,
+> and representative-DSEC simulation entries below are retained only as
+> historical audit evidence. They are retired from the active flow. Current
+> ASIC results use full-model structural layout/inventory and routed per-block
+> activity power multiplied by exact instance and operation counts; no
+> full-model simulation result is active.
+
 ## 2026-08-06 — Completed round-one ten-model benchmark
 
 Protocol: seed 17, 10 epochs, 2,048 training samples, 512 held-out samples, 64×64 output, 20 internal SNN steps, batch size 4.
@@ -527,10 +549,13 @@ integer percentage; exploratory 1.2% and 20% runs left 27 and 8 extracted slew v
 This closes the physical implementation check for the 2x2 characterization unit only. The power
 uses OpenROAD's default vectorless activity, not DSEC switching, and cannot be multiplied by 20,410
 tiles into a defensible full-chip result. Likewise, 639.636 MHz is an internal tile clock result,
-not measured 25-actor DAG throughput or event latency. Full-model simulation/PPA and
-activity-annotated energy remain open.
+not measured 25-actor DAG throughput or event latency. Full-model layout and
+per-block activity-annotated energy remain open.
 
-## Exact XL 50 ms integer actor-DAG run (2026-09-08)
+## Retired history: exact XL 50 ms integer actor-DAG run (2026-09-08)
+
+The implementation and generated outputs for this whole-model simulation were removed on
+2026-09-21. This section remains only as an audit record and is not an active workflow or artifact.
 
 The epoch-1 structural XL export completed all 44 actors for ten chronological 5 ms bins in the
 CPU verification Docker image. This is an exact fixed-point functional/activity result for the

@@ -1,0 +1,89 @@
+schema_version: 2
+model: EventSpikeSeg140k
+checkpoint: epoch_080_seed17
+scope: exact_per_block_physical_characterization
+monolithic_physical_characterization: forbidden
+
+constants:
+  channel_widths: [64, 128]
+  membrane_width_bits: 24
+  age_width_bits: 6
+  amplitude_width_bits: 19
+  elapsed_width_bits: 24
+  fractional_bits: 16
+  age_fractional_bits: 0
+  configuration_policy: actor_checkpoint_values_are_inputs_to_shared_lane_macros
+
+full_model_inventory:
+  adaptation_lane_instances: 10982400
+  spatial_groups_64_channels: 92400
+  spatial_groups_128_channels: 39600
+  penalty_reduce64_direct_instances: 92400
+  penalty_reduce64_lower_instances: 79200
+  penalty_reduce64_upper_instances: 39600
+  energy_reduce64_instances: 92400
+  energy_reduce128_instances: 39600
+
+composition_by_channel_width:
+  64:
+    - stage: channel_penalties
+      design: primitive_140k_down2_adaptation_penalty_lane_pnr_top
+      instances_per_spatial_group: 64
+    - stage: shared_penalty
+      design: primitive_140k_down2_adaptation_penalty_reduce64_pnr_top
+      role: direct
+      instances_per_spatial_group: 1
+    - stage: adjusted_squares
+      design: primitive_140k_down2_adaptation_square_lane_pnr_top
+      instances_per_spatial_group: 64
+    - stage: shared_energy
+      design: primitive_140k_down2_adaptation_energy_reduce64_pnr_top
+      instances_per_spatial_group: 1
+    - stage: channel_commits
+      design: primitive_140k_down2_adaptation_commit_lane_pnr_top
+      instances_per_spatial_group: 64
+  128:
+    - stage: channel_penalties
+      design: primitive_140k_down2_adaptation_penalty_lane_pnr_top
+      instances_per_spatial_group: 128
+    - stage: shared_penalty_lower
+      design: primitive_140k_down2_adaptation_penalty_reduce64_pnr_top
+      role: lower
+      instances_per_spatial_group: 2
+    - stage: shared_penalty_upper
+      design: primitive_140k_down2_adaptation_penalty_reduce64_pnr_top
+      role: upper_two_values_plus_62_zeros
+      instances_per_spatial_group: 1
+    - stage: adjusted_squares
+      design: primitive_140k_down2_adaptation_square_lane_pnr_top
+      instances_per_spatial_group: 128
+    - stage: shared_energy
+      design: primitive_140k_adaptation_energy_reduce128_pnr_top
+      instances_per_spatial_group: 1
+    - stage: channel_commits
+      design: primitive_140k_down2_adaptation_commit_lane_pnr_top
+      instances_per_spatial_group: 128
+
+power_composition:
+  dynamic_energy_per_bin: >-
+    10982400*(E_penalty_lane + E_square_lane + E_commit_lane)
+    + 92400*(E_penalty_reduce64_direct + E_energy_reduce64)
+    + 39600*(2*E_penalty_reduce64_lower + E_penalty_reduce64_upper
+    + E_energy_reduce128)
+  dynamic_power: dynamic_energy_per_bin * 200_bins_per_second
+  leakage_and_area: use_the_same_physical_instance_counts_without_duty_scaling
+
+activity_policy:
+  lanes: full_model_population_weighted_checkpoint_vectors_and_actor_specific_constants_from_all_15_adaptation_actors
+  reducer64_direct: population_weighted_64_channel_actor_groups
+  reducer64_lower: pooled_lower_and_upper_halves_of_128_channel_actor_groups
+  reducer64_upper: pooled_two_lower_results_with_62_zero_inputs
+  reducer128_energy: pooled_128_channel_actor_groups
+
+exactness_contract:
+  - Penalties are computed per channel before a saturating full-width sum.
+  - The three-reduce64 hierarchy is exact for the nonnegative saturating 128-channel penalty sum.
+  - Every adjusted square uses the same full-width reduced penalty.
+  - RMS energy is reduced over all channels before any channel commit.
+  - Every commit uses the same shared penalty and RMS energy.
+  - Lane configuration inputs are tied to each actor's exported checkpoint values at hierarchy integration.

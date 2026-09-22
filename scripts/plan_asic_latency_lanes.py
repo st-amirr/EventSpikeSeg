@@ -2,8 +2,9 @@
 """Propose extra spatial banks for the completion-token latency target.
 
 The planner is intentionally not a result generator.  It extrapolates existing
-per-bank commit imbalance, writes a candidate manifest, and requires an exact
-native reprofile before the candidate can be accepted.
+per-bank commit imbalance and writes a historical candidate manifest. This
+legacy analyzer is inactive: the active flow does not run or require a new
+full-model native profile.
 """
 
 from __future__ import annotations

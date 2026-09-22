@@ -34,10 +34,6 @@ services:
     <<: *cpu-verification
     command: ["python", "scripts/run_rtl_tests.py"]
 
-  replay:
-    <<: *cpu-verification
-    command: ["python", "scripts/run_exported_rtl_replay.py"]
-
   synthesis:
     <<: *cpu-verification
     command: ["bash", "asic/scripts/check_synthesis.sh"]

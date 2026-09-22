@@ -395,15 +395,25 @@ def loss_profile_for_epoch(suite: str, epoch: int, epochs: int) -> LossProfile:
         raise ValueError("epoch must be within the configured training horizon")
     progress = epoch / float(epochs)
     return LossProfile(
-        cross_entropy=0.45 + 0.25 * progress,
-        pixel_cross_entropy=0.55 - 0.25 * progress,
+        cross_entropy=1.0,
+        pixel_cross_entropy=0.0,
         focal=0.0,
-        dice=0.10 + 0.55 * progress,
+        dice=0.0,
         region_consistency=0.0,
-        auxiliary_ce=0.20 - 0.15 * progress,
+        auxiliary_ce=0.0,
         auxiliary_focal=0.0,
-        boundary=0.02 * progress,
+        boundary=0.0,
     )
+    # return LossProfile(
+    #     cross_entropy=0.45 + 0.25 * progress,
+    #     pixel_cross_entropy=0.55 - 0.25 * progress,
+    #     focal=0.0,
+    #     dice=0.10 + 0.55 * progress,
+    #     region_consistency=0.0,
+    #     auxiliary_ce=0.20 - 0.15 * progress,
+    #     auxiliary_focal=0.0,
+    #     boundary=0.02 * progress,
+    # )
 
 
 def seed_everything(seed: int) -> None:

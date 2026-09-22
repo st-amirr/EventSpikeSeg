@@ -6,7 +6,9 @@
 uses the native **440x640** semantic plane and has **149,835 registered parameters**,
 **149,423 executed inference parameters**, **143,824 executed synaptic weights**, and
 **25 executed PLIF populations plus one stateless temporal class-current readout**.
-`EventSpikeSegXL` is also an eleven-class ASIC target. Its epoch-1 checkpoint is used only
+`EventSpikeSegXL` is a secondary eleven-class ASIC reference target; primary layout,
+simulation and estimates use the 140k checkpoint and inventory. Preserve useful XL
+physical views and reports separately under `artifacts/ASIC_XL/`. Its epoch-1 checkpoint is used only
 for structural export/RTL bring-up while training continues; final constants must come from
 the selected trained/QAT checkpoint before accuracy or PPA claims.
 
@@ -587,7 +589,7 @@ achieved routed clock. Power uses representative DSEC switching activity (SAIF/V
 parasitics, and characterized cells/macros. ASAP7 results are predictive research estimates;
 only fabricated silicon measurements may be called measured ASIC power or latency.
 
-## EventSpikeSegXL ASIC target and software comparison
+## Secondary EventSpikeSegXL reference and software comparison
 
 ### Exact parameter accounting
 
@@ -620,7 +622,7 @@ int16-membrane, and two-int16-adaptation representation. The exporter, exact DAG
 attention RTL, capacity/tile manifests, and generated resident top now support XL; synthesis
 and final-checkpoint equivalence remain gated.
 
-### XL ASIC migration procedure
+### Deferred secondary XL ASIC migration procedure
 
 XL is not a parameter-only replacement for the 140k netlist. Most arithmetic actors are reusable,
 but its graph and one operation class are different. Promotion requires these gates in order:
@@ -638,9 +640,9 @@ but its graph and one operation class are different. Promotion requires these ga
    form Q/K coincidence popcounts for four eight-channel heads, compare each count with its exported
    fixed threshold, gate V spikes, and rendezvous before the existing 1x1 output actor and residual join.
 5. **Implemented for export/capacity/tile/top generation:** remove 25-actor, six-class,
-   16-channel-readout, and 140k-only topology assumptions. XL layerwise/full replay remains part
-   of the equivalence gate below.
-6. **Integer actor-DAG portion implemented:** the exported epoch-1 graph completed a real-event
+   16-channel-readout, and 140k-only topology assumptions. Use focused block equivalence;
+   whole-model replay is retired and must not be restarted.
+6. **Historical integer actor-DAG evidence (whole-model simulation retired):** the exported epoch-1 graph completed a real-event
    ten-bin/50 ms run actor by actor and emitted a 440x640 prediction. Serial and parallel integer
    execution are state/output equivalent. Layerwise final-checkpoint FP32/QAT -> integer -> RTL
    equivalence, cycle-accurate RTL execution, and activity-annotated PPA remain open.
@@ -772,7 +774,7 @@ state continues across predictions until a sequence/gap reset.
 ## Canonical naming
 
 - `EventSpikeSeg140k`: six-class baseline DSEC/ASIC implementation target.
-- `EventSpikeSegXL`: eleven-class expanded ASIC target, structurally prepared from epoch 1
+- `EventSpikeSegXL`: secondary eleven-class ASIC reference, structurally prepared from epoch 1
   while final trained/QAT constants and synthesis are pending.
 
 Historical top-ten/top-five/top-three architecture-search results retain their original
