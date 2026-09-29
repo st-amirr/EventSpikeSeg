@@ -1,8 +1,31 @@
 # EventSpikeSeg Agent Instructions
 
+## Analog synapse decision review — 2026-09-24
+
+Use a signed charge-per-presynaptic-event interface on the active SKY130 prototype. Continue the existing pulse-duration injector as the first candidate; switched-capacitor charge injection is the conditional alternative, not a more inherently SNN-faithful implementation. Do not use pulse-density error feedback across semantic bins or future events. Weight determines a connection's contribution; it does not independently set presynaptic firing frequency. Internal subpulses are implementation phases, not extra network spikes, and must finish within the same update.
+
+The primary analog reference is the best-validation full-float 140k seed-17 checkpoint from the 80-epoch run: `artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_best.pt`, epoch 58 / best epoch 58, `is_best=true`, SHA-256 `c934da40b0f65d2a63155cb89b663e06aebf527cea1db4b9902a5b53840457d7`. The epoch-80 checkpoint is a comparison only (`is_best=false`). Verify metadata/hash before use. The analog path uses the checkpoint's ordinary float inference parameters; QAT, Q7.16 exports and quantized references are not needed and must not define analog precision or acceptance. Float32 storage does not require float32 analog accuracy.
+
+At the update boundary, reproduce the model's signed weighted sum, learned beta, threshold/reset, inhibition and adaptation order. For this float PLIF, charge is `candidate = beta * previous_post_reset_state + summed_current`; apply beta once. Preserve the float path's subtractive reset, affine gain and any offsets, including when no presynaptic spike arrives. Hold uncommanded leak sufficiently small during accumulation and threshold only after all contributions arrive. Raw-event ingress may have multiplicity; do not reduce it to binary hidden-layer semantics.
+
+The bin-based contract means finite pulse duration is not automatically less faithful than a capacitor packet: integrated signed charge and completion before the 5 ms boundary are decisive. Charge delivery, saturation, uncommanded droop and order effects must still be measured. Preserve all digital/XL artifacts and keep their campaigns stopped; no new Markdown files or full-model SPICE campaign.
+
+
+## Full analog implementation delegation — 2026-09-23
+
+The user authorizes the full analog/mixed-signal workflow, including design, debug, per-module simulation, physical macro generation, full assembly and ORFS execution once readiness passes. ASAP7 is not mandatory: evaluate another PDK where it is a better fit, and keep technology-specific comparisons clearly separated. `docs/ACTIVE_TASKS.md` is the authoritative staged task plan. Earlier Grok-test-only and blanket no-ORFS instructions are superseded. Keep digital/XL jobs paused and all artifacts preserved. Use existing docs and YAML only. Approximate research estimates are allowed with explicit evidence/coverage; full layout still requires real implemented macros and validated assembly.
+
+
+## Active approach override — 2026-09-23
+
+User authorized analog/mixed-signal 140k feasibility as the active approach. Follow docs/ARCHITECTURE.md and write outputs to artifacts/analog_asic. Digital-only/register-state rules below now describe the preserved digital fallback, not restrictions on this analog experiment. Analog approximations and scaled estimates are allowed with explicit limitations; distinguish ideal, schematic, extracted and full-chip evidence. Preserve all digital/XL artifacts and keep their jobs paused. Prior active work is in docs/PROGRESS.md.
+
+
 ## Mission
 
-## Current ASIC target policy — 2026-09-21
+## Preserved digital fallback target policy — 2026-09-21
+
+The epoch-80 target statement below is the preserved digital ASIC baseline. The active analog experiment uses the best-validation epoch-58 full-float checkpoint specified above and in `docs/ACTIVE_TASKS.md`; do not apply the digital QAT/quantization contracts below to analog design or acceptance.
 
 All primary ASIC layout, block simulation, power, area, timing, and inventory work is based on **EventSpikeSeg140k v8, epoch 80, seed 17**: six classes, 440x640, 25 permanent PLIF actors, 54 graph edges, 30,976,000 resident PLIF identities, and 143,824 deployed synaptic weights. Primary exports/results live under `artifacts/ASIC/`; the latest accepted small gate-simulation results are in `artifacts/ASIC/primitive_characterization/`.
 

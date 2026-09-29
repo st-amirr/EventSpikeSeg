@@ -1,0 +1,139 @@
+"""Screen a held analog MOS gate with event steering at the drain."""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "artifacts/analog_asic"
+BENCH = OUT / "benches"
+RES = OUT / "results"
+
+
+def arg(name: str, default: str) -> str:
+    return next((part.split("=", 1)[1] for part in sys.argv[1:]
+                 if part.startswith(name + "=")), default)
+
+
+def main() -> int:
+    corner = arg("--corner", "ss")
+    temperature_c = {"ss": 0, "tt": 27, "ff": 85}.get(corner)
+    if temperature_c is None:
+        raise ValueError("unknown corner")
+    cap_um = float(arg("--weight-cap-um", "10"))
+    hold_us = float(arg("--hold-us", "5000"))
+    program_us = float(arg("--program-us", "10"))
+    fraction = float(arg("--gate-fraction", "0.8"))
+    width_ns = float(arg("--event-width-ns", "40.253"))
+    idle_clamp = arg("--idle-clamp", "rails")
+    if idle_clamp not in ("rails", "vcm"):
+        raise ValueError("idle clamp must be rails or vcm")
+    if not 1 <= cap_um <= 100 or not 0 <= hold_us <= 5000 or not 1 <= program_us <= 100:
+        raise ValueError("bounded gate-hold screen limit exceeded")
+    if not 0.1 <= fraction <= 0.95 or not 10 <= width_ns <= 500:
+        raise ValueError("bounded event stimulus limit exceeded")
+    pg, ng = 1.8 - fraction * 1.08, fraction * 0.6
+    start = program_us + hold_us + 2
+    finish = start + width_ns / 1000
+    post = finish + 0.010
+    stop = post + 0.050
+    tag = f"{corner}{temperature_c}_c{cap_um:g}_h{hold_us:g}_prog{program_us:g}_f{fraction:g}_w{width_ns:g}".replace(".", "p")
+    if idle_clamp == "vcm":
+        tag += "_idlecm"
+    stem = f"sky130_ms_weight_gate_steered_hold_{tag}"
+    lines = [f"SKY130 physical analog weight gate with steered drain {tag}",
+             ".option scale=1u reltol=1e-5 abstol=1e-15 vntol=1e-9",
+             f".temp {temperature_c}",
+             '.include "../pdk/sky130_fd_pr/models/parameters/invariant.spice"',
+             '.include "../pdk/sky130_fd_pr/models/r+c/res_typical__cap_typical__lin.spice"',
+             ".param m4_dw=0 tol_m4=0 tc1rm4=0 tc2rm4=0 tc1rvia4=0 tc2rvia4=0 rm4=0.047 rcvia4=0.38",
+             f'.include "../pdk/sky130_fd_pr/cells/nfet_01v8/sky130_fd_pr__nfet_01v8__{corner}.corner.spice"',
+             f'.include "../pdk/sky130_fd_pr/cells/pfet_01v8/sky130_fd_pr__pfet_01v8__{corner}.corner.spice"',
+             '.include "../pdk/sky130_fd_pr/cells/cap_mim_m3/sky130_fd_pr__cap_mim_m3_2.model.spice"',
+             '.include "../../../asic/analog/modules.spice"',
+             '.include "../../../asic/analog/sky130_ms_plif.spice"',
+             "Vdd vdd 0 1.8", "Vcm vcm 0 0.9",
+             f"Vpgsrc pgsrc 0 {pg:.12g}", f"Vngsrc ngsrc 0 {ng:.12g}",
+             f"Vsample sample 0 PWL(0 1.8 {program_us:.12g}u 1.8 {program_us+.0001:.12g}u 0 {stop:.12g}u 0)",
+             f"Vsampleb sampleb 0 PWL(0 0 {program_us:.12g}u 0 {program_us+.0001:.12g}u 1.8 {stop:.12g}u 1.8)",
+             f"Von on 0 PWL(0 0 {start-.0001:.12g}u 0 {start:.12g}u 1.8 {finish:.12g}u 1.8 {finish+.0001:.12g}u 0 {stop:.12g}u 0)",
+             f"Vonb onb 0 PWL(0 1.8 {start-.0001:.12g}u 1.8 {start:.12g}u 0 {finish:.12g}u 0 {finish+.0001:.12g}u 1.8 {stop:.12g}u 1.8)",
+             f"Voff off 0 PWL(0 1.8 {start-.0004:.12g}u 1.8 {start-.0003:.12g}u 0 {finish+.0003:.12g}u 0 {finish+.0004:.12g}u 1.8 {stop:.12g}u 1.8)",
+             f"Voffb offb 0 PWL(0 0 {start-.0004:.12g}u 0 {start-.0003:.12g}u 1.8 {finish+.0003:.12g}u 1.8 {finish+.0004:.12g}u 0 {stop:.12g}u 0)",
+             f"Xcap_p storep vcm membrane_mim w_um={cap_um:g} l_um={cap_um:g}",
+             f"Xcap_n storen vcm membrane_mim w_um={cap_um:g} l_um={cap_um:g}",
+             "Xprogram_p pgsrc storep sample sampleb vdd 0 transmission_gate",
+             "Xprogram_n ngsrc storen sample sampleb vdd 0 transmission_gate"]
+    for name in ("ideal", "held", "zero", "neutral"):
+        gp, gn = (("storep", "storen") if name == "held" else
+                  ("vdd", "0") if name == "neutral" else ("pgsrc", "ngsrc"))
+        off_node, offb_node = ("off", "offb") if name != "zero" else ("off_zero", "offb_zero")
+        on_node, onb_node = ("on", "onb") if name != "zero" else ("on_zero", "onb_zero")
+        idle_p, idle_n = ("vdd", "0") if idle_clamp == "rails" else ("vcm", "vcm")
+        lines += [f"Xmem_p_{name} vp_{name} vcm membrane_mim w_um=10 l_um=10",
+                  f"Xmem_n_{name} vn_{name} vcm membrane_mim w_um=10 l_um=10",
+                  f"Vcl_{name} cl_{name} 0 PWL(0 1.8 {start-.0003:.12g}u 1.8 {start-.0002:.12g}u 0 {stop:.12g}u 0)",
+                  f"Vclb_{name} clb_{name} 0 PWL(0 0 {start-.0003:.12g}u 0 {start-.0002:.12g}u 1.8 {stop:.12g}u 1.8)",
+                  f"Xcl_p_{name} vcm vp_{name} cl_{name} clb_{name} vdd 0 transmission_gate",
+                  f"Xcl_n_{name} vcm vn_{name} cl_{name} clb_{name} vdd 0 transmission_gate",
+                  f"Xp_{name} srcp_{name} {gp} vdd vdd sky130_fd_pr__pfet_01v8 w=1.5 l=10",
+                  f"Xn_{name} srcn_{name} {gn} 0 0 sky130_fd_pr__nfet_01v8 w=1 l=10",
+                  f"Xoff_p_{name} srcp_{name} {idle_p} {off_node} {offb_node} vdd 0 transmission_gate",
+                  f"Xoff_n_{name} srcn_{name} {idle_n} {off_node} {offb_node} vdd 0 transmission_gate",
+                  f"Xon_p_{name} srcp_{name} vp_{name} {on_node} {onb_node} vdd 0 transmission_gate",
+                  f"Xon_n_{name} srcn_{name} vn_{name} {on_node} {onb_node} vdd 0 transmission_gate"]
+        if name == "zero":
+            lines += [f"Voff_{name} off_{name} 0 1.8", f"Voffb_{name} offb_{name} 0 0",
+                      f"Von_{name} on_{name} 0 0", f"Vonb_{name} onb_{name} 0 1.8"]
+    lines += [".control", "set numdgt=15", f"tran 100n {stop:.12g}u uic"]
+    for phase, at in (("after_program", program_us + .1), ("pre_event", start - .001),
+                      ("during_event", start + width_ns / 2000), ("post_event", post)):
+        for node in ("storep", "storen"):
+            lines.append(f"meas tran {phase}_{node} find v({node}) at={at:.12g}u")
+    for name in ("ideal", "held", "zero", "neutral"):
+        lines.append(f"let diff_{name}=v(vp_{name})-v(vn_{name})")
+        lines.append(f"meas tran final_{name} find diff_{name} at={post:.12g}u")
+    lines.append(f"meas tran pre_event_vdd_current find i(Vdd) at={start-.001:.12g}u")
+    lines += ["quit", ".endc", ".end"]
+    BENCH.mkdir(parents=True, exist_ok=True)
+    RES.mkdir(parents=True, exist_ok=True)
+    deck = BENCH / f"{stem}.cir"
+    deck.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    cmd = ["docker", "run", "--rm", "--network", "none", "--memory", "8g", "--cpus", "2",
+           "--volume", f"{ROOT}:/workspace:ro", "--volume", f"{OUT}:/workspace/artifacts/analog_asic",
+           "--workdir", "/workspace/artifacts/analog_asic/benches", "--entrypoint", "timeout",
+           "eventspikeseg:analog-ngspice36", "120", "ngspice", "-b", deck.name]
+    run = subprocess.run(cmd, capture_output=True, text=True, timeout=135)
+    log = run.stdout + run.stderr
+    (RES / f"{stem}.log").write_text(log, encoding="utf-8")
+    found = {name: float(value) for name, value in re.findall(
+        r"(?m)^\s*((?:after_program|pre_event|during_event|post_event)_(?:storep|storen)|final_(?:ideal|held|zero|neutral)|pre_event_vdd_current)\s*=\s*([-+0-9.eE]+)", log)}
+    complete = run.returncode == 0 and len(found) == 13 and "Timestep too small" not in log
+    report = {"test": "sky130_physical_held_weight_gate_with_steered_drain", "simulation_completed": complete,
+              "return_code": run.returncode, "corner": corner, "temperature_c": temperature_c,
+              "weight_cap_square_um": cap_um, "hold_us": hold_us, "program_us": program_us,
+              "idle_clamp": idle_clamp,
+              "gate_fraction": fraction, "programmed_p_gate_v": pg, "programmed_n_gate_v": ng,
+              "event_width_ns": width_ns, "measurements_v": found,
+              "scope": "Physical SKY130 analog gate storage and TG source/drain event steering into a 10um first-touch MIM pair. Ideal analog programming voltage, clocks and supply. One positive event; no thermal noise, mismatch, repeated weights, calibrated transfer table, readout, reset/adaptation, extracted parasitics or full model."}
+    if complete:
+        report["stored_p_gate_drift_v"] = found["pre_event_storep"] - found["after_program_storep"]
+        report["stored_n_gate_drift_v"] = found["pre_event_storen"] - found["after_program_storen"]
+        report["ideal_gate_event_step_v"] = found["final_ideal"] - found["final_zero"]
+        report["held_gate_event_step_v"] = found["final_held"] - found["final_zero"]
+        report["held_over_ideal_step_ratio"] = report["held_gate_event_step_v"] / report["ideal_gate_event_step_v"]
+        report["neutral_switching_step_v"] = found["final_neutral"] - found["final_zero"]
+        report["ideal_gate_minus_neutral_step_v"] = found["final_ideal"] - found["final_neutral"]
+        report["held_gate_minus_neutral_step_v"] = found["final_held"] - found["final_neutral"]
+    (RES / f"{stem}.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2))
+    return 0 if complete else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

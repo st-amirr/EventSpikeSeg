@@ -1,0 +1,304 @@
+* SKY130 switched-capacitor charge integrator experiment.
+* Physical MOS OTA; MIM feedback capacitor stores the analog membrane state.
+* This is a first schematic candidate, not a qualified PLIF/synapse cell.
+.subckt sky130_sc_ota inp inn out vbiasn vbiasp vdd vss
++ params: win=10 wload=20 wtail=4 wn3=20 wp3=20 cc=500f
+* NMOS input differential pair and PMOS current-mirror load.
+Xn1 n1 inp ntail vss sky130_fd_pr__nfet_01v8 w={win} l=1
+Xn2 n2 inn ntail vss sky130_fd_pr__nfet_01v8 w={win} l=1
+Xntail ntail vbiasn vss vss sky130_fd_pr__nfet_01v8 w={wtail} l=2
+Xp1 n1 n1 vdd vdd sky130_fd_pr__pfet_01v8 w={wload} l=1
+Xp2 n2 n1 vdd vdd sky130_fd_pr__pfet_01v8 w={wload} l=1
+* Common-source second gain stage; bias is external in this screen.
+Xn3 out n2 vss vss sky130_fd_pr__nfet_01v8 w={wn3} l=0.5
+Xp3 out vbiasp vdd vdd sky130_fd_pr__pfet_01v8 w={wp3} l=0.5
+Ccomp n2 out {cc}
+.ends sky130_sc_ota
+
+* Experimental unity-gain difference amplifier. The local OTA has inverted
+* response to inp; equal signal/feedback and reference/VCM resistor pairs make
+* the output approximately VCM + reference - signal. This schematic prototype
+* has not been qualified for offset, mismatch, stability, loading, or PVT.
+.subckt sky130_sc_diff_readout signal reference out vbiasn vbiasp vdd vss vcm
++ params: gain=1
+Rsignal signal diff_sum 1Gig
+Rfeedback out diff_sum {1e9*gain}
+Rreference reference diff_plus 1Gig
+Rcommon vcm diff_plus {1e9*gain}
+Xota diff_sum diff_plus out vbiasn vbiasp vdd vss sky130_sc_ota wn3=2 wp3=27.8 cc=100f
+.ends sky130_sc_diff_readout
+
+* Sampled version: isolate both membrane nodes during accumulation, then close
+* matched transmission gates for a late-bin differential read.
+.subckt sky130_sc_diff_readout_sampled signal reference out enable enable_b vbiasn vbiasp vdd vss vcm
++ params: gain=1
+Xsignal_sample signal signal_samp enable enable_b vdd vss transmission_gate
+Xreference_sample reference reference_samp enable enable_b vdd vss transmission_gate
+Rsignal signal_samp diff_sum 1Gig
+Rfeedback out diff_sum {1e9*gain}
+Rreference reference_samp diff_plus 1Gig
+Rcommon vcm diff_plus {1e9*gain}
+Xota diff_sum diff_plus out vbiasn vbiasp vdd vss sky130_sc_ota wn3=2 wp3=27.8 cc=100f
+.ends sky130_sc_diff_readout_sampled
+
+* Differential charge sampler: capture reference-signal directly on a MIM
+* capacitor, isolate both membrane nodes, then clamp the return plate to VCM.
+* The resulting out node is VCM + reference - signal. Switch injection and
+* capacitor-ratio/loading errors require physical qualification.
+.subckt sky130_sc_diff_cap_sampler signal reference out return sample sample_b reset reset_b vdd vss vcm
++ params: sample_um=10
+Xsample_cap out return membrane_mim w_um={sample_um} l_um={sample_um}
+Xsample_signal signal return sample sample_b vdd vss transmission_gate
+Xsample_reference reference out sample sample_b vdd vss transmission_gate
+Xsample_reset_out out vcm reset reset_b vdd vss transmission_gate
+Xsample_reset_return return vcm reset reset_b vdd vss transmission_gate
+Xsample_clamp_return return vcm sample_b sample vdd vss transmission_gate
+.ends sky130_sc_diff_cap_sampler
+
+* Bottom-plate sequence variant: isolate the membrane-side plate first, then
+* open the reference-side plate and clamp the return to VCM.
+.subckt sky130_sc_diff_cap_sampler_bp signal reference out return sample_hi sample_hi_b sample_lo sample_lo_b reset reset_b vdd vss vcm
++ params: sample_um=10
+Xsample_cap out return membrane_mim w_um={sample_um} l_um={sample_um}
+Xsample_signal signal return sample_lo sample_lo_b vdd vss transmission_gate
+Xsample_reference reference out sample_hi sample_hi_b vdd vss transmission_gate
+Xsample_reset_out out vcm reset reset_b vdd vss transmission_gate
+Xsample_reset_return return vcm reset reset_b vdd vss transmission_gate
+Xsample_clamp_return return vcm sample_hi_b sample_hi vdd vss transmission_gate
+.ends sky130_sc_diff_cap_sampler_bp
+
+.subckt sky130_sc_charge_integrator out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=10
+* The first-stage output and common-source output invert; connect sum to inp
+* here so the closed-loop connection is negative feedback.
+Xota sum vcm out vbiasn vbiasp vdd vss sky130_sc_ota
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+* Large DC feedback path defines an operating point; its modeled leakage is
+* provisional and must be included in retention/error checks.
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom sum connect connect_b vdd vss transmission_gate
+* Reset the isolated packet capacitor to VCM between logical events; this
+* control must never overlap connect. It is required for repeatable packets.
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator
+
+* Held-output variant: isolate the OTA output between packet phases so its
+* quiescent operating point cannot overwrite membrane state. During hold,
+* clamp the OTA summing node to VCM; during a packet, close the OTA feedback.
+.subckt sky130_sc_charge_integrator_held out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=10
+Xota sum vcm ota_out vbiasn vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out init_level init init_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_held
+
+* DAC-friendly initialization variant. The state capacitor is initialized from
+* init_level while the isolated OTA output is clamped to VCM, avoiding a large
+* transient charge demand from the learned-threshold DAC.
+.subckt sky130_sc_charge_integrator_held_ota_vcm_init out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=10
+Xota sum vcm ota_out vbiasn vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out vcm init init_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_held_ota_vcm_init
+
+* Balanced signed packet injection: equal packet capacitors move in opposite
+* directions around VCM, cancelling first-order common-mode charge feedthrough.
+* This is an experiment; switch mismatch and residual charge injection remain.
+.subckt sky130_sc_charge_integrator_held_diffpacket out sum packet_top packet_bottom packet_top_b packet_bottom_b
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=1
+Xota sum vcm ota_out vbiasn vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out vcm init init_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket_p packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_n packet_top_b packet_bottom_b membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect_p packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_connect_n packet_bottom_b sum connect connect_b vdd vss transmission_gate
+Xpacket_reset_p packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xpacket_reset_n packet_bottom_b vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_held_diffpacket
+
+* Same balanced packet cell with DAC-friendly membrane initialization.
+.subckt sky130_sc_charge_integrator_held_diffpacket_ota_vcm_init out sum packet_top packet_bottom packet_top_b packet_bottom_b
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=1
+Xota sum vcm ota_out vbiasn vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out vcm init init_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket_p packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_n packet_top_b packet_bottom_b membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect_p packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_connect_n packet_bottom_b sum connect connect_b vdd vss transmission_gate
+Xpacket_reset_p packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xpacket_reset_n packet_bottom_b vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_held_diffpacket_ota_vcm_init
+
+* Passive switched-capacitor membrane: the packet bottom connects directly to
+* the stored state node. The OTA is absent during accumulation; sum is held at
+* VCM so the MIM state capacitor is a well-defined shunt to common mode.
+.subckt sky130_sc_charge_integrator_passive out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=1
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom out connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xsum_hold sum vcm vdd vss vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_passive
+
+* Passive packet cell with DAC initialization on the reference membrane.
+.subckt sky130_sc_charge_integrator_passive_dac_init out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=1
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom out connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xsum_hold sum vcm vdd vss vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_passive_dac_init
+
+* DAC-friendly precharged variant. Match the isolated OTA output to the stored
+* membrane immediately before reconnecting, while keeping init_level off that
+* OTA node so the learned-threshold DAC only initializes membrane state.
+.subckt sky130_sc_charge_integrator_precharged_ota_vcm_init out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b precharge precharge_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=10
+Xota sum vcm ota_out vbiasn vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out vcm init init_b vdd vss transmission_gate
+Xota_output_precharge out ota_out precharge precharge_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_precharged_ota_vcm_init
+
+* Experimental precharged variant: before reconnecting the OTA after an idle
+* hold, briefly match its isolated output node to the stored membrane voltage.
+* This tests whether stale OTA output charge causes the measured reconnect kick.
+.subckt sky130_sc_charge_integrator_precharged out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b precharge precharge_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=10
+Xota sum vcm ota_out vbiasn vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out init_level init init_b vdd vss transmission_gate
+Xota_output_precharge out ota_out precharge precharge_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_precharged
+
+* Experimental sleep variant: isolate state as before, but switch both OTA bias
+* rails off during membrane hold. On amp_enable, restore the nominal biases and
+* reconnect the precharged output node for packet integration.
+.subckt sky130_sc_charge_integrator_sleep out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=10
+Xbiasn_active vbiasn ota_vbiasn amp_enable amp_enable_b vdd vss transmission_gate
+Xbiasn_sleep vss ota_vbiasn amp_enable_b amp_enable vdd vss transmission_gate
+Xbiasp_active vbiasp ota_vbiasp amp_enable amp_enable_b vdd vss transmission_gate
+Xbiasp_sleep vdd ota_vbiasp amp_enable_b amp_enable vdd vss transmission_gate
+Xota sum vcm ota_out ota_vbiasn ota_vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out init_level init init_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_sleep
+
+* Experimental combination: precharge the isolated OTA output to the membrane
+* while its bias devices are asleep, then wake and connect it for integration.
+.subckt sky130_sc_charge_integrator_sleep_precharged out sum packet_top packet_bottom
++ reset reset_b packet_reset packet_reset_b init_level init init_b connect connect_b
++ amp_enable amp_enable_b precharge precharge_b vbiasn vbiasp vdd vss vcm
++ params: cmem_um=100 cpacket_um=10
+Xbiasn_active vbiasn ota_vbiasn amp_enable amp_enable_b vdd vss transmission_gate
+Xbiasn_sleep vss ota_vbiasn amp_enable_b amp_enable vdd vss transmission_gate
+Xbiasp_active vbiasp ota_vbiasp amp_enable amp_enable_b vdd vss transmission_gate
+Xbiasp_sleep vdd ota_vbiasp amp_enable_b amp_enable vdd vss transmission_gate
+Xota sum vcm ota_out ota_vbiasn ota_vbiasp vdd vss sky130_sc_ota
+Xota_output_connect out ota_out amp_enable amp_enable_b vdd vss transmission_gate
+Xota_output_init ota_out init_level init init_b vdd vss transmission_gate
+Xota_output_precharge out ota_out precharge precharge_b vdd vss transmission_gate
+Xsum_hold sum vcm amp_enable_b amp_enable vdd vss transmission_gate
+Xcfb out sum membrane_mim w_um={cmem_um} l_um={cmem_um}
+Rdc out sum 1e15
+Xpacket packet_top packet_bottom membrane_mim w_um={cpacket_um} l_um={cpacket_um}
+Xpacket_connect packet_bottom sum connect connect_b vdd vss transmission_gate
+Xpacket_reset packet_bottom vcm packet_reset packet_reset_b vdd vss transmission_gate
+Xstate_reset out vcm reset reset_b vdd vss transmission_gate
+Xstate_init out init_level init init_b vdd vss transmission_gate
+Xsum_init sum vcm init init_b vdd vss transmission_gate
+.ends sky130_sc_charge_integrator_sleep_precharged

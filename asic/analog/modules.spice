@@ -1,0 +1,115 @@
+* Analog ASIC module prototypes. All voltages encode normalized model states.
+* Mixed abstraction: CMOS switches/inverters use SKY130; B sources, ideal C,
+* resistors and switches are behavioral placeholders, NOT layout-ready circuits.
+* CMOS subcircuits require the separately supplied SKY130 model includes.
+.subckt inv a y vdd vss
+Xp y a vdd vdd sky130_fd_pr__pfet_01v8 w=2 l=0.15
+Xn y a vss vss sky130_fd_pr__nfet_01v8 w=1 l=0.15
+.ends inv
+.subckt transmission_gate a b en enb vdd vss
+Xn a en b vss sky130_fd_pr__nfet_01v8 w=1 l=0.15
+Xp a enb b vdd sky130_fd_pr__pfet_01v8 w=2 l=0.15
+.ends transmission_gate
+
+* Reusable physical storage prototype; driver/comparator external.
+.subckt membrane_hold input state sample sample_b vdd vss vcm params: cmem=1p
+Xsw input state sample sample_b vdd vss transmission_gate
+Cmem state vcm {cmem}
+.ends membrane_hold
+
+* Continuous comparator prototype: NMOS differential pair, PMOS mirror load,
+* externally biased tail, two CMOS restoring stages. Bias generator pending.
+* Input common-mode/headroom, offset and stability need characterization.
+.subckt comparator inp inn output vbias vdd vss
+Xip d1 inp tail vss sky130_fd_pr__nfet_01v8 w=2 l=0.5
+Xin d2 inn tail vss sky130_fd_pr__nfet_01v8 w=2 l=0.5
+Xtail tail vbias vss vss sky130_fd_pr__nfet_01v8 w=1 l=1
+Xload1 d1 d1 vdd vdd sky130_fd_pr__pfet_01v8 w=2 l=0.5
+Xload2 d2 d1 vdd vdd sky130_fd_pr__pfet_01v8 w=2 l=0.5
+Xbuf1 d2 inverted vdd vss inv
+Xbuf2 inverted output vdd vss inv
+.ends comparator
+
+* Two-phase sampled PLIF prototype. Snapshot avoids algebraic writeback feedback.
+* Main and snapshot capacitors are ideal. Target driver is behavioral; physical
+* DAC, charge scaling and bias generation are not implemented or power-accounted.
+* caller supplies nonoverlapping capture/commit and startup-reset phases.
+.subckt sampled_plif state snapshot spike capture commit reset vbias vdd vss vcm
++ params: beta=0.9 theta=0.4 scale=0.2 cmem=1p
+Xci capture capture_b vdd vss inv
+Xwi commit commit_b vdd vss inv
+Xri reset reset_b vdd vss inv
+* Finite-gm/slew sense buffer: tanh-limited current toward v(state), no ideal V.
+* Caps/bleeds to vcm keep DC well-posed. Provisional; not layout-ready.
+Bsense_i vcm sense_int I={30u*tanh(15*(v(state)-v(sense_int)))}
+Csense_par sense_int vcm 200f
+Rsense_bleed sense_int vcm 50Meg
+Rsense sense_int sensed 20k
+Csense_shunt sensed vcm 200f
+Rsensed_bleed sensed vcm 50Meg
+Xcap sensed snapshot capture capture_b vdd vss vcm membrane_hold cmem={cmem}
+* Snapshot settle RC before compare; reduces TG surge into the decision node.
+Rsnap_s snapshot snap_cmp 50k
+Csnap_s snap_cmp vcm 100f
+Rsnap_bleed snapshot vcm 100Meg
+* Learned threshold. ASAP7 generator may substitute a continuous behavioral
+* comparator; SKY130 keeps the MOSFET comparator below.
+Bthreshold threshold vss V={v(vcm)+scale*theta}
+Xcmp snap_cmp threshold spike vbias vdd vss comparator
+* Continuous logistic spike weight preserves beta/theta; no step discontinuity.
+Btarget target vss V={v(vcm)+beta*(v(snapshot)-v(vcm)-scale*theta/(1+exp(-50*(v(spike)-0.9))))}
+Xwrite target state commit commit_b vdd vss transmission_gate
+Xreset vcm state reset reset_b vdd vss transmission_gate
+Cstate state vcm {cmem}
+.ends sampled_plif
+
+* Signed synaptic charge injector. pulse is normalized 0/1; w is signed.
+* Charge C*scale*w delivered over pw; physical DAC/current driver is pending.
+.subckt signed_synapse pulse membrane vcm params: w=0.1 cmem=1p scale=0.2 pw=1u
+Bcharge vcm membrane I={cmem*scale*w*v(pulse)/pw}
+.ends signed_synapse
+
+* Feed candidate and shared adaptation penalty into a threshold/reset block.
+* Binary output is 0/1 normalized; electrical pulse conditioning is separate.
+.subckt threshold_reset candidate penalty spike residual params: theta=0.4
+Bspike spike 0 V={v(candidate)>=theta+v(penalty) ? 1 : 0}
+Breset residual 0 V={v(candidate)-v(spike)*(theta+v(penalty))}
+.ends threshold_reset
+
+* Pre-leak the committed state once per bin, then hold before next-bin input.
+* Input state is signed normalized; target uses a physical common-mode offset.
+.subckt sampled_leak committed target vcm params: beta=0.9 scale=0.2
+Btarget target 0 V={v(vcm)+scale*beta*v(committed)}
+.ends sampled_leak
+
+* Primitive square and root units compose an N-channel RMS reduction.
+* Caller supplies sum((candidate-penalty)^2)/N; do not average amplitudes.
+.subckt energy_square candidate penalty square
+Bsquare square 0 V={(v(candidate)-v(penalty))^2}
+.ends energy_square
+.subckt energy_root mean_square rms params: clip=100
+Broot rms 0 V={min(clip,sqrt(max(v(mean_square),0)+1e-8))}
+.ends energy_root
+
+* age in bins, amplitude in model state units. age<0 means inactive.
+* Clocked age/amplitude storage and latest-spike refresh remain controller duties.
+.subckt adaptation_triangle age amplitude penalty params: duration=5
+Btri penalty 0 V={v(age)<0 ? 0 : v(amplitude)*max(0,min(v(age)/duration,2-v(age)/duration))}
+.ends adaptation_triangle
+.subckt peer_inhibition residual rms any_spike own_spike inhibited params: strength=0.2
+Binh inhibited 0 V={v(residual)-strength*v(rms)*(v(any_spike)>0.5)*(v(own_spike)<0.5)}
+.ends peer_inhibition
+
+* Readout storage for a class-current charge sum. One per class per pixel.
+* Reset closes an ideal switch to vcm. Injection and reset driver PPA excluded.
+.model analog_reset_sw sw ron=10 roff=1e15 vt=0.5 vh=0.1
+.subckt class_integrator input_current reset state vcm params: cclass=1p
+Bcurrent vcm state I={v(input_current)}
+Cclass state vcm {cclass}
+Sreset state vcm reset 0 analog_reset_sw
+.ends class_integrator
+
+* First-index tie winner for six signed class sums; no output PLIF.
+.subckt argmax6 c0 c1 c2 c3 c4 c5 winner
+Bwinner winner 0 V={v(c0)>=max(v(c1),max(v(c2),max(v(c3),max(v(c4),v(c5))))) ? 0 : (v(c1)>=max(v(c2),max(v(c3),max(v(c4),v(c5)))) ? 1 : (v(c2)>=max(v(c3),max(v(c4),v(c5))) ? 2 : (v(c3)>=max(v(c4),v(c5)) ? 3 : (v(c4)>=v(c5) ? 4 : 5))))}
+.ends argmax6

@@ -1,0 +1,7 @@
+# Bounded schematic feasibility environment. No digital campaign is launched.
+# Record the resolved image ID with results; apt availability is not pinned.
+FROM openroad/orfs:latest
+USER root
+RUN apt-get update -qq && apt-get install -y --no-install-recommends ngspice \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace/artifacts/analog_asic/benches

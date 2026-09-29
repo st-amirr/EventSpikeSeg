@@ -1,177 +1,318 @@
-# Active work and resume order
+# Active tasks — complete mixed-signal analog ASIC implementation
 
-## 2026-09-22 — Bounded 140k mechanism checks
+## Authorization and objective — 2026-09-23
 
-- Reused existing inhibition/adaptation physical checkpoints and existing block directories. Each activity case checks 64 midpoint samples from its checkpoint-derived synthetic pool; no whole-model simulation, new synthesis or rerouting was performed.
-- Accepted 6/9 activity cases: penalty_lane, square_lane, commit_lane, penalty_direct, penalty_lower, penalty_upper. All accepted cases have zero unannotated pins. 5 accepted activity cases use detailed-route parasitics; 1 use global-route estimated parasitics. Three penalty-reducer roles share one physical design.
-- Pending after the bounded runs: inhibition, energy64, energy128. Do not increase the 120-second per-stage limit or launch a broad retry campaign automatically. No new measured power is accepted for pending cases; existing input-trace estimates remain separately labeled historical evidence.
-- Mechanism-only scaled proxies: 0.009344 W dynamic and 39.630 W leakage at 200 bins/s, using exact 140k counts. These omit the resident state/learned-beta update circuitry around mechanism populations as well as graph/control, top-level clocks/routing, and measured spike sparsity. They are not full-chip power.
-- Report: `artifacts/ASIC/primitive_characterization/base_140k_inventory/GATE_RESULTS.md`; detailed audit: `mechanism_gate_results.json`, `mechanism_gate_manifest.json`, and `mechanism_gate_status.json` in the same directory.
-- No ASIC process remains running from this step. Original physical databases and useful XL layout/training data were unchanged. Full 25-actor layout is still incomplete; physical assembly is a separate remaining milestone.
+The user authorizes Grok to carry out the entire analog/mixed-signal implementation: circuit design, debugging, per-module simulations, reusable macro layouts, physical-view preparation, full-model assembly, ORFS execution when ready, and power/area/latency estimates. This supersedes earlier instructions limiting Grok to testing/debugging or prohibiting all ORFS launches. Codex may also continue the work. Do not request permission again for routine reversible implementation steps already covered here.
 
-## Current ASIC target policy — 2026-09-21
+Work in `C:\Users\stamir\Desktop\EventSpikeSeg`. Use the existing docs structure; do not create additional Markdown files. Update `docs/project_spec.yaml`, this task list, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/PROGRESS.md`, and `docs/RESULTS.md` as appropriate. Analog outputs stay in `artifacts/analog_asic/`, with ASAP7-specific work in its `asap7/` subtree. Preserve every digital/XL artifact and checkpoint; do not resume their stopped jobs without a separate user instruction.
 
-All primary ASIC layout, block simulation, power, area, timing, and inventory work is based on **EventSpikeSeg140k v8, epoch 80, seed 17**: six classes, 440x640, 25 permanent PLIF actors, 54 graph edges, 30,976,000 resident PLIF identities, and 143,824 deployed synaptic weights. Primary exports/results live under `artifacts/ASIC/`; the latest accepted small gate-simulation results are in `artifacts/ASIC/primitive_characterization/`.
+Target: EventSpikeSeg140k v8, seed 17, six classes, 440x640, 25 permanent PLIF actors, 54 graph edges, 30,976,000 membrane identities and 143,824 deployed synaptic weights. The analog reference is the verified best-validation full-float checkpoint at epoch 58 of 80; epoch 80 is a non-best comparison. Read model sources and the existing float export; never substitute XL counts. Each layer retains its own local state. No cross-layer sharing or hidden reduction of image size or neuron count. Analog approximations are authorized for estimates, provided they are declared and tested; QAT/quantized artifacts do not define analog precision.
 
-**EventSpikeSegXL is secondary/reference work.** Preserve useful accepted XL GDS/LEF/Liberty views, final routed ODB/DEF/netlist/SDC/SPEF files, checkpoint-specific constants, hierarchy catalogs/instance maps/preflight, and validation/power reports. Keep them under `artifacts/ASIC_XL/` and their existing named OpenROAD result directories. Retain the latest useful unfinished-run database and failure summaries; redundant intermediate databases and rebuildable simulation binaries need not be retained. Never relabel XL measurements or its 44-actor inventory as 140k results. Reuse an XL physical view for 140k only after proving matching RTL, constants, geometry, interfaces and constraints.
+Deliverables: (1) reusable circuit/layout modules, (2) per-module functional and extracted simulations with energy/power/latency, (3) complete 140k hierarchical assembly and floorplan, (4) routed full layout if the physical feasibility gates pass, and (5) reproducible model estimates with coverage and uncertainty. A floorplan, schematic, behavioral simulation, or empty macro outline must never be reported as a completed routed chip.
 
-XL physical expansion remains paused behind 140k work. Preserve independent XL training and checkpoints. Neither model has a completed full-chip layout; existing routed blocks and structural hierarchy data must be labeled accordingly. Current work uses small per-block simulations and extracted-layout measurements; whole-model simulation remains retired. Historical entries below retain their original model and date and do not change this priority.
+## Current analog feasibility gate — 2026-09-27
+
+Keep the full-float analog SNN path. The corrected clock-gated latch resolves nominal ±3/±6µV states, and opening the direct-read TG 2ns after evaluation limits deterministic state disturbance to ≤0.049µV. Neither result qualifies switched noise. The latch input is about4.07fF; a full thermal sample there would have about1.43mV RMS differential kT/C. Opposing post-cut perturbation of about2.22mV flips the ±3µV decisions, but this is a deterministic stress rather than a noise-yield measurement. The 100µm physical MIM state pair has about20.31µV differential reset kT/C and requires about0.31m² bare MIM area for one cap per30,976,000 logical states. Its corrected full-frame reset-noise proxy lowers labeled accuracy on two selected validation records from49.82%→35.67% and48.18%→34.86%; the 10µm pair gives49.82%→30.49% on record0. The zero-noise control reproduces float logits, spikes and pixel classes exactly. Earlier reset-only and combined reset/comparator replay files are invalid because their code replaced the subtractively reset state with noise; use only `_corrected_subtractive_reset.json` reports. These bounded replays are sensitivity evidence, not measured device noise or dataset-wide accuracy.
+
+Next compare a **shared active differential charge bucket plus analog state store** against the 5ms update and area budget. Establish which supported physical element retains 30,976,000 independent analog states with acceptable noise and service; retain the existing direct-MOS injector only as a provisional event source. Before choosing a cell, characterize switched readout noise and mismatch in a credible model, then replay actual weighted fan-in, subtractive reset, beta and dynamic threshold across the ordinary full-float network. No layout or full-chip acceptance while readout noise, state storage and population service remain unqualified. The machine-readable boundary is `artifacts/analog_asic/results/sky130_readout_architecture_boundary.json`. Older status paragraphs below are chronological and are superseded wherever they conflict with this gate.
+
+The shared clocked latch's measured3.705ns nominal decision would need only23 parallel channels if it were the entire per-state service, but this excludes acquisition, precharge and state update. Total10ns/100ns/1µs/10µs service scenarios require62/620/6,196/61,952 channels. Use this range to size the next physical timing experiment; do not treat the ideal23-channel floor as an implementation count.
+
+2026-09-29 weighted-event update: the first-touch10µm physical SS/0°C cell has now summed actual epoch58 float final-fusion fan-ins of370,322 and329 signed events. At the370-event site, directly measuring the40.253ns stage-width gate curve and interpolating logarithmically reduces ideal-sum error to0.39–1.66% over three event orders, but order spread is0.662mV. A329-event current near32.623µV sums within9–22nV deterministically; this excludes initial membrane, beta, reset and dynamic threshold, and the10µm pair's independent thermal scale is about200µV. The322-event nearly cancelling site yields nanovolt sign variation, which is below credible physical noise resolution. Keep the architecture gate closed. Next characterize a realizable gate-level storage/driver and per-weight calibration error at SS/TT/FF, physical switched noise and readout, then replay complete PLIF updates and population service before layout. Use `sky130_ms_first_touch_float_fanin_ss0*.json` and the architecture boundary JSON as the machine-readable evidence.
+
+2026-09-29 PVT follow-up: separately measured, ideal gate maps keep the370-event summed result within0.03–1.67% magnitude error at SS/TT/FF, while the same SS map used without adjustment produces2.69–2.82× target magnitude at TT and can reverse sign or reach−596mV at FF. The TT combined mismatched-map simulation collapsed numerically; its separate forward/reverse decks completed. Treat this as a decisive calibration requirement. Next build or bound an actual analog gate-reference/trim mechanism and its update time, including local mismatch and noise; do not infer physical calibration from the external lookup table. Readout/state-storage limitations remain independent blockers.
+
+2026-09-29 physical weight-store gate: a sampled MIM pair switched directly onto the MOS gates suffers charge sharing; a10µm pair delivers only101.61µV against408.94µV direct after short hold. A100µm pair with10µs programming still misses by2.90% after5ms and costs2,874.56mm² bare over143,728 PLIF weights. Continuously held MOS gates with drain event steering avoid gate connection, but rail-clamped idle drains inject21.93mV at zero weight. VCM idle clamping cuts that switching term to0.351µV at the selected operating point, while5ms gate leakage changes the gate-dependent event by+91/+20/+3.1/+0.77% for10/20/50/100µm pairs. The VCM clamp also draws idle current and a short-refresh sweep is nonmonotonic. Keep weight storage unqualified. Next test a shared physical buffer/isolation path and local low-leak gate/reference refresh, including service and power; do not promote area or full model readiness from one-event subtraction.
+
+2026-09-29 buffer follow-up: the existing physical SKY130 OTA at SS/0°C follows selected0.72–1.26V DC inputs closely with ideal0.65/0.733V biases, but has−1.246mV error at0.48V and−2.672mV at0.30V. Loaded by the direct injector MOS gates, an off-rail-to-weight step takes roughly6–8µs to settle the n-gate, with substantial overshoot near5µs; the p-gate settles in≈0.1µs. Keep shared buffering as an option only with prefetch, calibrated low-voltage behavior, mux and population-service evidence. Do not treat this OTA as a50ns event driver or physically realized weight reference. The next bounded circuit task is to reduce the gate programming and readout disturbance without a huge replicated MIM pair, then check full-fanin service.
+
+Do not reuse the old OTA charge-integrator enable/reconnect path as the proposed shared bucket: it has up to27.14µV nominal two-packet error and roughly14.5–15.7mV full-bin reconnect movement. Require a differential reference maintained across the bin or a measured physical cancellation mechanism. Keep the direct-MOS injector as the stronger existing weighted-event baseline while this alternative is evaluated.
+
+2026-09-29 refinement: for two100µm MIM caps, reducing the20.31µV independent differential reset proxy to illustrative3µV/1µV would need reset-noise correlation `rho≥0.9782/0.9976`; these are design probes, not acceptance limits. Demonstrate that covariance in the physical reset/sense sequence rather than assuming matched caps cancel independent noise. SKY130, GF180MCU and IHP SG13G2 published MIM densities are around1.5–2fF/µm²; a process port among these does not by itself solve area or noise. Prioritize a physical correlated-reset/readout experiment and complete cycle timing on the existing SKY130 path. The architecture boundary JSON records the correlation and service calculations.
+
+The corrected full-float3µV reset proxy on two complete validation frames keeps mean labeled accuracy near baseline (49.59% versus49.82%;48.32% versus48.18%) yet changes about18.4%/20.2% of pixel classes and4.0%/4.3% of final-fusion spike bits. At1µV on record0, pixel agreement is83.3% and spike mismatch3.39%. Do not define a circuit noise acceptance threshold from these two frames or pixel accuracy alone. The next model gate needs segmentation IoU and a broader representative validation set after a physical noise model is available; meanwhile use3µV and1µV only as bounded design probes.
+
+The same two3µV full-frame replays now report mean IoU0.20503/0.19931 versus0.20573/0.19892 baseline. At the physical100µm independent-pair reset kT/C proxy of20.31µV, mean IoU falls to0.11938/0.11726. This narrows the physical question: demonstrate a measured reset/readout noise process near the low-microvolt regime without the current0.620m² two-cap bare-area cost, then run wider validation and actual weighted events. The3µV point remains illustrative, not an accepted specification.
+
+A new initialization-only20.31µV replay yields mean IoU0.12120/0.11591 on the same frames, nearly the0.11938/0.11726 result when fresh noise is also added after every spike. Because the float PLIF uses subtractive reset, implement reset as charge subtraction rather than hard sampling; still prioritize low-noise initial state and correlated threshold/reference creation. Post-spike reset-noise avoidance alone does not clear this gate.
+
+2026-09-29 first-touch candidate: keep an untouched membrane physically clamped to model zero and release it before its first weighted event. An idealized corrected full-float replay at the100µm-pair20.31µV proxy gives two-frame mean IoU0.20398/0.20271 versus baseline0.20573/0.19892; at the10µm-pair199.76µV proxy it gives0.19710/0.20109. These are two selected frames with only three seeds; pixel classes still change substantially. A bounded10µm TT MIM/TG/MOS bench preserves a≈16.68µV event step when the clamp opens0.2–10ns before event onset, but opening at onset or1ns later traps≈157µV or3.22mV instead. Next establish a local two-phase event route that guarantees clamp opening ahead of injection under variation, measure physical switched thermal noise and clamp/retention behavior, then broaden task replay. Do not promote first-touch or layout from idealized replay and nominal timing alone. Evidence: `sky130_ms_first_event_clamp_tt.json` and `sky130_readout_architecture_boundary.json` in `artifacts/analog_asic/results/`.
+
+Selected MOS SS/FF and0/85°C screens preserve the *relative* early-release result but expose37.3× fixed-gate event-charge spread:3.77–140.59µV for the same fraction0.6 command. Ideal externally set fractions0.687 (SS/0°C) and0.449 (FF/85°C) bring this one event near16.7µV, yet provide no realizable calibration or local mismatch guarantee. Next characterize a physical reference/trim or less temperature-sensitive signed charge source against actual float-weight values. Keep the full-float analog exploration active and the layout gate closed.
+
+A3µm pair cuts bare all-state MIM area to557.568mm², but its639.12µV first-touch noise proxy lowers two-frame mean IoU to0.14377/0.15201 versus0.20573/0.19892 float; the10µm pair costs6,195.2mm² bare. The3µm geometry has not been checked for layout legality. Continue looking for a denser/less noisy physical state/reference method before committing to replicated MIM; do not imply the first-touch replay solves area.
+
+The intermediate5µm pair costs1,548.8mm² bare and yields two-frame mean IoU0.17081/0.17796 at392.40µV first-touch noise proxy. The sampled trend confirms that shrinking a simple pair sacrifices task fidelity well before the bare area becomes modest. This remains a software sensitivity bound, not a physical noise or dataset result.
+
+The installed SKY130 fixed VPP capacitors provide only≈0.51–0.62fF/µm² by model-test capacitance and LEF footprint, below the approximate2fF/µm² MIM area term. A simple VPP substitution does not fix the area/noise gate. Continue analog alternatives with verified models; do not promote unsupported dense storage assumptions.
+
+The10µm first-touch proxy now covers four selected full validation frames, three seeds each: average per-frame mean IoU0.19991 versus0.20203 float. Records2/3 individually give0.19994/0.20149 versus0.20090/0.20258. Pixel agreement remains only≈63–66%, and the6,195.2mm² bare all-state pair area is unchanged. Use this as bounded evidence to keep first-touch under investigation, not as an architecture acceptance or a dataset result.
+
+Exact-zero full-float membrane occupancy on validation records0/1 is75.22%/75.93% after the first5ms update and82.06%/82.45% after the tenth. A sparse analog pool keyed only to nonzero state still needs≈25.4–25.5m cells near the end of these records, before address/control/adaptation cost. This does not justify replacing resident-state replication with a sparse allocation scheme. Next assess a physically supported storage mechanism and its switched noise; do not infer a large exact-zero capacity saving from event-camera input sparsity.
+
+An ideal one-cap/shared-reference first-touch replay improves two-frame mean IoU to0.20431/0.20651 at10µm versus0.20573/0.19892 float, but still costs3,097.6mm² bare across all states. At5µm and774.4mm² bare, mean IoU falls to0.18572/0.19370. Reference noise/distribution and single-ended readout are unimplemented, so this is not a selected storage cell. Continue toward a physically demonstrated lower-area store and event calibration; do not spend layout effort on the ideal reference assumption.
+
+A tighter physical injector two-point PVT check confirms that scalar gain trim is insufficient: at gate fractions0.4/0.6 the normalized charge ratio varies0.0364 (SS/0°C),0.0424 (TT/27°C), and0.0588 (FF/85°C). The low TT/SS points are stable to0.05ns timestep under tightened tolerances, while earlier loose multi-case curves shifted materially. Next qualify a reproducible full signed-weight transfer table and physical nonlinear calibration/reference mechanism, including low weights. Do not use the loose small-signal curve as a weight specification.
+
+Tight per-case PVT curves at gate fractions0.1–0.95 are monotonic but leave only0.0986–1165.34µV common single-event charge across the selected corners. Under the illustrative0.9V per-stage scaling from three float patches, fixed10.5ns pulses cover66.74% of143,728 PLIF static weights (plus96 final head weights outside this count). A fixed per-stage pulse width could cover the largest sampled weight with at most444.1ns at the slow corner; SS/0°C fraction0.95 is near-linear through450ns at zero state, and the sampled per-stage p99 serialized pulse contribution is≤15.74µs. These are promising range/service bounds, not an implementation: the0.1-fraction signal is below noise qualification, a450ns event varies5.35% over−0.9…+0.9V prepared state, low-end width scaling is unmeasured, and physical gate DAC/calibration and weighted fan-in remain open. Keep layout gated and next test a state-aware calibrated signed event source and its actual float-model impact.
+
+The signed repeated-event check now bounds one concrete accumulation error: ten0.95-fraction450ns events at SS/0°C are0.822% low against ten isolated events, with±0.2657mV residual after alternating signs. At a40ns final-fusion-like width, same-sign error is0.0731% but alternating residual remains±2.135µV, about11% of the sampled minimum final-fusion threshold under the illustrative scaling. It is a matched simulator-control comparison, not an on-chip correction. Next use actual float weight signs/magnitudes and bin ordering on a physically initialized cell, then replay measured nonlinearity through the float model before claiming SNN fidelity.
+
+2026-09-29 physical follow-up: the simple per-state20µm MIM/OTA held-output baseline sampler does not cancel a controlled−20/0/+20µV initial differential into a stable hardware decision. Its no-event output-minus-held value spans0.901mV, larger than the≈0.74–0.77mV output change from one≈4.12µV event; all tested comparator outputs remain high at the ideal15.5mV offset. The event-minus-no-event transfer only looks stable after simulator subtraction, which is not hardware. Do not use this OTA/output-MIM cell as the correlated reference. The next bounded analog path is a physically shared low-noise initialization/reference or a state-storage element with materially greater capacitance density; require actual reference cancellation and measured noise before selecting either. The two-cap geometry/correlation sweep in the architecture report shows why simply shrinking SKY130 MIM demands correlation above0.9997 at10µm for the illustrative3µV probe.
+
+The near-threshold gate is decisive for this OTA cell: at gate fraction0.601, a≈4.18–4.20µV event produces final second-OTA outputs1.756/1.609/0.230V for−20/0/+20µV initial offsets. The+20µV case alone crosses the nominal0.9V logic boundary despite nearly identical event charge. This is deterministic TT, not noise yield, but it rules out claiming the held-output baseline cancels per-state initialization uncertainty. Preserve this as a failed comparator architecture and do not spend further layout effort on it.
+
+## Immediate bounded plan — weight delivery, 2026-09-24
+
+Decision: preserve one logical presynaptic event -> one signed weighted contribution using ordinary full-float trained parameters; QAT/quantized versions do not define analog precision. The direct differential MOS injector with fixed10.5ns pulses and gate amplitude into a matched20um MIM pair remains the best current burst schematic branch, but not accepted. The corrected maximum-fan-in site gives0.81–0.96% error and8.4uV order span at gain0.965; gain0.986 improves a selected near-threshold event to<0.18% error but worsens the large-sum site's error to1.34–1.61% and order span to23.5uV. The10um MOS state pair shows6.3–6.6% error. An ideal1nS common-mode servo holds common mode but increases order spread to52.2uV. Longer or full-bin event spacing is not a robust fix: the5ms-spread MOS sequence has194.3uV order span. There is no global trim or smaller-cap MOS pass. The passive switched-capacitor fallback is now under a matched full-float weighted-event screen because packet charge may add more linearly; a10um/1um membrane/packet pair requires about0.55mV state change per50mV top-plate step and a measured ratio for the weight map. After this comparison, continue with whichever circuit has better multi-site error and retention, then add physical threshold/readout/reset and local spike replay. SKY130 remains active; ASAP7 storage and digital/XL artifacts are preserved history. No layout, population scaling, or network-accuracy claim is qualified. This continuation supersedes the earlier passive-SC-lead statement below.
+
+1. **Freeze the full-float reference and an error contract.** The current primary is `artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_best.pt` (epoch 58, best of 80, `is_best=true`); retain `EventSpikeSeg140k_seed17_epoch080.pt` as the final-epoch comparison (`is_best=false`). Record the SHA-256 hashes and both configurations. Neither file has ASIC-QAT provenance metadata; QAT and quantized exports are unnecessary for this analog path and must not define its weight precision. The full-float best checkpoint has been exported to `artifacts/analog_asic/model_reference/`. Use the active 25-actor DAG and folded ChannelAffine gains. Do not guess missing metadata. Use small real parameter subsets/short input traces from ordinary PLIF, stem inhibition, adaptation and readout; no full hardware-model replay. Report weight distributions per layer/channel, small-weight mass, signed sum/state ranges and near-threshold margins. Compare the pulse-tick/circuit transfer mapping with those same float traces; do not substitute synthetic low-bit model weights. Select scaling and error budget from observed state/spike/readout changes; task-level accuracy tolerance remains unset until supported by a bounded software validation comparison and an explicit acceptance criterion. Do not silently prune, clip or fine-tune.
+2. **Compare pulse duration against fast fixed-width gate-amplitude events.** Earlier long logical pulse-duration service estimates still exceed 5ms for many fan-in locations. The newer transistor-level fixed-bias width mapping is separately tested and also fails the 370-event weighted screen (6.7x target error at full gate bias; 33x at a reduced bias). Keep it as a documented comparison unless a regulated source materially changes transfer.
+3. **Decide from accuracy AND throughput.** Translate measured transfer/timing into the real float traces. Preserve all contributions before one threshold and one beta step per bin; no unfinished packets or error carried into a future bin/event. A first scale screen (per layer, largest effective float weight mapped to the maximum tested pulse) predicts median single-event positive durations of 162–265us in sampled layers. Replaying active inputs through the three sampled convolutions predicts serialized fan-in service medians of 0.19ms for stem, 6.58ms for enc1.standard and 15.94ms for final_fuse.standard, before setup/settling; 61.6% and 77.6% of active enc1/final-fuse destinations exceed 5ms. This is an optimistic one-lane-per-output screen, not a complete schedule, and no accuracy criterion has been set. It makes serial pulse delivery unsuitable at these scales without substantial within-neuron parallelism. Assess the switched-capacitor fallback now against the same float trace; do not represent pulse duration as qualified. Include existing restore/ADC costs and joins in any eventual 5ms claim.
+4. **Passive switched-capacitor membrane comparison (early schematic evidence only).** The MOS virtual-summing-node OTA integrator is demoted: physical-threshold mixed `pn`/`np` runs differ by 0.73µV, individual event windows move the stored state by about 6mV nearly independent of a 50mV-to-53.5mV packet adjustment, and keeping both OTAs continuously active drifts by 2.62mV. A new passive SKY130 membrane screen uses a 100µm MIM state capacitor, 1µm MIM packet capacitor and physical TGs, with no OTA during accumulation. At ±50mV top-plate steps it delivers ±5.6µV; `pn` and `np` both return to the initial state within reported precision, and the first-event state shifts by only 0.0–0.1µV over the following ~4ms. This is nominal TT schematic evidence with ideal state initialization: threshold-DAC loading, comparator/read kick, PVT, mismatch/noise, extraction and float-weight mapping are not yet tested. A 1µm packet is linear at5.6/16.8/33.6µV per ±50/±150/±300mV; 3µm reaches≈268µV but has≈1µV mixed-order residual; 10µm reaches≈2.9mV but shows≈28µV same-sign packet variation and2.4µV hold movement. Passive threshold init now uses the physical R2R24 DAC through TGs with no `.ic`: code3060 produces−11.0µV signal-minus-reference through4.9ms versus−10.914µV target. `pn`/`np` at1µm, ±0.3V finish at−10.9/−10.8µV, within0.014/0.114µV of target before comparator kick. The state-range test exposes a new blocker: with packet baseline fixed at0.9V, a1µm ±150mV packet has correct sign at0.9V but gives +62/+30µV for `p`/`n` from0.75V and −32/−62µV from1.05V. A10µm packet is worse. Bootstrapping the packet baseline to the initial state restores the first-event sign but retains 7–9% gain variation and≈119µV hold drift over4ms; increasing the explicit shunt from1e15Ω to1e18Ω does not remove the drift. Passive-cap float replay, with ideal continuous amplitude control and linearized transfer, gives at0.30V candidate headroom: 10µm caps produce0.081%/0.308%/1.283% spike mismatch in stem/enc1/final_fuse; 5.95% of final_fuse weights fall below the provisional0.18µV per-event floor. These are optimistic software sensitivities, not physical results. Later multi-event tests showed that this passive packet topology compresses at high fan-in; retain it as a comparison while exploring state-independent charge-delivery and differential-integration circuits. Do not accept the passive cell or start layout yet. The previous float-map screen double-applied ChannelAffine gain and was wrong; `scripts/analyze_sky130_pulse_float_mapping.py` now treats exported `weight__*` arrays as already-folded effective coefficients. The corrected full-graph sensitivity replay remaps only `final_fuse.standard` through measured 1/3/10µm cap curves and drops weights below the smallest measured packet: at 0.15/0.30/0.60V candidate headroom, 54.6/37.4/26.1% of its coefficients fall below that floor, final-stage spike mismatches are 5.28/3.77/2.55%, and segmentation argmax agreement on three 64×64 patches is 91.87/93.55/94.17%. This is a sensitivity study, not task accuracy or a qualified analog mapping. Matched same-phase no-event subtraction removes a ~7.38µV startup/feedthrough offset; both top-plate pulse signs are monotonic from 5–300mV. New physical-init/hold/packet sequencing results supersede the prior init-failure summary: 2.5µs TG initialization plus a 0.5µs guard reaches 0.75/0.90/1.05V within 109µV; OTA-disconnected 5ms idle retention is within 0.247mV; and a 1µm ±0.3V packet after the hold produces −41.0…−41.3µV / +41.1…+41.2µV when the packet bottom and OTA disconnect before the packet top plate returns to VCM. A two-packet test including packet-cap reset between events gives ±82µV for same-sign pairs; mixed-sign pairs stay within 0.43µV of zero. Maximum error against two single-packet increments is 0.62µV and `pn`/`np` order difference is 0.075µV. A 5ms-bin timing test places events at 0.5ms and 4.5ms and samples after the second event. The first packet signal changes by ≤0.56µV over the intervening ~4ms isolated hold, but after matched reconnect-baseline subtraction the two-event same-sign totals are only −65.3/+65.3µV versus −82.3/+82.3µV expected; mixed-sign residuals are ≤2.31µV. Error reaches 17.03µV and `pn`/`np` order difference 4.20µV. The no-event OTA reconnects shift the stored output by 15.67mV over two windows, so simulator-control subtraction cannot be treated as hardware correction. A 0.5µs post-packet settle tail lowers hold drift to 0.56µV but increases sum error to 17.03µV. OTA bias sleep during hold lowers drift to 0.24µV but retains 14.64mV common reconnect drift; a 0.5µs soft-start lowers drift to 0.10µV but retains 14.54mV shift and 16.90µV accumulation error; precharging OTA output from the membrane is worse (711.7mV common drift, or 890.36mV with bias sleep). These nominal TT experiments do not qualify PVT, mismatch, noise or extraction. The full-float three-patch replay anchored to physically measured ±41.16µV 1µm packets gives 5.325/3.947/2.605% final_fuse spike mismatch and 91.805/93.319/94.092% output pixel argmax agreement at 0.15/0.30/0.60V headroom; this is sensitivity, not task accuracy. The same-phase reference remains a simulator control rather than implemented offset cancellation. The prior active implementation choice was passive switched-capacitor membrane accumulation; the OTA virtual-summing-node path remains a comparison/failure record. Qualify passive transfer and threshold initialization before repeating float-weight sensitivity screens. Do not prune or retrain without a separately agreed accuracy decision. The provisional 2.5µs packet cycle remains an estimate, not throughput qualification.
+5. **Qualify only the selected candidate.** Run a small relevant corner/temperature set, model-supported mismatch/noise sensitivity and local layout/extraction for one representative synapse-plus-PLIF module. Missing mismatch data means unqualified variation, not zero mismatch. Integrate all supplies/clock/reference energy and report idle power, energy per logical contribution, settling/throughput and actual area. Include helper circuitry. Then bind variants to the 140k inventory. A nominal schematic pass is not extracted PPA or full-chip layout.
+6. **Update the existing status documents.** Record checkpoint hash, chosen precision/scaling, measured-vs-assumed clocks, transfer errors, spike agreement and coverage, service time, and remaining restore/writeback/parallelism blockers in the existing YAML/RESULTS/PROGRESS. Do not describe full-float reference as exact analog float precision. Do not promote the multiplexed state architecture or full ORFS readiness while its ADC/restore accuracy and population throughput remain unqualified. Stop on a measured architectural tradeoff or unavailable physical model; routine bounded tests need no new permission.
+
+Research basis: local `src/eventspikeseg/model_components.py` (`SpikingStage.forward`, `ParametricLIF._candidate_membrane`, `HardwareLIF.forward`); [SpikingJelly neuron model](https://spikingjelly.readthedocs.io/zh-cn/latest/tutorials/en/neuron.html); [pulse-controlled analog synapses](https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2014.00051/full); [switched-capacitor synapses](https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2015.00010/full). These demonstrate implementation options, not this project's precision or performance.
+
+## Live status — previous schematic evidence, 2026-09-23
+
+Stage 1 baseline frozen: `artifacts/analog_asic/asap7/baseline_freeze.json`. Suite exit 0 for compatibility benches; PLIF external smoke accepted (`max_state_error≈0.00897`). `check_asap7_analog_ready.py` gates on OSDI inverter+PLIF smoke evidence and lists content blockers (still exit 2 / `full_orfs_ready=false`). Run all SPICE/tool checks inside Docker (`eventspikeseg:analog-ngspice36` + mounted ngspice45); do not use host simulator binaries. XL remains paused.
+
+Stage 2 complete: contracts/stimuli via `scripts/export_analog_stage2_contracts.py` → `asap7/circuit_contract.json`, `asap7/stimuli/`, `design.yaml` encoding sections.
+
+Stage 3 architecture is a **SKY130 mixed-signal PLIF prototype** with digitally retained membrane words. The 1k/2k R-2R restore/mux now passes coarse range, tested monotonicity, and A→B→A after a uniform +12,544-code offset and +2.553mV rail shift; center error is 46µV and worst error 938.1 legacy Q7.16 voltage LSBs, so analog precision remains unqualified. The regenerated 23-bit weight voltage DAC passes a coarse 5mV transfer screen (max error 3.592mV), while the direct R-2R/MOS current injector fails monotonicity and stays near cutoff at low codes. The gate-pulse-duration injector passes short-width and sequential accumulation screens; the expanded 24-case TT sweep also stays correctly signed/monotonic from 0.75–1.05V initial membrane voltage and up to 500µs logical pulse width (3.5ms physical positive). At that long width the delivered swing is about 0.66V positive and 0.59–0.65V negative, so polarity/state matching over the larger range remains open and one long event consumes most of a 5ms bin. The best-validation full-float checkpoint is verified/exported: epoch 58 of the 80-epoch run; the epoch-80 checkpoint is retained as comparator. Analog reference uses float parameters directly and does not require QAT or quantized exports. One real-DSEC bounded model trace shows large activation-dependent weighted currents (final-stage p99 about 2.43k model units); no circuit-to-float mapping or spike-preservation result exists yet. There is no PVT/mismatch or extracted-layout evidence. The SAR/phase controller is ideal-comparator RTL only; its restore path remains unqualified. **Digital 140k ASAP7 ORFS remains stopped** (user); XL remains paused. Next: map measured pulse transfer to actual per-event float weights on real traces, then estimate service time against the 5ms update window.
+
+## Current accepted starting point
+
+- Digital 140k ORFS is **stopped** (user 2026-09-23): containers removed, no auto-resume. Journal: 18 complete / 128 OOM / 2 paused. Artifacts under `artifacts/ASIC/` preserved (GDS/LEF/RTL/journal). Stop evidence: `artifacts/ASIC/digital_stop_20260923/` (prior pause: `digital_pause_20260923/`). XL stays secondary and paused.
+- SKY130 prototype remains preserved separately. Its five smoke benches are not ASAP7 measurements.
+- ASAP7 PDK revision: `58d72c9d291e186a77468586ab0c43d8a21eda6a`; original TT/SS/FF cards are preserved. ngspice 45.2 + OpenVAF 23.5.0 + Berkeley BSIM-CMG 107 are available in `artifacts/analog_asic/asap7/tools/`. Run those Linux binaries inside the existing `eventspikeseg:analog-ngspice36` container image using the current runners; the image name does not imply the mounted simulator is version 36.
+- Model conversion preserves card physics and records syntax/geometry choices. EOTACC validation-range adaptation is in `model_source_changes.json`; do not silently modify device equations or discard card parameters.
+- Current `compatibility_checks.json` reports inverter DC/transient completion and an 80us sampled PLIF smoke with matching spike sequence and maximum state error about 0.00897 model units. This result uses finite-gm behavioral sensing/drive, a scale-normalized logistic comparator and captured spike decision. The transistor comparator at 0.7V has not been integrated successfully. Passing smoke does not establish physical implementation.
+- In the one tested 5ms retention stimulus, ideal 1pF/10pF/20pF capacitors drift about 15.15/1.59/0.805mV. Only 20pF meets the provisional 0.02 model-unit limit. Do not choose 20pF blindly: physical area, other states, leakage, temperature and total population cost are unqualified.
+- No analog physical macro views, extracted PPA, or full-model ORFS assembly are accepted yet. `check_asap7_analog_ready.py` currently reports not ready and includes historical ngspice36 incompatibility; update it to use current evidence as work advances. It presently returns not ready unconditionally, so it must become a real validation gate before being used to authorize a run.
+
+## Stage 1 — reproduce and freeze the working baseline
+
+1. Read `docs/project_spec.yaml`, `docs/AGENTS.md`, this file, `docs/ARCHITECTURE.md` and recent progress/results. Inspect running containers and git changes before editing. Do not overwrite another agent's live changes.
+2. Run, in order, from the project root:
+
+   ```powershell
+   python scripts/prepare_analog_asic.py
+   python scripts/prepare_asap7_analog.py
+   python scripts/build_asap7_analog_modules.py
+   python scripts/test_asap7_analog.py
+   python scripts/check_asap7_analog_ready.py
+   ```
+
+   Inspect the JSON and logs, not only exit codes. Readiness is expected to fail initially. ngspice can exit zero after an aborted analysis. Require the intended end time, finite traces and actual assertion results. Do not overwrite newer provenance fields when regenerating manifests; fix generators to preserve or explicitly rebuild those fields first.
+3. Record source/PDK/tool/image hashes, command lines and baseline results in machine-readable manifests. Preserve the working baseline before each topology change. Treat 80us as an accelerated functional bench, not the physical 5ms model bin or measured model latency.
+
+Exit: reproducible baseline, correct status reporting, known behavioral placeholders and pending physical work itemized in `design.yaml`.
+
+## Stage 2 — freeze model-to-circuit contracts and tolerances — COMPLETE 2026-09-23
+
+Status: **complete (provisional contracts frozen for Stage 3 sizing)**. Physical PLIF and ORFS remain not ready. Reproduce: `python scripts/export_analog_stage2_contracts.py`.
+
+1. DONE: Inspected `model_components.py` HardwareLIF/ParametricLIF order, `artifacts/ASIC/model_spec.yaml` quantization, and all 25 parameter JSONs + `quantized_weights.npz`. Constants are quantized export, not float checkpoint.
+2. DONE: Small per-module stimuli under `artifacts/analog_asic/asap7/stimuli/` (silence, signed cancellation, threshold boundaries, bursts, persistence, synapse, peer inhibition, 16→6 readout). No 31M-state campaign.
+3. DONE: Encoding in `design.yaml` (`circuit_contract` / `asap7_encoding` / `pending_physical`) and `asap7/circuit_contract.json`. VDD=0.7, vcm=0.35, smoke scale 0.07 V/unit; per-layer weight absmax spans ~0.3..68 — shared cell variants listed, no single unproven scale.
+4. DONE: Sampled 5 ms order recorded: accumulate → snapshot → threshold → reset/inhibition → adaptation → beta once → hold; nonoverlap + hold spike across commit.
+5. DONE: Separate acceptance tiers: circuit smoke 0.02 (label smoke-only), module spike/state criteria TBD post-transistor, workload accuracy unavailable/sensitivity-only.
+
+Exit met: machine-readable contracts + stimuli. Next: Stage 3 transistor PLIF / capacitor qualification.
+
+## Stage 3 — complete the representative PLIF and storage circuitry
+
+**Current status (capacitor gate):** no discrete capacitor SPICE model/PCell is present in the open ASAP7 snapshot (`asap7/capacitor_survey.json`); VDD=0.7V does not establish a capacitor rating or density. MOS Cgg is the user-selected analog experiment and remains unqualified after the retention/leakage diagnostics above. Continue bounded analog architecture exploration; do not silently substitute ideal capacitance or claim a physical view. Digital stays paused unless the user explicitly asks to switch.
+
+1. Qualify an implementable ASAP7 capacitor structure, its model, usable voltage range and layout area. Do not map an ideal capacitor to fabricated geometry without evidence. Include sampling/snapshot/compensation capacitors and buffers, not just one membrane capacitor.
+2. Test retention over actual 5ms intervals for multiple signed states and input conditions, reset/feedthrough, charge injection, thermal noise assumptions and relevant temperature/corners. Compare lower-leakage switching/storage designs and capacitance choices using measured sensitivity. Estimate full-population capacitor area before committing to a large value.
+3. Replace the logistic comparator, behavioral sense buffer, reset/beta driver and current injector with transistor circuits or fully characterized physical helpers. Keep the behavioral version as a reference. Start with isolated circuits, then integrate one channel; do not debug millions of neurons at once.
+4. Implement signed synaptic injection with an explicit weight-delivery circuit (current/charge/pulse-duration coding). Account for weight storage, bias/DAC/control and loading. An ideal B-source is not a physical synapse and its apparent supply power is not valid PPA.
+5. Run the representative ordinary PLIF through signed accumulation, threshold/reset, learned-beta update, repeated bins, startup and idle tests. Check nonoverlap, decision capture and settling before commit. Avoid tuning numerical tolerances merely to hide a failure.
+
+Exit: stable representative transistor-level PLIF and physical capacitor candidate, with declared operating limits. If acceptable retention forces infeasible area or a semantic change, present the measured tradeoff as an architecture decision before scaling.
+
+## Stage 4 — finish every module family and bind all actors
+
+| Module family | Required implementation and tests |
+| --- | --- |
+| Standard/grouped/depthwise/pointwise synapses | Signed weights, tap connectivity, stride/padding/boundaries, multiplicity, pulse loading and delivery throughput; reuse physical cells with verified parameters. |
+| Ordinary PLIF | Dedicated local membrane state, programmable learned beta/threshold, sampled comparison/subtractive reset, capture/commit and reset handling. |
+| Peer inhibition | Retinotopic cross-channel RMS-derived energy, any-spike trigger, exclude spiking channels, preserve simultaneous spikes and the model's operation order. |
+| Adaptation | Per-neuron last-spike age/amplitude, triangular rise/fall and expiry, shared channel penalty, energy-based refresh and threshold adjustment. If digital helpers are chosen, include their state/clock/conversion costs. |
+| Energy/reduction | Square/mean/root and channel sums with correct normalization, clipping, signed inputs and 32/64/128-channel cases where the export requires them. |
+| Readout | 16-to-6 signed current delivery, ten-bin accumulation, six-class first-index-tie argmax, reset and output coding; no invented output PLIF. |
+| Routing and control | Coordinate selection, address delivery, forks, residual OR versus multiplicity-preserving sums, upsample/concat, matching completion tags and backpressure. Include actual digital glue and analog boundaries. |
+| Infrastructure | Phase/clock generation, biases/references, supplies, reset distribution, conversion only where needed, output buffering and loading. |
+
+Derive exact variants and multiplicities from the 140k graph. Bind every actor to module implementations and constants in `design.yaml`; report uncovered roles explicitly. Physical memory/compute cannot be relabeled from another layer or PDK without equivalence. Compare small groups against software references before building large groups.
+
+Exit: all module families have implemented netlists, bounded functional tests and a coverage table; no missing function is assigned zero cost.
+
+## Stage 5 — reusable macro layout and extracted characterization
+
+1. Resolve a usable ASAP7 analog layout, DRC, LVS and extraction workflow. The public PDK snapshot contains references to external Calibre decks, not the decks themselves. Inspect available open-source rules and document their actual coverage. Do not claim signoff from incomplete rules or assume commercial licenses. Ask only if an unavailable tool/license or materially weaker validation requires a decision.
+2. Lay out one qualified cell/small macro per family, with actual transistors/capacitors, supplies, pins, well/tap requirements, isolation, matching and routing. Reuse accepted cells; avoid separate full optimization for every boundary unless physically necessary.
+3. Run connectivity/LVS, available geometric checks, extraction and post-layout SPICE. Preserve all failures and fix the cell before replicating it. Compare schematic/extracted state trajectories, energy and settling; record any checks unavailable in this predictive PDK.
+4. Produce consistent GDS, LEF, SPICE/CDL and appropriate Liberty/digital interface views. LEF units, DBU/scaling, layer names, pin access and power pins must match the installed ASAP7 platform. Pay particular attention to ASAP7's scaled library conventions. Timing models must describe digital interfaces honestly; analog nets require custom routing/extraction checks, not invented digital timing arcs.
+5. Build `asap7/macro_views.json`, `physical_validation.json` and capacitor qualification evidence with hashes, topology/version, dimensions, corner/loading conditions and measured coverage. Preserve them at accepted milestones.
+
+Exit: physically implemented reusable macros with consistent views and explicit validation status. No empty boxes, copied unrelated GDS, or behavioral sources count as completed analog macros.
+
+## Stage 6 — per-module energy, power, area and latency
+
+For each accepted physical family/variant, run bounded post-extraction activity tests using Stage 2 stimuli. Record supply energy by integrating all relevant V*I sources, idle/static power, incremental active energy with clearly defined baseline, settling/decision latency, initiation interval and area. Include bias, clock/phase, weight delivery, buffers, converters and control, or explicitly mark missing coverage. Avoid double counting shared circuitry and leakage when aggregating.
+
+Cover relevant corners/temperatures and mismatch/noise sensitivity if supported; otherwise provide a labelled uncertainty range. Keep stimulus duration, event count, bin count, capacitance/load and state distribution alongside every value. Distinguish ideal behavioral estimates, schematic transistor results, extracted results and physical measurement. Never treat a training bit width as measured analog precision.
+
+Exit: machine-readable per-module results with units, evidence and assumptions, summarized in existing RESULTS. Missing extracted measurements remain null/unknown.
+
+## Stage 7 — full-model assembly and ORFS preparation
+
+1. Generate a hierarchical 25-actor assembly with all 54 graph edges and all local membrane/adaptation identities conserved. Check coordinate coverage, channel counts, readout mapping, duplicate/aliased state, constant bindings and graph transforms. Reuse hierarchy; do not flatten 31 million neurons for a first attempt.
+2. Calculate area and interconnect feasibility from accepted macro dimensions before routing. Produce a full-model architectural floorplan and inspect density, pin count, placement bounds, routing tracks, voltage/bias domains and estimated power distribution. If it cannot fit the selected die/host constraints, stop for a concrete partition/capacity decision rather than silently shrinking the model.
+3. Write the actual top/wrappers, SDC, macro placement and power-grid scripts, required view lists and ORFS config under `artifacts/analog_asic/asap7/orfs/`. Use the current digital ORFS platform collateral only where compatible. Configure additional LEF/GDS/Liberty macro views; protect analog instances/nets and record what ORFS routes versus what stays inside custom macros.
+4. Upgrade `check_asap7_analog_ready.py` from its current always-not-ready scaffold into a real gate: validate current source/view hashes, matching cells/pins/units, physical qualification, no unresolved black boxes, conservative timing interfaces and full graph/state conservation. File existence alone must not produce a pass. Report scoped limitations separately from blockers.
+5. Run a small integration smoke containing real representative macros plus digital glue. Verify loading, synthesis preservation, placement, routing, GDS merge and extracted interface behavior before full-model ORFS.
+6. Prepare a reproducible single launcher with preflight, bounded RAM/CPU, logs, durable stage checkpoints and explicit resume behavior. Set NUM_CORES consistently with Docker CPU limits. Schedule by host RAM with headroom; stop an OOM family after failure and resize/repartition instead of sweeping a queue of identical failures. Do not rewrite unchanged inputs on resume. Inspect partial outputs before trusting make timestamps.
+
+Exit: ready=true based on evidence, successful representative integration, and a concrete full-layout launcher. Record the exact Grok/terminal command in this file; do not invent it before validation.
+
+## Stage 8 — run and verify the full physical layout
+
+Once Stage 7 passes, the user's authorization includes executing the analog full-model ORFS flow. Run staged floorplan/placement, clock and power distribution where applicable, routing, extraction and final reports. Save accepted checkpoints; stop on correctness or resource failures rather than multiplying retries. Inspect analog interfaces and routing effects beyond digital STA. Verify GDS integrity, macro count/identity, missing cells, connectivity and available DRC/LVS checks. Do not call the chip complete while unrouted connections or unimplemented circuitry remain.
+
+Full-chip transistor/event simulation is not required. Validate extracted module/interface samples and inventory conservation; keep the intended per-module estimation methodology.
+
+Exit: full routed layout and reports, or a precise feasibility limitation with the completed module layouts/floorplan retained. A limitation is not permission to silently switch technology, reduce scope or restart digital work.
+
+## 2026-09-24 analog follow-up — differential reference
+
+The full-float checkpoint remains the only analog precision reference; quantized/QAT exports are not required. A late-switched VCM-referenced OTA difference readout isolates both membrane nodes during accumulation and cancels the nominal ~15.4mV reconnect shift. All four 5ms-bin event orders work in TT with ≤0.54µV readout relation error, ±63.5µV same-sign packet sums, and <1.9µV mixed residual. Full-float three-patch sensitivity gives 1.78–4.41% final-stage spike mismatch and 92.77–94.39% pixel argmax agreement. A corner screen shows the fixed 1.0 gain under-gains SS by 17.37µV; gain 1.35 corrects SS to 1.07µV but over-gains TT by 21.49µV. First-stage resizing did not cover all corners. Also, the present 1GΩ resistors are ideal components with no physical geometry. The active blocker is now readout calibration plus physically realizable low-loading input resistors. Explore a programmable gain/trim and a switched-capacitor alternative, then return to full corner/mismatch and layout qualification. Evidence is in `artifacts/analog_asic/results/sky130_sc_differential_reference_sampled_*` and `artifacts/analog_asic/model_reference/float_patch_trace_sampled_diffreadout.json`.
+
+## 2026-09-25 analog follow-up — passive sampling is noise-limited; pursue active differential sensing
+
+The SKY130 passive MIM sampler (`scripts/test_sky130_sc_cap_differential_sample.py`) changes the membrane differential by 2.5–3.9µV over its sample window at 10µm, but raw sampled output has about −0.466mV nominal offset. A VCM-only dummy does not remove it in the same run. Offline matched event/no-event subtraction reproduces all four 10µm event-order state changes within 0.05–0.09µV, but that is a simulator control, not a circuit. Estimated kT/C is 142.6µV RMS at 203.8fF; at 1.811pF (30µm) it is 47.8µV RMS, comparable to the ~55µV 5ms two-packet response, while sampling disturbs the differential by 8.1µV. A 1µm cap has ~1.32mV kT/C and ~27mV feedthrough. Do not promote passive voltage sampling as the readout.
+
+A direct OTA differential-input sensitivity screen now shows ±64µV produces roughly ∓0.31V output swing (about 5,000V/V nominal TT); ±250µV approaches the output rails. Continue with an active low-loading differential readout whose closed-loop or integrating gain is set for the real float-model state range, including offset cancellation and 5ms timing. First measure its transfer across signed state steps, then use supported noise/PVT models and full-float sensitivity. Do not infer task accuracy or circuit noise from the present noiseless nominal screens. Evidence: `results/sky130_sc_cap_differential_sample_*_10p0um_bp.json`, `results/sky130_sc_cap_differential_sample_*_30p0um_bp.json`, and `results/sky130_sc_ota_diff_sensitivity.json`.
+
+## Stage 9 — model-level estimates and final handoff
+
+Aggregate exact physical-instance counts with representative or model-derived activity. Report idle/static and active power separately; include routing, clocks, bias, memory/weight delivery and converters without duplication. Provide low/nominal/high activity cases where sparsity is uncertain. Explain uncovered mechanisms.
+
+Compute latency along the DAG with concurrent branches, dependent joins, contention, event delivery and analog settling. Report throughput/5ms-bin completion budget and prediction timing separately from the 50ms observation window. Do not add every layer's isolated delay indiscriminately or present a synthetic smoke duration as inference latency.
+
+Update existing RESULTS with per-module tables, whole-model estimates, layout images/paths, measured-versus-scaled labels, operating conditions and limitations. Update PROGRESS and this file with exact commands, completed gates and outstanding issues. Deliver reusable sources, manifests, physical views and results; no extra Markdown reports. If analog is infeasible, preserve it and ask whether to resume the preserved digital checkpoints.
+
+## Work discipline and stop conditions
+
+Prefer one meaningful representative test before expansion. Preserve last accepted results and track changes by hashes. After two failures with the same apparent cause, change to an evidence-based isolation test or summarize the blocker; do not repeat identical retries or raise limits without a reason. Stop only for an actual external dependency, infeasible area/resource bound, unresolved acceptance criterion affecting claims, or a material architecture/technology decision. Continue analog exploration and debugging within the selected approach; preserve digital/XL checkpoints and switch back only on explicit user instruction. Routine edits, tests, analog ORFS launches after readiness, and fixes within this plan are already authorized.
+
+This plan supersedes historical test-only ownership and blanket no-ORFS instructions. It does not authorize deleting existing artifacts, restarting digital/XL work, purchasing software, bypassing licenses, or claiming a result that has not been obtained.
+
+### Late comparator follow-up — 2026-09-25
+
+At 10ns, the 0.5µm OTA input comparator with 0.8882V precharge disturbed the physical membrane by 0.16–0.19µV. The same-sign `pp`/`nn` cases and mixed `pn` case reported the differential sign correctly, but mixed `np` at −1.953µV was reported positive with +6.162mV paired output difference. This fails near-zero state-sign readout and the 100ns result is timestep-sensitive. Next prototype explicit threshold referencing plus auto-zero/baseline sampling with a switched OTA input and isolated membrane. First demonstrate sign and learned-threshold margin across all four event orders at fine resolution; retain the 0.18µV provisional disturbance/sensitivity budget. If an auto-zeroed low-kick OTA still fails, test a preamplified dynamic latch or buffered closed-loop readout. Do not proceed to layout or claim readout acceptance before this gate. Evidence: `results/sky130_sc_ota_plif_comparator_{pp,nn,pn,np}_w0.5_t1.5us_p0p8882_s10n.json`.
+
+### Current readout candidate — ABBA chopped buffered closed loop
+
+Direct late-switched OTA comparison fails mixed near-zero sign. Retain the switched-capacitor membrane and use two unity-OTA buffers followed by an xhigh-poly closed-loop OTA that reads normal/swapped buffer inputs in A–B–B–A phases. This chopper cancels static output offset and linear drift. The 1MΩ/approximately9.1MΩ geometry estimate was too low: the circuit delivered only ~9.1× gain. Increasing feedback-resistor length from3078µm to3445µm gives effective gain ~10.16× in the physical `pn` transient. With 10ns steps, the 5ms physical-cell `pn`/`np` readouts now show correct polarity, 0.009/−0.005µV input-equivalent total error, and −0.023/+0.020µV read disturbance. At TT amp-only screens with 1.411µV differential and 0.8884V common mode, process/resistor/temperature cases span up to0.068µV input-equivalent gain error. This is a provisional schematic candidate, not acceptance: no mismatch, transient noise, per-channel threshold circuit, extracted layout, or actor-wide ranges.
+
+The 24-bit transistor R-2R DAC now initializes a separate physical threshold-reference capacitor from the full-float median threshold (`10.914µV` at0.30V headroom). A testbench audit invalidated the earlier code3243/16nV claim: DAC-mode `.ic` still contained the intended threshold, and signal-cell netlist edits were initially applied after the cell had already been copied into the deck. Corrected runs use no threshold `.ic`, the VCM supply for signal initialization, a DAC-fed threshold cell, and event-gated/matched OTA phases. In the clean5ms no-event hold, code2711 gives a−10.831µV mean signal-minus-reference differential (83nV from target); ABBA input-equivalent error is−0.078µV and read disturbance−0.033µV. Under equal simplified packets with corrected polarity, `pp` ends at+1.191µV and `nn` at−20.878µV, both with correct readout sign. Mixed orders end at−10.216µV (`pn`) and−9.486µV (`np`), a0.730µV order difference. That exceeds the sampled full-float ~0.18µV q0.1 threshold margin, so this is not an acceptance pass. All are nominal SKY130 schematic screens at50ns; QAT/quantized exports are not used.
+
+Next calibrate positive/negative packet transfer and diagnose the mixed-order error against no-event retention, then replay the measured full-float per-event weights and thresholds across actual traces. Threshold spread, weight-to-charge resolution, mismatch, transient noise, PVT and extraction remain open. The earlier0.091µV replay is only a uniform static perturbation on one DSEC frame; it does not qualify this measured circuit. Details and corrected artifact paths are in `docs/RESULTS.md`.
+
+### Latest continuation — packet timing and capacitor-noise screen — 2026-09-25
+
+The ABBA buffered readout remains the best measured readout, but the current charge integrator is not an accepted state cell. Added one-event timing controls (`pz`, `zp`, `nz`, `zn`) to `scripts/test_sky130_sc_physical_chopped_readout.py` and measured them with the physical threshold DAC (code2711), corrected packet polarity, 50ns maximum step, and identical 5ms timing. The matched `zz` baseline is−10.831µV. With a0.05V positive packet, a positive event gives +6.514µV at0.5ms and +6.796µV at4.5ms. With a0.0564V negative packet, a negative event gives−5.175µV at0.5ms and−5.313µV at4.5ms. Polarity-specific amplitude partly balances the mixed sequence, but early/late transfer still changes by0.14–0.28µV per event; the mixed-order screen remains about0.56µV. The bipolar-bucket variant is quarantined: its `np` ordering holds one active OTA bucket for about4ms and shifts the differential about−425µV, so it is not evidence for a valid split accumulator.
+
+Added `scripts/analyze_sky130_cap_kTC_float_sensitivity.py` and `results/sky130_cap_kTC_float_sensitivity.json`. It reproduces recorded `final_fuse.standard` spikes exactly before perturbation, then runs 64 Monte Carlo PLIF replays per case with fixed captured full-float currents, one beta application per update, and either independent per-update or static per-neuron candidate-state noise. At0.30V headroom,0.1µV RMS independent noise causes0.0926% spike mismatch and0.18µV causes0.168%; a14.26µV single-cap scale causes1.95%, while20.16µV differential-pair noise causes2.23%. Static per-neuron perturbations are more damaging:0.1µV causes0.217%. Area-scaling the prior203.8fF/10µm MIM estimate to the tested100µm-square membrane gives20.38pF and14.26µV single-cap kT/C at300K. This is theoretical, not SPICE transient-noise evidence; OTA, switch, packet, reference and device noise are omitted, and upstream spike inputs are held fixed. It makes capacitive analog state a serious precision/area blocker under the provisional0.1% sampled-stage screen.
+
+Next compare a regenerative or charge-domain event front end that reduces state exposure, and quantify whether event-time-dependent charge correction removes measured hold drift. Preserve full-float parameters; no QAT reference, retraining, pruning, or layout. Do not claim this local noise replay establishes segmentation accuracy. Detailed scope and artifacts are in `docs/RESULTS.md`; machine status is in `docs/project_spec.yaml` and `artifacts/analog_asic/design.yaml`.
 
 
-## 2026-09-21 — Simple layout/block-simulation milestone (latest)
+### Event-time compensation attempt — 2026-09-25
 
-User requested small steps, storage cleanup, and reuse of layouts for per-block simulation/power rather than prolonged full-model simulation and repeated physical retries.
+Added early-event polarity scaling to scripts/test_sky130_sc_physical_chopped_readout.py. Applying early-positive ×1.0433 and early-negative ×1.0267 (derived from isolated-event early/late transfer) to the mixed-event benches reduced the pn/np differential from0.563µV to0.203µV at50ns. The corrected pn/np means are−10.273/−10.476µV; their mean remains+0.457µV away from the matched no-event baseline, and the order difference still slightly exceeds the provisional0.18µV margin. The measured single-event scaling does not fully predict the two-event state interaction. Treat as a useful partial correction, not a fix. Keep the 5ms bin contribution order-independent and do not carry compensation errors into another bin.
 
-- Removed 16.44 GiB of redundant OpenROAD database checkpoints and compiled simulation executables. Final views, all reports, latest unfinished-run databases, source RTL and training/checkpoint data are preserved; deletion manifests are under `artifacts/ASIC/`.
-- Reused the 140k ordinary-PLIF and conv9 final layouts. Post-route functional gate simulations passed 65 and 255 output-snapshot checks; extracted-SPEF power has zero unannotated pins for both.
-- Current compact results: `artifacts/ASIC/primitive_characterization/base_140k_inventory/GATE_RESULTS.md` and `gate_results.json`. These supersede the corresponding input-only power measurements for this workload, not all other blocks or the entire model.
-- Prior PLIF annotation covered 116 pins with 12,869 unannotated; the old 2.013376 W subtotal must not be presented as validated full-chip power.
-- Full 25-actor layout remains incomplete. Existing GDS files are isolated blocks. Readout now passes 49 gate-level reference checks after correcting pre-edge versus post-edge testbench sampling. Its existing layout supplied extracted power; 45,229 pins have VCD activity and only the two verified-zero coordinate outputs are unannotated. RTL and physical files were unchanged.
-- XL training was observed running in `eventspikeseg-train-dsec-xl-run-0abd58c1b591` and was not interrupted. No ASIC container remains running from this milestone.
+The simple one-cap-per-PLIF area estimate is also now in the JSON: one100µm-square MIM per30,976,000 logical states implies about0.31m² capacitor area and631µF total capacitance, before switches, readout, routing or spacing. Achieving0.18µV single-cap kT/C at the same assumed density requires about7.92mm-square MIM per state and roughly1,940m² aggregate capacitor area. This is a geometric lower bound, not a floorplan. Continue analog-only exploration by testing whether differential/regenerative charge handling can avoid per-neuron capacitor noise/area and whether event-time trim can be calibrated on mixed sequences. If no architecture avoids those physical costs, preserve evidence and surface the concrete architecture boundary; do not silently restart digital or QAT work.
 
-Read this after `project_spec.yaml`, `docs/AGENTS.md`, `docs/ARCHITECTURE.md`, and
-`docs/DECISIONS.md`. Update it whenever a long-running stage starts, completes,
-fails, or changes the next valid stage. Detailed history belongs in
-`docs/PROGRESS.md`.
+Area clarification (2026-09-25): evaluate one-cap-per-state MIM across realistic PDK dimensions. The prior 100 um per-state scenario was the SPICE bench size, not a design point, and the 0.18 uV software sensitivity point is not a capacitor-noise specification. Compare area and kT/C separately, then validate task-level accuracy with circuit-aware noise and retention.
 
-## Current processes
+2026-09-25 MIM sweep note: SKY130 typical model gives C≈2w²+0.76w fF for square width w in um (shipped 1um cap test: 2.642fF). A raw 1um one-cap-per-state array is ~30.98mm² over 30,976,000 states, before spacing/periphery; 100um is not a design point. Smaller membrane C requires proportionally smaller event charge: with the existing 1um packet cap, preserving ~41uV from the 100um/0.3V bench point estimates ~75mV at 50um, ~3mV at 10um, and ~0.08mV at 1um. First 50um full 5ms ABBA transient exceeded the 180s ngspice timeout, so retry coarser step and shorter cases; do not infer behavior from timeout.
 
-### EventSpikeSeg140k full-model ASIC implementation
+2026-09-25 continuation: the active candidate is a truly passive SKY130 MIM membrane with packet-bottom switch to the stored state and OTA absent during accumulation. Raw MIM area is below the prior digital isolated-PLIF footprint at 5-10um (774mm2 and 3,098mm2 vs 46,647mm2 for 30,976,000 states), but support circuitry/layout are not included. 10um/1um packet TT schematic runs with 4.0mV nominal pulse and 1.14 early-event trim gave +81.5uV for two same-sign events and mixed pn/np residuals -0.06/+0.04uV; 5ms read disturbance 1-2uV. `.ic` still initializes state, and DRC/extraction/PVT/noise/task accuracy are pending. 5um has much worse apparent early-event hold loss (~34% in the compared trace); 1um loses packet signal under direct read-buffer loading and has ~1.23mV kT/C. New controlled tests (20um state/2um packet, ±64mV, 100 equal-sign active events) end at 33.36mV against ~52mV linear expectation, exposing cumulative charge-sharing compression at realistic fan-in. Direct pulse-current many-event tests had a SPICE initial-condition error (`.ic v(state)=0.9` under `uic`); correcting it to `.ic v(state)=0` yields a stable 0.9V baseline with ~1.1uV/5ms no-pulse drift. However, 100 equal-sign rail-switch pulses reach only 152.7/170.1mV versus 1.916/1.972V isolated-event extrapolation; the nominal saturation-bias gate variant reaches 161.0/143.3mV versus 1.952/1.768V expected, still ~92% low. 2ns pulses still lose ~50.5% after 20 events, so this unregulated injector is not qualified. Next explore explicit constant-current bias with pulsed steering and differential integration; retest against actual float event sequences and state range before choosing. Do not switch back to digital or use QAT.
+2026-09-25 differential follow-up: two 20um MIM states with complementary pMOS-source/nMOS-sink event injection keep common mode near VCM. At p/n gate levels 0.72/0.60V and 10.5ns pulses, a 100-event equal-sign train is 7.1% below isolated-pulse linear extrapolation, much better than the single-ended circuit's >90% compression. At the sampled final-fuse p99 fan-in of316, same-sign transfer is +2.69% high and a 158/158 mixed train leaves+0.183mV differential residual; at the maximum fan-in370, transfer is +1.01% high and a balanced-sign train leaves−0.423mV residual. Both same-sign cases move each membrane by roughly0.30–0.35V from VCM and shift common mode several mV. Reverse order of the 100-event alternating train flips its residual from−2.687 to+2.687mV. 7ns and14ns widths show +23.7% and−17.8% error at100 events, respectively, so this is a promising but unqualified direct-gate variant. Packing370 events15ns apart completes in5.55us with0.35% low transfer and+0.108mV balanced-sign residual. The explicit current-source/TG variant reduces idle drift with narrow stacked TGs but creates 59–828mV single-event changes through charge injection and is deprioritized. Next map the direct differential transfer against actual full-float weights/event traces, include readout/threshold disturbance, and test realistic state range. No digital fallback or QAT.
 
-- State: primary active physical target as of 2026-09-20. Use the canonical
-  epoch-80 seed-17 six-class checkpoint export in `artifacts/ASIC/`; keep all
-  XL estimates and views separate.
-- Exact inventory: 25 permanent PLIF actors, 54 graph edges, 30,976,000 direct
-  register/latch-resident PLIF identities, 143,824 deployed weights,
-  3,730,918,400 expanded actor synapse terms per dense bin, and 27,033,600
-  readout terms per dense bin.
-- Three checkpoint-exact isolated primitives are complete through ASAP7 detailed
-  route and a fourth exact 32-channel stem-inhibition group is timing-closed and
-  congestion-free through global route. All four have zero setup/hold TNS and
-  VCD-driven power.
-- Reproducible results and capacity multiplication:
-  `artifacts/ASIC/primitive_characterization/base_140k_inventory/`.
-- Historical input-trace subtotal at 20 frames/s and ten bins was 2.013376 W dynamic
-  for ordinary PLIF updates, dense actor synapse terms, exact readout blocks, and
-  all 70,400 stem-inhibition groups. This excludes adaptation, full graph routing,
-  clocks, and measured spike sparsity;
-  it is not full-chip power signoff.
-- Full-model layout is not complete. The isolated PLIF footprint multiplied over
-  all 30,976,000 state identities is a capacity bound of 46,647.068 mm^2 of die
-  footprint before mechanism variants, synapses, clock, power, and routing.
-- No ASIC run is active at the latest inspection. Reuse completed 140k layouts
-  and accepted small-block measurements; remaining adaptation characterization and
-  the full 25-actor hierarchy are unfinished work, not running jobs.
-
-### EventSpikeSegXL training
-
-- State: active at the 2026-09-15 inspection.
-- Container: `eventspikeseg-train-dsec-xl-run-179bb2d1cab0`.
-- A Docker engine restart interrupted and removed the prior auto-remove container
-  during epoch 19. The replacement resumed epoch 19 from the durable epoch-18
-  checkpoint; no epoch-19 checkpoint existed at restart.
-- Latest durable checkpoint:
-  `artifacts/model_checkpoints/dsec_XL/EventSpikeSegXL_seed17_epoch018.pt`,
-  SHA-256 `340926232155f67fe3d1bf460209c63dbbec03a6da1f18c7237b77665c432324`.
-- Constraint: do not stop or replace this run without explicit authorization.
-
-### XL full-chip physical implementation
-
-- State: paused as a secondary/reference target while the 140k base model is the
-  primary physical target. The exact 1x1 `down2.depthwise` route completed after adding its missing
-  retinotopic-mechanism RTL dependency. The preceding 1x1 `enc1.depthwise`,
-  `detail1.depthwise`, `detail2.vertical`, and `detail2.horizontal` routes and the
-  exact 2x2 readout route are also complete. The hierarchy was regenerated after
-  8x8, 4x4, and 2x2 actor capacity failures; every actor now uses exact 1x1 leaves.
-- Current physical checkpoint: epoch-1 seed-17 provisional ASIC export.
-- No XL actor ORFS process is active. Preserve the accepted views and reports
-  below for secondary work; do not resume the XL master campaign as the primary flow.
-- Completed physical view: exact readout master `xl_hm_readout__out_2x2`.
-  Its route has zero final DRC and antenna violations, +1252.43 ps setup slack,
-  +48.5815 ps hold slack, and 266.839 MHz reported fmax. Its hash-verified LEF,
-  GDS, and Liberty are staged in `artifacts/ASIC_XL/hard_hierarchy/views/`.
-- Exact inventory: 44 actors, 49,610 logical 8x8 actor tiles, 3,163,600 exact
-  physical actor leaves, 4,400 logical readout tiles, 70,400 physical 2x2 readout
-  leaves, 3,234,000 total hard-macro instances, 335 unique masters, 78,707,200
-  PLIFs, 2,916,390,400 resident-state bits, and all 281,600 output pixels.
-- Actor partitioning is deterministic and constrained by measured capacity: all
-  44 actors use 1x1 leaves. No 2x2, 4x4, or 8x8 actor remains in the layout.
-- Sources and gates:
-  `artifacts/ASIC_XL/resident_macro_variants/manifest.json` and
-  `artifacts/ASIC_XL/hard_hierarchy/`.
-- The fixed macroized native top, wrappers, and conservation preflight preserve
-  all 44 actor replacements, the readout, and the original soft graph.
-- Physical-view readiness remains false until all 335 masters have LEF, GDS, and
-  Liberty. The current representative actor routes cover 5/44 actor populations;
-  the complete top-level route has not been run.
-
-### Secondary XL isolated primitive characterization
-
-- State: ordinary one-cell PLIF and one fully connected nine-term 3x3 convolution
-  output are complete through ASAP7 placement, detailed routing, extraction, and
-  VCD-driven OpenSTA power. Outputs are under
-  `artifacts/ASIC_XL/primitive_characterization/` and are aggregated by
-  `scripts/inventory_xl_physical_primitives.py`.
-- Ordinary PLIF: zero final detailed-route violations, 238.762 um^2 standard-cell
-  area, 921.968 MHz fmax, 33.8188 pJ dynamic per bin update, and 0.205748 uW TT
-  leakage. Multiplying 60,544,000 ordinary cells at 200 updates/s gives 0.4095 W
-  dynamic, 12.4568 W leakage, and 14,455.61 mm^2 standard-cell area before shared
-  routing, clocks, power grid, pads, and top-level whitespace.
-- Nine-term convolution block: zero flow errors, 28.7372 um^2 standard-cell area,
-  and 62.2855 uW dynamic under 128 pseudorandom vectors at one vector/5 ns.
-  Normalized values are 3.19302 um^2, 0.0346031 pJ per bin evaluation, and
-  2.37704 nW leakage per hardwired term. The exact model has 9,125,811,200 terms.
-- A combined adaptation-plus-inhibition experiment was stopped and its partial
-  outputs removed because no actor uses both mechanisms. Valid characterization
-  must keep inhibition-only stem groups and adaptation-only encoder groups separate.
-
-## Preserved secondary XL evidence
-
-- All 45 rows in
-  `artifacts/ASIC_XL/partitioned_synthesis_1x1/summary.tsv` pass for corrected
-  beta48 RTL. Legacy stride-2 and normalized boundary results are not exact
-  hard-macro views.
-- The corrected `enc1.depthwise` 1x1 route, exact gate replay, and
-  activity-annotated power remain valid for that stride-1 interior partition.
-- The exact actor macro generator distinguishes output shape, receptive halo,
-  clipped boundary offset, true stride, padding, dilation, and tile origin. Its
-  334 exact 1x1 actor masters conserve all 49,610 logical 8x8 tiles and every
-  one of the 78,707,200 PLIF identities.
-- The packed exact 8x8 readout master passes focused cocotb and structural Yosys.
-- Flat full-top attempts at 8, 16, and 24 GiB produced no complete netlist. Reuse
-  them only as XL capacity evidence; full 140k assembly remains separate work.
-
-## Next valid execution
-
-1. Complete checkpoint-exact 140k inhibition-only and adaptation-only PLIF
-   characterizations, followed by the six-class temporal readout and graph-control
-   primitives.
-2. Generate the exact 25-actor base hard hierarchy from
-   `resident_tile_plan_8x8.json`, retaining every direct resident state identity,
-   boundary/halo variant, and all 54 graph edges.
-3. Route all required base masters resumably, reusing only digest-matching views.
-4. Run top-level floorplanning, placement, CTS, routing, extraction, timing,
-   physical checks, GDS integrity, and IR analysis. Compute power by multiplying
-   accepted per-block activity results by the exact physical inventory.
-5. Keep the XL hierarchy paused and separate until the 140k target reaches those
-   gates or the user explicitly changes the primary target.
-
-## Process rules
-
-- Primary 140k work preserves exact 440x640 dimensions, all 25 permanent actors,
-  all 54 graph edges, and all 30,976,000 local register/latch PLIF identities.
-- Secondary XL evidence preserves its own 44 actors and 78,707,200 PLIF identities;
-  these counts must never be used as the 140k implementation inventory.
-- The 8x8 value is the retained logical hierarchy boundary; exact 1x1
-  physical leaves subdivide it without reducing the model or score map.
-- Inspect containers, logs, status JSON, manifests, and digests before launching.
-- Use bounded, non-dumpable containers and preserve restart artifacts.
-- Do not create scheduled tasks for this flow.
-- Do not recreate full-model simulation, replay, native activity profiling, or
-  activity-derived whole-model estimates for 140k or XL. Simulate and measure
-  blocks independently, then multiply by the exact full-layout inventory.
-- Never substitute SRAM, truncate dimensions, share actor compute, drop boundary
-  variants, or call extrapolated tile measurements full-chip PPA.
+2026-09-25 status update: the measured 10um passive cell has been mapped against all25 spiking convolution actors using the ordinary full-float checkpoint, continuous weights, and three frozen-input DSEC patches. At0.30V candidate headroom, the ±0.512V measured packet range clips weights in several actors; `context2.depthwise` represents79.0% of weights and has2.77% local spike mismatch. At0.15V, it represents97.3% and local mismatch is0.123%. These are local software replays, not closed-loop or task metrics; peer-membrane inhibition feedback is not recomputed in the mapping helper. A 0.512V packet causes about4.57mV state change, and the current permanently attached read buffer disturbs state by about50µV at that large signal. The validated gain-normalized readout relation error is about3µV. New follow-up demonstrates multi-event compression in both the passive packet cell and unregulated rail-gated pulse injector. Continue exploring circuit remedies under the existing analog authorization; compare against actual full-float events before selecting a method. See the latest section of `docs/RESULTS.md`.
 
 
 
+
+### Latest analog continuation — corrected weighted event sequence and coding comparison — 2026-09-26
+
+A PWL timestamp precision defect invalidated the old weighted-sequence measurements: those ngspice logs contain thousands of non-increasing time-point warnings. Their JSON files now carry invalid/superseded metadata. Corrected benches use 12 significant timestamp digits and a matched no-event differential reference; the accepted log has zero non-increasing PWL warnings.
+
+Current bounded lead: direct differential MOS injection into a matched20um MIM pair, fixed10.5ns events and full-float gate-amplitude mapping. At the sampled 370-event `final_fuse.standard` maximum-fanin output,0.15V candidate headroom and0.965 gain trim, the target is−8.742mV. At15ns event spacing (5.535us train), the three tested orders deliver−8.659/−8.667/−8.672mV relative to the same-deck no-event cell, with0.96/0.86/0.81% error and8.4uV forward/reverse span after a5ms hold. Common mode moves−8.3mV from the no-event baseline. This is a nominal TT schematic screen, not module acceptance.
+
+Fixed-bias duration coding on this unregulated injector is worse: full gate bias yields−67.3mV versus−8.742mV target; lower gate bias requiring widths through338ns yields−298.2mV. A cascode gate pulse gave only0.170mV stable isolated-event transfer at the tested bias. Passive SC high-fanin compression remains a comparison. Do not use QAT or quantized weights.
+
+Next replay more high-fanin outputs and common-mode/state conditions, then add physical threshold/readout/reset and beta/hold behavior before local spike-sensitivity evaluation. Check off-state common-mode drift, DAC precision, noise/mismatch, supported PVT, energy and area. Qualify one representative module with local layout/extraction only after the weighted electrical and readout gates pass; do not claim full-model acceptance from this single-site screen.
+
+
+## Current analog continuation — 2026-09-26
+
+The passive packet alternative has completed a corrected matched weighted-sequence comparison and remains inferior; do not repeat that same fixed-VCM packet protocol. Continue with the20um direct differential MOS gate-amplitude lead using original full-float weights. Randomized full-bin checks now cover max/p99/median fan-in; cancellation-heavy median sums remain sensitive to ordering. The saved trace lacks within-bin timestamps, so retain random order only as a stress proxy. Next: (1) determine whether timestamped presynaptic activations can be captured from the real inference path without changing model semantics; (2) develop a physical transistor-level common-mode/state-following correction for the MOS injector and compare it against the uncompensated cell across large-sum, cancellation-heavy and near-threshold sequences; (3) connect physical learned-threshold comparison, reset and beta/hold behavior for those bounded sites; (4) replay resulting spike decisions against the corresponding full-float PLIF candidates. If no feasible compensation preserves charge across these cases, explore another analog charge-injection topology. Keep the full-float checkpoint, do not use QAT, and do not start layout until the representative PLIF path has a credible schematic result.
+
+### Readout noise correction — 2026-09-26
+
+The apparent two-stage sample-isolated readout noise pass used second-stage-only white TRNOISE; it did not include first-stage OTA noise and is not an acceptance result. First-OTA output noise can couple through the compensation capacitor into membrane state. A closed-loop buffer reduces nominal state disturbance but its ideal PDK noise estimate remains35–123uV for1us samples across4–100um devices, above mapped final-fusion thresholds;1ms averaging is too slow for population service. A passive shared sampler trades kT/C against state kick:30um yields47.8uV and8.09uV;50um yields28.73uV and19.95uV;100um yields14.38uV and42.96uV;200um times out at60s. Next compare same-amplifier correlated sampling/autozero with active differential charge buckets or regenerative threshold sensing. Use a physical switched aperture model and actual full-float threshold margins. Keep the fixed-width amplitude-coded synapse provisional; preserve analog operation and gate layout on noise,5ms service, PVT/mismatch and area.
+
+
+## Charge-balance result and immediate next experiment — 2026-09-26
+
+A corrected isolated-event common-mode calibration and separate pMOS/nMOS gate mapping suppress the burst common-mode shift to24uV, but full-bin order sensitivity persists and the cancellation-heavy site worsens. Next test schedule choices that respect binned SNN semantics and available service time, then attach a physical comparator/threshold to the best bounded sequence. Keep gate balance provisional; its sources are ideal, and no physical DAC is claimed.
+
+
+## Current qualification gate — 2026-09-26
+
+The direct MOS injector remains a provisional synapse. The model supplies a signed convolution sum once per5ms timestep, so hardware event ordering may be chosen but must meet service time. Greedy neutral ordering did not remove cancellation error. Focus next on offset cancellation or autozero for the physical20um MIM/OTA readout: nominal TG initialization leaves a−13.8uV settling offset versus3.1–6.4uV learned thresholds. Bound added read disturbance, input-referred noise, temperature/process/mismatch, and local float spike/task accuracy; include comparator, reset and beta/hold in the same module. The simple independent reset kT/C proxy already yields3.185% local final-fusion spike mismatch. Keep the full-float checkpoint and analog path; do not accept or scale the module on nominal gain alone.
+
+
+## Noise proxy task follow-up — 2026-09-26
+
+A bounded full-float run with 20um-pair reset kT/C proxy gives2.86–4.22% final-fusion spike mismatch and68.0–90.7% baseline pixel agreement across three held-out frames; selected-patch accuracy moves in both directions. Do not treat the apparent improvement in one frame as evidence of a useful noisy circuit. Build and characterize matched/autozero readout around the physical MIM/OTA interface, including initialization and sampling disturbances, then evaluate a broader held-out set with measured perturbations before selecting cap size or layout.
+
+
+## Current readout prototype gate — 2026-09-26
+
+The physical baseline-sampled20um MIM/OTA front end nominally separates a+3.01uV and+6.53uV event at4.9ms with an ideal15.5mV second-OTA threshold source. Keep it provisional. Next screen SS/FF/temperature, output-sample hold drift and differential mismatch sensitivity; implement a physical calibrated threshold reference, then replay actual weighted fan-in through this readout and add reset/beta. Include extra sample-cap area, OTA energy and parallel service demand. Use2ns transient resolution for10.5ns event pulses; the20ns bench is invalid for threshold decisions.
+
+
+## Bias/temperature blocker — 2026-09-26
+
+The physical sampled-OTA cell passes only nominal TT one-event threshold separation. Fixed biases fail MOS SS/FF and TT0/85C screens; the same pulse varies by several-fold in retained charge. Sweep realistic OTA bias operating points and threshold calibration across temperature, then repeat a bounded one-event and weighted readout screen. If no physical bias/reference can preserve the learned-threshold decision with tolerable noise and area, replace this analog readout topology. Keep layout and full-population claims gated.
+
+
+## Shared-readout scaling gate — 2026-09-26
+
+A dedicated continuously biased sampled-OTA cell is too costly under full-state replication. Continue with shared analog readout or a faster dynamic sense path. The current physical input-TG/OTA channel needs about30us for a nominal6uV prepared state to cross an ideal threshold and loses about32% of that state by49us. Before layout, reduce connection kick and service time; build physical calibrated OTA bias and learned-threshold DAC; replay real signed weighted events into the same readout; include reset/beta and full actor completion. The simple all-state5ms bound is≥185,856 channels and~8.5W of measured TT idle bias, not a qualified chip estimate. Maintain the original float checkpoint and analog direction.
+
+### Updated shared-readout gate — 2026-09-26
+
+The2um OTA input plus20fF compensation variant is the current nominal readout experiment. It retains about92% of a prepared3/6uV differential after49us connected and makes the TT6uV threshold decision within5us; SS/FF and ideal-bias-trimmed TT0/85C settle by9us. Fixed bias still fails at0/85C. A real single signed10.5ns MOS event has been driven into the shared path at500us with matching1/2ns transient results; the long5ms combined event deck did not finish. The optimistic all-state10us service floor is61,952 channels, about3.6W continuously biased at nominal sampled channel current, plus24.8mm2 raw sample-cap area, before dependencies and routing. Next implement and characterize a physically generated, calibratable bias and threshold reference; check near-threshold offset/noise across PVT and load; then integrate multi-event float fan-in with beta/reset. Only then consider macro layout. Keep analog-only full-float reference.
+
+The threshold source now has a physical MIM bottom-plate charge-step experiment. A1.7um offset MIM separates prepared3/6uV and a real single ±0.65 event at TT, and prepared3/6uV at SS/FF and ideally trimmed0/85C by9us. A3um offset MIM responds to ideal bottom-drive voltage but no physical DAC, mismatch or layout is qualified. The decisive next gate is circuit-aware noise and dynamic threshold: the20um differential state pair has~100.8uV kT/C while final-fuse static thresholds map to3.1–6.4uV, and some encoder/context actors have location-dependent triangular adaptation. Evaluate whether analog gain/range scaling or a different analog state/readout representation can close that gap before spending effort on layout or a replicated DAC. Preserve full-float semantics; no QAT or digital architecture switch.
+
+Per-update final-fuse comparator noise at the20um pair kT/C level changes~59% of argmax pixels in the selected validation patches. Scaling caps to200um still changes~44%, at~2.48m2 raw all-state capacitor area; a1000um noise illustration is below1% final-stage spike mismatch but~62m2 raw capacitor area and still only~78% baseline pixel agreement. Keep analog direction, but treat independent small floating MIM state plus this sampled readout as unqualified. Explore shared/correlated differential storage and an active low-noise current/charge integrator; compare full-float neuron threshold/adaptation semantics, real weighted-event operation, noise and actor throughput. Do not begin layout until an analog candidate survives that gate.
+
+Historical note, superseded by the current gate above: the prior full-frame reset-noise replay used incorrect reset semantics, so its reported label changes and accuracy cannot support a circuit choice. The comparator-only noise proxy has separate limitations. Use the corrected subtractive-reset results and compare correlated differential state with active current/charge integration against physical noise, area and population service. Maintain analog-only and full-float references; no QAT or layout until evidence supports a candidate.
+
+The open-loop SKY130 OTA noise result sharpens the active gate: with2um input devices it integrates to100/106/95uV RMS across TT/SS/FF over1Hz–100kHz; with20um input it is36uV TT. The20um OTA can preserve 3/6uV prepared states using a1us sample/isolate and a programmed offset cap, but noise remains comparable to threshold after headroom scaling. A full-float three-frame replay with36.27uV comparator noise across25 active PLIF populations lowers mean labeled accuracy37.87→29.58% at0.9V candidate range. The noise proxy uses an open-loop small-signal spectrum, not a transient switched OTA model, so quantify real correlation/auto-zero behavior before rejecting or accepting this path. Next test low-noise correlated sampling and a buffered/dynamic readout, then rerun weighted events, threshold adaptation, reset and broader validation. Analog only; no QAT/layout yet.
+
+Two-phase OTA chopping now demonstrates baseline cancellation for ±65uV states with only about0.06–0.14uV state disturbance, but a−1.25uV state is misclassified. This is not noise qualification. Continue by measuring correlated residual noise versus chop spacing and sweeping around float-mapped thresholds; then choose the next analog topology based on task-level margins.
+
+Latest analog candidate — fixed-width amplitude-coded MOS event injection, followed by1us state sampling/isolation, physical output MIM hold and a second OTA with capacitive threshold offset. TT tests separate prepared3/6uV states under a calibrated white TRNOISE proxy across13 seeds, and correctly sense one real ±0.65,10.5ns event across4 seeds. Stress amplitude up to32x retains prepared-state decisions in a single-seed screen. This is promising but not qualified: no flicker, mismatch/PVT, real threshold DAC, beta/reset/adaptation, full weighted fan-in through readout, shared scheduling, or task replay mapped through measured gain/margin. Previous all-actor noise replay injects noise at PLIF threshold directly and is not calibrated to this amplified sampled comparator. Next model measured transfer/margins in full-float replay, then combine complete weighted fan-in, threshold/reset and beta in one bounded readout cell. Keep layout gated.
