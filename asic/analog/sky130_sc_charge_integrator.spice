@@ -15,6 +15,19 @@ Xp3 out vbiasp vdd vdd sky130_fd_pr__pfet_01v8 w={wp3} l=0.5
 Ccomp n2 out {cc}
 .ends sky130_sc_ota
 
+* Experimental shared common-mode controller for a complementary pair of
+* active charge buckets. The OTA integrates mean-output error into vbiasp;
+* finite-range, stability, mismatch, loading and PVT must be qualified.
+.subckt sky130_sc_bucket_cmfb outp outn vcm vbiasp_aux vbiasn_ref vbiasp_ref vdd vss params: rcmfb=1Meg
+Rcmfb_p outp cmfb_mean {rcmfb}
+Rcmfb_n outn cmfb_mean {rcmfb}
+Xcmfb_ota vcm cmfb_mean vbiasp_aux vbiasn_ref vbiasp_ref vdd vss sky130_sc_ota wn3=4 wp3=20 cc=5p
+Rcmfb_leak vbiasp_aux vbiasp_ref 100Meg
+Ccmfb vbiasp_aux vss 10p
+Xp_assist_p outp vbiasp_aux vdd vdd sky130_fd_pr__pfet_01v8 w=0.42 l=10
+Xp_assist_n outn vbiasp_aux vdd vdd sky130_fd_pr__pfet_01v8 w=0.42 l=10
+.ends sky130_sc_bucket_cmfb
+
 * Experimental unity-gain difference amplifier. The local OTA has inverted
 * response to inp; equal signal/feedback and reference/VCM resistor pairs make
 * the output approximately VCM + reference - signal. This schematic prototype

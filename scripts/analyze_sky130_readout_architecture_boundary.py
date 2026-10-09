@@ -400,6 +400,430 @@ def main() -> int:
         "shared_buffer_service_and_calibration_qualified": False,
         "scope": "Existing transistor OTA at SS/0C with ideal biases. DC follower range and off-rail-to-weight transient under injector MOS gate loading. No sampled weight input, mux, event charge, thermal noise, mismatch, local calibration, extracted parasitics or full population throughput."
     }
+    bucket_base = "sky130_sc_integrator_many_events_n100_cp1_cm100_step0.3_ts20n_neutral_"
+    bucket_cases = {name: result(bucket_base + name)
+                    for name in ("p_train", "n_train", "mixed", "mixed_reverse")}
+    bucket_bias = {offset: result(bucket_base + "mixed" + suffix)
+                   for offset, suffix in ((0.1, "_nbias0p1mv"), (1.0, "_nbias1mv"))}
+    bucket_startup = {
+        "isolated_mixed": result(bucket_base + "mixed_init100u_fbstart1m"),
+        "all_cases": result("sky130_sc_integrator_many_events_n100_cp1_cm100_step0.3_ts20n_neutral_init100u_fbstart1m"),
+        "isolated_mixed_bias_0p1mv": result(bucket_base + "mixed_nbias0p1mv_init100u_fbstart1m"),
+    }
+    report["source_results"].extend(bucket_base + name for name in bucket_cases)
+    report["source_results"].extend(bucket_base + "mixed" + suffix
+                                    for suffix in ("_nbias0p1mv", "_nbias1mv"))
+    report["source_results"].extend((bucket_base + "mixed_init100u_fbstart1m",
+                                     "sky130_sc_integrator_many_events_n100_cp1_cm100_step0.3_ts20n_neutral_init100u_fbstart1m",
+                                     bucket_base + "mixed_nbias0p1mv_init100u_fbstart1m"))
+    report["continuous_ota_charge_bucket_neutral_reference_screen"] = {
+        "positive_100_event_minus_neutral_mv": bucket_cases["p_train"]["read_state_difference_from_neutral_event_reference_mv"]["p_train"]["final"],
+        "negative_100_event_minus_neutral_mv": bucket_cases["n_train"]["read_state_difference_from_neutral_event_reference_mv"]["n_train"]["final"],
+        "balanced_100_event_minus_neutral_uv": {
+            name: bucket_cases[name]["read_state_difference_from_neutral_event_reference_mv"][name]["final"] * 1000
+            for name in ("mixed", "mixed_reverse")
+        },
+        "neutral_bias_offset_stress_uv": {
+            str(offset): row["read_state_difference_from_neutral_event_reference_mv"]["mixed"]["final"] * 1000
+            for offset, row in bucket_bias.items()
+        },
+        "physical_init_and_startup_feedback_mixed_minus_neutral_uv": {
+            name: row["read_state_difference_from_neutral_event_reference_mv"]["mixed"]["final"] * 1000
+            for name, row in bucket_startup.items()
+        },
+        "physical_init_and_startup_feedback_pre_event_mixed_offset_uv": {
+            name: row["read_state_difference_from_neutral_event_reference_mv"]["mixed"]["pre"] * 1000
+            for name, row in bucket_startup.items()
+        },
+        "startup_operating_point_qualified": False,
+        "reference_matching_qualified": False,
+        "state_storage_and_noise_qualified": False,
+        "scope": "TT/27C 5ms nominal schematic, 100 fixed-amplitude events into continuously enabled single-ended OTAs and a separately switched zero-charge branch. A 100us physical VCM clamp plus switched 1Meg startup feedback does not make the mixed branch independent of deck composition. The branch bias offsets are deterministic voltage stresses, not statistical mismatch. No full-float weighted train, noise, state transfer, physical weight drive, beta/reset, extraction or population service."
+    }
+    weighted_latch = {}
+    for label, tag in (("model_threshold", "0"), ("diagnostic_near_zero", "m4"),
+                       ("diagnostic_positive", "m10")):
+        stem = f"sky130_ms_weighted_threshold_latch_nearthr_shift{tag}uv"
+        row = result(stem)
+        if (not row["simulation_completed"] or row["event_count"] != 329 or
+                row["qat_or_quantized_reference_used"] or
+                not row["decision_matches_physical_preeval_state"]):
+            raise RuntimeError(f"invalid weighted threshold latch result: {stem}")
+        weighted_latch[label] = {
+            "source_result": f"{stem}.json",
+            "float_margin_uv": row["ideal_float_candidate_minus_threshold_uv"],
+            "physical_preeval_margin_uv": row["preeval_state_minus_reference_uv"],
+            "state_change_across_latch_window_uv_including_hold_drift": row["read_state_disturbance_uv"],
+            "decision_matches_float": row["decision_matches_float"],
+        }
+        report["source_results"].append(stem)
+    report["weighted_fanin_clocked_latch_screen"] = {
+        "cases": weighted_latch,
+        "independent_pair_kt_over_c_proxy_uv_rms_at_0c": row["independent_pair_kt_over_c_proxy_uv_rms_at_0c"],
+        "physical_threshold_source_qualified": False,
+        "readout_noise_qualified": False,
+        "full_plif_feedback_qualified": False,
+        "scope": "One 329-event original-float SS/0C shared-bank MOS/TG/10um-MIM sequence connected to a transistor latch. The model threshold is imposed by ideal differential startup levels. The near-zero and positive cases shift that threshold for sensitivity only, not model operation. Full-fanin analog gate levels emulate measured R-2R correction with ideal PWL; no physical ladder, thermal-noise transient, mismatch, beta/reset, full 5ms state evolution, extraction or layout."
+    }
+    def software_report(stem: str) -> dict:
+        return json.loads((RES / f"{stem}.json").read_text(encoding="utf-8"))
+    range_boundary = software_report("sky130_float_dynamic_range_noise_boundary")
+    if range_boundary["qat_or_quantized_reference_used"] or len(range_boundary["actors"]) != 25:
+        raise RuntimeError("invalid float dynamic-range trace boundary")
+    gain_cases = {}
+    for record_index in (0, 1):
+        noiseless_stem = (f"sky130_float_state_saturation_validation_{record_index}_"
+                          "all_neurons_full_none_g32-64-100")
+        noise_stems = (
+            (f"sky130_float_state_saturation_validation_{record_index}_"
+             f"all_neurons_full_reset_only_g{'1-4-10' if record_index == 0 else '1-4-10-32'}"),
+            (f"sky130_float_state_saturation_validation_{record_index}_"
+             f"all_neurons_full_reset_only_g{'32-64-100' if record_index == 0 else '64-100'}"),
+        )
+        noiseless = software_report(noiseless_stem)
+        noisy = [software_report(stem) for stem in noise_stems]
+        for row in (noiseless, *noisy):
+            if (row["qat_or_quantized_reference_used"] or not row["full_frame"] or
+                    row["record_index"] != record_index or row["scope"] != "all-neurons" or
+                    row["checkpoint_sha256"] != range_boundary["checkpoint_sha256"]):
+                raise RuntimeError("invalid full-float gain/noise replay")
+        report["source_results"].extend((noiseless_stem, *noise_stems))
+        gain_cases[str(record_index)] = {
+            "baseline_present_class_mean_iou": noiseless["baseline_present_class_mean_iou"],
+            "noiseless": {
+                str(int(row["linear_gain_relative_to_max_fitting_range"])): {
+                    "spike_mismatch": row["final_fuse_spike_mismatch"],
+                    "pixel_agreement": row["segmentation_pixel_agreement_with_float"],
+                    "present_class_mean_iou": row["present_class_mean_iou"],
+                } for row in noiseless["trials"]
+            },
+            "independent_reset_noise": {
+                str(gain): {
+                    metric: sum(row[field] for row in rows) / len(rows)
+                    for metric, field in (("mean_spike_mismatch", "final_fuse_spike_mismatch"),
+                                          ("mean_pixel_agreement", "segmentation_pixel_agreement_with_float"),
+                                          ("mean_present_class_mean_iou", "present_class_mean_iou"))
+                }
+                for gain in (1, 4, 10, 32, 64, 100)
+                if (rows := [row for report_row in noisy for row in report_row["trials"]
+                             if row["linear_gain_relative_to_max_fitting_range"] == gain])
+            },
+        }
+    report["float_state_gain_noise_tradeoff"] = {
+        "trace_boundary_source": "sky130_float_dynamic_range_noise_boundary.json",
+        "final_fuse_trace_fraction_margin_below_10um_pair_noise_proxy": range_boundary["actors"]["final_fuse__standard"]["fraction_of_states_with_margin_below_independent_10um_pair_ktc_proxy"],
+        "full_frame_cases": gain_cases,
+        "simple_linear_gain_qualified": False,
+        "physical_companded_or_split_range_store_qualified": False,
+        "scope": "Two 440x640 full-float validation frames, 25 PLIF populations, original checkpoint, QAT disabled. Each actor's per-record maximum sets its ideal +/-0.9V baseline range. Candidate and post-reset membrane are clipped at higher linear gain. Three independent Gaussian 10um-pair reset-noise proxy seeds are added at initialization and after spikes. The per-record maxima make this an optimistic sensitivity screen, not a calibration recipe. Noise is not transistor transient noise; no physical nonlinear encoding, gain switching, local mismatch, measured injector scaling, timing or validation-set accuracy."
+    }
+    compander_cases = {}
+    for record_index in (0, 1):
+        prefix = (f"sky130_float_state_saturation_validation_{record_index}_"
+                  "all_neurons_full_")
+        stems = {
+            "noiseless_100_to_1000": prefix + "none_g100-500-1000_asinh_ideal",
+            "noiseless_5000_to_10000": prefix + "none_g5000-10000_asinh_ideal",
+            "noise_100_to_1000": prefix + "reset_only_g100-500-1000_asinh_ideal",
+            "noise_5000_to_10000": prefix + "reset_only_g5000-10000_asinh_ideal",
+        }
+        rows = {name: software_report(stem) for name, stem in stems.items()}
+        for row in rows.values():
+            if (row["encoding"] != "asinh-ideal" or row["record_index"] != record_index or
+                    not row["full_frame"] or row["scope"] != "all-neurons" or
+                    row["checkpoint_sha256"] != range_boundary["checkpoint_sha256"]):
+                raise RuntimeError("invalid ideal companding replay")
+        noiseless = rows["noiseless_100_to_1000"]["trials"] + rows["noiseless_5000_to_10000"]["trials"]
+        if any(row["final_fuse_spike_mismatch"] != 0 or
+               row["segmentation_pixel_agreement_with_float"] != 1 for row in noiseless):
+            raise RuntimeError("ideal companding changed a zero-noise float result")
+        noisy = rows["noise_100_to_1000"]["trials"] + rows["noise_5000_to_10000"]["trials"]
+        compander_cases[str(record_index)] = {
+            str(ratio): {
+                "near_zero_voltage_gain_relative_to_linear": selected[0]["near_zero_voltage_gain_relative_to_linear"],
+                "mean_spike_mismatch": statistics.mean(row["final_fuse_spike_mismatch"] for row in selected),
+                "mean_pixel_agreement": statistics.mean(row["segmentation_pixel_agreement_with_float"] for row in selected),
+                "mean_present_class_mean_iou": statistics.mean(row["present_class_mean_iou"] for row in selected),
+            }
+            for ratio in (100, 500, 1000, 5000, 10000)
+            if (selected := [row for row in noisy
+                            if row["linear_gain_relative_to_max_fitting_range"] == ratio])
+        }
+        report["source_results"].extend(stems.values())
+    record0_asinh = software_report(
+        "sky130_float_state_saturation_validation_0_all_neurons_full_none_g5000-10000_asinh_ideal")
+    record0_max = record0_asinh["actor_max_absolute_candidate_model_units"]["final_fuse.standard"]
+    asinh_scale = record0_max / 10000
+    def illustrative_step(state: float) -> float:
+        return (0.9 / math.asinh(10000) *
+                (math.asinh((state + 1) / asinh_scale) - math.asinh(state / asinh_scale)))
+    report["ideal_asinh_state_encoding_bound"] = {
+        "full_frame_cases": compander_cases,
+        "illustrative_final_fuse_record0_unit_event_at_ratio10000": {
+            "state_model_units": (0, 1000),
+            "delta_model_units": 1,
+            "required_encoded_voltage_step_v": (illustrative_step(0), illustrative_step(1000)),
+            "scope": "One illustrative +1 model-unit event; not an actual synaptic weight or measured circuit step."
+        },
+        "full_float_noise_qualified": False,
+        "physical_encoding_and_update_implemented": False,
+        "state_store_qualified": False,
+        "scope": "Ideal per-record asinh state encoding V=0.9*asinh(m/(M/R))/asinh(R) with exact inverse and full-state range, across two full validation frames and 25 original-float PLIF actors. Independent Gaussian 10um-pair kT/C voltage noise is injected at initialization and after spikes, then exactly decoded; three seeds. This is an upper-bound software sensitivity, not a physical switched-capacitor, nonlinear injector, decoder, threshold, reset or state-store implementation. Per-record M is optimistic calibration; mismatch, transistor noise, current weight map, 5ms service and full validation are absent."
+    }
+    piecewise_cases = {}
+    for record_index in (0, 1):
+        prefix = (f"sky130_float_state_saturation_validation_{record_index}_"
+                  "all_neurons_full_")
+        control_stem = prefix + "none_g10000_piecewise8_ideal"
+        noise_stem = prefix + "reset_only_g10000_piecewise8_ideal"
+        control, noisy = software_report(control_stem), software_report(noise_stem)
+        if (control["checkpoint_sha256"] != range_boundary["checkpoint_sha256"] or
+                noisy["checkpoint_sha256"] != range_boundary["checkpoint_sha256"] or
+                control["encoding"] != "piecewise-ideal" or
+                noisy["encoding"] != "piecewise-ideal" or
+                control["piecewise_segment_count"] != 8 or
+                noisy["piecewise_segment_count"] != 8 or
+                control["trials"][0]["final_fuse_spike_mismatch"] != 0 or
+                control["trials"][0]["segmentation_pixel_agreement_with_float"] != 1 or
+                len(noisy["trials"]) != 3):
+            raise RuntimeError("invalid eight-range float replay")
+        report["source_results"].extend((control_stem, noise_stem))
+        piecewise_cases[str(record_index)] = {
+            "near_zero_voltage_gain_relative_to_linear": noisy["trials"][0]["near_zero_voltage_gain_relative_to_linear"],
+            "mean_spike_mismatch": statistics.mean(row["final_fuse_spike_mismatch"] for row in noisy["trials"]),
+            "mean_pixel_agreement": statistics.mean(row["segmentation_pixel_agreement_with_float"] for row in noisy["trials"]),
+            "mean_present_class_mean_iou": statistics.mean(row["present_class_mean_iou"] for row in noisy["trials"]),
+        }
+    piecewise_max = record0_asinh["actor_max_absolute_candidate_model_units"]["final_fuse.standard"]
+    knots = [piecewise_max / 10000 * math.sinh(math.asinh(10000) * index / 8)
+             for index in range(9)]
+    slopes = [0.9 / 8 / (knots[index + 1] - knots[index]) for index in range(8)]
+    required_last_cap_f = 207.6e-15 * slopes[0] / slopes[-1]
+    required_last_cap_ff = required_last_cap_f * 1e15
+    required_last_mim_side_um = (-0.76 + math.sqrt(0.76**2 + 8 * required_last_cap_ff)) / 4
+    report["ideal_eight_range_state_encoding_bound"] = {
+        "full_frame_cases": piecewise_cases,
+        "illustrative_final_fuse_record0_positive_state_knots_model_units": knots,
+        "illustrative_segment_slopes_v_per_model_unit": slopes,
+        "first_to_last_segment_slope_ratio": slopes[0] / slopes[-1],
+        "per_state_switched_capacitance_implementation_bound": {
+            "fine_capacitance_per_side_f": 207.6e-15,
+            "required_last_range_capacitance_per_side_f": required_last_cap_f,
+            "required_last_range_square_mim_side_um_typical_model": required_last_mim_side_um,
+            "all_30976000_states_bare_two_cap_area_m2":
+                30976000 * 2 * required_last_mim_side_um**2 * 1e-12,
+            "excludes_switches_routing_reference_and_peripherals": True,
+            "full_range_per_state_capacitance_bank_selected": False,
+            "interpretation": "If voltage slope is changed only by increasing local state capacitance while event charge per model unit stays fixed, the final range needs this capacitance. This is an architectural lower-bound scenario, not a measured layout. State-dependent event-charge scaling or shared active circuitry avoids this specific capacitor requirement but is unimplemented."
+        },
+        "physical_range_switching_and_charge_conservation_qualified": False,
+        "scope": "Eight straight segments join equally spaced voltage samples of the ideal asinh curve at R10000. Exact encode/inverse and noiseless state-dependent updates are assumed; the same independent 10um-pair Gaussian voltage reset proxy uses three seeds on two full original-float frames. No physical gain-switch, carry, charge transfer, boundary-crossing signed event, beta/reset, mismatch, fixed calibration or 5ms service is implemented."
+    }
+    switch_cases = {}
+    for name in ("matched_short", "vcm_short", "matched_5ms", "vcm_5ms",
+                 "matched_crossing_short", "matched_crossing_5ms"):
+        stem = f"sky130_piecewise_range_switch_{name}"
+        row = result(stem)
+        if row["long_hold"] != name.endswith("5ms"):
+            raise RuntimeError(f"invalid range-switch duration: {stem}")
+        switch_cases[name] = {
+            "source_result": f"{stem}.json",
+            "state_change_across_switch_window_uv": row["state_change_across_switch_measurement_window_uv"],
+            "post_pulse_state_mv": row["measurements_v"]["after_pulse_event"] * 1000,
+            "five_ms_event_difference_hold_loss_mv": row.get("event_difference_hold_change_mv_over_5ms"),
+            "physical_final_minus_ideal_piecewise_mv": row.get("physical_final_minus_piecewise_ideal_mv"),
+        }
+        report["source_results"].append(stem)
+    report["physical_piecewise_range_switch_screen"] = {
+        "cases": switch_cases,
+        "physical_matched_extension_precharge_implemented": False,
+        "autonomous_range_detection_and_timing_implemented": False,
+        "weighted_signed_event_across_both_directions_qualified": False,
+        "five_ms_hold_qualified": False,
+        "scope": "TT/27C two-branch SKY130 10um fine +13.3um extension differential MIM with physical TGs. A 100nA/50ns ideal current pulse is applied after range connection or while a manually timed range connection occurs 13ns into the pulse. Ideal voltage sources prepare the extension, so matched precharge is a best-case bound; VCM precharge is a charge-sharing negative control. The five-ms event-minus-no-event difference loses ~1.184mV. No physical precharge driver, range detector, reverse crossing, measured weighted MOS source, noise, mismatch, beta/reset, extracted layout or population service."
+    }
+    precharge_sensitivity = {}
+    zero_crossing = result("sky130_piecewise_range_switch_matched_crossing_short")
+    for label, tag in (("plus_0p1_mv", "0p1"), ("plus_1_mv", "1"),
+                       ("minus_1_mv", "m1")):
+        stem = f"sky130_piecewise_range_switch_matched_crossing_short_err{tag}mv"
+        row = result(stem)
+        precharge_sensitivity[label] = {
+            "source_result": f"{stem}.json",
+            "extension_differential_precharge_error_mv": row["extension_differential_precharge_error_mv"],
+            "additional_final_state_error_mv_vs_zero_offset": (
+                row["measurements_v"]["after_pulse_event"] -
+                zero_crossing["measurements_v"]["after_pulse_event"]) * 1000,
+        }
+        report["source_results"].append(stem)
+    report["physical_piecewise_range_switch_screen"]["boundary_reference_error_stress"] = precharge_sensitivity
+    report["physical_piecewise_range_switch_screen"]["boundary_reference_is_fixed_per_segment_not_state_tracking"] = True
+    actual_steps = json.loads((RES / "sky130_piecewise_actual_event_range_three_sites.json").read_text(encoding="utf-8"))
+    if (actual_steps["checkpoint_sha256"] != range_boundary["checkpoint_sha256"] or
+            actual_steps["qat_or_quantized_reference_used"] or
+            actual_steps["piecewise_segment_count"] != 8 or
+            actual_steps["piecewise_ratio"] != 10000 or
+            set(actual_steps["sites"]) != {"near_threshold_scale", "high_cancellation", "max_fanin"}):
+        raise RuntimeError("invalid actual-weight piecewise event demand")
+    report["source_results"].append("sky130_piecewise_actual_event_range_three_sites")
+    report["actual_float_weight_piecewise_event_demand"] = {
+        name: {
+            "event_count": site["event_count"],
+            "orders": {order: {
+                "largest_required_encoded_step_mv": row["required_absolute_encoded_step_mv_percentiles"]["100"],
+                "events_above_measured_single_event_ceiling":
+                    row["events_exceeding_measured_MOS_single_event_ceiling_count"],
+                "events_below_measured_single_event_floor":
+                    row["events_below_measured_MOS_single_event_floor_count"],
+                "optimistic_equal_ceiling_extra_slots":
+                    row["optimistic_minimum_equal_ceiling_extra_slots"],
+                "optimistic_equal_ceiling_slot_time_us":
+                    row["optimistic_minimum_equal_ceiling_slot_time_us"],
+                "piecewise_range_or_zero_crossings": row["events_crossing_a_piecewise_range_or_zero_count"],
+            } for order, row in site["orders"].items()},
+        } for name, site in actual_steps["sites"].items()
+    }
+    report["actual_float_weight_piecewise_event_demand"]["scope"] = actual_steps["scope"]
+    report["actual_float_weight_piecewise_event_demand"]["existing_MOS_bank_implements_encoded_update"] = False
+    report["actual_float_weight_piecewise_event_demand"]["event_demand_qualified"] = False
+    biased_step = result("sky130_ms_state_bias_step_ss0_geom4")
+    if (biased_step["physical_case_count"] != 8 or
+            biased_step["smaller_drive"]["physical_case_count"] != 4 or
+            biased_step["repeated_smaller_drive"]["physical_case_count"] != 5 or
+            biased_step["manual_polarity_gate_correction"]["physical_case_count"] != 6 or
+            biased_step["mos_corner"] != "ss" or
+            biased_step["temperature_c"] != 0):
+        raise RuntimeError("invalid state-biased MOS event sweep")
+    report["source_results"].append("sky130_ms_state_bias_step_ss0_geom4")
+    report["physical_MOS_event_stored_state_sweep"] = {
+        "minimum_absolute_step_mv": biased_step["minimum_absolute_step_mv"],
+        "maximum_absolute_step_mv": biased_step["maximum_absolute_step_mv"],
+        "max_to_min_absolute_step_ratio": biased_step["max_to_min_absolute_step_ratio"],
+        "physical_case_count": biased_step["physical_case_count"],
+        "smaller_drive_minimum_absolute_step_mv": biased_step["smaller_drive"]["minimum_absolute_step_mv"],
+        "smaller_drive_maximum_absolute_step_mv": biased_step["smaller_drive"]["maximum_absolute_step_mv"],
+        "smaller_drive_max_to_min_absolute_step_ratio":
+            biased_step["smaller_drive"]["max_to_min_absolute_step_ratio"],
+        "repeated_small_drive_bank_loaded_cases": [{
+            "initial_differential_v": row["initial_differential_v"],
+            "positive_negative_alternating_residual_mv":
+                row["positive_negative_alternating_residual_mv"],
+            "negative_positive_alternating_residual_mv":
+                row["negative_positive_alternating_residual_mv"],
+            "positive_negative_single_step_magnitude_difference_mv":
+                row["positive_negative_single_step_magnitude_difference_mv"],
+        } for row in biased_step["repeated_smaller_drive"]["cases"]],
+        "manually_corrected_biased_state_max_alternating_residual_mv": {
+            str(row["initial_differential_v"]): row["maximum_absolute_alternating_residual_after_mv"]
+            for row in biased_step["manual_polarity_gate_correction"]["cases"]
+            if row["strengthened_gate_fraction"] in (0.90058, 0.90116)
+        },
+        "physical_state_sensor_or_programmer_implemented": False,
+        "state_dependent_companded_charge_control_implemented": False,
+        "scope": biased_step["scope"],
+    }
+    first_range = json.loads((RES / "sky130_piecewise_first_range_physical_boundary.json").read_text(encoding="utf-8"))
+    if (first_range["checkpoint_sha256"] != range_boundary["checkpoint_sha256"] or
+            first_range["qat_or_quantized_reference_used"] or
+            first_range["full_analog_architecture_ready"] or
+            first_range["full_eight_range_physical_update_qualified"]):
+        raise RuntimeError("invalid physical first-segment float fan-in evidence")
+    report["source_results"].append("sky130_piecewise_first_range_physical_boundary")
+    report["physical_piecewise_first_segment_float_fanin"] = {
+        site: first_range[site] for site in
+        ("near_threshold_scale", "high_cancellation",
+         "high_cancellation_with_ideal_state_polarity_command")
+    }
+    report["physical_piecewise_first_segment_float_fanin"]["high_cancellation_50p253ns_slot_solver_failed"] = True
+    report["physical_piecewise_first_segment_float_fanin"]["full_eight_range_update_qualified"] = False
+    report["physical_piecewise_first_segment_float_fanin"]["scope"] = first_range["scope"]
+    prefix = json.loads((RES / "sky130_piecewise_first_range_highcancel_prefix40.json").read_text(encoding="utf-8"))
+    if (prefix["checkpoint_sha256"] != first_range["checkpoint_sha256"] or
+            prefix["qat_or_quantized_reference_used"] or
+            [row["event_count"] for row in prefix["rows"]] != [40, 80, 120, 160, 200, 240, 280, 320, 322]):
+        raise RuntimeError("invalid physical high-cancellation prefix evidence")
+    report["source_results"].append("sky130_piecewise_first_range_highcancel_prefix40")
+    report["physical_piecewise_first_segment_float_fanin"]["high_cancellation_shuffle_prefix_errors_uv"] = {
+        str(row["event_count"]): row["error_uv"] for row in prefix["rows"]
+    }
+    mos_store = json.loads((RES / "sky130_mos_state_cap_boundary.json").read_text(encoding="utf-8"))
+    if (not mos_store["all_simulations_completed"] or
+            mos_store["logical_state_count"] != 30_976_000 or
+            [row["program_v"] for row in mos_store["results"]] != [0.6, 0.9, 1.2]):
+        raise RuntimeError("invalid bounded MOS gate storage evidence")
+    report["source_results"].append("sky130_mos_state_cap_boundary")
+    report["physical_MOS_gate_state_cap_screen"] = {
+        "results": mos_store["results"],
+        "scope": mos_store["scope"],
+        "dense_state_store_qualified": False,
+        "five_ms_microvolt_hold_qualified": False,
+        "noise_qualified": False,
+    }
+    refresh = json.loads((RES / "sky130_mos_refresh_service_boundary.json").read_text(encoding="utf-8"))
+    decay = json.loads((RES / "sky130_mos_decay_prediction_boundary.json").read_text(encoding="utf-8"))
+    if (refresh["logical_state_count"] != 30_976_000 or refresh["model_qualified"] or
+            not decay["all_simulations_completed"] or
+            [row["program_v"] for row in decay["rows"]] != [0.6, 0.75, 0.9, 1.05, 1.2]):
+        raise RuntimeError("invalid MOS refresh/decay boundary evidence")
+    report["source_results"].extend(("sky130_mos_refresh_service_boundary",
+                                     "sky130_mos_decay_prediction_boundary"))
+    report["physical_MOS_gate_state_cap_screen"]["conditional_refresh_service"] = {
+        "rows": refresh["rows"], "scope": refresh["scope"]}
+    report["physical_MOS_gate_state_cap_screen"]["nominal_decay_prediction"] = {
+        "endpoint_fitted_tau_s": decay["endpoint_fitted_tau_s"],
+        "intermediate_state_prediction_errors_uv": {
+            str(row["program_v"]): row["two_endpoint_single_pole_prediction_errors_uv"]
+            for row in decay["rows"] if row["program_v"] in (0.75, 1.05)},
+        "scope": decay["scope"],
+    }
+    stack = json.loads((RES / "sky130_mos_stacked_isolation_boundary.json").read_text(encoding="utf-8"))
+    switch_leak = json.loads((RES / "sky130_mos_switch_leakage_boundary.json").read_text(encoding="utf-8"))
+    if (not stack["all_simulations_completed"] or not switch_leak["all_simulations_completed"] or
+            [row["program_v"] for row in stack["results"]] != [0.6, 1.2] or
+            [row["initial_state_v"] for row in switch_leak["results"]] != [0.6, 1.2]):
+        raise RuntimeError("invalid MOS switch isolation evidence")
+    report["source_results"].extend(("sky130_mos_stacked_isolation_boundary",
+                                     "sky130_mos_switch_leakage_boundary"))
+    report["physical_MOS_gate_state_cap_screen"]["stacked_switch_5ms"] = stack["results"]
+    report["physical_MOS_gate_state_cap_screen"]["isolated_off_switch_5ms"] = switch_leak["results"]
+    report["physical_MOS_gate_state_cap_screen"]["simple_stacked_TG_selected_for_layout"] = False
+    hv_switch = json.loads((RES / "sky130_hv_switch_state_boundary.json").read_text(encoding="utf-8"))
+    if (not hv_switch["all_simulations_completed"] or
+            [row["program_v"] for row in hv_switch["results"]] != [0.6, 1.2]):
+        raise RuntimeError("invalid public HV switch state evidence")
+    report["source_results"].append("sky130_hv_switch_state_boundary")
+    report["physical_MOS_gate_state_cap_screen"]["public_HV_switch_5ms"] = {
+        "results": hv_switch["results"], "scope": hv_switch["scope"],
+        "model_source": hv_switch["model_source"],
+        "selected_for_layout": False,
+    }
+    fullrail = json.loads((RES / "sky130_mos_fullrail_hold_boundary.json").read_text(encoding="utf-8"))
+    pvt_hold = json.loads((RES / "sky130_mos_pvt_hold_boundary.json").read_text(encoding="utf-8"))
+    float_retention = json.loads((RES / "sky130_mos_retention_float_boundary.json").read_text(encoding="utf-8"))
+    if (not fullrail["all_simulations_completed"] or
+            not fullrail["measured_start_voltages_strictly_increasing"] or
+            len(fullrail["rows"]) != 13 or
+            not pvt_hold["all_simulations_completed"] or len(pvt_hold["results"]) != 9 or
+            float_retention["checkpoint_sha256"] !=
+            "c934da40b0f65d2a63155cb89b663e06aebf527cea1db4b9902a5b53840457d7" or
+            float_retention["qat_or_quantized_reference_used"] or
+            float_retention["analog_architecture_ready"] or
+            len(float_retention["rows"]) != 2):
+        raise RuntimeError("invalid full-rail MOS storage/float replay evidence")
+    report["source_results"].extend(("sky130_mos_fullrail_hold_boundary",
+                                     "sky130_mos_pvt_hold_boundary",
+                                     "sky130_mos_retention_float_boundary"))
+    report["physical_MOS_gate_state_cap_screen"]["fullrail_TT_5ms"] = {
+        "rows": [{"program_v": row["program_v"],
+                  "program_error_v": row["program_error_v"],
+                  "hold_drift_v": row["hold_drift_v"]} for row in fullrail["rows"]],
+        "scope": fullrail["scope"],
+    }
+    report["physical_MOS_gate_state_cap_screen"]["selected_PVT_5ms"] = pvt_hold["results"]
+    report["physical_MOS_gate_state_cap_screen"]["original_float_replay"] = {
+        "rows": float_retention["rows"], "scope": float_retention["scope"]}
+    report["physical_MOS_gate_state_cap_screen"]["linear_state_cell_selected_for_layout"] = False
+    report["physical_MOS_gate_state_cap_screen"]["piecewise_encoder_physically_qualified"] = False
     report["interpretation"] += " The fixed MOS gate event has a large selected-corner charge-transfer spread and needs physical compensation/calibration before full-float weight mapping."
     (RES / "sky130_readout_architecture_boundary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({key: report[key] for key in ("nominal_clocked_sampler_all_signed_cases_correct", "held_direct_read_max_abs_state_disturbance_uv", "direct_read_cutoff_sweep", "post_cut_opposing_perturbation", "corrected_float_replay_reset_noise", "thermal_estimates_300k", "one_100um_mim_per_logical_state_geometry", "full_analog_architecture_ready")}, indent=2))

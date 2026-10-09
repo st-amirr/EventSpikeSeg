@@ -1,3 +1,24 @@
+# 2026-10-08 encoder-load screen terminal and20usrefinement launch: TT10us/4extraENC24402 completedbutfirstcharge15.105863fC vs176.844251target(-91.458098percent), so10usunselected.20us/4extra7054 and50us/16extra10699 bothterminalincomplete withtimestepabortatsecondreset60.0568/120.057us respectively; rawpartialfirstcharges177.768715(+0.522756percent) and176.446490(-0.224922percent) retainedseparatelyfromcompletedwriteback, nofullsimulation acceptance. Nativepreservationofwrongfirstchargecannotqualifyfloatoperation. Writeback50cases/39complete/11incomplete+separatereportrecovery; feedbackscaling9/6withactualcount/unitwindow/bias/holdauditsand25trainedbetaarchiveprovenance.20us candidate keeps8feedbackMIM/unit1us/4extra7umhold/nominal5uAbias/realbufferedparking, pulseorderingfitsmintrainedbeta with100ns ramps, notbetaaccuracyproof. Threebounded5ns refinementsactive exactzero21347/positive81207/negative87544; positivesavesactualENC/SUM/common/drive/mirror/linear/clockwaveform. Collectsamehandlesbeforegeneratoredits. Currentprototype8caps isquarterfeedbackplatearea and20usencoding2.5xfasterthan50us schedule, bothconditionaluntilcompletephysics/noise/PVT/model/5mschecks. Fulloriginal-floatanaloggoalactive/incomplete,noQAT/digitalfallback/fullPLIF/combinedchipacceptance.
+# 2026-10-08 stronger bias screen terminal and encoder-load tests launch: TT10us8-cap20uA47032/50uA36767 completed butfirstcharges16.478860/17.902854fC versus176.844251target (-90.681710/-89.876485percent), so strongerbiasvariantsunselected; preserveexistingphysicalgeometry/root currents anderror evidence, noidealgaincorrection. TT50us8cap5uA5ns32293 terminalreturn124 timeout withprogressnear116us, retainedincomplete; noaccuracy/convergence claim. Auditedwriteback47cases/38complete/9incomplete+separatereportingrecovery; scalingboundary6cases/5complete. Physicalfirstchargeerrorandwritebackpreservationarenowseparatelyreported: accuratepreservationofwrongfirststatecannotqualifyfloatsemantics. Current100nsramp orderingfitsalltrainedbetaswith8caps/unit1us butnot4caps/unit0.5us; thisisorderingonly, notdelivered-beta/PVT/jitterprecision. Added selectable4/16 extraactual7um ENC hold-MIM instances (baseXloadretained), noidealcapacitancescaling; noisecapture/retention/PVTunqualified. Threebounded20ns TT+200 testsactive:10us/4extra24402,20us/4extra7054,50us/16extra10699 control afterverified5nstimeout. Collectexacthandlesbeforegeneratoredits. Defaultsremain50us/32feedback/16extrahold/5uAbias; originaltrainedfloatbeta/currentsign preserve, unitwindow scaleswithfeedbackcount. Faster/smaller prototype/service/5ms/combinedlayout/modelacceptanceallfalse; noQAT/digitalfallback/criticaldecision.
+# 2026-10-08 first faster/smaller feedback tests terminal: TT+200nA5ns shortfull59012(10us,32MIM),shortsmall49105(10us,4MIM),smallcontrol36087(50us,4MIM) allcompleted.10us fullbank firstcharge1487.059513fC vs707.377005target(+110.221636pct);10us4bank181.033801vs88.422126(+104.738124pct), fastersettingunselectedforaccuracy.50us4bank88.108809vs88.422126(-0.354342pct), unityreadback87.665487,preservationerror-0.443322fC(-0.503153pct), positivefinitepointonly; noise/PVT/zero/otherbetaunqualified. Actualnative MIM instances removed; beta/unity window scaleswithcount (4caps0.5us) andsame actualnative R, noidealvoltage/current/gain rescaling. OriginalfloatNPZ25beta arraysmin0.322730988/max0.974767029; fourbankminimumtrainedpulse161.365ns fails200ns total100nsrise/fall template, so4banknotfullmodelcompatibleunderpresentramps. Nextscreen8nativecaps/unit1us (minbeta322.731ns), withactualsharedphysicalbiasroot20/50uA for10us encoding vs5uA/50uscontrol; nativegeometryunchanged,current/rootnoise/reliability/combinedoperationunqualified. Activeexacthandlesbias20_47032/bias50_36767/cf8control_32293 fromlatesttools; collectsamehandlesbeforegenerator edits. Timingcompressionchangesencodingperiodsonly, preserves100nsclockramps/read/resetguards, fullPLIF/5msserviceunqualified. Fulloriginal-floatanaloggoalactive/incomplete,noQAT/digitalfallback.
+# 2026-10-08 buffered bank parking and full-inventory service screen closure: all launchedjobs terminal, nolivehandles. Direct common-node parkingzero5ns6905 completesbut readback0.900811169fC/preservationerror0.898914299fC andCFrestoredisturbance2.44709fC; directparkingunselected. Added actual seven-MOSOTA follower onexistingcommon reference, physical22umMiller/7umload MIM andexisting5uAbiasmirror, parkingcurrent deliveredfrombufferoutput ratherthanweakdiodecalnode. Bufferedpositive46756/negative38871 complete20ns: readback+703.877438/-699.397517fC, preservationloss0.365403/0.721037percent, CF disturbances-0.081092/+0.146734fC, energy41.864652/41.290202nJ per130usdiagnostic; reference released-initial movement-214.865/+404.013uV versuspriornegativeabout9mV. Bufferedzero20nsfail retainedabort60.0495us; zero5ns31510 completewithfirstincrement0.001736659fC, readback-0.001254674fC, preservation-0.002991333fC, energy41.223651nJ. No generalnumerical/PVT/noise/mismatch/precisionacceptance. Auditedwriteback41cases/33complete/8historicalincomplete+separatehostreportrecovery; trim8/7;26individualnativeabstracts, no combinedlayout. New conditionalservice_plate_budget reportaudits originalfloatcheckpoint/25actors/30,976,000states andnative32x22umfeedbackgeometry. Withone serial50usvisitperresidentper5ms/permanentactorassignment andonefeedbackbankperchannel, excludingallotherwork, requires309760channels and4797.562880mm2 feedbackplatesalone.10/5/1us hypotheticalscenarios yield959.698432/479.973120/96.149504mm2, not achievedlatency/minimumfullchiparea. Residentstore/amplifiers/control/routing/graphdependencies/noiseexcluded; fasterencodingandpipelining/notvisitingallstatesnotproved. Current50us/32capprototype cannot be promoted toarrayreplication as5msqualified. Next boundedservice/density optimization withnativebias/cap/timing andactualnoise/error/modeltolerance, alongside bufferedparking/numerical/cornerqualification, then autonomouscalibration/exactweightedPLIF andcombinedlayout. Fulloriginal-floatanalog goalactive/incomplete,noQAT/digitalfallback, nocriticaluserdecisionneeded.
+# 2026-10-08 parked-bank signed results and zero refinement: TT20ns zero56546 terminal/incomplete, transientabort67.9511us reportedparkcommandbranch; partialfirstincrement0.001914482fC fromactualqendpoint isnotcompletewriteback evidence. Physicalbankoutbeforefirstread1.499118600V matchescommon1.499118603V, confirming commandedparkingnodevoltage underthispartialrun. Positive9970/negative44671 terminal/completed: firstcharges+706.532623/-704.586203fC, unityreadback+704.349421/-719.641844fC, preservation-2.183203/-15.055641fC (~-0.309/+2.137percent ratios); CFrestore disturbances+0.963762/+4.199718fC, notselectedasprecisionfix. FourparkTGs currentlyshare reversedrestoregates; conductionoverlap/clockfeedthrough/reference load arehypotheses, notuniqueproven causes. Zero5ns boundeddiagnostic6905active; collectsamehandlebeforegeneratoredits. Nexttestreal independentparkingdriverphasewith explicitcommandgap torestore, measureactualendpoints; noidealcurrent/gain/offsetcorrection/autonomouscontroller. Fulloriginal-floatanaloggoalactive/incomplete;26individualnativeabstracts, noPLIF/model/5ms/combinedlayoutacceptance.
+# 2026-10-08 physically parked bank launch: added optionalfour native opposite-phase TGs parkingbankout toreference whileinput/outputrestoreoff, usingexisting actual complementaryrestore drivers. DC metrology probesrestoreon withparkoff: all256points complete; nominal externalbestcode30 remainsRCerror0.309270percent withOPwarnings recorded/unqualifiedprecision. Actualnative-loopimport mapsparkreference toexisting common node (notidealstate/current resultsubstitute), andmeasuresactualbankout voltagesbefore/during/afterrestore. Nativeviews/sourceimmutable; noautonomouscalibrationcontroller. ThreeboundedTT27 parked-bank loopszero/positive/negative launched; active exacthandles zero56546/positive9970/negative44671; collectsamehandles before source edits; all priorjobs terminal. Fulloriginal-floatanaloggoalactive/incomplete,noQAT/fullPLIF/model/5ms/combinedlayoutacceptance.
+# 2026-10-08 native trim-bank stage closure and two-ended candidate unselected: correctedTTzero64215 terminal/completed butfirstincrement-1.909010752fC, unityreadback-2.834079006fC, CF disturbance duringrestore+14.728487103fC, markedlyworse thanone-endedtrimzero0.028032391fC. Correctedpositive12382 terminal/incomplete: OPsteppingfailures then transientabort24.5995us, reportedrestorecommandbranch, no unique causeattribution. Two-endedfloatingbank candidate isunselected, despite256pointDC reachability. Original one-endedcode30 signedpreservation0.092/0.255percent remainsprovisional withzero/load error, not acceptedcalibration. Nexttest physically parkisolatedbankto existingreference voltage duringrestoreoff, audit initialoperatingpoint and edge disturbance, then actualautonomouscodecalibration/readback overrepresentativeweights/states/noise/mismatch/PLIF/service. All launchedjobs terminal,nolivehandles. Auditedwriteback33cases/27complete/6historicalincomplete+separatehostreport recovery; trim7cases/6complete/onehistoricalstrictOPwarning rejection; inverse159/133. Eight new resistorviews+prior18 make26 realqualifiedindividual routerabstracts, no combinedbank/module/fullchiproute. Documentation/YAML updated; goalactive/incomplete, originalfull-floatcheckpoint/noQATpreserved, allaccuracy/5ms/completePLIF/layoutacceptancefalse.
+# 2026-10-08 two-ended bank metrology terminal and importer repair: corrected native two-ended profiles TT30/FF48/SS18 complete256DCpoints each; worstpolarity RC error0.309270/0.241825/0.317122percent respectively, MOS/passive corners explicit, MIMtypical. Externalcode/controller/numericalprecision/noise/combinedlayout stillunqualified. Initialtwo-endedTTzero/positive loop imports terminalfailed before simulation with duplicate restoreoutP/restoreoutN instances: broad Xrestoreout prefix also copied existingdriver instances. Reports/decks/logs/snapshots retainedincomplete. Fixed importselector to exact indexed isolation TGs and explicitbit/base/segment/bypass types. Boundary nowrecords duplicate top-level names and cannotmark physical topologyverifiedwhen duplicatesexist. CorrectedTTzero64215/positive12382 bounded20ns loopsactive; collectsamehandles beforegenerator edits. Trim7cases/6complete/onehistoricalOPclassification incomplete; writeback31cases/26complete/5historical incomplete+separatereportingrecovery.26nativeindividualimportedabstracts, no combined bank/module route. Fulloriginal-floatanalog goalactive/incomplete/noQAT/fullPLIF/accuracy/5ms/chipacceptance.
+# 2026-10-08 externally trimmed actual writeback terminal and bank-isolation diagnosis: TT27 code30 jobs66378/7054/72297 all terminal/completed20ns. Positive firstbeta706.753806fC/readback707.403537fC,error+0.649732fC(+0.0919318percent); negative firstbeta-704.161359/readback-702.365418,error+1.795940fC(-0.2550467percent). Samecode zero firstincrement0.017958608fC/readback0.028032391fC, versusfour-TG singleR firstincrement-0.000018734fC/readback-0.008303222fC. Improved finite gain does not qualify zero accuracy: bank permanentlyconnectedto SUM whileinputrestoreoff adds device loading/leakage/parasitic effects; unique cause notproven. Added optional outputrestore quartet toisolatebothends, realexisting TG andsame actualrestore drivers; fresh128code/two-polarity nominalDC reachability97939 active so addedRon is includedin externalcode selection. No arbitrary softwaregain correction/autonomouscalcontroller. Writeback29cases/26complete/3historical incomplete+separate reportingrecovery; trim4cases/3complete withonehistorical strictOPwarning rejection,26individual realabstracts/import. Collectexacthandle before characterization-source edits; no writeback runs live. Fulloriginal-floatanalog goalactive/incomplete; noQAT/fullPLIF/noise/model/5ms/combinedbank/module/array/chipacceptance.
+# 2026-10-08 native trim-bank reachability and actual-loop launch: built eight new independent resistor primitivesL2/4/8/16/32/60/64/128um,W1um with official GF180 PCells, standaloneDRC0/uniqueLVS/realGDS/cap extraction/emptyfeedback/immutablebuilder. Their real LEFs export and actual OpenROAD import now26components, with preserved obstructions; no combined bank/layout/RPEX qualification. Seven seriesresistor segments bypassed by four real TGs each after60um nativebase, actual loaded four-inverter complementary drivers perbit and four restoreTGs.128codes x +/-0.2V DC metrology each at TT27/res_typical,FF85/res_ff,SS0/res_ss with typicalMIM: all corrected probescompleted256samples, externalbestcodes30/49/18 worst two-polarityRC errors0.174618/0.363831/0.341195percent. TT/SS OPsteppingwarnings recorded and numerical precisionunqualified; first strict warning-rejected run retainedincomplete. Numericcodeordering monotonic only in these probes, SAR/controller notproved/implemented. Actual writeback generator can importauditedbankprofile, native resistorviews and realbitdrivers; usesfixed externalbestcode (no autonomouscalibration),4restoreTGs, resetdummyandcheckpointbeta once. Three boundedTT27 native-loop jobs active positive66378/zero7054/negative72297; collectsamehandles before generatoredits. Fulloriginal-floatanalog goalactive/incomplete, noQAT/digitalfallback/PLIF/model/5ms/combinedmodule/chipacceptance.
+# 2026-10-08 lower-resistance restore and two-frame sensitivity closure: all launchednative/software jobs terminal, no live handles. Four parallel existing native restore TGs reduce nominal +/-200nA preservationloss from1.91/2.17percent to0.550/0.810percent; zero20/5ns readback-0.008303222/-0.008284744fC, matched numerical difference0.000018478fC. FF85positive+4.409percent andSS0negative-3.387percent remain uncalibrated, typical passive cards only; complete PVT/process/noise/mismatch/model/5ms acceptancefalse. Actual signed charge-ratios audited against immutable matched decks/checkpoint/nativeviews. Writeback boundary26cases/23complete/3historical incomplete plus separate host-report recovery;18individual abstracts unchanged, no combined-route claim. Original-float all-actor/full-frame record0and1 gain-only sensitivity completedreturn0; about94.42/94.47percent pixelagreement and0.928/0.933percent final-fuse spike mismatch, aggregate meanIoU remains near respectivefloatbaseline. This extrapolates two nominal small-signal gains toallstates/actors with ideal initialization/per-record ranges and zero offset/noise/leakage, and is not validation-set accuracy or physical transfer qualification. Newgf180_writeback_gain_float_boundary.json audits actualcheckpointSHA, immutable replay/source/native inputs, signedbench equalityexceptIinput, and coefficient equalityto physicalcharge ratios. Next implementphysicalRC calibration with actual nativeR/C/loading, characterize signal-dependentreset/capture andsamplednoise/mismatch, completeweighted-event/threshold/subtractivereset/adaptation/inhibition PLIF, fixed-actorfull-floatvalidation/5msservice and combinedmodule/array/full-chiplayout. Fullscopeoriginal-floatanalog goalactive/incomplete, noQAT/digitalfallback, nodecisionneeded.
+# 2026-10-08 nominal writeback-gain software sensitivity first frame terminal: bounded Docker/host16776 completedreturn0 with original checkpointSHA verified/QATdisabled/full440x640/all25actors. Measured nominal physical gain ratios0.994497702/0.991896173 extrapolated after each completed post-reset bin, offset/noise/leakage omitted and initialization/per-record ranges ideal. Record0 meanIoU0.205726340 versus baseline0.205726013, labeledaccuracy0.498078823 versus0.498206675; floatpixelagreement0.944243610 andfinal-fuse spike mismatch0.009282737. Similar aggregate IoU does not establish preserved trajectories or validation-set accuracy. New source/native/charge-ratio audited machine boundarygf180_writeback_gain_float_boundary.json currentlyonecase. Same bounded240s record1 sensitivity25171 active, collectexacthandle before replay-source edits. Physical writeback boundary26cases/23complete/3historical incomplete+separate reporting recovery; all nativejobs terminal. Next physical RC calibration and residual capture/reset/noise qualification, exactweighted PLIF/fixed-actor validation/5ms/combined routing stillopen; original full-float analog goalactive/incomplete.
+# 2026-10-08 four-TG refinement terminal and full-float gain sensitivity launch: all native jobs94692/55022/94738 terminal/completed. TTzero5ns firstincrement-0.000038125fC, unityreadback-0.008284744fC; versus20ns readback difference0.000018478fC, not general convergence proof. FF85positive firstbeta707.989328fC/readback739.201238fC,error+31.211910fC(+4.409pct); SS0negative firstbeta-705.620463/readback-681.718059,error+23.902404fC(-3.387pct signed ratio). Both use independently typical resistor/MIM cards at their actual temperatures, so MOS-corner labels do not mean full passive-process corners. Native resistor temperature metrology predicts substantial gain change; real RC calibration remains essential. Added bounded240s original-float full-frame record0/all-neurons software sensitivity using measured nominal positive0.994497702/negative0.991896173 multiplicative writeback after each post-reset bin. Docker/host handle16776 active; input reports/checkpoint/source snapshot preserved, no QAT. This intentionally extrapolates two small-signal gains to all actors/states and assumes ideal initialization/per-record encoding with zero offset/noise/leakage; it cannot qualify actual circuit transfer, validation-set accuracy or5ms service. Collect exact handle before replay-generator edits. Native generator has no live runs; original full-float analog goal active/incomplete.
+# 2026-10-08 four-TG signed completion and corner refinement: all firstthree TT20ns four-native-restore jobs85590/23598/14236 terminal/completed. Positive firstbeta706.416455fC/readback702.529541fC,error-3.886914fC(~0.550percent) versusone-TG1.908percent. Negative error+5.708758fC(~0.810percent) versusone-TG2.169percent. Zero readback-0.008303222fC. This reduces shared series-TG loss but leaves capture/reset/gain/calibration/noise/precision/service unqualified. Writeback boundary23cases/20complete+separate reporting recovery. Added exact-deck comparisons: group only byte-identical benches after deleting restore-switch-instance lines, so matched comparisons cannot mix timing/native models/reset methods. Newbounded four-TG jobs active TTzero5ns94692,FF85positive20ns55022,SS0negative20ns94738; collect exact handles before generator edits.18 qualified individual abstracts remain; parallelinstances are not combined-layout qualification. Full original-float analog goal active/incomplete, no decision needed.
+# 2026-10-08 lower-resistance restore experiment: added selectable1/2/4/8 parallel native restore TG instances, same qualified physical cell and actual shared complementary driver loading, no ideal resistance/current correction. Default remains1. Exact instance count/wiring now audited by writeback boundary. Three TT27 four-TG20ns diagnostic jobs launched: zero85590 andnegative14236 terminal/completed; positive23598 confirmed live on latest handle poll. Zero unity readback-0.008303222fC (firstincrement-0.000018734fC); negative firstbeta-704.452146fC, readback-698.743388fC, preservationerror+5.708758fC (~0.810percent loss) versus one-TG2.169percent. Positive status must be collected before generator edits. Extra switch area/shared gate load physically present in circuit; combined placed/routed geometry still unqualified. Goal active/incomplete; original full-float SNN/noQAT preserved, no complete PLIF/accuracy/5ms/module/array/chip acceptance.
+# 2026-10-08 recap closure: SS0zero7982 terminal/completed20ns real reset-dummy diagnostic, firstincrement-0.000849150fC, unityreadback-0.011574906fC, preservationerror-0.010725756fC. All launched runs terminal; none live. Same physical summing-plate reset dummy completes TT27/SS0/FF85 zero tests at20ns with readback-0.007690/-0.011575/+0.061040fC. Nominal5ns run remains incomplete; numerical/PVT/mismatch/noise/accuracy acceptance false. Writeback boundary20cases/17complete/3historical incomplete plus separately retained host-report recovery; inverse159/133 and18native abstracts unchanged. Next implement and characterize lower restore-TG series resistance, qualify physical RC calibration and signal-dependent reset/capture, then actual weighted-event/complete PLIF/full-float tolerance/5ms service/combined routing and full-chip assembly. Full original-float analog goal active/incomplete, no critical decision required.
+# 2026-10-08 signed and fast-corner reset candidate terminal: TT+20034089/-20064799 andFF85zero76713 all completed20ns native diagnostics. Signed firstbeta charges+706.413294/-704.457830fC, unityreadback+692.932210/-689.180778fC, preservationerrors-13.481084/+15.277052fC (approximately1.91/2.17percent magnitude loss). This candidate improves nominal zero but does not resolve series-R/load gain. Initial reset pedestal depends on preceding encoded signal (-0.077783/+0.147945fC signed vs+0.011220fC zero), so one nominal offset correction cannot be assumed. FFzero firstincrement+0.026198677fC, readback+0.061039900fC,error+0.034841223fC; residual upstream capture/route offset remains unqualified. Writeback boundary19cases/16complete plus one separate reporting recovery; three prior incomplete simulations retained including5ns summing-plate candidate abort. SS0zero20ns7982 active to complete bounded three-corner check; collect same handle before edits. Then physically reduce/characterize restore-TG series resistance, actual native-R calibration and signed signal-dependent reset/capture residuals; exact PLIF/weighted events/full-float tolerance/5ms service/combined module/arrays/chip still required. No QAT/digital fallback/model/layout completion claim. Goal remains active/incomplete.
+# 2026-10-08 summing-plate reset dummy complete nominal diagnostic: TTzero20ns78940 terminal/completed. Real dummy at virtualSUM leaves initial absolute CF+0.011220019fC versus baseline-0.574389269fC; first incrementalzero+0.000259903fC, unity readback-0.007690001fC, preservationerror-0.007949905fC. Substantial physical pedestal reduction, not yet selected/accepted: matched5ns abort remains preserved and no corner/mismatch/noise/model tolerance established. Candidate uses existing qualified actual switch and real complementary reset drivers, no ideal offset subtraction. Next signedTT+200_34089/-200_64799 andFF85zero76713 bounded20ns diagnostics active; collect same handles before edits. All physical loop/source artifacts immutable. NativeRC/process calibration, real weighted events/complete PLIF, fixed-actor float sensitivity,5ms population service and combined module/array/full-chip layout remain open. No user decision needed; original full-float analog goal remains active/incomplete.
+# 2026-10-08 reset aperture observations and summing-plate candidate: TTzero diagnostic26262 completed. Native CF charge while resetclosed-0.000000453fC,300ns after release-0.574317328fC, prebeta-0.574389269fC; second reset similarly0.02644135aC closed and-0.574360143fC released. Thus pedestal develops after release; output-side dummy previously barely changes it, no unique transistor cause inferred. Added optional reset dummy on virtualSUM (integratesum), same real qualified NF0.5/PF1 TG with reversed physical gates. First5ns run85631 terminal/incomplete: timestep-too-small68.0491us reports restorecommand branch, no rootcause claim. Partial native observations before abort show resetreleased+0.011302041fC/prebeta+0.011220178fC, promising offset change but not full writeback completion/acceptance. Preserved report/log/deck/snapshot. Bounded20ns diagnostic78940 active with unchanged physical inputs/source; collect exact handle before edits. Writeback boundary15cases/12complete plus separate reporting recovery. Signed previous late voltage-drop/R metrology inference suggests route2351/2359ohm and+173.571/-172.811nA (derived, not direct current observation), consistent with significant seriesTG loading; no physical calibration yet. All complete PLIF/model/5ms/combined module/chip gates remain false.
+# 2026-10-08 physical reset dummy terminal and diagnostic continuation: TT zero run48447 completed using real half-size complementary reset TG. Initial absolute CF charge-0.573095395fC, zero firstincrement0.000267552fC, unityreadback0.564888486fC; versus no-dummy0.566593442fC, the change0.001704956fC is insufficient. Dummy is not selected as a reset-pedestal solution and no precision acceptance follows. Writeback boundary13cases/11complete plus one separately retained reporting recovery. Added actual native CF-charge/LINEAR/virtualSUM/common observations during closed reset, after release and pre-beta, for both reset phases; TTzero no-dummy5ns diagnostic26262 active. Collect same handle before source edits. Physical offset mechanism remains under investigation, no unique reset-edge cause established; do not replace physical absolute CF conversion with software-subtracted incremental charge. Goal remains active/incomplete, all full PLIF/model/5ms/combined module/full-chip acceptance false.
+# 2026-10-08 recap and reset-pedestal diagnosis: original epoch58 full-float analog SNN remains authoritative; QAT/digital fallback paused. Eighteen individual native GF180 layouts/imported abstracts are qualified only for standalone geometry/DRC/LVS/cap extraction and router import, not combined module/full-chip routing. All prior probe-free writeback jobs terminal/completed: TT zero first incremental beta charge0.000477017fC, unity readback0.566593442fC; actual CF initial charge-0.574389269fC and afterbeta-0.574866286fC. Physical reencoding uses absolute CF voltage, so initial-reset pedestal is physically restored rather than removed by incremental measurement. Signed+/-200nA probe-free firstcharges+706.416680/-704.459160fC, readback+693.508698/-688.607783fC; preservationloss1.83/2.25percent. Current observation omitted/null, no inferred measurement or ideal correction. Writeback boundary12cases/10complete plus separate reporting-failure recovery; fixed boundary summarizer self-glob ingestion, immutable source evidence retained. Inverse159/133 unchanged with18abstract provenance audited. Added optional actual half-size NF0.5/PF1 reset TG dummy, both analog terminals tiedLINEAR, complementary reset gates reversed; uses existing qualified donor native geometry and actual reset drivers. TTzero5ns physical diagnostic48447 active; collect same handle before generator edits. Native-R process/temperature calibration, reset/load correction, noise/mismatch/retention, actual signed weight-event/threshold/subtractive-reset/adaptation and fixed-actor full-float tolerance remain required before5ms service/combined module/array/full-chip layout acceptance. No decision needed; goal active/incomplete.
 document:
   title: Digital Neuromorphic ASIC Event-Camera Spiking Neural Network for Semantic Segmentation
   short_name: EventSpikeSeg-ASIC
@@ -1667,13 +1688,26 @@ active_top_three_accuracy_search:
     required_seeds: [17, 101, 2026]
     canonical_model_file_unchanged_until_pass: true
 
-# User-directed analog exploration state. This supplements the digital deployment spec during the analog feasibility study.
+# User-directed analog implementation workstream for the primary full-float target. The historic digital deployment spec and its artifacts remain preserved; quantized/QAT artifacts do not define analog precision or serve as a fallback.
 analog_workstream:
   model_reference: best_validation_float32_checkpoint_epoch58_sha256_c934da40b0f65d2a63155cb89b663e06aebf527cea1db4b9902a5b53840457d7
   qat_or_quantized_reference: false
-  current_assessment: first_stage_noise_invalidates_second_stage_only_TRNOISE_pass; closed_loop_unity_buffer_noise_exceeds_float_threshold_margins; clock_gated_latch_nominally_resolves_pm3_pm6uV_but_not_noise_qualified; corrected_subtractive_reset_full_frame_zero_noise_matches_exactly; 20.31uV_100um_pair_init_noise_alone_drops_selected_frame_mean_iou_about_0.20_to_0.12; idealized_first_touch_replay_restores_near_baseline_two_frame_mean_iou_but_requires_physical_early_clamp_release; fixed_gate_event_charge_varies_37.3x_across_selected_PVT; simple_20um_ota_held_baseline_has_0.901mV_initial_offset_span_and_gate_fraction_0.601_decision_flips_for_plus20uV_initial_offset; 10um_pair_requires_illustrative_rho_above_0.999774_for_3uV_and_costs_6195mm2_bare; no_readout_or_state_storage_qualified
-  synapse_encoding: fixed_width_10.5ns_presynaptic_pulse_signed_weight_encoded_in_analog_current_or_charge_amplitude; pulse_duration_rejected_for_this_operating_point_due_6.7x_to_33x_fanin_error
-  next_direction: explore_first_touch_clamped_state_with_guaranteed_local_release_before_weighted_injection; characterize_physical_switched_noise_retention_and_nonlinear_PVT_compensated_float_weight_transfer_then_complete_5ms_service; reject_simple_scalar_gain_trim_and_ideal_shared_reference_as_accepted_solutions; use_only_corrected_subtractive_reset_float_replay_for_reset_noise; integrate_actual_weighted_fan_in_subtractive_reset_beta_and_dynamic_threshold_before_layout
+  current_assessment: original_full_float_epoch58_remains_authoritative_no_QAT; passive_MIM_packet_and_open_loop_MOS_injector_fail_order_or_state_transfer; differential_independent_OTA_C_rails; single_ended_OTA_C_at_100G_has_virtual_ground_with_2uV_error_but_shuffled_322_event_result_minus176.7uV_vs_plus7.491uV_target; OTA_C_DC_return_tradeoff_and_event_gated_startup_unresolved; no_integrated_neuron_macro_or_readout_qualified
+  state_storage_assessment_2026_10_05: compact_fixed_bulk_MIM_TG_loses_about52percent_near_VCM_offset_in5ms; isolated_body_tied_TG_low_drift_numbers_are_parked_source_controls_only; corrected_fixed_VCM_shared_bus_with_both_well_diode_proxies_and_DNW1p2V_loses36p6percent_small_differential_span_and58p9percent_wide_span_over5ms; equal_early_late_event_final_ratio_about0p693_to0p696; no_qualified_compact_membrane_store_or_full_chip_assembly
+  state_storage_assessment_2026_10_06: historical_default_GMIN_retention_rejections_require_numerical_revalidation; ngspice47_explicit_low_GMIN_reopens_compact_storage_screen; corrected_equal102aC_diode_events_near_zero_ratio0p999858_but_signed_high_range_ratio0p861852; direct_diode_is_not_addressable; body_tied_TG_TT_refined_drift15p632uV_but_FF2mV_state_collapses_to0p062mV_and_modest_off_overdrive_does_not_rescue_it; no_qualified_state_macro_or_full_chip_assembly
+  numerical_state_audit: artifacts/analog_asic/results/analog_state_gmin_audit.json
+  gf180_extracted_gatecap_probe_2026_10_06: Magic8p3p684_DRC0_Netgen_unique_GDS_3p5x12p1um_capacitance1p08681fF; official_primitive_e11a8c98dfc905561d38813b1416e65a4b9280e9; FF85_5ms_retention_large99p9654percent_small99p9861percent; access_still_schematic_no_noise_accuracy_or_population_acceptance
+  gf180_combined_physical_state_2026_10_06: DRC0_LVS_unique_GDS_11p14x16p1um_FF85_5ms_large99p965527percent_small99p986313percent; equal_event_ratios_near0p999892111_high0p999067794; 100ns_vs500ns_endpoint_difference_max1p69e_minus11V; official_igbmod0_igcmod0_no_gate_leakage_acceptance; ideal100fF_read_destructive_plus502_minus542mV; switch_off_error_about10mV; unshared_two_cell_inventory_repetition11111p339mm2_not_optimized_array; physical_state_accepted_false
+  gf180_noise_float_boundary_2026_10_06: stationary_write_noise323_to327uV_per_rail_not_sampled; pair_proxy456p998uV_signed_diff_fullscale1p5V_maps_to274p199uV_in_replay0p9V; every_bin_noise_actor_linear_IoU0p04767_0p05931_vs0p20573_0p19892; ideal_companding_IoU0p20453_0p20032_with19_to20percent_changed_pixels_no_physical_encoder; linear_compute_proxy3uV_near_baseline_30uV_degrades_record0; physical_accuracy_acceptance_false
+  gf180_combined_charge_reader_2026_10_06: routed10MOS_2MIM_138x79p24um_DRC0_LVS_unique_50cap_entries_GDS; typical27_FF85_SS0_transients_complete_100ns_vs900ns_max3p338uV_at_ideal100fF_load; destructive_read_no_restore; stationary_frozen_read_noise262_to286uV_RMS_10Hz_to100MHz_not_sampled_noise; added_physical_output_MIM_loads_only_modest_noise_reduction_and_slower_settling; physical_state_accepted_false
+  gf180_charge_reader_boundary: artifacts/analog_asic/results/gf180_combined_charge_reader_boundary.json
+  gf180_permanent_gate_sensor_2026_10_06: two3MOS_layouts26x18p04um_DRC0_LVS_unique_GDS; short_STATE_rail_BUS_coupling0p02243fF; typical_FF_SS_three5ms_read_screens_complete_no_weighted_events; read_preserves_state_but_common_shift5to20mV_and_near_zero_span_gain_about0p6percent; stationary_bus_noise138to153uV_held_gate6p49to7p27uV_not_sampled; resident_per_stored_rail_unshared_single_rail_repetition14528p98mm2_not_array; no_architecture_acceptance
+  gf180_gate_sensor_boundary: artifacts/analog_asic/results/gf180_gate_sensor_boundary.json
+  gf180_sensor_self_reference_2026_10_06: official_local_mismatch32sensor3seed_zero_sigma4p11to4p30mV; shared_analog_zero_servo8slots_3seeds_post_release_5ms_read_sigma48to67uV; combined_writer12MOS_1MIM_138x80p04um_DRC0_LVS_unique_GDS_61cap_entries_seed17_read_sigma50p16uV; common_offset7to11mV_uncorrected; voltage_PVT_screens_complete; typical2us_VDD_program_read_energy781_769pJ_not_full_service; initialize_only_at_model_reset_boundary_not_spike_reset; physical_state_accepted_false
+  gf180_sensor_self_reference_boundary: artifacts/analog_asic/results/gf180_sensor_self_reference_boundary.json
+  current_state_next_step: physical_nonlinear_encoder_sampled_noise_handling_exact_signed_charge_PLIF_float_accuracy_routed_assembly_leakage_density_full5ms_service_full_chip_layout_no_QAT_digital_fallback
+  synapse_encoding: full_float_signed_presynaptic_events; matched_shared_13_geometry_bank_42.2657ns_continuous_analog_gate_bias_map_with_2.5ns_to_full_width_duration_extension_below_charge_floor; no_QAT; physical_R2R_ladder_not_instantiated_in_full_fanin
+  next_direction: continue analog/full-float circuit work by developing OTA autozero/common-mode correction or a state-aware charge-transfer topology; keep the frozen original-float high-cancellation, maximum-fanin, and near-threshold traces as gates; require signed order-invariant transfer, PVT, 5ms retention, threshold/reset/beta, switched noise/mismatch, full-frame replay, area and 5ms actor service before reusable neuron layout or 140k assembly; no quantized/QAT or digital fallback
   acceptance_gates: actual_float_weighted_events; beta_reset_and_dynamic_threshold_adaptation; credible_switched_noise; complete_frame_validation; actor_service_and_area_before_layout
   reset_noise_replay_status: legacy_reset_only_and_combined_mode_invalid_due_to_replacing_subtractively_reset_membrane_with_noise; corrected_reports_suffix_corrected_subtractive_reset_json; zero_noise_full_frame_exact
   readout_boundary_report: artifacts/analog_asic/results/sky130_readout_architecture_boundary.json
@@ -1684,6 +1718,12 @@ analog_workstream:
   first_touch_intermediate_area_probe: 5um_pair_bare_all_state_area_1548.8mm2_with_392.40uV_independent_noise_proxy_and_two_frame_mean_iou_0.17081_0.17796; no_accepted_storage_geometry
   first_touch_four_frame_probe: 10um_pair_199.76uV_idealized_proxy_average_mean_iou_0.19991_vs_float_0.20203_on_validation_records_0_to_3_three_seeds_each; bare_all_state_area_6195.2mm2_and_pixel_agreement_only_about_63_to_66_percent; not_dataset_accuracy_or_physical_acceptance
   installed_sky130_vpp_density_probe: fixed_VPP_cells_0.511_and_0.622fF_per_um2_from_local_reference_capacitance_and_LEF_footprint; less_dense_than_MIM_area_term; no_denser_qualified_analog_store_identified
+  sky130_mos_gate_state_cap_probe: TT_100um2_drawn_gate_0.650_to_0.797pF_vs_equal_area_MIM_0.207pF; 5ms_off_center_no_pulse_drift_3.726_to_4.568mV; independent_pair_ktc_proxy_102_to_113uV; optimistic_full_inventory_gate_only_area_1613_to_1975mm2_at_10um_MIM_pair_capacitance; legal_layout_noise_PVT_refresh_and_service_unqualified; see_sky130_mos_state_cap_boundary_json
+  sky130_mos_refresh_service_probe: conditional_one_pole_3uV_illustrative_error_requires_3.26_to_4.00us_refresh_at_pm0.3V_and_7.74_to_9.51m_channels_at_1us_per_state; endpoint_decay_fit_misses_intermediate_5ms_states_by_22_to_258uV; not_acceptance_limit_or_physical_refresh_circuit; simple_full_inventory_refresh_not_selected; see_sky130_mos_refresh_service_boundary_json_and_sky130_mos_decay_prediction_boundary_json
+  sky130_mos_switch_leakage_probe: two_series_TGs_with_middle_MIM_do_not_improve_3.7_to_4.6mV_5ms_drift; ideal_initialized_bare_gate_has_zero_nominal_drift; off_NFET_and_PFET_attached_to_state_create_opposing_millivolt_drift; simple_stack_not_selected_for_layout; see_sky130_mos_stacked_isolation_boundary_json_and_sky130_mos_switch_leakage_boundary_json
+  sky130_mos_body_tracking_probe: largest_84_to_95mV_drift_cases_outside_or_at_documented_VBS_range_and_not_valid_for_selection; in_range_single_device_cases_still_drift_1.9_to_2.4mV_in_5ms; no_isolated_well_layout; special_SRAM_pass_devices_restricted_to_hard_IP; no_analog_state_store_macro_selected
+  sky130_hv_switch_state_probe: official_public_5V_gate_TT_models_imported; physical_10us_TG_programming_0.6_and_1.2V_then_5ms_hold; 5V_pair_drift_plus4.553_and_minus3.715mV_vs_1.8V_pair_plus4.587_and_minus3.714mV; high_voltage_substitution_not_selected_for_layout; no_noise_PVT_extraction_or_service_qualification
+  sky130_mos_fullrail_float_replay: TT_13_level_sampled_state_hold_with_0V_endpoint_excluded_outside_model_range; selected_SS0_TT27_FF85_hold_cases_complete; full_float_epoch58_two_complete_DSEC_frames_all25_PLIF_actors; ideal_piecewise8_R10000_plus_physical_TT_hold_and_113uV_independent_reset_noise_proxy_has_about_2.9pct_final_spike_mismatch_and_near_baseline_selected_frame_mean_iou_but_only_85pct_pixel_agreement; linear_small_MOS_state_under_same_proxy_has_about_13.7pct_mismatch_and_mean_iou_0.119_vs_float_0.20; neither_is_physical_architecture_or_dataset_accuracy_acceptance; see_sky130_mos_retention_float_boundary_json
   exact_zero_membrane_occupancy_probe: two_full_validation_records_all_25_deployed_actors_30.976m_states; nonzero_after_first_update_75.22_and_75.93_percent; nonzero_after_tenth_update_82.06_and_82.45_percent; sparse_exact_zero_analog_pool_not_selected
   ideal_shared_reference_one_cap_probe: 10um_one_cap_141.25uV_proxy_two_frame_mean_iou_0.20431_0.20651_but_3097.6mm2_bare_all_state_area; 5um_one_cap_277.47uV_proxy_mean_iou_0.18572_0.19370_and_774.4mm2_bare; physical_reference_noise_distribution_single_ended_readout_unqualified
   injector_tight_two_point_pvt_probe: gate_fraction_0.4_to_0.6_charge_ratio_0.0364_SS_0C_0.0424_TT_27C_0.0588_FF_85C; normalized_shape_spread_1.62x; scalar_gain_trim_insufficient; submicrovolt_low_point_timestep_checked_under_tight_solver; full_weight_transfer_DAC_and_calibration_unqualified
@@ -1698,4 +1738,2218 @@ analog_workstream:
   analog_weight_gate_storage_probe: SS_0C_physical_MIM_TG_MOS_single_event; direct_10um_sampled_gate_connection_101.61uV_vs_408.94uV_direct_due_charge_sharing; direct_100um_pair_5ms_event_error_minus2.90_percent_and_2874.56mm2_bare_all_PLIF_weight_area; steered_rail_idle_zero_weight_switching_packet_21.93mV; steered_VCM_idle_zero_weight_packet_0.351uV_with_static_current; steered_VCM_idle_5ms_gate_dependent_error_plus91_plus20_plus3.1_plus0.77_percent_for_10_20_50_100um_pairs; no_qualified_weight_store_or_calibration
 
   analog_weight_gate_buffer_probe: existing_SKY130_OTA_SS_0C_unity_feedback_ideal_bias_0.65_0.733V; DC_error_minus0.024mV_at0.936V_minus1.246mV_at0.48V_minus2.672mV_at0.30V; physical_MOS_gate_loaded_off_rail_to_weight_n_output_requires_about7_to_9us_with_overshoot_vs_p_output_about0.1us; no_sampled_weight_mux_calibration_noise_or_population_service_qualification
+
+  selected_research_architecture: no_selected_full_PLIF_macro; corrected_VCM_centered_100x10um_SKY130_MOS_gate_cap_pair_is_current_storage_experiment_lead_only; zero_state_capacitance_14.45pF_per_rail_not_old_74.84pF_grounded_channel_value; 5ms_loaded_isolated_injector_hold_drift_at_pm100mV_126_138_138uV_SS_TT_FF; ideal_piecewise8_full_float_replay_two_frames_96.69_96.79pct_pixel_agreement_and_0.488_0.498pct_final_fuse_spike_mismatch_at_gain1; pair_area_estimate_0.76m2_excluding_restore_routing_sensors_driver_readout; 20x2um_pair_area0.30m2_but_only91.9pct_best_pixel_agreement; state_dependent_event_charge_or_shared_active_integrator_remain_research_directions; physical_weighted_update_sensing_noise_mismatch_and_population_service_open
+  latest_matched_bank_fanin_screen: SKY130_SS0_full_float_370_event_target_minus52.45418mV_physical_forward_reverse_shuffle_minus51.58811_minus52.09683_minus51.82068mV; near_threshold_329_event_target_plus32.62296uV_physical_orders_plus33.047_plus32.951_plus33.006uV; same_site_float_margin_4.09_to5.77uV_below_existing_noise_proxy; schematic_only_no_full_R2R_or_PLIF_feedback
+  continuous_ota_neutral_bucket_screen: SKY130_TT27_100_fixed_packet_events_over5ms; neutral_reference_nominal_positive_negative_minus3.6614_plus3.7434mV_balanced_order_residual_plus9.1_plus6.8uV; plus0.1mV_neutral_bias_stress_minus168.3uV; VCM_init_and_timed_startup_feedback_balanced_isolated_minus1.3uV_but_complete_deck_plus1982.6uV; single_ended_separate_OTA_reference_unqualified; shared_differential_CMFB_offset_control_remains_exploration
+  weighted_fanin_latch_screen: SKY130_SS0_original_float_329_signed_events_10um_MIM_pair_transistor_latch; model_threshold_margin_minus4.087uV_physical_preeval_minus3.767uV_no_spike; diagnostic_threshold_minus10uV_gives_plus5.913uV_float_plus5.987uV_physical_spike; diagnostic_minus4uV_gives_minus0.087uV_float_plus0.134uV_physical_and_wrong_float_decision; independent_pair_reset_ktc_proxy_192uV_RMS_at0C; ideal_threshold_initialization_and_effective_gate_PWL; no_noise_qualified_readout_beta_reset_or_layout
+  float_state_range_noise_screen: original_float25_actor_trace_final_fuse_max_candidate_13801_units_maps_65.21uV_per_unit_at_0.9V; 7.14pct_final_fuse_margins_below_192uV_10um_pair_noise_proxy; fixed_gain10x_overflows_18.06pct_final_fuse_candidates; two_full_frame_all_actor_ideal_hard_clip_plus_independent_reset_noise_proxy_gain32_to64x_changes_4.6_to4.9pct_final_fuse_spikes_and_about20_to22pct_pixel_classes; gain100x_collapses; per_record_gain_normalization_optimistic; simple_linear_gain_not_selected; physical_nonlinear_or_split_range_store_unbuilt
+  ideal_nonlinear_state_bound: mathematical_asinh_state_voltage_encoding_with_exact_inverse_and_per_record_max_range; R10000_gives_about1010x_near_zero_voltage_gain; zero_noise_exact_original_float_trajectory_on_two_full_frames; independent_10um_pair_reset_noise_proxy_changes_2.31_2.41pct_final_fuse_spikes_and_12_to13pct_pixel_classes_over_three_seeds; state_dependent_event_increment_reset_encoder_decoder_and_store_not_physically_implemented; current_additive_MOS_injector_cannot_be_reused_unchanged; not_architecture_acceptance
+  eight_range_analog_research_target: ideal_piecewise8_R10000_zero_noise_exact_on_two_full_float_frames; independent_10um_pair_reset_noise_proxy_changes_2.462_2.555pct_final_fuse_spikes_and_12.97_13.86pct_pixel_classes; first_to_last_voltage_slope_span_about4496x; ideal_precharge_physical_one_boundary_diagnostic_only; full_range_per_state_capacitance_bank_rejected_about28.9m2_bare_area; no_qualified_state_dependent_weighted_event_dense_store_or_readout
+  physical_first_range_switch_screen: SKY130_TT27_10um_fine_plus13.3um_extension_differential_MIM_TG; ideal_boundary_matched_extension_precharge_one_manual_positive_current_boundary_crossing_final125.296mV_vs_piecewise_ideal125.473mV; VCM_precharged_extension_drops112.5mV_state_to41.0mV; matched_ideal_precharge_event_difference17.354mV_loses1.184mV_6.82pct_over5ms; fixed_boundary_reference_plus0.1mV_moves_final_plus0.0635mV_and_plusminus1mV_moves_about_plusminus0.635mV; no_physical_reference_programming_range_detector_reverse_crossing_weighted_MOS_source_noise_or_macro_acceptance
+  actual_float_event_piecewise_demand: three_final_fuse_sites_original_float_weights; near_threshold_329_events_max0.858mV; high_cancellation_322_events_max1.220mV; max_fanin_370_events_max29.9_341.9_245.4mV_forward_reverse_shuffle; max_fanin_5_16_22_events_above_measured16.624mV_one_event_bank_step; equal_ceiling_optimistic_extra_slots_5_74_58; state_dependent_charge_driver_and_5ms_service_unqualified
+  physical_MOS_stored_state_first_event_sweep: SKY130_SS0_10um_differential_MIM_shared13_geometry_bank_geom4_gate0.95_42.2657ns_both_polarities_precharged_differentials_minus1.2_0_plus0.6_plus1.2V; eight_nominal_cases_absolute_event_step16.209_to17.701mV_ratio1.092; passive_state_bias_does_not_implement_eight_range_state_dependent_charge_law
+  physical_MOS_small_event_stored_state_screen: SKY130_SS0_geometry0.5_gate0.9_42.2657ns_both_signs_precharged_differential_plusminus0.6V; four_cases_absolute_step1.3115_to1.3377mV_ratio1.020; no_programmed_weight_state_map_or_repeated_fanin
+  physical_MOS_bank_loaded_signed_cancellation_screen: SKY130_SS0_geom0.5_gate0.9_42.2657ns_pulse50.253ns_slot10ns_TG_release2ns_gate_slew; full13_geometry_bank_inactive_branches_connected; ten_alternating_equal_pulses_zero_state_residual_about0.042uV_but_plusminus0.6V_precharged_state_residual_about131uV; biased_positive_negative_single_pulse_magnitude_difference26.3uV; state_aware_signed_balance_required_before_weighted_full_fanin_acceptance
+  manual_MOS_polarity_compensation_screen: SKY130_SS0_bank_loaded_geom0.5_ten_equal_alternating_pulses; weaker_polarity_gate_fraction0.90116_vs_stronger0.90000_at_precharged_plusminus0.6V; maximum_nominal_residual_reduced_from131.2uV_to0.5_0.6uV; no_physical_state_sensing_programming_full_float_event_map_noise_or_retention_acceptance
+  intermediate_MOS_polarity_compensation_screen: SKY130_SS0_bank_loaded_geom0.5_ten_equal_alternating_pulses_precharged_plusminus0.3V; weaker_polarity_gate_fraction0.90058_vs_stronger0.90000; maximum_nominal_residual_reduced_from65.9_65.4uV_to0.4_0.3uV; approximate_manual_bias_slope0.00193_gate_fraction_per_stored_differential_volt; physical_adaptive_control_and_full_float_weights_open
+  first_piecewise_segment_actual_float_fanin: SKY130_SS0_full_float_10um_differential_MIM_shared13_geometry_bank_ideal_effective_gate_commands; segment0_slope47.374mV_per_model_unit_guarded_to_plusminus2.374716_units; near_threshold329_events_ideal23.699118mV_physical_errors_forward_plus42.372uV_reverse_minus30.558uV_shuffle_plus10.752uV_at50.253ns; high_cancellation322_events_ideal_plus5.442uV_physical_errors_plus11.624_minus67.089_minus22.995uV_at55ns_and_shorter_deck_solver_failed; ideal_event_state_polarity_command_only_partial_high_cancellation_improvement; no_full_eight_range_or_PLIF_macro_acceptance
+  high_cancellation_first_range_error_diagnosis: actual_322_mixed_float_events_use_all13_geometry_bank_branches_with125_on_geometry4_and_median_effective_gate_fraction0.677; physical_geometry4_fraction0.67683_at_plusminus30mV_precharge_shows0.67uV_polarity_imbalance; shuffled_physical_prefix_error_minus20.58uV_by120_events_then_approximately_minus18_to_minus26uV_through322; independent_noise_retention_dense_state_store_gates_open
+
+  weight_gate_prefetch_probe: SKY130_SS_0C_loaded_OTA_0.45V_to_0.48V_command_after_10us_precharge; minus4.57mV_error_at0.2us_plus9.69mV_overshoot_at0.5us_minus1.45mV_at2us_minus1.25mV_at3us; cold_branch_minus414mV_at2us_about7_to9us_to_settle; ideal_command_bias_supply_no_weight_store_mux_calibration_or_population_service
+
+  weight_gate_buffered_hold_probe: SKY130_SS_0C_10um_MIM_TG_sampled_0.48V_to_OTA_input; stored_input_0.47805V_after_programming_0.49656V_at5ms; drift_plus18.50mV; loaded_output_0.49545V_at5ms; OTA_supply_current_about8.9uA; unrefreshed_cell_unqualified
+
+  static_geometry_weight_probe: physical_SS_0C_10um_first_touch_state_pair_10.5ns_event_gate_fraction0.6; both_injector_MOS_widths_scaled_0.5_1_2_give_2.4328_3.9142_6.7569uV; monotonic_nonlinear_one_event_only; candidate_to_avoid_per_weight_analog_capacitor_refresh; full_float_range_mismatch_PVT_area_and_service_unqualified
+
+  static_geometry_float_range_boundary: existing_epoch58_folded_float_static_weight_1st_to_99th_abs_ratio_about39384_final_fuse_standard_472_enc1_standard_246_context2_depthwise; illustrative_event_voltage_scale_cancels_in_ratio; task_tolerance_to_small_weight_approximation_unmeasured; no_geometry_cell_selected
+
+  static_geometry_five_bias_probe: SKY130_SS_0C_physical_10um_state_single_positive_event_width_scales_0.5_1_2_4_and_ideal_shared_gate_fractions_0.4_0.5_0.6_0.7_0.8; event_range_0.0969_to456.69uV; optimistic_frozen_full_float_three_stage_best_local_spike_mismatch_one_bias_6.85_3.33_2.84_percent_vs_five_bias_1.35_0.0003_0_percent; final_fuse_illustrative_1_10uV_event_omission_floors_increase_mismatch_to_1.45_3.17_percent; no_physical_reference_noise_mismatch_PVT_or_layout_qualification
+
+  static_geometry_corner_screen: at_gate_fraction0.5_geometry4_single_event_6.215_21.963_34.323uV_SS0_TT27_FF27; at_fraction0.8_geometry2_223.810_753.366_1212.279uV; both_settings_about5.5x_SS0_to_FF27_spread; ordering_preserved; requires_shared_reference_calibration; no_mismatch_noise_or_extracted_layout
+
+  static_geometry_signed_train_screen: ten_same_sign_10.5ns_events_50ns_spacing_error_minus0.0103percent_at_fraction0.5_geometry4_and_minus0.00686percent_at_fraction0.8_geometry2; alternating_residual_nanovolt_scale_only_in_ideal_deterministic_decks; fraction0.8_geometry4_failed_convergence; no_physical_cancellation_precision_claim
+
+  shared_bias_r2r_gate_load_screen: compact_8bit_ideal_1k2k_R2R_PDK_TG_switches_loaded_by_PDK_MOS_gates; one_code_trim_per_PN_rail_max_static_error3.51mV_TT27; same_trimmed_codes_max_error4.84mV_SS0_and4.24mV_FF27; existing_24bit_ladder_op_timed_out_at120s; event_settling_noise_mismatch_layout_and_charge_accuracy_unqualified
+
+  shared_bias_r2r_event_screen: TT27_10.5ns_pulse_through_physical_gate_TGs_and_injector_MOS_against_ideal_gate_matched_control; charge_error_plus3.46percent_at_fraction0.5_geometry4_and_minus8.26percent_at_fraction0.8_geometry2; paired_one_code_event_trim_failed_ngspice_timestep_convergence; static_gate_voltage_trim_not_event_charge_qualification
+
+  shared_bias_r2r_five_point_event_screen: all_five_gate_fractions_geometry4_requested; 10_ladder_transient_exceeded_120s_Docker_bound; no_measurements; not_a_device_feasibility_result
+
+  shared_bias_r2r_12bit_transfer: stage_width_40.253ns_2ns_edges_eight_biases_0.4_to0.95_TT27_DAC_to_ideal_ratios_0.99846_0.99682_0.99208_0.99381_0.99582_0.96753_0.97081_0.97630; ten_event_same_sign_added_error_0.316percent_at0.5_geom4_and0.029percent_at0.8_geom2; 104_measured_geometry_bias_level_local_float32_replay_mismatch_final_fuse0.431_enc1_0.285_context2_1.407percent_no_high_clip; weighted_event_lookup_sum_minus52.581mV_vs_float_minus52.454mV; physical_370_event_bank_output_forward_reverse_shuffle_minus47.192_minus47.852_minus47.492mV_8.77_to10.03percent_low_0.660mV_order_spread; physical_fanin_PWL_gates_TT_DAC_correction_assumed_not_ladder; per_synapse_loading_state_dependent_transfer_readout_and_closed_loop_task_unverified
+
+  open_small_node_pdk_screen: ICsprout55_real_55nm_preview_public_repo_lists_SPICE_models_and_RC_extraction_unfinished; OpenRPDK28_under_construction; ASAP7_and_FreePDK45_predictive; continue_SKY130_analog_circuit_baseline_pending_usable_small_node_analog_models_and_capacitor_noise_evidence
   alternate_open_pdk_mim_density_screen: sky130_nominal_2fF_per_um2_per_layer; gf180mcu_1_to_2fF_per_um2; ihp_sg13g2_1.5fF_per_um2; no_density_only_migration_selected
+  mos_gate_state_pair_layout: artifacts/analog_asic/layout/sky130_mos_gate_state_pair_100x10_nf10/qualification.json; GDS_DRC0_unique_LVS; 20_extracted_nfet_devices; separate_gate_rails_and_shared_VCM; AC_sweep_VGS_minus0.45_to_plus0.45V_14.39_to25.71pF_per_rail; actual_zero_state_14.45pF_per_rail; no_access_TG_event_driver_or_readout
+  mos_gate_state_small_bank_float_replay: 20x2um_unit_10_devices_per_rail; extracted3.039pF_per_rail; SS_TT_FF_loaded_isolated_injector_hold_drift_at_pm100mV_2.94_2.97_3.00mV; ideal_piecewise8_full_frame_best91.91pct_pixel_agreement_1.51pct_final_fuse_spike_mismatch; not_selected
+  mos_gate_state_large_bank_float_replay: 100x10um_unit_10_devices_per_rail; 5ms_loaded_isolated_injector_hold_drift_at_pm100mV_126_138_138uV_SS_TT_FF; full_frame_record0_SS_TT_FF_and_record1_SS_piecewise8_gain1_pixel_agreement96.69_96.68_96.69_96.79pct; final_fuse_spike_mismatch0.488_0.488_0.488_0.498pct; software replay uses ideal encoding_and_weighted_update; no_noise_mismatch_or_macro_acceptance
+
+  mos_pair_shared_reset_timing: deterministic_extracted_TG_pair kick improved from1.243uV to0.132nV by opening bridge before VCM clamp; no transient noise or mismatch; not correlated_noise_acceptance
+  mos_pair_full_float_reset_noise_replay: epoch58_full_float_DSEC_record0; measured_TT_5ms_retention; ideal_piecewise8; synthetic_independent_24uV_rms; init_only_and_each_spike_reset; 3_seeds_pixel_agreement99.863_to99.939pct; final_fuse_mismatch_below0.10pct; not_hardware_acceptance
+  mos_extracted_full_float_injector_gate: 322_event_high_cancellation_shuffle_SS0; target_plus5.442uV; extracted_output_minus49.77uV; error_minus55.22uV; wrong_sign; behavioral_state_feedback_0p004V worsens_to_minus63.81uV; reject_current_long_pulse_injector_for_PLIF_layout
+  next_analog_injection_direction: closed_loop_fully_differential_OTA_C_event_integrator_with_low_impedance_virtual_summing_node_and_internal_CMFB; MOS_open_loop_state_injector_rejected_by_extracted_shortpulse_fullfloat_ordered_sequence_and_pm50uV_state_dependence; qualify_actual_float_event_order_signed_transfer_state_hold_PVT_noise_mismatch_threshold_reset_beta_readout_and_actor_service_before_neuron_macro_layout
+
+analog_continuation_2026_10_03: >-
+  Static geometry full-float MOS weight encoding is still an experiment. The original segmented DC-restarted result is invalid for state carry. With UIC, direct-bank off-state load moves a 100um state pair by 2.90mV before the first event; series access reduces this to 34nV. One polarity-reversed isolated event with 5x device width matches within 1.81%, but multi-event deck is outside PDK width limits and no retention/fan-in/layout qualification exists. Continue in analog full-float mode; require valid SPICE completion, isolated-access transfer grid, retention, then ordered float sequence before layout.
+  Follow-up: in-range isolated-TG geometry sweep delivers only20-34pct of target float event charge; wider TG improves charge but shifts common mode. Five-times raw transistor width exceeds PDK model range. Full360-branch netlist is killed by bounded Docker memory and33-branch sim timestep-underflows, so no full-sequence or layout acceptance. Next implement a convergent isolated switch driver or physical weight source for the shared calibrated injector.
+  Pulse-width follow-up: sampled1ns after 10.5/30/52.5ns isolated events, charge is0.230/0.217/0.202mV vs+0.683mV target; longer pulse worsens charge slightly, so measurement delay does not explain underdrive. Continue analog physical weight-source exploration, no layout promotion.
+
+  Shared analog bias R-2R event delivery: TT-trimmed 12-bit ideal-R ladder with PDK TGs and extracted injector devices gives event-charge error -2.3..-3.2% TT, -4.6..-6.0% SS, -1.4..-2.0% FF. Bias DAC only; no learned weight quantization or QAT. Physical resistor ratio, mismatch, noise and full-float replay remain open.
+  routed_r2r2_physical_slice: seven_SKY130_xhigh_poly_1p41_PCells_and_M1_routes; Magic_DRC0_Netgen_unique_LVS_GDS; extracted_resistor_only_DC_monotonic_0_27_85C_step_deviation_below0.0044pct; physical_base_TG_combined_schematic_DNL_21_to37pct_TT_SS_FF; MOS_multiplicity1000x_optimistic_model_only_worst_DNL1.317pct_SS_no_scaled_layout; high_drive_array_layout_and_fullfloat_replay_required
+
+analog_continuation_2026_10_04: >-
+  Original_epoch58_float_reference_and_5ms_25_actor_DAG_remain_authoritative_without_QAT_or_digital_fallback.
+  Settled_5ms_buffered_readout_resolves_plusminus0.25uV_at_TT27_SS0_FF85_with_externally_fitted_corner_codes,
+  but_its_30us_serial_channel_demands_at_least185856_parallel_channels_for30976000_states.
+  Routed_weighted_trim_macro_replication_bbox_floor43462mm2_and_two_extracted_sample_bank_floor4751mm2;
+  conditional_sample_kTC_noise1.014uV_input_equivalent_vs_exploratory_float_q0p1_margin0.537uV.
+  Keep_this_as_deterministic_module_demonstrator_only.
+  Fixed_20x20um_MIM_live_two_range_positive_crossing_has_measured_PDK_branch_charge_but_externally_driven_gate_and_trim;
+  FF_gate1p0_to1p1V_changes_update84p677_to21p436mV_and_selector_timing.
+  Ideal_six_range_full_float_two_frame_noise_replay_remains_a_sensitivity_bound_without_physical_encoding.
+  Minimum_routed_2x2um_MIM_with_routed_TG_fails_5ms_SS0_hold_by_about_plus166_and_minus149mV_even_with_grounded_PEX_substrate;
+  stacked_TG_does_not_repair_it.
+  Its_pair_layout_replication_floor_is1101mm2_if_two_cells_store_two_states;
+  the_earlier_large_differential_MOS_pair_requires_one_pair_per_state_and_about757744mm2_in_replicated_bboxes.
+  No_qualified_compact_analog_state_store_signed_weighted_update_sensor_or_full_chip_assembly_exists.
+  Continue_analog_state_storage_and_event_update_architecture_research_with_physical_hold_noise_area_and_service_gates_before_layout_promotion.
+  Corrected_off_switch_screen_uses_ideal_programming_not_invalid_UIC_initialization;
+  SS0_min_MIM_bare_state_holds_but_routed_TG_drifts_about_plus156_minus156mV_in5ms,
+  NFET_only_pull_down_and_PFET_only_pull_up_by_hundreds_of_mV,
+  and_tested_single_device_length0p5_to8um_does_not_materially_improve_drift.
+  Standard_PDK_MIM_cross_check_reproduces_direction_and_order_of_magnitude.
+  Public_ICsprout55_preview_lists_SPICE_models_and_RC_extraction_todo,
+  OpenRPDK28_is_under_construction,
+  IHP_SG13G2_is_130nm_with_1p5fF_per_um2_MIM_vs_measured_SKY130_2p38fF_per_um2;
+  no_ready_denser_open_analog_PDK_migration_selected.
+
+analog_continuation_2026_10_05: >-
+  Signed_fixed_cap_boundary_screen_2026_10_05: one_positive_TT_and_negative_TT_SS_FF_live_crossings_complete_with_physical_MOS_MIM_TG_comparator_and_externally_fitted_gate_reference; all_1p5us; no_weight_map_PEX_noise_mismatch_or_5ms_hold.
+  Same_cap_signed_direct_sequence_2026_10_05: ideal_gate_TT_pair_positive9p0549mV_negative_minus9p1195mV_pn_minus0p0791mV_np_minus0p0624mV; fixed_gates_SS_pn_minus0p8743mV_and_FF_pn_plus49p0046mV; sequence_omits_live_range_selector_and_physical_bias_control; compact_analog_state_and_fullfloat_service_unqualified.
+  Manual_corner_gate_fit_2026_10_05: at_0p9V_initial_SS_individual_positive9p6202mV_negative_minus9p6377mV_pn_minus35p2uV_np_minus14p7uV; FF_positive10p3057mV_negative_minus10p3199mV_pn_minus30p6uV_np_minus11p5uV; ideal_sources_one_state_only_no_physical_calibration_or_margin_acceptance.
+  Compressed_MIM_state_hold_2026_10_05: routed_min_MIM_TG_SS0_plusminus1mV_and_plusminus10mV_offsets_from_VCM_lose_about52percent_of_offset_over5ms_while_bare_MIM_holds; wide_range_fixed_current_area_estimate_not_applicable_near_VCM; analog_state_cell_unqualified.
+  Event_time_state_screen_2026_10_05: equal_ideal_charge_at_0p5ms_vs4p5ms_on_routed_min_MIM_TG_yields_0p4174mV_vs0p7499mV_increment_at5ms_after_no_event_subtraction_ratio0p557_with_50ns_max_step; immediate_responses_agree_within0p1percent; original_1us_step_result_invalid; original_float_bin_accumulation_unqualified.
+  Learned_beta_comparison_2026_10_05: source_hashed_original_float_export_1856_channel_values_median_beta0p938_1804_ge0p9_only6_lt0p6; accessed_min_MIM_TG_small_signal_5ms_retention_about0p48_cannot_replace_boundary_beta_or_event_time_semantics.
+  Near_VCM_stacked_TG_2026_10_05: two_routed_off_TGs_in_series_on_min_MIM_have_essentially_same_5ms_SS0_drift_as_one_at_plusminus1mV_and_plusminus10mV; simple_stack_rejected_for_this_cell.
+  Isolated_body_tied_TG_2026_10_05: GDS_bbox_6p25_by_16p345um_Magic_DRC0_unique_Netgen_LVS_25_PEX_caps_DNW_tap_port; TT27_reduced_min_MIM_with_both_PDK_well_diode_proxies_pwell_remainder27p625um2_PFET_nwell8p8409um2_has_pm1mV_differential_5ms_drift_minus14p0uV_and_illustrative_1percent_pwell_geometry_imbalance_plus29p8uV; pm300mV_differential_drift_minus4p091mV; near_VCM_DNW_bias0p902V_single_diode_case_still_minus16p7uV_differential; unshared_two_TG_per_differential_state_footprint6329mm2_before_caps; physical_body_wiring_junction_geometry_noise_and_full_signoff_open; do_not_replicate_as_resident_state_cell.
+  Body_tied_DNW_balance_parked_source_control_2026_10_05: TT27_DNW1p2V_both_well_diodes_common_mode_drift_plus0p02605mV_at_pm1mV_but_differential_minus14p3uV; pm300mV_differential_minus4p1008mV; not_shared_bus_retention; official_SKY130_SONOS_100k_guaranteed_cycles_corresponds_to_500s_if_membrane_rewritten_every5ms.
+  Body_tied_shared_bus_correction_2026_10_05: parked_source_values_above_are_optimistic_controls_not_architecture_retention; TT27_fixed_VCM_source_DNW1p2V_both_well_diodes_pm1mV_differential_drift_minus0p7315mV_and_pm300mV_minus353p257mV_in5ms; ideal_equal_0p5ms_4p5ms_event_final_increments_0p3154mV_0p4533mV_at50ns_step_and_ratio0p6929_at25ns_step; physical_write_read_noise_mismatch_and_population_service_open.
+  Passive_guard_screen_2026_10_05: TT27_two_extracted_body_tied_TGs_per_rail_plus_ideal10fF_guard_early_late_final_ratio0p773; ideal100fF_guard_ratio0p718; no_guard_co_write_or_physical_guard_layout; unshared_four_TG_per_differential_state_footprint12658mm2_before_caps; not_selected_for_resident_membrane.
+  Next_storage_gate_2026_10_05: preserve_original_full_float_analog_SNN; investigate_state_storage_without_continuously_reverse_biased_junction; require_5ms_hold_event_order_physical_write_read_PVT_noise_mismatch_population_area_and_service_before_macro_or_full_chip_assembly.
+
+gf180_sampled_restore_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  physical_state_accepted: false
+  full_chip_accepted: false
+  offset_macro_drc_count: 0
+  offset_macro_lvs_unique: true
+  offset_macro_size_um: [126, 45.59]
+  routed_offset_transfer_stable: false
+  nominal_staggered_separate_piece_error_mv: [1.279, 1.343]
+  later_read_offset_error_mv: [0.672, 1.267]
+  later_read_first_sample_error_mv: -0.710
+  all_launched_runs_terminal: true
+  scope: deterministic_four_slot_zero_state_only_no_sampled_noise_RPEX_gate_leakage_complete_PLIF_model_accuracy_population_service_or_full_chip_acceptance
+
+gf180_dedicated_routed_restore_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  physical_state_accepted: false
+  full_chip_accepted: false
+  isolated_offset_macro_size_um: [216, 64.29]
+  isolated_offset_macro_drc_count: 0
+  isolated_offset_macro_lvs_unique: true
+  top_useb_coupling_before_after_ff: [11.3563, 3.0404]
+  isolated_typical_zero_error_mv: [0.200, 0.370]
+  isolated_mismatch_seed17_zero_error_mv: [0.159, 0.318]
+  isolated_ss0_zero_error_mv: [0.375, 0.565]
+  ff85_trap500ns_complete: false
+  ff85_trap100ns_complete: true
+  ff85_trap100ns_zero_error_mv: [-0.247, -0.093]
+  nonzero_diagnostic_ideal_charge_fc: [-1, 1]
+  nonzero_restore_error_extrema_mv: [-1.286, 1.827]
+  all_launched_runs_terminal: true
+  scope: module_deterministic_capacitance_extraction_only_no_sampled_noise_RPEX_gate_leakage_full_PLIF_model_accuracy_population_service_acceptance
+
+gf180_buffered_reversed_restore_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  physical_state_accepted: false
+  full_chip_accepted: false
+  sample_acquisition_us: 4.2
+  scheduled_slot_us: 15
+  physical_sample_buffer: second_routed_writer12MOS_1MIM_with_physical_input_TGs_and_ideal20uA_reference
+  reversed_offset_macro_size_um: [216, 64.29]
+  reversed_offset_macro_drc_count: 0
+  reversed_offset_macro_lvs_unique: true
+  floating_plate_substrate_capacitance_before_after_ff: [94.12493, 3.54726]
+  nonzero_positive_probe_restore_error_mv: [-0.380, -0.134]
+  nonzero_negative_probe_restore_error_mv: [0.522, 1.023]
+  stored_offset_reuse_stable: false
+  all_launched_runs_terminal: true
+  scope: typical_Gear_deterministic_small_module_ideal_diagnostic_charge_no_sampled_noise_model_accuracy_PVT_mismatch_population_service_or_full_chip_acceptance
+
+gf180_reference_refresh_energy_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  physical_state_accepted: false
+  full_chip_accepted: false
+  dummy_bottom_compensation_selected: false
+  physical_zero_reference_cells_per_bench: 1
+  offset_recaptured_physically_per_slot: true
+  nominal_positive_restore_error_mv: [-0.1979, -0.1978]
+  nominal_negative_restore_error_mv: [0.453, 0.457]
+  mismatch_seed17_positive_restore_error_mv: [-0.211, -0.150]
+  ff85_negative_restore_error_mv: [0.259, 0.260]
+  scheduled_service_period_us: 15
+  restore_period_vdd_energy_nj: 11.480752
+  measured_module_vdd_mean_power_mw: 0.765383
+  conditional_full_state_every5ms_restore_vdd_w: 71.12556
+  power_estimate_is_accepted_chip_power: false
+  all_launched_runs_terminal: true
+  scope: small_deterministic_capacitance_extracted_module_ideal_currents_controls_charge_excludes_PLIF_events_external_references_drivers_sampled_noise_RPEX_model_accuracy_density_and_population_acceptance
+
+gf180_low_bias_restore_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  physical_state_accepted: false
+  full_chip_accepted: false
+  reference_current_candidates_ua: [20, 2, 1, 0.5]
+  reference0p5ua_initialization_functional: false
+  reference1ua_is_accepted_architecture: false
+  reference1ua_typical_service_energy_nj: [0.541, 0.542]
+  reference1ua_ff85_service_energy_nj: 0.552
+  reference1ua_typical_positive_next_read_error_mv: [-0.2245, -0.2240]
+  reference1ua_typical_negative_next_read_error_mv: [0.4411, 0.4414]
+  reference1ua_ff85_positive_next_read_error_mv: [-0.367, -0.358]
+  reference1ua_conditional_full_state_restore_vdd_w: [3.35, 3.42]
+  power_estimate_is_accepted_chip_power: false
+  stationary_state_noise_ref20_2_1ua_uv_rms: [624, 396, 385]
+  stationary_noise_is_sampled_noise: false
+  all_launched_runs_terminal: true
+  scope: small_deterministic_module_and_stationary_DC_noise_only_no5ms_multi_bin_PLIF_sampled_noise_RPEX_model_accuracy_density_or_population_acceptance
+
+
+gf180_signed_idle_hold_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  physical_state_accepted: false
+  full_chip_accepted: false
+  idle_hold_after_final_hold_reset_us: 5010
+  ideal_diagnostic_charge_fc: [1, -1]
+  positive_signal_next_read_error_mv: [-0.20824, -0.20769]
+  negative_signal_next_read_error_mv: [0.45877, 0.45907]
+  positive_zero_relative_signal_gain: [0.98055, 0.98058]
+  negative_zero_relative_signal_gain: [0.97812, 0.97814]
+  offline_gain_is_applied_circuit_correction: false
+  positive100ns_vs500ns_signal_error_max_difference_uv: 3.85
+  repeated_multibin_PLIF_qualified: false
+  sampled_noise_qualified: false
+  silicon_gate_leakage_qualified: false
+  scope: deterministic_extracted_capacitance_module_one_followread_not_original_float_accuracy_density_or_population_service_acceptance
+
+
+gf180_small_signal_restore_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  diagnostic_charge_fc: [0.25, -0.25]
+  positive_zero_relative_gain: [0.98510, 0.98519]
+  negative_zero_relative_gain: [0.97296, 0.97367]
+  single_gain_correction_established: false
+  offline_diagnostics_drive_circuit: false
+  physical_state_accepted: false
+  full_chip_accepted: false
+  all_launched_runs_terminal: true
+
+
+gf180_offset_load_diagnostic_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  separately_extracted_extra_offset_mim_count: 4
+  total_offset_mim_count: 8
+  physical_state_accepted: false
+  full_chip_accepted: false
+  larger_capacitance_selected_as_solution: false
+  positive_zero_relative_gain: [0.98763, 0.98784]
+  negative_zero_relative_gain: [0.98901, 0.98907]
+  positive_mean_top_to_bottom_signal_loss_uv_before_after: [275.15, 154.29]
+  repeated_extra_standalone_capacitor_footprint_um2_per_shared_channel: 2533.44
+  combined_extension_routing_qualified: false
+  all_launched_runs_terminal: true
+  scope: diagnostic_capacitance_extracted_module_no_sampled_noise_model_accuracy_area_or_population_service_acceptance
+
+
+gf180_small_writer_input_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  writer_layout: artifacts/analog_asic/layout/gf180_sensor_servo_writer_input2p5um/qualification.json
+  writer_differential_input_width_um: 2.5
+  buffer_differential_input_width_um: 10
+  magic_drc_count: 0
+  netgen_lvs_unique: true
+  same_standalone_footprint_um: [138, 80.04]
+  offset_mim_count: 4
+  positive_zero_relative_signal_gain: [0.98237, 0.98242]
+  negative_zero_relative_signal_gain: [0.98061, 0.98063]
+  stationary_state_noise_uv_rms: 374.375
+  stationary_noise_is_sampled_noise: false
+  physical_state_accepted: false
+  full_chip_accepted: false
+  all_launched_runs_terminal: true
+
+
+gf180_restore_extension_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  writer_input_width_um: 2.5
+  write_feedback_duration_us_baseline_candidate: [2, 6]
+  scheduled_slot_us_baseline_candidate: [15, 19]
+  candidate_service_energy_nj: [0.69107, 0.69180]
+  candidate_positive_signal_error_mv: [-0.17928, -0.17884]
+  candidate_negative_signal_error_mv: [0.41944, 0.42172]
+  longer_restore_selected: false
+  physical_state_accepted: false
+  full_chip_accepted: false
+  all_launched_runs_terminal: true
+  scope: deterministic_capacitance_extracted_module_not_sampled_noise_model_accuracy_or_population_service_acceptance
+
+
+gf180_affine_restore_float_sensitivity_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_restore_affine_float_sensitivity_boundary.json
+  original_epoch58_checkpoint_sha256: c934da40b0f65d2a63155cb89b663e06aebf527cea1db4b9902a5b53840457d7
+  qat_or_quantized_reference_used: false
+  source_physical_probe_voltage_scope_mv: [-16.2, 16.2]
+  affine_proxy_gains_positive_negative: [0.98239, 0.98062]
+  normalized_offset_uv: 64.06
+  full_frame_records: [0, 1]
+  baseline_mean_iou: [0.205726, 0.198918]
+  combined_proxy_mean_iou: [0.113471, 0.123449]
+  record0_gain_only_mean_iou: 0.206809
+  record0_offset_only_mean_iou: 0.111974
+  record0_hypothetical3_10uv_offset_mean_iou: [0.203343, 0.200462]
+  physical_zero_offset_compensation_next_priority: true
+  proxy_is_qualified_physical_transfer: false
+  model_accuracy_qualified: false
+  physical_state_accepted: false
+  full_chip_accepted: false
+  all_launched_runs_terminal: true
+
+
+gf180_split_calibration_sample_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  layout: artifacts/analog_asic/layout/gf180_offset_subtractor_short_split4_isolated_reversed_splitsample/qualification.json
+  magic_drc_count: 0
+  lvs_unique: true
+  capacitance_entries: 112
+  timing_advancement_ns: [0, 100, -100, 200]
+  zero_control_error_uv: [169.59, 143.77, 134.83, 173.04]
+  original_layout_zero_control_error_uv: 106.77
+  split_sample_selected_as_correction: false
+  physical_state_accepted: false
+  full_chip_accepted: false
+  model_accuracy_qualified: false
+  all_launched_runs_terminal: true
+
+
+gf180_reference_acquisition_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  reference_calibration_capture_us: [2, 5]
+  scheduled_slot_us: [15, 18]
+  zero_control_error_uv: [106.765, 132.338]
+  scheduled_vdd_energy_nj: [0.541457, 0.652052]
+  calibration_release_offset_delta_uv_baseline: [-45.114, -44.210]
+  calibration_release_offset_delta_uv_extended: [-43.398, -43.379]
+  longer_reference_acquisition_selected: false
+  future_bench_names_include_source_revision: true
+  replay_physical_source_hash_preserved_and_checked: true
+  physical_state_accepted: false
+  model_accuracy_qualified: false
+  full_chip_accepted: false
+  all_launched_runs_terminal: true
+
+
+gf180_calibration_dummy_2026_10_06:
+  boundary: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  dummy_nf_pf_width_pairs_um: [[0.5, 1], [0.33, 0.66]]
+  layouts_drc0_lvs_unique: true
+  intentional_DS_terminal_merges_independently_checked: true
+  zero_control_error_uv: [[-56.21, -56.09], [-104.998, -104.997]]
+  calibration_release_step_uv: [[53.35, 54.10], [90.39, 91.28]]
+  selected_as_correction: false
+  width_linear_compensation_assumption_validated: false
+  future_bench_source_revision_snapshot_verified: true
+  physical_state_accepted: false
+  model_accuracy_qualified: false
+  full_chip_accepted: false
+  all_launched_runs_terminal: true
+
+gf180_sample_clock_routing_2026_10_07:
+  goal_status: active_original_float_analog
+  layouts:
+    sampleb_2um:
+      drc_errors: 0
+      lvs_unique: true
+      capacitance_entries: 85
+      zero_next_read_error_uv: [-73.012, -73.009]
+      calibration_release_delta_uv: [168.004, 168.763]
+    sample_4um:
+      drc_errors: 0
+      lvs_unique: true
+      capacitance_entries: 85
+      zero_next_read_error_uv: [-81.514, -81.513]
+      calibration_release_delta_uv: [-38.883, -37.967]
+  selected: false
+  physical_state_accepted: false
+  full_chip_accepted: false
+  signed_runs_completed: 4
+  boundary_cases: 75
+  boundary_simulations_completed: 74
+  evidence: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  next_step: measure_settled_calibration_and_use_transition_then_physical_compensation_noise_PVT_mismatch_exact_PLIF_accuracy_density_full5ms_service
+  scope: extracted_capacitance_deterministic_module_only_no_RPEX_sampled_noise_silicon_leakage_or_population_acceptance
+
+gf180_continuous_offset_bank_2026_10_07:
+  goal_status: active_original_float_analog
+  simulations_completed_this_stage: 9
+  boundary_cases: 84
+  boundary_simulations_completed: 83
+  half_width_plate_layout:
+    width_nf_um: 0.5
+    width_pf_um: 1.0
+    length_um: 0.28
+    mos_count: 8
+    mim_count: 4
+    drc_errors: 0
+    lvs_unique: true
+    capacitance_entries: 84
+    selected: false
+  startup_only_clamp_candidate:
+    physical_use_tgs_always_on: true
+    external_reference_clamp_startup_only: true
+    reference_clamp_opens_after_first_calibration_start_ns: 100
+    per_calibration_reference_clamp: physical_bank_sample_bottom_TG
+    zero_next_read_error_uv: [59.278, 59.280]
+    positive_next_read_error_uv: [-109.368, -108.945]
+    negative_next_read_error_uv: [195.464, 195.687]
+    positive_gain: [0.989589, 0.989617]
+    negative_gain: [0.991576, 0.991591]
+    positive_vdd_service_energy_pj: 541.637
+    negative_vdd_service_energy_pj: 540.956
+    slot_us: 15
+    scope: nominal_deterministic_extracted_cap_module_ideal_diagnostic_charge_reference_control_no_RPEX_sampled_noise_or_full_chip_acceptance
+  physical_state_accepted: false
+  full_chip_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_sampled_restore_boundary.json
+  next_step: qualify_numerics_sampling_disturbance_PVT_mismatch_noise_then_offset_gain_encoder_assembly_exact_PLIF_float_accuracy_density_full5ms_service
+
+gf180_continuous_restore_qualification_2026_10_07:
+  goal_status: active_original_float_analog
+  new_transient_runs_completed: 6
+  new_stationary_noise_runs_completed: 1
+  qualification_cases: 8
+  main_boundary_cases: 90
+  main_boundary_simulations_completed: 89
+  step50_vs_step100_max_error_difference_uv:
+    positive: 3.5975
+    negative: 3.5378
+    scope: same_physical_deck_sensitivity_not_convergence_or_accuracy_tolerance
+  ff85_negative:
+    zero_error_uv: -71.860
+    signal_error_uv: [18.688, 20.111]
+    gain: [0.994320, 0.994408]
+  ss0_positive:
+    zero_error_uv: 77.852
+    signal_error_uv: [-119.971, -119.946]
+    gain: [0.987758, 0.987760]
+  local_mismatch_seed17:
+    initial_program_minus_command_mv: -5.6362745
+    coarse_initialization_within_5mv: false
+    coarse_screen_is_model_accuracy_tolerance: false
+    yield_qualified: false
+  stationary_restore_noise:
+    state_rms_uv: 374.375
+    readbus_rms_uv: 260.491
+    reference_rms_uv: 283.833
+    band_hz: [10, 100000000]
+    dc_minus_transient_bus_uv: 2.692
+    sampled_noise_qualified: false
+  physical_state_accepted: false
+  original_float_accuracy_accepted: false
+  full_chip_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_continuous_restore_qualification_boundary.json
+  next_step: physical_sampling_disturbance_correction_and_nonlinear_encoder_or_sampled_noise_handling_then_float_accuracy_routed_assembly_exact_PLIF_leakage_density_full5ms_service
+
+gf180_sampler_alternatives_2026_10_07:
+  goal_status: active_original_float_analog
+  smaller_sampler:
+    nf_width_um: 0.5
+    pf_width_um: 1.0
+    length_um: 0.28
+    drc_errors: 0
+    lvs_unique: true
+    capacitance_entries: 13
+    standalone_area_um2: 30.163
+    selected: false
+  acquisition_buffer:
+    physically_routed_macro_reused: gf180_sensor_servo_writer
+    calibration_traverses_both_buffers: true
+    ideal_buffer_or_gain_offset_correction: false
+    positive_zero_error_uv: 63.103
+    negative_zero_error_uv: 63.102
+    positive_signal_error_uv: [-106.839, -106.775]
+    negative_signal_error_uv: [199.652, 200.318]
+    positive_service_vdd_energy_pj: 793.196
+    negative_service_vdd_energy_pj: 792.318
+    slot_us: 15
+    energy_increase_percent_approx: 46.5
+    added_shared_prototype_macro_area_um2: 11045.52
+    selected: false
+  positive_rerun:
+    historical_120s_case_completed: false
+    historical_simulator_returncode: null
+    bounded_240s_case_completed: true
+    same_physical_deck_verified: true
+    simulator_returncode: 0
+    measurements: 160
+    expected_measurements: 160
+  matched_stationary_noise:
+    positive_state_rms_uv: 375.448
+    negative_state_rms_uv: 375.322
+    sampled_noise_qualified: false
+  qualification_cases: 13
+  main_boundary_cases: 95
+  main_boundary_simulations_completed: 93
+  physical_state_accepted: false
+  original_float_accuracy_accepted: false
+  full_chip_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_continuous_restore_qualification_boundary.json
+  next_step: physical_nonlinear_encoder_sampled_noise_handling_exact_signed_charge_PLIF_float_accuracy_routed_assembly_leakage_density_full5ms_service_full_chip_layout
+
+gf180_nonlinear_encoder_2026_10_07:
+  reference: original_epoch58_best_full_float
+  qat_enabled: false
+  separate_layout_drc_lvs_gds_qualified: true
+  mirrored_feedback_mos_count: 6
+  feedback_mim_count: 4
+  feedback_mim_side_um: 7
+  diagnostic_span_v: 1.0
+  central_gain_mv_per_na:
+    typical27: 21.36625158
+    ff85: 0.3513957274
+    ss0: 868.1144292
+  nominal_100us:
+    final_window_maximum_dc_error_uv: 3.452745538
+    final_window_peak_to_peak_uv: 0.465997041
+    vdd_energy_per_phase_pj: 2016.875093
+    excludes: reference_control_generation_state_access_and_full_PLIF
+  ss0_1000us_final_window_dc_error_uv: 21698.978793
+  span_1p2_diagnostic:
+    ss0_100us_final_window_dc_error_uv: 6630.144833
+    typical27_central_gain_mv_per_na: 1.962615289
+    selected: false
+  case_count: 47
+  simulations_completed: 47
+  all_runs_terminal: true
+  physical_view_and_input_provenance_verified: true
+  encoder_accepted: false
+  physical_state_accepted: false
+  original_float_accuracy_accepted: false
+  full_chip_accepted: false
+  scope: extracted_component_DC_and_command_step_diagnostics_no_inverse_integrated_state_sampled_noise_combined_layout_RPEX_or_population_service
+  evidence: artifacts/analog_asic/results/gf180_nonlinear_encoder_boundary.json
+  next_step: measured_noise_physical_reference_calibration_near_zero_gain_settling_then_inverse_exact_PLIF_float_replay_assembled_layout_density_full5ms_service
+  stationary_zero_input_output_noise_uv_rms:
+    band_hz: [10, 100000000]
+    typical27_span1: 295.646859963
+    ff85_span1: 363.860070546
+    ss0_span1: 277.417073133
+    reference_and_sampled_noise_included: false
+  corner_specific_ideal_span_diagnostics:
+    ss0:
+      span_v: 1.3
+      central_gain_mv_per_na: 28.590628055
+      phase_us: 100
+      final_window_dc_error_uv: 4.742250112
+      final_window_peak_to_peak_uv: 1.689885542
+      output_noise_uv_rms: 282.749902743
+    ff85:
+      span_v: 0.65
+      central_gain_mv_per_na: 9.433023414
+      phase_us: 100
+      final_window_dc_error_uv: 2.081259087
+      final_window_peak_to_peak_uv: 0.153154325
+      output_noise_uv_rms: 324.388832109
+      maximum_virtual_sum_error_uv: 257.293613346
+    physical_calibration_implemented: false
+    common_transfer_accepted: false
+    ff85_span0p6_rejected_for_rail_failure: true
+
+gf180_self_biased_encoder_precision_2026_10_07:
+  reference: original_epoch58_best_full_float
+  qat_enabled: false
+  physical_span_common_reference: extracted_NF_PF_diode_stack_and_OTA_buffers
+  physical_lifted_source_body: encoded_NF_source_VLOW_body_VSS_mirror_NF_sources_VSS
+  low_reference_ideal_current_na: 20
+  encoder_reference_ideal_current_pa: 10
+  tiny_current_generator_implemented: false
+  source_lifted_layout_drc_lvs_gds_qualified: true
+  common_transfer_and_mismatch_qualified: false
+  fixed4mim:
+    typical27_near_zero_gain_relative_to_linear: 774.348508785
+    typical27_stationary_output_noise_uv: 474.264706991
+    typical27_1000us_final_window_dc_error_uv: 13949.375094
+    float_replay_record0_baseline_iou: 0.205726012588
+    float_replay_record0_mean_iou: 0.205730011066
+    float_replay_record0_pixel_agreement: 0.823656499386
+    float_replay_record1_baseline_iou: 0.198918029666
+    float_replay_record1_mean_iou: 0.199967170755
+    float_replay_record1_pixel_agreement: 0.810374061267
+    replay_scope: actual_DC_table_stationary_zero_bias_noise_proxy_ideal_inverse_and_per_record_actor_current_scaling_two_full_frames_not_validation_accuracy
+  switched_compensation:
+    extracted_TG_included: true
+    control_policy: ideal_command_current_magnitude_at_least20nA_enables_three_extra7um_MIMs
+    autonomous_physical_control_implemented: false
+    permanent7um_1000us_dc_error_uv: 51.411197361
+    permanent7um_stationary_noise_uv: 643.477856258
+    permanent5um_200us_inclusive_late_dc_error_uv: 2538.992440748
+    permanent5um_1000us_dc_error_uv: 51.775947119
+    permanent5um_stationary_noise_uv: 810.760392693
+    selected: false
+  conditional_exact_1ms_bench_population_repeat:
+    service_channels: 6195200
+    vdd_power_w: 329.4
+    accepted_chip_power: false
+    scope: hypothetical_all_states_every5ms_same_bench_repeated_with_per_service_reference_buffers_excludes_other_PLIF_and_controls_not_universal_floor
+  physical_cases: 127
+  physical_simulations_completed: 123
+  preserved_incomplete_returncode124_cases: 4
+  replay_cases: 7
+  replay_trials: 19
+  all_runs_terminal: true
+  source_and_physical_provenance_verified: true
+  physical_inverse_implemented: false
+  physical_state_accepted: false
+  original_float_accuracy_accepted: false
+  full_chip_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_measured_encoder_float_boundary.json
+  physical_evidence: artifacts/analog_asic/results/gf180_nonlinear_encoder_boundary.json
+  next_step: qualify_physical_hysteresis_controller_PVT_and_long_hold_then_physical_generator_inverse_exact_PLIF_fixed_actor_calibration_routing_leakage_density_full5ms_service
+
+gf180_physical_compensation_controller_2026_10_07:
+  reference: original_epoch58_full_float_no_QAT
+  geometry_scale: 10
+  feedback_mim_count: 40
+  layout_components_individually_drc0_unique_lvs_gds: true
+  controller: physical_11MOS_current_replica_with_hysteresis_and_complementary_TG_controls
+  thresholds_na_nominal_only: [50, 100]
+  observer_ports: [PMIR, NMIR]
+  physical_bank_clamp_selected: false
+  clamp_rejection: positive_step_2p278V_ripple_218mV_virtual_sum_deviation
+  trusted_static_controller_DC_reference: false
+  dc_solver_reset_nodeset_1000_iterations_still_warns: true
+  dynamic_only_no_DC_errors_computed: true
+  late_window_ripple_uv_at_200us:
+    typical27: 5.300825234
+    ff85: 62.378157040
+    ss0: 10.709581701
+  late_endpoint_difference_vs_1ms_trajectory_uv:
+    typical27: 53.480255116
+    ff85: 270.670598608
+    ss0: 39.816311780
+  typical_200us_25ns_vs_50ns_max_endpoint_difference_uv: 0.003633322
+  typical_100us_zero_return_uv: -2191.201760424
+  unclamped_zero_stationary_noise_uv_rms: 571.682
+  noise_scope: official_models_10Hz_to100MHz_no_current_generator_noise_or_sampled_covariance
+  long_hold_reference_scope: history_dependent_1ms_500ns_maxstep_no_trusted_DC_or_state_accuracy_acceptance
+  physical_cases: 127
+  completed_cases: 123
+  incomplete_returncode124_cases: 4
+  DC_reports_without_solver_warning: 44
+  historical_transients_using_solver_warning_DC: 1
+  all_runs_terminal: true
+  evidence: artifacts/analog_asic/results/gf180_nonlinear_encoder_boundary.json
+  physical_inverse_implemented: false
+  physical_state_accepted: false
+  full_chip_accepted: false
+  next_step: physical_inverse_and_current_generator_state_semantics_PVT_sampled_noise_fixed_actor_full_float_validation_then_assembled_layout_and_full5ms_service
+
+gf180_physical_encoder_inverse_2026_10_07:
+  reference: original_epoch58_full_float_no_QAT
+  physical_inverse_prototype_implemented: true
+  qualified_inverse_accepted: false
+  static_inverse:
+    circuit: extracted_six_MOS_mirror_with_physical_seven_MOS_drain_regulating_OTA_and_physical_reference_buffers
+    input_voltage_command: ideal_measured_encoder_DC_points_not_loaded_stored_state
+    monotonic_all_nominal_corners: true
+    nominal_max_current_error_pa:
+      typical27: 10.740166049
+      ff85: 28.110796865
+      ss0: 8.933149096
+    independent_copy_mismatch_seed17_reset:
+      max_current_error_na: 222.730931518
+      zero_current_error_pa: 21.181438751
+      op_solver_warning: false
+    preliminary_seed17_without_reset_reproducibility_qualified: false
+  shared_mode:
+    circuit: same_actual_mirror_and_OTA_physical_encode_decode_TGs_and_feedback_isolation_TG
+    mode_clocks: ideal_complementary_100ns_ramps
+    current_commands: diagnostic_not_weighted_event_generator
+    encoder_hold: physical_7um_MIM_load_and_extracted_gate_capacitance_not_packed_31M_state_array
+    working_mode_TG_nf_pf_width_um: [0.5, 1.0]
+    encode_us: 1000
+    decode_us: 20
+    reltol: 0.000001
+    vntol_v: 0.000000001
+    nominal_500ns_maxstep_current_error_na: 33.552598750
+    nominal_100ns_maxstep_current_error_na: 33.557421592
+    nominal_100ns_maxstep_capture_movement_uv: 851.886466058
+    maximum_decoded_endpoint_difference_100ns_vs500ns_na: 0.127219328
+    shared_mismatch_seed17_reset_max_current_error_na: 33.195547024
+    shared_mismatch_seed17_reset_virtual_sum_deviation_uv: 518.718821403
+    dummy_same_size_TG_selected: false
+    dummy_rejection_max_current_error_na: 126.361885202
+    added_capture_MIM22_selected: false
+    capture_and_extra_Miller_cases: incomplete_return124_not_qualified
+  new_TG_layout:
+    cell: gf180_fixed_body_tg_nf0p25
+    nf_pf_width_um: [0.25, 0.5]
+    length_um: 0.28
+    drc_count: 0
+    lvs_unique: true
+    real_gds: true
+    bbox_width_height_um: [2.82, 10.53]
+    extracted_capacitors: 13
+    extraction_feedback_empty: true
+    selected_for_shared_mode: false
+    functional_cases: incomplete_return124
+  case_count: 159
+  simulations_completed: 133
+  mode_edge_aborted_cases: 4
+  bounded_return124_cases: 11
+  all_runs_terminal: true
+  source_and_physical_provenance_verified: true
+  physical_state_accepted: false
+  original_float_accuracy_accepted: false
+  full_chip_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_encoder_inverse_boundary.json
+  limitations: missing_sampled_noise_gate_leakage_RPEX_current_generators_combined_layout_PLIF_updates_and_full_population_service
+  next_step: near_zero_mode_transfer_fixed_actor_calibration_capture_disturbance_then_physical_signed_charge_beta_reset_adaptation_accuracy_and_full5ms_service_before_full_assembly_layout
+
+
+gf180_signed_charge_beta_continuation_2026_10_07:
+  reference: original_epoch58_full_float_no_QAT
+  beta_actor: detail_stem
+  beta_channel: 0
+  beta_float32: 0.8842212557792664
+  beta_export_checkpoint_sigmoid_max_difference: 0.0
+  inverse_boundary_cases_completed: [159, 133]
+  integration_feedback_mim_count: 32
+  integrator_compensation_um: 7
+  diagnostic_bias_ua: 5
+  integrator_virtual_sum_deviation_uv: 231.364
+  integrator_charge_residual_fc: 1.695694
+  bench_energy_nj: 158.940
+  delayed_beta_tail_trial_ns: 200
+  delayed_beta_positive_2ua_charge_fc: 7222.016816
+  delayed_beta_negative_2ua_charge_fc: -7032.174843
+  beta_target_2ua_charge_magnitude_fc: 7073.770046
+  new_layout_cell: gf180_encoder_w10_isolated_enc_sum_observer_ports
+  new_layout_drc_errors: 0
+  new_layout_lvs_unique: true
+  new_layout_bbox_width_height_um: [73.9, 46.38]
+  new_layout_capacitance_entries: 24
+  new_layout_sum_nmir_pmir_coupling_ff: [0.04555, 0.07111]
+  previous_layout_sum_nmir_pmir_coupling_ff: [0.6425, 0.64856]
+  new_layout_beta_positive_negative_2ua_charge_fc: [7222.268430, -7032.047918]
+  new_layout_selected: false
+  no_tail_beta_simulation_handle: 39646
+  no_tail_beta_simulation_state: completed
+  no_tail_beta_positive_negative_2ua_charge_fc: [6815.791541, -6635.144922]
+  numerical_refinement_handle: 15078
+  numerical_refinement_state: completed
+  numerical_charge_difference_fc: 0.153217454
+  later_beta_start_delay_ns: 1500
+  later_beta_decode_us: 10
+  later_beta_simulation_handle: 72516
+  later_beta_simulation_state: completed
+  later_beta_positive_negative_2ua_charge_fc: [7189.440290, -7015.725884]
+  later_beta_charge_balance_residual_fc: 0.403310586
+  additional_hold_mim_simulation_handle: 25358
+  additional_hold_mim_simulation_state: incomplete_return124
+  physical_beta_accepted: false
+  physical_state_accepted: false
+  original_float_accuracy_accepted: false
+  full_chip_accepted: false
+  scope: Separate qualified layouts in an extracted diagnostic circuit; ideal reference currents and phase clocks, capacitive extraction only, no complete PLIF or population-service acceptance.
+
+  smaller_hold_mim_simulation_handle: 89517
+  smaller_hold_mim_simulation_state: completed
+  smaller_hold_mim_positive_negative_2ua_charge_fc: [7156.094557, -7069.427093]
+  smaller_hold_mim_postpulse_gate_movement_uv: 1851.495175
+
+  four_small_hold_caps_simulation_handle: 6745
+  four_small_hold_caps_simulation_state: incomplete_return124
+
+  smaller_hold_mim_mismatch_seed17_handle: 5710
+  smaller_hold_mim_mismatch_seed17_state: completed
+  mismatch_seed17_zero_delivered_charge_fc: 32.333690462
+  mismatch_seed17_positive_negative_10na_charge_fc: [68.247731284, -3.356162937]
+  phase_charge_probe_simulation_handle: 86252
+  phase_charge_probe_simulation_state: completed
+  mismatch_zero_charge_startup_steady_closing_park_fc: [16.306320, 0.008899, 16.015345, 0.003520]
+  route_dummy_simulation_handle: 74144
+  route_dummy_simulation_state: completed_unselected
+  route_dummy_effective_zero_charge_fc: 32.310723534
+  nonoverlap_route_simulation_handle: 32539
+  nonoverlap_route_simulation_state: completed
+  nonoverlap_effective_zero_charge_fc: 0.058945263
+  nonoverlap_tail200_effective_positive_negative_2ua_charge_fc: [7451.129184, -7393.828383]
+
+  nonoverlap_no_tail_simulation_handle: 53226
+  nonoverlap_no_tail_simulation_state: completed
+  nonoverlap_no_tail_effective_positive_negative_2ua_charge_fc: [7046.742949, -6993.459344]
+  nonoverlap_no_tail_effective_zero_charge_fc: 0.058317288
+  matched_nominal_nonoverlap_simulation_handle: 11703
+  matched_nominal_nonoverlap_simulation_state: completed
+  nominal_nonoverlap_no_tail_effective_positive_negative_2ua_charge_fc: [7049.647639, -6988.127743]
+  nominal_nonoverlap_no_tail_effective_zero_charge_fc: -0.005296789
+  all_launched_simulations_terminal: false
+  current_research_lead: ENC_only_isolated_layout_one7um_hold_MIM_delayed1500ns_nonoverlap_beta_no_tail
+  next_step: Numerical_PVT_sampled_noise_physical_gain_offset_then_weighted_events_exact_PLIF_fixed_actor_accuracy_5ms_service_combined_layout
+
+  selected_phase_numerical_refinement_handle: 75509
+  selected_phase_numerical_refinement_state: completed
+  selected_phase_effective_charge_numerical_difference_fc: 0.046500967
+
+  selected_phase_ff85_handle: 16412
+  selected_phase_ff85_state: completed_functional_negative_headroom_failure
+  selected_phase_ss0_handle: 50486
+  selected_phase_ss0_state: incomplete_return124
+
+  ff85_negative_2ua_capture_post_voltage_v: [0.037205, -0.112651]
+  ff85_negative_2ua_effective_charge_fc: -8796.226698
+  raised_low_reference_trial_na: 2000
+  raised_low_reference_ff85_handle: 63332
+  raised_low_reference_ff85_state: completed
+  raised_reference_ff85_negative_capture_post_voltage_v: [0.468944, 0.468708]
+  raised_reference_ff85_positive_negative_2ua_effective_charge_fc: [7054.420341, -7026.303567]
+  raised_reference_ff85_bench_energy_nj: 168.108284
+  raised_reference_tt27_handle: 94573
+  raised_reference_tt27_state: completed_unselected_positive_gain_error
+  raised_reference_ss0_handle: 56704
+  raised_reference_ss0_state: incomplete_return124
+
+  raised_reference_ss0_no_extra_hold_state: completed_unselected_gain_error
+  raised_reference_ss0_no_extra_hold_positive_negative_2ua_charge_fc: [7833.314692, -6766.949457]
+  raised_reference_tt27_positive_negative_2ua_charge_fc: [7362.325894, -6960.826641]
+  ss0_extra_encoder_compensation_handle: 55551
+  ss0_extra_encoder_compensation_state: incomplete_return124
+  physical_component_abstract_count: 11
+  physical_component_abstract_source_geometry_unchanged: true
+  physical_component_abstract_size_ports_obstructions_verified: true
+  physical_component_abstract_provenance_verified: true
+  physical_component_abstract_router_import_pin_access_accepted: false
+
+  component_router_import_verified: true
+  component_router_import_count: 11
+  component_router_stack: GF180D_5LM_1TM_11K
+  component_router_import_provenance_verified: true
+  component_router_pin_access_drc_accepted: false
+  ss0_encoder_steady5ua_one_small_hold_state: completed_with_initial_OP_warning
+  ss0_encoder_steady5ua_one_small_hold_positive_negative_2ua_effective_charge_fc: [7483.777030, -6849.201582]
+  ss0_encoder_steady5ua_one_small_hold_bench_energy_nj: 232.950436
+
+  ss0_encoder_steady5ua_four_small_hold_handle: 31437
+  ss0_encoder_steady5ua_four_small_hold_state: completed_with_initial_OP_warning
+
+  component_router_initial_validation_retracted_undefined_well_layers: true
+  component_router_added_nonrouting_layers: [Nwell, Pwell]
+  component_router_all_obstruction_rectangles_retained: true
+  component_router_rule_coverage_accepted: false
+  ss0_encoder_steady5ua_four_small_hold_positive_negative_2ua_effective_charge_fc: [7266.573260, -6919.533068]
+  ss0_encoder_steady5ua_four_small_hold_bench_energy_nj: 232.946415
+  tt27_stronger_bias_four_caps_handle: 46007
+  tt27_stronger_bias_four_caps_state: completed
+  ff85_stronger_bias_four_caps_handle: 48975
+  ff85_stronger_bias_four_caps_state: completed
+
+  stronger_bias_four_caps_tt27_positive_negative_2ua_effective_charge_fc: [7162.504266, -6961.021763]
+  stronger_bias_four_caps_ff85_positive_negative_2ua_effective_charge_fc: [6988.447805, -6992.227649]
+  stronger_bias_four_caps_tt_ff_ss_bench_energy_nj: [235.349180, 238.908755, 232.946415]
+  stronger_bias_four_caps_all_three_nominal_pairs_completed: true
+  stronger_bias_four_caps_statistical_accuracy_service_accepted: false
+
+  faster_encoding_calibration_reference_na: 1.0
+  faster_encoding_encode_us: 200
+  faster_encoding_tt27_handle: 45722
+  faster_encoding_tt27_state: completed
+  faster_encoding_ss0_handle: 21859
+  faster_encoding_ss0_state: completed_with_initial_OP_warning
+
+  faster_encoding_tt_ss_bench_energy_nj: [48.983507, 47.983199]
+
+  calibration1na_long_tt_control_handle: 73623
+  calibration1na_long_tt_control_state: completed
+  calibration1na_tt_200vs1000us_charge_difference_fc: 0.202718878
+  calibration10na_20us_ss_handle: 64549
+  calibration10na_20us_ss_state: completed_unselected_zero_charge_error
+  calibration10na_20us_ss_first_last_zero_charge_fc: [4.617026, 5.116936]
+  calibration10na_20us_ss_bench_energy_nj: 6.855134
+
+  calibration1na_20us_tt_handle: 43332
+  calibration1na_20us_tt_state: completed
+  calibration1na_20us_ss_handle: 86707
+  calibration1na_20us_ss_state: completed_with_initial_OP_warning
+
+  calibration1na_20vs200us_tt_ss_charge_difference_fc: [2.064230863, 2.434379726]
+  calibration1na_20us_tt_ss_bench_energy_nj: [7.115116, 6.922199]
+
+  calibration1na_20us_ff_handle: 8235
+  calibration1na_20us_ff_state: completed_midrange_charge_error
+  calibration1na_20us_tt_100ns_handle: 68771
+  calibration1na_20us_tt_100ns_state: completed
+
+  calibration1na_20us_ff_positive200na_charge_target_fc: [644.999903, 707.377005]
+  calibration1na_20us_ff_positive200na_error_percent: -8.818
+  calibration1na_20us_tt_step_charge_difference_fc: 0.261079432
+  calibration1na_200us_ff_handle: 89179
+  calibration1na_200us_ff_state: completed
+  fast_policy_signed_domain_pvt_accepted: false
+  calibration1na_200us_ff_positive200na_charge_fc: 706.029998
+  calibration1na_200us_ff_bench_energy_nj: 49.744563
+  calibration1na_50us_ff_handle: 5882
+  calibration1na_50us_ff_state: completed
+  calibration1na_100us_ff_handle: 70295
+  calibration1na_100us_ff_state: completed
+  calibration1na_ff_50us_100us_vs200us_charge_difference_fc: [0.515841173, 0.209288308]
+  calibration1na_ff_50us_100us_bench_energy_nj: [14.339147, 26.140975]
+  calibration1na_50us_tt_handle: 47299
+  calibration1na_50us_tt_state: completed
+  calibration1na_50us_ss_handle: 26160
+  calibration1na_50us_ss_state: completed_with_initial_OP_warning
+  calibration1na_50us_ff_100ns_handle: 47151
+  calibration1na_50us_ff_100ns_state: completed
+  calibration1na_50us_tt_ff_ss_vs200us_charge_difference_fc: [0.670152209, 0.515841173, 0.635338860]
+  calibration1na_50us_tt_ff_ss_bench_energy_nj: [14.093254, 14.339147, 13.765711]
+  calibration1na_50us_ff_step_charge_difference_fc: 0.043614368
+  next_characterization_encode_us: 50
+  next_characterization_scope: mismatch_initialization_sampled_noise_physical_references_then_complete_PLIF_float_and_population_service
+  calibration1na_50us_tt_mismatch_handles: [31250, 95115, 41083]
+  calibration1na_50us_tt_mismatch_seeds: [17, 101, 2026]
+  calibration1na_50us_tt_mismatch_state: completed_three_diagnostic_seeds
+  calibration1na_50us_tt_mismatch_nominal_difference_fc: [0.676837013, 6.386333000, 5.339213702]
+  shared_hold16_tt_ss_max_charge_error_percent: [2.506345950, 4.010473989]
+  shared_hold16_tt_ss_max_capture_movement_uv: [740.325126, 1048.776275]
+  shared_hold16_tt_ss_bench_energy_nj: [14.040429, 13.726861]
+  shared_hold16_added_standalone_cap_area_um2: 1210.32
+  shared_hold16_precision_service_accepted: false
+  shared_hold16_ff50_ss200_tt50_seed17_handles: [27228, 73597, 98567]
+  shared_hold16_followup_state: completed
+  feedback_release_advance_baseline_500ns_1500ns_handles: [26771, 21080, 75221]
+  feedback_release_advance_state: terminal_rejected_500ns_functional_error_1500ns_transient_abort
+  delayed_feedback_release_200ns_500ns_handles: [70672, 24382]
+  delayed_feedback_release_state: terminal_rejected_saturation_or_increased_charge_error
+  shared_hold16_ff50_effective_positive_negative2ua_charge_fc: [7004.220140, -7021.450056]
+  shared_hold16_ss50_vs200us_charge_difference_fc: 0.155541
+  shared_hold16_tt_seed17_nominal_difference_fc: 1.427868
+  capture_phase_variants_selected: false
+  next_hold16_timing_characterization_accepted: false
+  current_all_launched_processes_terminal: true
+  physical_current_divider_cell: gf180_encoder_current_reference_divider
+  physical_current_divider_size_um: [66, 56.04]
+  physical_current_divider_drc0_unique_lvs_gds: true
+  physical_current_divider_cal_tt_ff_ss_na: [1.813509, 2.105200, 1.629299]
+  physical_current_divider_low_tt_ff_ss_ua: [2.040767, 2.043580, 2.038156]
+  physical_current_divider_stationary_cal_noise_tt_ff_ss_na_rms: [0.334529, 0.358169, 0.319267]
+  physical_current_divider_stationary_noise_band_hz: [10, 100000000]
+  physical_current_divider_sampled_noise_reference_accepted: false
+  physical_current_divider_encoder_tt_ff_ss_handles: [95327, 34359, 18831]
+  physical_current_divider_encoder_state: completed_all_three_nominal_pairs_no_initial_OP_warning
+  physical_current_divider_root_source_ideal: true
+  physical_reference_encoder_tt_ff_ss_max_charge_error_percent: [2.589140168, 1.105356813, 4.106618489]
+  physical_reference_encoder_tt_ff_ss_encode_noise_uv_rms: [628.284351, 684.963629, 583.899176]
+  physical_reference_encoder_tt_ff_ss_encode_noise_bias_match_uv: [0.000344418, 0.001699795, 0.000004097]
+  physical_reference_encode_noise_sampled_accepted: false
+  physical_reference_filter1_tt_ff_ss_handles: [10241, 6153, 90585]
+  physical_reference_filter1_state: completed_three_nominal_pairs_and_matched_stationary_noise
+  physical_reference_filter1_tt_ff_ss_encode_noise_uv_rms: [574.941300, 621.153662, 557.783000]
+  physical_reference_filter1_tt_ff_ss_span_noise_uv_rms: [265.527774, 286.245318, 246.658213]
+  physical_reference_filter1_added_standalone_area_um2: 633.36
+  physical_reference_filter1_cold_tt_ss_handles: [13994, 91846]
+  physical_reference_filter1_cold_state: completed_1ms_prelude_inadequate
+  physical_reference_filter1_cold_prelude_us: 2000
+  physical_reference_filter1_cold2ms_tt_ff_ss_handles: [66273, 42293, 50327]
+  physical_reference_filter1_cold2ms_state: completed_three_nominal_pairs
+  physical_reference_filter1_cold2ms_tt_ff_ss_vs_powered_charge_difference_fc: [0.045427, 0.035644, 0.026223]
+  physical_reference_filter1_cold2ms_tt_ff_ss_startup_energy_nj: [462.990585, 469.332163, 459.315845]
+  physical_reference_filter1_cold2ms_tt_ff_ss_max_charge_error_percent: [2.594200009, 1.048074277, 4.110198552]
+  reference_noise_boundary_cases_completed: [17, 15]
+  reference_noise_boundary_evidence: artifacts/analog_asic/results/gf180_reference_noise_boundary.json
+  reference_noise_boundary_provenance_verified: true
+  physical_reference_startup_controller_accepted: false
+  physical_reference_filter1_mismatch_seeds: [17, 101, 2026]
+  physical_reference_filter1_mismatch_handles: [87560, 19005, 45154]
+  physical_reference_filter1_mismatch_state: completed_three_diagnostic_seeds
+  physical_reference_filter1_mismatch_nominal_charge_difference_fc: [3.005166, 2.757979, 3.758232]
+  physical_reference_filter1_mismatch_first_zero_charge_fc: [0.139480, 0.137937, 0.306546]
+  physical_reference_nearzero_tt_negative10pa_charge_target_fc: [0.092760647, -0.035368850]
+  physical_reference_nearzero_signed_accuracy_accepted: false
+  halfsize_capture_dummy_tt_ss_handles: [48894, 98401]
+  halfsize_capture_dummy_state: completed_unselected_negative10pa_sign_failure
+  halfsize_capture_dummy_tt_ss_first_zero_charge_fc: [0.068701752, 0.157277863]
+  fullsize_capture_dummy_tt_ss_tt_seed17_handles: [85970, 57079, 87115]
+  fullsize_capture_dummy_state: completed_improved_unaccepted_slowcorner_negative10pa
+  fullsize_capture_dummy_tt_ss_first_zero_charge_fc: [0.011490756, 0.037817720]
+  fullsize_capture_dummy_tt_ss_negative10pa_charge_fc: [-0.028142694, 0.005308916]
+  fullsize_capture_dummy_tt_seed17_first_last_zero_charge_fc: [-0.002835050, -0.008845450]
+  fullsize_capture_dummy_signed_pvt_accepted: false
+  fullsize_capture_dummy_tt_wide_ff_near_ss_fine_handles: [34092, 64736, 51103]
+  fullsize_capture_dummy_followup_state: completed_but_slowcorner_small_sign_failure
+  fullsize_capture_dummy_tt_wide_positive_negative2ua_charge_fc: [6966.915040, -6969.680966]
+  fullsize_capture_dummy_ff_near_first_last_zero_charge_fc: [0.012161983, 0.008682292]
+  fullsize_capture_dummy_ss_fine_negative10pa_charge_fc: 0.004598126
+  tight_charge_solver_powered_tt_ss_state: incomplete_OP_or_early_transient_failure
+  small_signal_numerical_precision_accepted: false
+  inverse_current_failure_counts: {bounded_timeout: 11, transient_abort: 10, operating_point_failure: 1}
+  physical_phase_inverter_cell: gf180_phase_inverter
+  physical_phase_inverter_size_um: [23, 34.64]
+  physical_phase_inverter_drc0_unique_lvs_gds: true
+  current_router_import_component_count: 18
+  physical_beta_driver_standard_tt_handle: 23107
+  physical_beta_driver_standard_tt_state: completed_unselected_increased_zero_charge
+  physical_beta_driver_tt_first_last_zero_charge_fc: [0.348883529, 0.342724705]
+  physical_beta_driver_logic_midpoint_width_us: 3.444002
+  physical_beta_driver_refined_state: terminal_incomplete_park_clock_source_branch_reported
+  current_phase_noise_numerical_precision_accepted: false
+  matched_physical_park_beta_standard_dummy_handles: [94387, 97639]
+  matched_physical_park_beta_state: terminal_completed_standard_unaccepted
+  matched_physical_park_beta_refined_state: terminal_incomplete
+  matched_physical_park_beta_tt_zero_charge_by_dummy_count_fc:
+    count0: [-0.028764400, -0.031624149]
+    count1: [-0.021495612, -0.024380646]
+    count2: [-0.012901541, -0.017314543]
+    count4: [-0.010253486, -0.013704632]
+  matched_physical_park_beta_ss_count4_zero_charge_fc: [-0.036478946, -0.044609065]
+  matched_physical_park_beta_count4_tt_positive1pa_charge_fc: -0.003589973
+  matched_physical_park_beta_count4_ss_positive10pa_charge_fc: 0.000263572
+  matched_physical_park_beta_refined_failure: transient_abort_upstream_vparkcommand_branch_not_root_cause_proof
+  matched_physical_park_beta_step20_handles: [49935, 18882]
+  matched_physical_park_beta_step20_state: terminal_completed_precision_unqualified
+  inverse_failure_counts: {bounded_timeout: 13, transient_abort: 12, operating_point_failure: 1}
+  matched_physical_park_beta_step20_vs100_max_charge_difference_fc: [0.007377621, 0.016589859]
+  matched_physical_park_beta_step20_tt_zero_charge_fc: [-0.015350472, -0.012655275]
+  matched_physical_park_beta_step20_ss_zero_charge_fc: [-0.025444865, -0.028019206]
+  matched_physical_park_beta_step5_handles: [35354, 48501]
+  matched_physical_park_beta_step5_state: terminal_incomplete_bounded_timeout
+  matched_physical_park_beta_short_step_handles: [54285, 57621, 85048, 62192]
+  matched_physical_park_beta_short_step_state: terminal_completed_unaccepted
+  feedback_endpoint_measurement: native_model_temperature_statistical_capacitance_plus_extracted_PM_C0_times_actual_two_terminal_voltage
+  feedback_endpoint_tt20_measured_capacitance_pf: 31.561359620
+  feedback_endpoint_tt_ss_20_handles: [17536, 63756]
+  feedback_endpoint_tt_ss_20_state: terminal_completed
+  feedback_endpoint_tt_ss_5_handles: [97815, 33326]
+  feedback_endpoint_tt_ss_5_state: terminal_completed
+  feedback_endpoint_physical_precision_accepted: false
+  feedback_endpoint_step5_vs20_max_settled_charge_difference_fc: [0.000119928, 0.000043209]
+  feedback_endpoint_step5_vs20_max_same_aperture_charge_difference_fc: [0.000181826, 0.000189423]
+  feedback_endpoint_tt5_settled_zero_charge_fc: [-0.021566121, -0.023846267]
+  feedback_endpoint_ss5_settled_zero_charge_fc: [0.032003363, 0.030288046]
+  feedback_endpoint_tt5_settled_signed10pa_charge_fc: [-0.057386245, 0.014035604]
+  feedback_endpoint_ss5_settled_signed10pa_charge_fc: [-0.003672784, 0.067749542]
+  feedback_leak_audit_handles: [81613, 82207]
+  feedback_leak_audit_state: terminal_completed
+  legacy_capacitor_current_integral_sub_fc_precision_qualified: false
+  feedback_leak_audit_max_native_resistor_leak_charge_fc: [7.9195e-9, 1.68237e-8]
+  feedback_endpoint_dummy_count0_1_tt_ss_handles: [46971, 88792, 18355, 59700]
+  feedback_endpoint_dummy_count0_1_tt_ss_state: terminal_completed_unaccepted
+  feedback_endpoint_tt20_settled_zero_charge_by_count_fc:
+    count0: [-0.029623142, -0.031792983]
+    count1: [-0.027635570, -0.029719547]
+    count4: [-0.021686050, -0.023870135]
+  feedback_endpoint_ss20_settled_zero_charge_by_count_fc:
+    count0: [0.032795402, 0.031094371]
+    count1: [0.032611631, 0.030906875]
+    count4: [0.031999690, 0.030289205]
+  feedback_endpoint_dummy_pvt_correction_selected: false
+  feedback_endpoint_all_runs_terminal: true
+  zero_input_beta_plateau_mirror_current_pa_tt_ss: [-2.830947, 5.097460]
+  physical_mode_drivers_implemented_in_bench: true
+  physical_mode_drivers_state: terminal_completed_unaccepted
+  physical_mode_driver_sequencer_accepted: false
+  physical_mode_drivers_tt_ss_handles: [87289, 22646]
+  physical_mode_drivers_tt_ss_zero_charge_fc:
+    tt: [-0.050466153, -0.052325684]
+    ss: [0.032129661, 0.030409510]
+  physical_mode_drivers_midpoint_encode_decode_gap_ns: [92.7925, 92.2615]
+  physical_mode_drivers_tt_positive10pa_stored_charge_fc: -0.014765073
+  physical_mode_drivers_tt_ss_energy_nj_per60us: [14.317995, 13.847899]
+  physical_mode_drivers_capture_dummy_nf1_state: terminal_completed_rejected_offset_worse
+  physical_mode_drivers_capture_dummy_nf1_handles: [73201, 18799]
+  physical_mode_drivers_capture_dummy_nf1_tt_ss_zero_charge_fc:
+    tt: [-0.176685458, -0.177079128]
+    ss: [-0.204481210, -0.203492489]
+  physical_mode_drivers_all_runs_terminal: true
+  physical_mode_drivers_capture_dummy_nf1_selected: false
+  physical_mode_output_buffer_inverters_per_encode_decode_tree: 4
+  physical_mode_output_buffer_added_shared_standalone_area_um2: 3186.88
+  physical_mode_output_buffer_tt_ss_handles: [22610, 34549]
+  physical_mode_output_buffer_state: terminal_completed_unaccepted
+  physical_mode_output_buffer_balance_accepted: false
+  physical_mode_output_buffer_tt_ss_zero_charge_fc:
+    tt: [-0.037931087, -0.039878423]
+    ss: [-0.000723023, -0.002067778]
+  independent_capture_dummy_macros:
+    nf0p25_pf1: {drc: 0, unique_lvs: true, real_gds: true, caps: 13, lef_size_um: [2.82, 10.78]}
+    nf0p5_pf0p5: {drc: 0, unique_lvs: true, real_gds: true, caps: 13, lef_size_um: [2.78, 10.60]}
+  independent_capture_dummy_buffered_handles: [82783, 5180, 83701, 32301]
+  independent_capture_dummy_buffered_state: terminal_completed_unselected
+  capture_dummy_geometry_secant_prediction_nf_pf_um: [0.75076955, 1.21244471]
+  capture_dummy_geometry_secant_prediction_evidence: artifacts/analog_asic/results/gf180_capture_dummy_geometry_prediction.json
+  capture_dummy_native_nf0p75_pf1p2: {drc: 0, unique_lvs: true, real_gds: true, caps: 13, lef_size_um: [2.78, 11.075]}
+  capture_dummy_native_nf0p75_pf1p2_handles: [5499, 5656]
+  capture_dummy_native_nf0p75_pf1p2_state: tt_completed_ss_transient_aborted_unaccepted
+  capture_dummy_geometry_prediction_accepted: false
+  capture_dummy_native_nf0p75_pf1p2_tt20_charges_fc: [0.007687476, -0.028020010, 0.043406857, 0.005236035]
+  capture_dummy_native_nf0p75_pf1p2_ss20_failure: transient_abort_at179p901746us_vint_branch_no_unique_root_cause
+  capture_dummy_native_nf0p75_pf1p2_step5_handles: [85129, 65005]
+  capture_dummy_native_nf0p75_pf1p2_step5_state: terminal_completed_unaccepted
+  capture_dummy_native_nf0p75_pf1p2_tt5_charges_fc: [0.007618170, -0.028026540, 0.043339267, 0.005145582]
+  capture_dummy_native_nf0p75_pf1p2_ss5_charges_fc: [0.007896891, -0.027793863, 0.043584668, 0.006459078]
+  capture_dummy_native_nf0p75_pf1p2_tt5_vs20_max_endpoint_difference_fc: 0.000090453
+  capture_dummy_native_nf0p75_pf1p22: {drc: 0, unique_lvs: true, real_gds: true, caps: 13, lef_size_um: [2.78, 11.085]}
+  capture_dummy_native_nf0p75_pf1p22_tt_ss_ff5_handles: [27075, 51334, 36008]
+  capture_dummy_native_nf0p75_pf1p22_state: terminal_completed_tt_ss_ff_provisional_writeback_candidate
+  capture_dummy_native_nf0p75_pf1p22_charges_fc:
+    tt: [0.000882746, -0.034758916, 0.036548812, -0.001546376]
+    ss: [-0.000100138, -0.035789649, 0.035588611, -0.001442898]
+    ff85: [0.027929945, -0.007979593, 0.063498833, 0.023587242]
+  capture_dummy_native_nf0p75_pf1p22_pvt_precision_accepted: false
+  capture_dummy_native_nf0p75_pf1p22_all_runs_terminal: true
+  current_next_stage: physical_CF_result_conversion_encoder_writeback_separate_reset_restore_then_exact_PLIF_and_full_accuracy_noise_mismatch_5ms_population_service_full_assembly
+  writeback_native_resistor_cell: gf180_writeback_resistor_123x1
+  writeback_native_resistor_geometry_um: [123, 1]
+  writeback_native_resistor_qualified: {drc: 0, unique_lvs: true, real_gds: true, extracted_caps: 2, lef_size_um: [3.36, 126.58]}
+  writeback_rc_base_window_us_excludes_beta: 4
+  writeback_native_tt27_resistance_ohm: 126688.362
+  writeback_native_tt27_rc_us: 3.998456939
+  writeback_native_uncalibrated_scale:
+    res_typical27: 1.000385914
+    res_typical0: 0.974256597
+    res_typical85: 1.047819364
+    res_ss27: 0.833845093
+    res_ff27: 1.250054766
+  writeback_native_calibration_implemented: false
+  writeback_first_loop_tt_positive200na_handle: 13013
+  writeback_first_loop_state: terminal_host_reporting_failure_preserved_unknown_simulator_exit
+  writeback_first_pulse: learned_beta_once
+  writeback_readback_pulse: unity_4us_after_physical_restore_capture_and_CF_reset
+  writeback_physical_result_source: actual_integrator_CF_voltage_through_native_resistor_TG_to_encoder_SUM
+  writeback_accepted: false
+  writeback_boundary_evidence: artifacts/analog_asic/results/gf180_encoder_writeback_boundary.json
+  writeback_boundary_cases_completed: [9, 7]
+  writeback_reporting_failure_recovery_evidence: artifacts/analog_asic/results/gf180_encoder_writeback_reporting_failure_recovery.json
+  writeback_tt_signed200_first_charges_fc: [706.416781, -704.459166]
+  writeback_tt_signed200_unity_readback_charges_fc: [693.508888, -688.607803]
+  writeback_tt_signed200_preservation_errors_fc: [-12.907892, 15.851363]
+  writeback_tt_signed200_supply_energy_nj_per130us: [30.785917, 30.210123]
+  writeback_tt_zero_with_current_probe_state: terminal_transient_abort_vwriteprobe_reported
+  writeback_omit_current_probe_handles: [43207, 49907, 57242]
+  writeback_omit_current_probe_state: active
+  writeback_omit_current_probe_current_observation_available: false
+
+gf180_native_writeback_trim_stage_2026_10_08:
+  active_reference: original_epoch58_full_float_checkpoint
+  qat_or_quantized_reference_used: false
+  writeback_evidence: artifacts/analog_asic/results/gf180_encoder_writeback_boundary.json
+  trim_evidence: artifacts/analog_asic/results/gf180_trim_bank_boundary.json
+  gain_sensitivity_evidence: artifacts/analog_asic/results/gf180_writeback_gain_float_boundary.json
+  router_evidence: artifacts/analog_asic/results/gf180_component_lef_import.json
+  individually_imported_components: 39
+  trim_topology: native_60um_base_plus_seven_native_series_segments_with_four_TG_bypass_instances_per_segment
+  selection: externally_selected_DC_code_no_autonomous_calibration_controller
+  passive_corner_scope: independently_selected_resistor_corner_typical_MIM_only
+  one_ended_nominal_code: 30
+  one_ended_signed_preservation_error_percent_positive_negative: [0.0919318, -0.2550467]
+  one_ended_zero_unity_readback_fc: 0.028032391
+  two_ended_candidate: unselected_zero_charge_error_and_signed_transient_abort
+  two_ended_zero_unity_readback_fc: -2.834079006
+  live_jobs: []
+  next_action: article_architecture_service_density_and_float_error_envelope_then_representative_PLIF_macro
+  research_target: suitable_article_ASIC_implementation_not_manufacturing_signoff
+  gds_integrity_evidence: artifacts/analog_asic/results/gf180_gds_integrity_boundary.json
+  integrity_audited_original_views: 28
+  integrity_passed_original_views: 13
+  integrity_failed_original_views: 15
+  separately_corrected_inverter_evidence: artifacts/analog_asic/layout/gf180_phase_inverter_fullroute/qualification.json
+  separately_corrected_inverter_gds_qualified: true
+  entire_current_import_inventory_integrity_reaudited: false
+  conditional_25us_8cap_feedback_plate_only_mm2: 599.69536
+  first_order_gear_screen_status: all_three_terminal_aborted
+  native_reset_resistor_screen_status: signed_timeouts_zero_complete_unselected
+  autonomous_calibration_controller_implemented: false
+  dc_numerical_precision_qualified: false
+  combined_bank_layout_qualified: false
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  buffered_parking_status: provisional_zero5ns_and_signed20ns_complete_zero20ns_abort
+  buffered_parking_signed_loss_percent_positive_negative: [0.365402518, 0.721037410]
+  buffered_parking_zero_preservation_error_fc_5ns: -0.002991333
+  conditional_service_plate_evidence: artifacts/analog_asic/results/gf180_shared_core_service_plate_budget.json
+  conditional_50us_feedback_plate_only_mm2: 4797.562880
+  conditional_service_scope: serial_visit_per_resident_per_bin_one_feedback_bank_per_channel_ignores_all_other_work_not_measured_minimum
+  feedback_scaling_evidence: artifacts/analog_asic/results/gf180_feedback_scaling_boundary.json
+  trained_beta_minimum: 0.32273098826408386
+  trained_beta_maximum: 0.9747670292854309
+  four_cap_100ns_ramp_all_beta_compatible: false
+  eight_cap_100ns_ramp_beta_ordering_fits: true
+  first_charge_error_must_be_checked_separately_from_preservation: true
+  refinement_20us_8cap_4extra_status: zero_and_negative_complete_positive_second_reset_abort
+  numerical_method_agreement_qualified: false
+  inherited_donor_numerical_method: gear
+  method_audit_uses_final_actual_deck_options: true
+  explicit_trapezoidal_20us_signed_zero_completed: true
+  negative_20us_error_persists_across_methods: true
+  settling_25us_4extra_status: signed_complete_zero_mode_transition_abort
+  settling_only_negative_loss_fix_selected: false
+  active_next_screen: none_architecture_feasibility_takes_priority
+  intermediate_8extra_25us_status: signed_complete_zero_trapezoidal_abort
+  encoder_load_comparison_audits_exact_native_command_deck: true
+  routed_hold_bank_evidence: artifacts/analog_asic/layout/gf180_mim_bank_7x7_n9/qualification.json
+  routed_feedback_bank_evidence: artifacts/analog_asic/layout/gf180_mim_bank_22x22_n8/qualification.json
+  routed_hold_bank_bbox_um: [141.5, 14.0]
+  routed_feedback_bank_bbox_um: [245.5, 29.0]
+  routed_bank_combined_PLIF_accepted: false
+  routed_bank_first_loop_status: negative_and_zero_complete_positive_second_reset_abort
+  actual_routed_RC_scale_must_use_extracted_bank_capacitance: true
+
+gf180_architecture_capacity_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_architecture_capacity_boundary.json
+  generator: scripts/analyze_gf180_architecture_capacity.py
+  resident_membrane_states: 30976000
+  adaptation_enabled_states: 10982400
+  audited_7um_single_cap_membrane_plate_only_mm2: 1517.824
+  all_resident_updates_per_second_for_5ms: 6195200000
+  illustrative_300mm2_half_membrane_plate_um2_per_state: 4.842458677685951
+  illustrative_300mm2_quarter_feedback_optimistic_serial_slot_us: 3.1265874726794616
+  illustrative_allocations_are_design_requirements: false
+  smaller_storage_qualified: false
+  complete_service_slot_qualified: false
+  next_action: smaller_analog_storage_and_float_error_tolerance_then_faster_complete_PLIF_service
+  full_chip_accepted: false
+
+float_linear_storage_noise_stage_2026_10_08:
+  reference: original_epoch58_float
+  qat_enabled: false
+  existing_274uv_channel_range_record0_mean_iou_range: [0.11871834844350815, 0.11984410881996155]
+  record0_baseline_mean_iou: 0.2057260125875473
+  active_session_id: null
+  container: null
+  active_noise_sigma_uv: 100
+  active_scope: all_neurons_full_frame_record0_three_seeds
+  noise_placement: initialization_and_every_post_bin_membrane
+  range_scope: ideal_per_record_per_channel
+  validation_set_accuracy_accepted: false
+  physical_storage_noise_qualified: false
+
+float_linear_storage_noise_terminal_2026_10_08:
+  evidence: artifacts/analog_asic/results/float_linear_storage_noise_boundary.json
+  no_noise_control_exact: true
+  zero_amplitude_writeback_control_exact_three_seeds: true
+  mean_iou_100uv_channel_ranges: 0.12161307781934738
+  mean_iou_30uv_channel_ranges: 0.12160794933636983
+  baseline_mean_iou: 0.2057260125875473
+  live_jobs: []
+  next_action: physical_nonlinear_state_mapping_and_short_complete_service_with_linear_compute_error_validation
+  model_accuracy_accepted: false
+  physical_storage_accepted: false
+
+gf180_corrected_tg_stage_2026_10_08:
+  layout_evidence: artifacts/analog_asic/layout/gf180_fixed_body_tg_fullroute/qualification.json
+  abstract_evidence: artifacts/analog_asic/layout/gf180_fixed_body_tg_fullroute/abstract_qualification.json
+  latest_nominal_hold_evidence: artifacts/analog_asic/results/gf180_fullroute_tg_hold_step100_src24c4c91744d0.json
+  full_cell_drc_zero: true
+  exported_gds_roundtrip_lvs_unique: true
+  exported_gds_roundtrip_drc_zero: true
+  bbox_size_um: [38.0, 41.2]
+  corrected_tg_is_final_compact_array: false
+  native_mos_width_nf_pf_um: [1.0, 2.0]
+  native_mos_length_um: 0.28
+  router_import_inventory_count: 30
+  fresh_entire_inventory_integrity_audit_complete: false
+  signed_voltage_release_shift_mv_approx: [-12.5825, -20.578, -5.18]
+  live_jobs: []
+  next_action: corrected_view_edge_compensation_or_bottom_plate_sampling_then_combined_macro
+  physical_storage_accepted: false
+  complete_PLIF_accepted: false
+  full_chip_accepted: false
+
+gf180_fullroute_sampling_compensation_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_fullroute_sampling_boundary.json
+  half_dummy_primitive_evidence: artifacts/analog_asic/layout/gf180_fixed_body_tg_fullroute_half/qualification.json
+  half_dummy_exported_gds_drc_lvs_pass: true
+  router_import_inventory_count: 31
+  sampling_mode: floating_differential_bottom_plate_open20ns_before_top
+  reference_voltage_v: 1.65
+  input_voltage_grid_v: [0.3, 1.65, 3.0]
+  both_terminal_half_dummy_release_errors_mv: [4.141, 0.4787416, -3.012]
+  no_dummy_bottom_plate_release_errors_mv: [14.499, 8.701651, 16.702]
+  selection: provisional_both_terminal_half_dummy_for_combined_layout_evaluation
+  live_jobs: []
+  fine_step_completed: true
+  matched_physical_deck_except_transient_step: true
+  maximum_reported_endpoint_step_difference_uv: 0.427
+  combined_sampler_layout_implemented: false
+  physical_storage_accepted: false
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  next_action: combined_sampler_layout_and_actual_differential_read_restore
+
+gf180_combined_sampler_stage_2026_10_08:
+  layout_evidence: artifacts/analog_asic/layout/gf180_compensated_bottom_sampler/qualification.json
+  abstract_evidence: artifacts/analog_asic/layout/gf180_compensated_bottom_sampler/abstract_qualification.json
+  simulation_evidence: artifacts/analog_asic/results/gf180_fullroute_tg_hold_step100_dummy1half_bottom1_bdummy1_macro1_src5d5b17dff2d3.json
+  bbox_size_um: [139.0, 136.1]
+  physical_drc_lvs_and_exported_gds_readback_pass: true
+  combined_macro_layout_implemented: true
+  final_compact_resident_array_cell: false
+  mos_count: 8
+  native_mim_count: 1
+  actual_routed_release_errors_mv: [16.123, 4.06441, 7.592]
+  primitive_compensation_accuracy_transfers_to_routed_macro: false
+  legacy_standalone_MIM_gds_port_flags_sufficient: false
+  current_integrity_audit_evidence: artifacts/analog_asic/results/gf180_gds_integrity_port_checked_boundary.json
+  live_jobs: []
+  current_integrity_audit_complete: true
+  current_integrity_audited_views: 32
+  current_integrity_passing_views: 15
+  current_integrity_failing_views: 17
+  standalone_native_mim_exported_ports_connected: false
+  physical_storage_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  next_action: reduce_clock_state_route_coupling_and_add_differential_read_restore
+
+gf180_sampler_route_guards_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_sampler_routing_boundary.json
+  shielded_layout_evidence: artifacts/analog_asic/layout/gf180_compensated_bottom_sampler_shielded/qualification.json
+  shielded_actual_gds_drc_lvs_pass: true
+  matched_simulation_source_and_commands_except_layout: true
+  bbox_area_increase_percent: 7.053637031594451
+  maximum_release_error_reduction_percent: 15.201885505178703
+  shielded_release_errors_mv: [13.672, -0.7575282, 3.416]
+  extracted_PM_layout_capacitance_ff_unshielded_shielded: [14.3435, 1.02928]
+  extracted_M_VSS_layout_capacitance_ff_unshielded_shielded: [33.7628, 74.04136]
+  direct_state_clock_coupling_removed: false
+  router_import_inventory_count: 33
+  fresh_entire_33_view_integrity_audit_complete: false
+  live_jobs: []
+  physical_storage_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  next_action: qualify_required_analog_read_frontend_and_integrate_actual_differential_read_restore
+
+gf180_corrected_ota_read_stage_2026_10_08:
+  corrected_ota_cell: gf180_shared_ota_core_pmos_input_fullroute
+  standalone_gds_drc_lvs_pass: true
+  interoperability_inventory: 34
+  nominal_unity_report: artifacts/analog_asic/results/gf180_fullroute_ota_bias1ua_comp7um_src74e241fd205b.json
+  loaded_sampler_script: scripts/screen_gf180_sampler_dual_buffer.py
+  live_host_sessions: []
+  read_restore_accepted: false
+  complete_PLIF_accepted: false
+  full_chip_accepted: false
+  stacking_status: architecture_candidate_only_no_qualified_3d_flow
+
+gf180_loaded_read_range_stage_2026_10_08:
+  first_run_terminal: true
+  first_report: artifacts/analog_asic/results/gf180_sampler_dual_buffer_src504ce2a7ff3e.json
+  upper_3v_read_error_mv: 30.7501
+  upper_3v_release_to_5ms_drift_mv: 29.26
+  next_case: membrane_window_0_75_to_2_55_v_with_terminal_observations
+  accepted: false
+
+gf180_loaded_read_settled_acquisition_stage_2026_10_08:
+  acquisition_us: 20
+  nominal_step_ns: 100
+  report: artifacts/analog_asic/results/gf180_sampler_dual_buffer_window1_acq1_src206bccdc3be0.json
+  high_release_to_5ms_drift_mv: -0.036
+  high_late_read_error_mv: 0.0778006
+  low_release_error_mv: 9.085
+  convergence_step_ns: 20
+  service_accepted: false
+  storage_accepted: false
+
+gf180_loaded_read_convergence_stage_2026_10_08:
+  boundary: artifacts/analog_asic/results/gf180_sampler_dual_buffer_boundary.json
+  reports: 6
+  complete_reports: 5
+  bounded_timeout_reports: 1
+  early_aperture_end_us: 50
+  early_held_observation_us: 49
+  time_steps_ns: [100, 20]
+  exact_decks_match_except_tran: true
+  maximum_observed_endpoint_difference_uv: 18
+  full_5ms_fine_step_completed: false
+  live_host_sessions: []
+  storage_accepted: false
+  service_accepted: false
+  next: actual_switched_read_access_precharge_loading_and_restore_integration
+
+gf180_switched_read_charge_transfer_stage_2026_10_08:
+  boundary: artifacts/analog_asic/results/gf180_sampler_read_access_boundary.json
+  completed_nominal_reports: 4
+  aperture_end_us: 50
+  maximum_step_ns: 20
+  shared_follower_access_disturbance_mv: [180.515, 1.700202, -184.87]
+  selected_next_layout_candidate: active_charge_reader_with_physical_reset_dummy
+  selection_provisional: true
+  zero_output_baseline_mv: 2.85491
+  zero_output_reset_dummy_mv: 0.256489
+  signed_span_gain_reset_dummy: 0.1640291961334246
+  destructive_read_requires_restore: true
+  numerical_offset_correction_applied: false
+  combined_reader_layout_accepted: false
+  nonlinear_read_restore_accepted: false
+  complete_PLIF_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next: route_corrected_reader_then_resimulate_and_integrate_calibrated_analog_inverse_restore
+
+gf180_routed_reader_stage_2026_10_08:
+  boundary: artifacts/analog_asic/results/gf180_routed_reader_boundary.json
+  physical_cells:
+    - gf180_active_charge_reader_fullroute
+    - gf180_active_charge_reader_fullroute_shielded
+    - gf180_active_charge_reader_fullroute_guarded
+  per_cell_full_drc_and_gds_readback_lvs_pass: true
+  per_cell_mos_count: 15
+  per_cell_native_mim_count: 10
+  per_cell_area_um2: [227802.0, 233205.236, 237144.271]
+  router_import_inventory: 37
+  fresh_full_inventory_physical_audit_completed: false
+  nominal_zero_outputs_mv: [-92.4142, -28.0992, 0.150151]
+  guarded_signed_span_gain: 0.24732528674275953
+  guarded_read_disconnect_output_step_mv: 2.56
+  nominal_aperture_us: 50
+  max_step_ns: 20
+  capture_diagnostic_runs: 6
+  capture_diagnostic_complete_runs: 0
+  capture_issue: timestep_too_small_near_sampling_release_unique_rootcause_unestablished
+  live_host_sessions: []
+  selected_candidate: guarded_reader_provisional
+  combined_capture_layout_accepted: false
+  inverse_restore_accepted: false
+  complete_PLIF_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+  full_chip_accepted: false
+  next: isolate_capture_loading_and_actual_clock_driver_interface_then_inverse_restore_and_complete_neuron
+
+gf180_capture_clock_isolation_stage_2026_10_08:
+  script: scripts/screen_gf180_sampler_reader_capture.py
+  hold_bank_precharge_only_completed: true
+  access_switch_only_completed: false
+  capture_clock_inverters_only_resolved_abort: false
+  all_phase_extracted_inverter_driver_diagnostic: terminal_completed
+  live_host_sessions: []
+  capture_accepted: false
+  restore_accepted: false
+
+gf180_native_reader_capture_stage_2026_10_08:
+  all_clock_native_drivers_full_capture_completed: true
+  selected_capture_cell: gf180_reader_output_capture_guarded
+  capture_cell_full_drc_and_gds_readback_lvs_pass: true
+  capture_cell_mos_count: 6
+  capture_cell_native_mim_count: 9
+  capture_cell_bbox_um: [460.3, 123.9]
+  capture_cell_bbox_area_um2: 57031.17
+  router_import_inventory: 38
+  ideal_clock_zero_offset_transfers_to_actual_driver_chain: false
+  primitive_capture_dummy_errors_mv: [-0.288, -0.36417, -0.445]
+  routed_capture_errors_mv: [-0.519, -0.7038, -0.879]
+  detailed_aperture_steps_ns: [20, 10]
+  detailed_aperture_diagnostic_status: terminal_completed
+  live_host_sessions: []
+  capture_accuracy_accepted: false
+  inverse_restore_accepted: false
+  complete_PLIF_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+  full_chip_accepted: false
+
+gf180_capture_aperture_boundary_2026_10_08:
+  boundary: artifacts/analog_asic/results/gf180_reader_capture_boundary.json
+  reports: 15
+  complete_reports_including_isolation: 7
+  incomplete_reports: 8
+  matched_source_time_steps_ns: [20, 10]
+  exact_decks_match_except_tran: true
+  maximum_observed_endpoint_difference_uv: 17.9395
+  maximum_held_capture_difference_uv: 0.09
+  fine_nominal_capture_release_steps_mv: [-0.523, -0.708, -0.883]
+  fine_nominal_capture_post_release_drift_uv: [4.0, 4.13, 4.0]
+  aperture_end_us: 50
+  held_observation_us: 49
+  live_host_sessions: []
+  numerical_consistency_is_noise_accuracy: false
+  combined_chain_interconnect_layout_accepted: false
+  inverse_restore_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+  full_chip_accepted: false
+  next: held_output_buffer_and_physical_analog_inverse_restore_with_whole_cycle_metrology
+
+gf180_held_buffer_inverse_stage_2026_10_08:
+  script: scripts/screen_gf180_buffered_capture_inverse.py
+  buffer_cell: gf180_held_output_buffer_guarded
+  buffer_gds_drc_lvs_pass: true
+  buffer_native_mos_count: 7
+  buffer_native_mim_count: 1
+  separate_buffer_only_completed: true
+  separate_buffer_inverse_completed: true
+  inverse_native_resistor_ratio_target: 4
+  inverse_resistor_models_schematic: true
+  native_resistor_corner: res_typical
+  combined_buffer_diagnostic: terminal_completed
+  live_host_sessions: []
+  calibrated_nonlinear_inverse_accepted: false
+  restore_connection_implemented: false
+  complete_PLIF_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+
+gf180_actual_analog_identity_restore_stage_2026_10_08:
+  script: scripts/screen_gf180_analog_read_restore.py
+  physical_component_router_import_inventory: 39
+  external_initialization_disconnect_us: 25
+  restore_mux_enable_us: 58
+  reacquisition_us: [60, 80]
+  top_release_us: 80
+  restore_mux_release_us: 80.1
+  held_observation_us: 89
+  native_clock_driver_chain: true
+  inverse_native_resistor_array_schematic: true
+  restore_mux_interconnect_schematic: true
+  nonlinear_model_inverse_accepted: false
+  identity_fixture_only: true
+  diagnostic_status: terminal_completed
+  live_host_sessions: []
+  complete_PLIF_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+  full_chip_accepted: false
+
+gf180_identity_restore_round_trip_stage_2026_10_08:
+  first_report: artifacts/analog_asic/results/gf180_analog_read_restore_inverse1_step20_settings990844ac97_srca48a30ad8579.json
+  round_trip_errors_mv: [-3.973, -13.705005, -17.473]
+  reacquired_errors_mv: [-6.338, -16.599505, -23.849]
+  restore_release_steps_mv: [2.364, 2.8945, 6.376]
+  numerical_offset_correction_applied: false
+  fine_aperture_max_step_ns: 10
+  long_hold_max_step_ns: 1000
+  long_hold_observation_ms: 5.08
+  live_host_sessions: []
+  calibration_required: true
+  nonlinear_inverse_accepted: false
+  complete_PLIF_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+  full_chip_accepted: false
+
+gf180_buffered_read_restore_boundary_stage_2026_10_08:
+  boundary: artifacts/analog_asic/results/gf180_buffered_read_restore_boundary.json
+  completed_reports: 7
+  matched_aperture_max_steps_ns: [10, 20]
+  exact_aperture_decks_match_except_tran: true
+  maximum_endpoint_difference_uv: 19.3873
+  round_trip_error_step_differences_uv: [2, 2.546, 4]
+  fine10ns_round_trip_errors_mv: [-3.971, -13.702459, -17.469]
+  nominal_postrestore_5ms_hold_completed: true
+  long_hold_max_step_ns: 1000
+  long_hold_drift_observation_interval_ms: 4.991
+  native_card_hold_drifts_uv: [280, 17.9, -19]
+  silicon_gate_leakage_qualified: false
+  long_hold_fine_step_convergence_completed: false
+  live_host_sessions: []
+  calibrated_inverse_accepted: false
+  complete_PLIF_accepted: false
+  model_accuracy_accepted: false
+  population_5ms_service_accepted: false
+  full_chip_accepted: false
+  next: matched_native_inverse_network_and_physical_zero_reference_calibration_then_complete_neuron
+
+gf180_physical_inverse_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_physical_inverse_boundary.json
+  generator: scripts/summarize_gf180_physical_inverse.py
+  native_resistor_network: gf180_inverse_resistor_network_123x1
+  combined_inverse_amplifier: gf180_inverse_amplifier_guarded
+  resistor_unit_count: 5
+  unit_length_width_um: [123, 1]
+  nominal_feedback_to_input_unit_ratio: 4
+  resistor_network_size_um: [107.8, 161.59]
+  combined_inverse_size_um: [585.3, 245.29]
+  full_drc_and_reference_lvs_pass: true
+  exported_gds_readback_drc_lvs_pass: true
+  original_ground_short_diagnostics_preserved: true
+  router_import_component_count: 41
+  aggregate_41_view_physical_qualification_claimed: false
+  actual_cycle_same_source_10_20ns_decks_match_except_tran: true
+  max_endpoint_difference_uv: 87.00000000005926
+  fine_round_trip_error_mv: [-5.358, -14.958869, -17.949]
+  short_aperture_is_retention_evidence: false
+  macro_to_macro_interconnect: schematic
+  calibrated_inverse_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_action: physical_zero_reference_calibration_then_nonlinear_inverse_complete_PLIF_model_service_assembly
+
+gf180_zero_reference_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_zero_reference_boundary.json
+  generator: scripts/summarize_gf180_zero_reference.py
+  zero_reference_cell: gf180_zero_reference_buffer_guarded
+  size_um: [585.3, 245.29]
+  native_resistor_count: 5
+  native_mim_count: 1
+  mos_count: 7
+  dedicated_known_zero_path: true
+  reference_formula: (4*held_zero+VCM)/5
+  ideal_postprocessed_state_correction: false
+  full_drc_reference_lvs_exported_gds_readback_pass: true
+  router_import_component_count: 42
+  fresh_42_view_aggregate_physical_qualification_claimed: false
+  completed_diagnostic_report_count: 4
+  same_source_10_20ns_combined_reference_decks_match_except_tran: true
+  max_312_endpoint_difference_uv: 117.99999999995148
+  uncalibrated_four_path_round_trip_mv: [-6.874, -16.632010, -18.665]
+  fine_combined_reference_round_trip_mv: [12.085, 2.436158, 0.164]
+  short_aperture_proves_retention: false
+  macro_to_macro_interconnect: schematic
+  calibrated_state_preservation_accepted: false
+  nonlinear_inverse_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_action: native_gain_adjustment_and_physical_restore_release_correction_then_nonlinear_PLIF_model_service_assembly
+
+gf180_native_gain_trim_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_native_gain_trim_boundary.json
+  generator: scripts/summarize_gf180_native_gain_trim.py
+  network: gf180_inverse_resistor_network_123x1_rf126
+  amplifier: gf180_inverse_amplifier_rf126_guarded
+  native_input_resistor_length_um: 123
+  native_series_feedback_lengths_um: [123, 123, 123, 126]
+  nominal_inverse_gain_magnitude: 4.024390243902439
+  zero_reference_divider_ratio: 0.8
+  network_size_um: [107.8, 163.09]
+  amplifier_size_um: [585.3, 246.79]
+  full_parent_drc_reference_lvs_exported_gds_readback_pass: true
+  native_126um_primitive_strong_qualification_scope: verified_within_network_and_amplifier_parents
+  router_import_component_count: 44
+  fresh_44_view_aggregate_physical_qualification_claimed: false
+  completed_diagnostic_report_count: 3
+  fine_trim_round_trip_error_mv: [6.640, 2.414199, 5.581]
+  coarse_control_round_trip_error_mv: [12.083, 2.434355, 0.163]
+  coarse_trim_restore_release_step_mv: [1.375, 1.930497, 6.560]
+  matched_10_20ns_decks_equal_except_tran: true
+  max_312_endpoint_difference_uv: 122.0000000000665
+  short_aperture_proves_retention: false
+  ideal_postprocessed_state_correction: false
+  macro_to_macro_interconnect: schematic
+  calibrated_state_preservation_accepted: false
+  nonlinear_inverse_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_action: physical_restore_release_correction_then_range_nonlinear_inverse_complete_PLIF_model_service_assembly
+
+gf180_dummy_release_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_dummy_release_boundary.json
+  generator: scripts/summarize_gf180_dummy_release.py
+  candidate_sampler: gf180_compensated_bottom_sampler_full_top_dummy_shielded
+  candidate_sampler_size_um: [139.0, 145.7]
+  full_parent_drc_reference_lvs_exported_gds_readback_pass: true
+  full_top_dummy_selected: false
+  current_reference_sampler: gf180_compensated_bottom_sampler_shielded
+  rejection_scope: current_native_gain_trim_zero_reference_actual_cycle
+  reason: improved_high_state_release_but_worse_whole_cycle_due_changed_acquisition_read_gain_reference
+  fine_full_top_round_trip_error_mv: [-5.731, 2.418738, 16.986]
+  coarse_half_top_round_trip_error_mv: [6.637, 2.412430, 5.579]
+  coarse_full_top_restore_release_step_mv: [2.501, -0.498507, -1.722]
+  matched_10_20ns_decks_equal_except_tran: true
+  max_312_endpoint_difference_uv: 133.00000000004974
+  completed_diagnostic_report_count: 3
+  router_import_component_count: 45
+  fresh_45_view_aggregate_physical_qualification_claimed: false
+  short_aperture_proves_retention: false
+  ideal_postprocessed_state_correction: false
+  macro_to_macro_interconnect: schematic
+  calibrated_state_preservation_accepted: false
+  nonlinear_inverse_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_action: bottom_top_release_timing_and_range_compensation_then_nonlinear_PLIF_model_service_assembly
+
+gf180_release_timing_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_release_timing_boundary.json
+  generator: scripts/summarize_gf180_release_timing.py
+  commanded_bottom_lead_ns_compared: [20, 100, 500]
+  best_measured_three_case_commanded_lead_ns: 20
+  measured_electrical_nonoverlap_qualified: false
+  physical_sequencer_implemented: false
+  timing_changes_initial_acquisition_and_restore: true
+  acquired_measurements_precede_bottom_command: true
+  fine_reference_round_trip_error_mv: [6.640, 2.414199, 5.581]
+  coarse_100ns_round_trip_error_mv: [7.657, 3.803625, 7.247]
+  coarse_500ns_round_trip_error_mv: [7.370, 3.428302, 6.651]
+  matched_10_20ns_reference_decks_equal_except_tran: true
+  max_312_endpoint_difference_uv: 122.0000000000665
+  completed_diagnostic_report_count: 4
+  new_layout_created: false
+  short_aperture_proves_retention: false
+  ideal_postprocessed_state_correction: false
+  macro_to_macro_interconnect: schematic
+  calibrated_state_preservation_accepted: false
+  nonlinear_inverse_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_action: simultaneous_reverse_release_and_range_compensation_then_nonlinear_PLIF_model_service_assembly
+
+gf180_release_order_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_release_order_boundary.json
+  generator: scripts/summarize_gf180_release_order.py
+  signed_bottom_lead_ns_compared: [-20, 0, 20]
+  best_measured_three_case_signed_bottom_lead_ns: 20
+  top_first_round_trip_error_mv: [8.236, 4.367500, 7.162]
+  simultaneous_round_trip_error_mv: [8.941, 4.488980, 8.212]
+  bottom_first_round_trip_error_mv: [6.637, 2.412430, 5.579]
+  measured_electrical_order_nonoverlap_qualified: false
+  physical_sequencer_implemented: false
+  acquired_measurements_precede_first_plate_command: true
+  completed_new_diagnostic_report_count: 3
+  reused_fine_report_count: 1
+  reused_fine_provenance_and_deck_equivalence_verified: true
+  reused_fine_same_executable_claimed: false
+  max_312_endpoint_difference_uv: 122.0000000000665
+  new_layout_created: false
+  short_aperture_proves_retention: false
+  ideal_postprocessed_state_correction: false
+  macro_to_macro_interconnect: schematic
+  calibrated_state_preservation_accepted: false
+  nonlinear_inverse_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_action: physical_range_dependent_charge_compensation_and_nonlinear_inverse_then_complete_PLIF_model_service_assembly
+
+gf180_restore_state_range_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_restore_state_range_boundary.json
+  generator: scripts/summarize_gf180_restore_state_range.py
+  nominal_initialized_voltages_v: [0.75, 1.05, 1.35, 1.65, 1.95, 2.25, 2.55]
+  overlap_anchor_context_spans_uv: [6, 11]
+  completed_diagnostic_report_count: 5
+  fine_bands: [lower, upper]
+  middle_band_fine_convergence_claimed: false
+  largest_observed_fine_error_mv: 8.238
+  largest_error_nominal_voltage_v: 2.25
+  coarse_2_25v_acquired_error_mv: 0.556
+  coarse_2_25v_release_error_mv: 7.681
+  upper_fine_coarse_decks_equal_except_tran: true
+  lower_fine_coarse_decks_equal_except_tran: true
+  upper_max_312_endpoint_difference_uv: 128.99999999993472
+  diagnostic_affine_maximum_residual_mv: 3.0220194300519863
+  diagnostic_quadratic_maximum_residual_mv: 2.772706852210529
+  diagnostic_fits_applied_to_state: false
+  new_layout_created: false
+  short_aperture_proves_retention: false
+  ideal_postprocessed_state_correction: false
+  macro_to_macro_interconnect: schematic
+  calibrated_state_preservation_accepted: false
+  nonlinear_inverse_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_action: asymmetric_NF_PF_dummy_sizing_and_full_range_remeasurement_then_nonlinear_PLIF_model_service_assembly
+
+gf180_asymmetric_dummy_partial_stage_2026_10_08:
+  evidence: artifacts/analog_asic/results/gf180_asymmetric_dummy_partial_boundary.json
+  overall_stage: analog_block_validation_before_complete_PLIF_integration
+  completed_bands: [lower, upper]
+  middle_band_completed: false
+  fine_convergence_completed: false
+  candidate_selected: false
+  physical_primitive_and_sampler_full_drc_lvs_gds_pass: true
+  router_import_component_count: 47
+  aggregate_47_view_physical_qualification_claimed: false
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_host_sessions: []
+  next_milestone: complete_neuron_with_measured_error_timing_area
+
+# Method-change screening; no acceptance claim.
+gf180_nondestructive_read_stage_2026_10_08:
+  stage: analog_block_validation_before_complete_PLIF
+  selected_investigation: non_destructive_current_read_shared_column
+  previous_destructive_dummy_sweeps: suspended_pending_method_review
+  fallback: local_switched_capacitor_once_bin_updates
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_current_read_boundary.json
+  initial_write_error_unresolved: true
+  column_frontend_implemented: false
+  sense_cell_physically_qualified: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  next: implement_sense_cell_and_real_shared_column_frontend
+  goal_status: active_incomplete
+
+gf180_extracted_sense_stage_2026_10_08:
+  stage: analog_block_validation_before_complete_PLIF
+  sense_primitive: gf180_nondestructive_sense_nf05_l1_fullroute
+  primitive_full_DRC_LVS_GDS_readback_qualified: true
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_extracted_read_boundary.json
+  complete_storage_cell_physically_qualified: false
+  initial_write_error_unresolved: true
+  next: transistor_column_frontend_and_physical_storage_cell
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_nondestructive_cell_frontend_stage_2026_10_08:
+  stage: analog_block_validation_before_complete_PLIF
+  storage_cell_DRC_LVS_GDS_readback_qualified: true
+  combined_cell_frontend_matched_20ns_10ns_diagnostic_completed: true
+  frontend_physical_assembly_qualified: false
+  selected_compensation_mim_um: 22
+  initial_write_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_cell_frontend_boundary.json
+  live_sessions: []
+  next: reduce_write_coupling_and_physically_assemble_shared_frontend
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_nondestructive_write_source_stage_2026_10_09:
+  stage: analog_block_validation_before_complete_PLIF
+  selected_cell: gf180_nondestructive_storage_cell_write_source_flat
+  physical_DRC_LVS_GDS_readback_qualified: true
+  LEF_abstract_exported: true
+  matched_20ns_10ns_nominal_diagnostic_completed: true
+  extraction_scope_difference_unresolved: true
+  initial_write_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_write_source_boundary.json
+  live_sessions: []
+  next: residual_write_correction_and_physical_shared_column_frontend
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_physical_column_frontend_stage_2026_10_09:
+  stage: analog_block_validation_before_complete_PLIF
+  selected_frontend: gf180_nondestructive_column_tia_m2exit_guarded_flat
+  frontend_DRC_LVS_GDS_readback_qualified: true
+  frontend_LEF_exported: true
+  matched_20ns_10ns_diagnostic_completed: true
+  cell_frontend_interconnect_physically_assembled: false
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_physical_frontend_boundary.json
+  initial_write_accepted: false
+  current_decode_implemented: false
+  live_sessions: []
+  next: routed_cell_frontend_and_residual_write_update_correction
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_integrated_storage_read_stage_2026_10_09:
+  stage: integrated_analog_storage_read_validation_before_complete_PLIF
+  selected_view: gf180_nondestructive_storage_read_assembly_guarded_flat
+  assembly_DRC_LVS_GDS_readback_qualified: true
+  assembly_LEF_exported: true
+  cell_frontend_interconnect_physically_assembled: true
+  matched_20ns_10ns_nominal_diagnostic_completed: true
+  extraction_scope_difference_unresolved: true
+  initial_write_accepted: false
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_routed_assembly_boundary.json
+  live_sessions: []
+  next: analog_neuron_update_path_and_residual_write_correction
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_signed_pulse_update_stage_2026_10_09:
+  stage: integrated_storage_read_and_neuron_update_exploration
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_pulse_update_boundary.json
+  direct_pulse_selected: false
+  gated_cascode_selected: false
+  post_event_tail_read_disabled_confirmed: true
+  injector_physically_qualified: false
+  original_float_weights_bound: false
+  signed_event_accuracy_accepted: false
+  once_bin_beta_implemented: false
+  threshold_reset_adaptation_implemented: false
+  next: continuously_biased_current_steering_and_neutral_packet_check
+  live_sessions: []
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_current_steering_review_stage_2026_10_09:
+  stage: analog_neuron_update_method_selection
+  evidence: artifacts/analog_asic/results/gf180_nondestructive_current_steering_boundary.json
+  direct_membrane_current_steering_selected: false
+  neutral_packet_accuracy_accepted: false
+  injector_physically_qualified: false
+  next_candidate: active_shared_charge_accumulator_fixed_sum_node
+  reuse_candidate: gf180_active_charge_reader_fullroute_guarded
+  original_float_weights_bound: false
+  live_sessions: []
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_active_paired_charge_stage_2026_10_09:
+  stage: analog_neuron_update_circuit_exploration
+  selected_investigation: paired_shared_active_charge_accumulation
+  evidence: artifacts/analog_asic/results/gf180_active_charge_accumulator_boundary.json
+  extracted_integrator_macros_reused: true
+  pair_source_reference_physically_assembled: false
+  single_ended_small_pulse_accepted: false
+  dummy_compensation_selected: false
+  nominal_cancellation_is_precision_proof: false
+  original_float_weights_bound: false
+  once_bin_beta_implemented: false
+  threshold_reset_adaptation_implemented: false
+  next: mismatch_noise_signed_sequence_and_float_tolerance_characterization
+  live_sessions: []
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_signed_update_mismatch_stage_2026_10_09:
+  stage: analog_neuron_update_offset_compensation_required
+  evidence: artifacts/analog_asic/results/gf180_signed_update_mismatch_boundary.json
+  repeated_event_nominal_accumulation_observed: true
+  pulse_short_sign_mismatch_failure_observed: true
+  switched_capacitor_nominal_signed_transfer_observed: true
+  switched_capacitor_zero_packet_mismatch_failure_observed: true
+  bottom_weight_driver: ideal_unimplemented
+  neutral_correction_applied_to_state: false
+  next: shared_autozero_or_tracked_packet_precharge_circuit_diagnostic
+  live_sessions: []
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_routed_autozero_update_stage_2026_10_09:
+  stage: analog_neuron_update_with_routed_shared_offset_sampling
+  evidence: artifacts/analog_asic/results/gf180_autozero_update_boundary.json
+  macro: gf180_autozero_charge_integrator_fullroute_guarded
+  full_drc_lvs_and_exported_gds_readback_pass: true
+  lef_size_ports_and_obstructions_verified: true
+  shared_macro_mos_count: 11
+  shared_macro_native_mim_count: 19
+  shared_macro_size_um: [618.5, 385.57]
+  resident_state_replication_of_macro: false
+  leading_candidate: pulse_duration_continuous_current_steering_into_routed_autozero_integrator
+  short_pulse_signs_observed_in_two_mismatch_seeds: true
+  residual_event_offset_and_gain_accuracy_accepted: false
+  output_baseline_physically_cancelled: false
+  switched_capacitor_small_positive_mismatch_failure_observed: true
+  gate_pulse_long_settling_tail_observed: true
+  source_pair_bias_and_clock_assembly_physically_qualified: false
+  next: native_source_and_interface_qualification_event_offset_baseline_capture_and_float_tolerance
+  live_sessions: []
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_physical_source_charge_stage_2026_10_09:
+  stage: physical_source_qualification_and_signed_charge_mapping
+  evidence: artifacts/analog_asic/results/gf180_physical_source_charge_boundary.json
+  compact_source: gf180_signed_cascode_source_compact_guarded
+  compact_source_full_drc_lvs_and_gds_readback_pass: true
+  compact_source_lef_verified: true
+  compact_source_size_um: [122.8, 66.5]
+  compact_source_area_um2: 8166.2
+  source_area_reduction_percent: 70.798
+  native_mos_geometry_um: [0.5, 1.0]
+  low_bias_physical_short_positive_mismatch_failure_observed: true
+  candidate_pf_gate_v: 2.55
+  candidate_nf_gate_v: 0.6
+  stronger_bias_signed_contributions_observed_in_two_seeds: true
+  signed_gain_and_duration_mapping_accepted: false
+  analog_bias_weight_driver_physically_implemented: false
+  source_integrator_pair_interconnect_physically_qualified: false
+  baseline_physically_cancelled: false
+  next: actual_float_weight_tolerance_signed_charge_calibration_and_interface_assembly
+  live_sessions: []
+  weighted_charge_accepted: false
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_float_weight_interface_stage_2026_10_09:
+  stage: original_float_precision_and_weight_interface_method_change
+  evidence: artifacts/analog_asic/results/gf180_float_weight_interface_boundary.json
+  mapping_evidence: artifacts/analog_asic/results/gf180_original_float_pulse_mapping_boundary.json
+  fresh_float_archive: artifacts/analog_asic/model_reference/gf180_source_mapping_float/eventspikeseg140k_float_parameters.npz
+  checkpoint_epoch: 58
+  canonical_inference_actor_count: 25
+  neuron_coefficient_count: 143728
+  readout_coefficient_count: 96
+  qat_or_quantized_reference_used: false
+  smallest_tested_pulse_ns: 20
+  coefficient_fraction_below_test_pulse_at_illustrative_0p3v: 0.8793971947011021
+  headroom_is_patch_derived_illustrative_not_full_model_bound: true
+  full_frame_software_sensitivity_record_count: 2
+  coherent_signed_gain_error_sensitive: true
+  accuracy_acceptance_threshold_established: false
+  shared_gate_1p5us_program_guard_settling_failure_observed: true
+  shared_gate_6us_guard_recovery_observed: true
+  next: continuously_biased_calibrated_weight_current_cells_or_ranges_with_physical_offset_baseline_cancellation
+  actual_weight_memory_programmer_implemented: false
+  live_sessions: []
+  weighted_charge_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
+
+gf180_weight_bank_storage_stage_2026_10_09:
+  stage: analog_weight_storage_and_current_cell_characterization
+  evidence: artifacts/analog_asic/results/gf180_weight_bank_storage_boundary.json
+  completed_diagnostics: 11
+  incomplete_fine_5ms_revisit: 1
+  physical_cell: gf180_sampled_weight_current_cell_fullroute_complete_guarded
+  physical_checks: full_DRC_LVS_GDS_readback_cap_extraction_LEF
+  characterization_dimensions_um: [660.3, 352.9]
+  dense_weight_tile_accepted: false
+  method: setup_programmed_analog_weights_continuously_biased_cells_selected_per_event
+  startup_settling: range_dependent_weak_cells_unresolved_after_1ms
+  adaptive_5ms_revisit: completed_1us_maxstep_convergence_unqualified
+  gate_leakage_and_noise_qualified: false
+  negative_stored_weight_path_qualified: false
+  physical_neutral_and_output_baseline_cancellation: incomplete
+  next: stabilize_weak_ranges_cancel_offsets_qualify_signed_float_mapping_then_full_PLIF_and_dense_assembly
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_weight_cell_precharge_stage_2026_10_09:
+  stage: physical_startup_precharge_for_weak_analog_weights
+  evidence: artifacts/analog_asic/results/gf180_weight_cell_precharge_boundary.json
+  completed_diagnostics: 8
+  incomplete_diagnostics: 1
+  physical_cell: gf180_precharged_weight_current_cell_fullroute_guarded
+  physical_checks: full_DRC_LVS_GDS_readback_cap_extraction_LEF
+  characterization_dimensions_um: [660.3, 361.9]
+  startup_reference_v: 2.9
+  startup_release_us: 10
+  event_warmup_us: 100
+  physical_reference_implemented: false
+  neutral_event_and_output_baseline_cancellation: incomplete
+  signed_weight_calibration: incomplete
+  next: physical_offset_compensation_signed_float_mapping_full_PLIF_dense_assembly
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_differential_stored_weight_stage_2026_10_09:
+  stage: signed_differential_current_weight_calibration
+  evidence: artifacts/analog_asic/results/gf180_differential_stored_weight_boundary.json
+  completed_diagnostics: 8
+  method: independently_stored_biased_current_difference
+  physical_cell: gf180_precharged_weight_current_cell_fullroute_guarded
+  complete_bank_pair_physically_assembled: false
+  calibration: offline_secant_applied_through_real_reference_writers
+  physical_calibration_servo_reference_programmer: incomplete
+  trimmed_zero_event_uv: [0.920265, 0.0176325, 0.931246, 0.0150372]
+  signed_trimmed_contributions_uv: [26.0699, -13.3962, 26.0638, -13.4127]
+  signed_gain_calibration: incomplete
+  physical_output_baseline_cancellation: incomplete
+  next: baseline_capture_calibration_interface_signed_range_float_mapping_full_PLIF_dense_assembly
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_physical_baseline_capture_stage_2026_10_09:
+  stage: physical_output_baseline_capture_and_reference_trim
+  evidence: artifacts/analog_asic/results/gf180_physical_baseline_capture_boundary.json
+  completed_diagnostics: 9
+  physical_cell: gf180_output_baseline_capture_fullroute_guarded
+  physical_checks: full_DRC_LVS_GDS_readback_cap_extraction_LEF
+  characterization_dimensions_um: [660.3, 337.9]
+  physical_read_signal: capacitively_coupled_read_reference_minus_read_weighted
+  physical_bank_pair_assembly: incomplete
+  reference_programmer_and_calibration_servo: incomplete
+  untrimmed_routed_no_event_offset_uv: 347.856
+  refined_reference_trim_v: -0.0003448921377004516
+  refined_no_event_read_initial_late_uv: [0.0633345, 0.607989]
+  refined_trim_numerical_convergence: unproven_changed_trim_and_timestep
+  loaded_read_buffer_and_sampled_noise: unqualified
+  next: loaded_read_buffer_noise_reference_recalibration_signed_float_mapping_full_PLIF_dense_assembly
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_buffered_readout_noise_stage_2026_10_09:
+  stage: buffered_readout_layout_and_noise_feasibility
+  evidence: artifacts/analog_asic/results/gf180_buffered_readout_noise_boundary.json
+  completed_diagnostics: 8
+  physical_cell: gf180_buffered_baseline_readout_fullroute_spaced_guarded
+  physical_checks: full_DRC_LVS_GDS_readback_cap_extraction_LEF
+  characterization_dimensions_um: [668.5, 379.57]
+  old_overlapped_layout: LVS_failed_preserved_unqualified
+  driven_loads_ff: [50, 500]
+  pair_continuous_output_noise_uv_rms_1hz_100mhz: 259.611289
+  ideal_4us_average_noise_uv_rms: 53.425707
+  ideal_100us_average_noise_uv_rms: 29.956615
+  averaging_filter_physically_implemented: false
+  sampled_capture_storage_noise_qualified: false
+  physical_calibration_servo_reference_delivery: incomplete
+  readout_accuracy_accepted: false
+  next: lower_noise_chopped_or_correlated_readout_float_error_tolerance_then_full_PLIF_dense_assembly
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_follower_readout_stage_2026_10_09:
+  stage: lower_noise_follower_readout_layout_and_linearity
+  evidence: artifacts/analog_asic/results/gf180_follower_readout_noise_boundary.json
+  completed_diagnostics: 11
+  physical_cell: gf180_follower_baseline_readout_fullroute_guarded
+  physical_checks: full_DRC_LVS_GDS_readback_cap_extraction_LEF
+  characterization_dimensions_um: [660.3, 376.57]
+  mos_native_mim_count: [4, 9]
+  nominal_nf_pair_continuous_output_noise_uv_rms: 87.630398
+  ideal_4us_averaged_output_noise_uv_rms: 14.360467
+  nf_local_gain_body_effect_calibration: incomplete
+  source_tied_pmos_candidate: schematic_only_nwell_isolation_unqualified
+  pmos_central_gain_range: [0.996484, 0.997765]
+  pmos_central_max_sampled_linear_fit_error_uv: 111.202838
+  sampled_noise_reference_calibration_qualified: false
+  next: source_tied_pmos_physical_qualification_headroom_current_reference_linearity_float_tolerance_fullPLIF_assembly
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_pmos_readout_precision_stage_2026_10_09:
+  stage: physical_readout_complete_precision_method_selection
+  evidence: artifacts/analog_asic/results/gf180_pmos_readout_physical_boundary.json
+  completed_physical_diagnostics: 5
+  failed_benches_preserved: 2
+  completed_float_replay_reports: 5
+  float_replay_forwards: 38
+  physical_cell: gf180_pmos_follower_baseline_readout_fullroute_guarded
+  physical_checks: full_DRC_LVS_GDS_readback_cap_extraction_LEF
+  characterization_dimensions_um: [660.3, 376.88]
+  source_nwell_body_tied_to_out: true
+  mos_native_mim_count: [4, 9]
+  continuous_pair_output_noise_uv_rms_1hz_100mhz: 99.342271
+  ideal_4us_average_output_noise_uv_rms: 10.943703
+  nominal_integrator_to_output_gain: 0.841141
+  conditional_4us_input_noise_proxy_uv: 13.010541
+  averaging_or_chopping_physically_implemented: false
+  central_sampled_linear_fit_error_uv: 111.202838
+  seed29_offset_uv_before_trim: 752.635
+  seed29_offset_uv_after_reference_trim: -0.915338
+  physical_reference_servo_implemented: false
+  float_reference: original_epoch58_seed17_no_QAT
+  sensitivity_scope: two_frames_three_seeds_hypothetical_candidate_error_not_acceptance
+  per_channel_scaling: preferred_for_further_work
+  single_record_fixed_calibration: rejected_range_overflows_and_zero_ranges
+  calibration_overflow_channels: 946
+  calibration_total_channels: 1856
+  next: broader_independent_channel_calibration_nonzero_floors_rail_checks_and_chopped_autozero_differential_readout
+  fallback_candidate: physically_realized_companded_charge_domain_compute
+  sampled_noise_PVT_retention_qualified: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_two_polarity_readout_stage_2026_10_09:
+  stage: precision_feasibility_two_polarity_sampler_not_selected
+  evidence: artifacts/analog_asic/results/gf180_chopped_readout_boundary.json
+  completed_circuit_diagnostics: 13
+  completed_model_replay_reports: 3
+  model_forwards: 16
+  physical_scope: extracted_qualified_children_schematic_combined_interconnect
+  new_combined_layout_qualified: false
+  one_shot_two_phase_sampling: true
+  continuous_chopper_filter_implemented: false
+  physical_cross_share_seed29_zero_offset_uv: 6.412520
+  physical_cross_share_signed_gain_two_point: 0.9069005
+  seed29_zero_stored_state_displacement_uv: -7.425080
+  stationary_capture_aperture_noise_uv_rms: 78.396638
+  final_switched_sample_covariance_qualified: false
+  gate_rezero_variant: not_selected_worse_pedestal
+  four_storage_banks_gate_rezero: not_selected_more_cap_area_precision_unresolved
+  comparator_only_linear_encoding_hypothesis: insufficient_at_tested_15uv_noise
+  comparator_custom_forward_near_zero_control: original_baseline_hash_reproduced
+  next: review_prior_physical_compander_inverse_range_crossing_limits_then_range_coded_charge_domain_updates_and_encoded_comparison
+  broader_nonzero_channel_calibration_rail_checks: required
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete

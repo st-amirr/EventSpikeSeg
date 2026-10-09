@@ -1,0 +1,12 @@
+FROM eventspikeseg:orfs-guarded
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential git m4 tcsh tcl-dev tk-dev libx11-dev libxext-dev libxft-dev \
+        libxpm-dev libxt-dev libxmu-dev libcairo2-dev netgen-lvs \
+    && git clone --depth 1 --branch 8.3.306 https://github.com/RTimothyEdwards/magic.git /tmp/magic \
+    && cd /tmp/magic \
+    && ./configure --prefix=/usr/local > /tmp/magic-configure.log 2>&1 \
+    && (make -j2 LDDL_FLAGS=-shared > /tmp/magic-build.log 2>&1 || (tail -120 /tmp/magic-build.log && exit 1)) \
+    && make install > /tmp/magic-install.log 2>&1 \
+    && rm -rf /tmp/magic /tmp/magic-configure.log /tmp/magic-build.log /tmp/magic-install.log /var/lib/apt/lists/*

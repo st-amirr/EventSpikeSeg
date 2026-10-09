@@ -1,0 +1,14 @@
+* Provisional native3.3V shared OTA; official GF180 primitive model names.
+* Schematic device geometry/diffusions. Compensation R/C are not physical views.
+* Bias pin requires a reference; no precision/offset/noise acceptance implied.
+.subckt gf180_shared_ota IP IN OUT VDD VSS BIAS
+Xn1 mirror IN tail VSS nfet_03v3 w=10u l=1u as=4.4p ad=4.4p ps=20.88u pd=20.88u
+Xn2 first IP tail VSS nfet_03v3 w=10u l=1u as=4.4p ad=4.4p ps=20.88u pd=20.88u
+Xt tail BIAS VSS VSS nfet_03v3 w=10u l=2u as=4.4p ad=4.4p ps=20.88u pd=20.88u
+Xp1 mirror mirror VDD VDD pfet_03v3 w=20u l=1u as=8.8p ad=8.8p ps=40.88u pd=40.88u
+Xp2 first mirror VDD VDD pfet_03v3 w=20u l=1u as=8.8p ad=8.8p ps=40.88u pd=40.88u
+Xpout OUT first VDD VDD pfet_03v3 w=40u l=1u as=17.6p ad=17.6p ps=80.88u pd=80.88u
+Xnsink OUT BIAS VSS VSS nfet_03v3 w=20u l=1u as=8.8p ad=8.8p ps=40.88u pd=40.88u
+Ccomp first comp 1p
+Rcomp comp OUT 100
+.ends gf180_shared_ota

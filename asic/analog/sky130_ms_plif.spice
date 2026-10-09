@@ -1,22 +1,27 @@
 * SKY130 mixed-signal analog PLIF primitives (transistors + PDK MIM).
-* The restore/mux and direct weight-DAC subcircuits retain their old Q7.16-style
-* digital interfaces as legacy candidates; that encoding is not the active analog
-* precision target. The active pulse-duration synapse uses the full-float model
-* as a behavioral reference, with error limits derived from state/spike tests.
-* Synaptic contribution is signed charge per presynaptic event. The active
-* pulse-duration variant encodes charge in gate-on time; switched-capacitor
-* transfer is the fallback if pulse range, state dependence or service time fails.
-* Legacy direct weight-DAC injector remains unqualified and is not active.
+* The restore/mux and direct weight-DAC subcircuits retain old Q7.16-style
+* digital interfaces as legacy experiments; that encoding is not the analog
+* precision target. The reference is the original float32 model. The leading
+* event-source candidate is fixed-width MOS injection with signed weight encoded
+* in pulse amplitude. It currently uses ideal gate voltages and has not passed
+* physical weight storage/drive, noise/mismatch, temperature or layout gates.
+* Pulse-duration encoding was rejected for the measured full-float fan-in because
+* its transfer range overshot by 6.7x–33x. Passive packet accumulation and current
+* OTA-C alternatives also failed order/PVT gates. No PLIF cell is selected yet.
+* Switched-capacitor transfer remains an alternative to investigate, not a chosen
+* fallback. No QAT or quantized export defines analog precision.
 * Weight scale and membrane voltage mapping are to be measured per actor family.
 * No QAT or quantized export is required for the analog reference path.
 * Analog state uses the PDK MIM membrane; legacy digital-code restore remains
 * separately present pending model-based validation.
-* Injector weight rails are full range (weight_hi=vdd, weight_lo=vss); current
-* linearity and signed matching are unqualified (see injector screen result).
+* Legacy WDAC injector rails are full range; its 24-bit interface is not approved
+* as an analog weight-precision requirement. Current linearity and signed matching
+* remain unqualified outside the bounded calibrated full-fan-in experiment.
 * Decay ≈ MOS conductance to vcm during an explicit leak phase.
 * Beta mapping (declared approx): t_leak ≈ -tau_nom * ln(beta).
 * Membrane ≈ PDK MIM; restore via 24-bit R-2R + TG (ideal R provisional).
-* Population: multiplex physical channel(s); logical membranes are 24-bit codes.
+* Population/state storage and channel service are open feasibility questions;
+* no 24-bit logical-membrane representation is selected for the analog design.
 .include "sky130_ms_r2r24.spice"
 
 .subckt membrane_mim state vcm params: w_um=100 l_um=100
@@ -90,7 +95,7 @@ Bthreshold threshold vss V={v(vcm)+scale*theta}
 Xcmp snapshot threshold spike vbias vdd vss comparator
 .ends analog_plif_mux_channel
 
-* Analog membrane update with Q7.16 magnitude represented by pulse duration.
+* Rejected diagnostic: analog membrane update with Q7.16 magnitude represented by pulse duration.
 * Pulse inputs are gate levels: p_gate=1.0V / n_gate=0.525V during activity,
 * p_gate=vdd / n_gate=vss when inactive. Nominal TT sizing matches the bounded
 * 1pF charge screen only; calibrate widths, bias and PVT before using at scale.

@@ -1,0 +1,13 @@
+FROM eventspikeseg:analog-layout
+
+LABEL org.eventspikeseg.magic.revision="4f53bb3091d1e4a9b2009a58f157a8a4331d4c84"
+LABEL org.eventspikeseg.magic.version="8.3.684"
+
+COPY magic_src /tmp/gf180-magic
+RUN cd /tmp/gf180-magic \
+    && test "$(git rev-parse HEAD)" = "4f53bb3091d1e4a9b2009a58f157a8a4331d4c84" \
+    && ./configure --prefix=/opt/magic-gf180 > /tmp/gf180-magic-configure.log 2>&1 \
+    && (make -j2 LDDL_FLAGS=-shared > /tmp/gf180-magic-build.log 2>&1 || (tail -100 /tmp/gf180-magic-build.log && exit 1)) \
+    && make install > /tmp/gf180-magic-install.log 2>&1
+
+ENV PATH="/opt/magic-gf180/bin:${PATH}"

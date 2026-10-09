@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,re,subprocess,random
+import json,re,subprocess,random,hashlib
 from pathlib import Path
 import numpy as np
 ROOT=Path(__file__).resolve().parents[1]; OUT=ROOT/'artifacts/analog_asic'; REF=OUT/'model_reference'; RES=OUT/'results'; BENCH=OUT/'benches'
@@ -15,6 +15,10 @@ COMMON='''.option scale=1u
 '''
 def main():
  import sys
+ corner=next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--corner=')), 'tt').lower()
+ if corner not in {'tt','ss','ff','sf','fs'}: raise ValueError('corner must be tt, ss, ff, sf, or fs')
+ temp=float(next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--temperature-c=')), '27'))
+ common=COMMON.replace('__tt.corner.spice',f'__{corner}.corner.spice')
  gain=float(next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--event-gain-correction=')), '1.0'))
  headroom=float(next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--headroom-v=')), '0.30'))
  cap=float(next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--membrane-cap-um=')), '20'))
@@ -25,8 +29,14 @@ def main():
  x=arc['presynaptic_input__final_fuse__standard'].astype(np.float32); w=params['weight__final_fuse__standard'].astype(np.float32); cand=arc['candidate__final_fuse__standard']; cur=arc['current__final_fuse__standard']; thr=arc['threshold__final_fuse__standard']; geom=next(z for z in meta['effective_folded_weight_and_neuron_parameters'] if z['name']=='final_fuse.standard')
  active=fn(x,np.ones_like(w),cand.shape[-2:],groups=geom['conv_groups'],dilation=tuple(geom['conv_dilation']),padding=tuple(geom['conv_padding']))
  site_rank=int(next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--site-rank=')), '0'))
- if site_rank<0 or site_rank>=active.size: raise ValueError('site rank is outside the active-output array')
- site_order=np.argsort(-active.reshape(-1),kind='stable'); ni,oi,yy,xx=np.unravel_index(int(site_order[site_rank]),active.shape); count=int(active[ni,oi,yy,xx]); contrib=[]; pad_y,pad_x=geom['conv_padding']; dy,dx=geom['conv_dilation']
+ site_index=next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--site-index=')), None)
+ if site_index is None:
+  if site_rank<0 or site_rank>=active.size: raise ValueError('site rank is outside the active-output array')
+  site_order=np.argsort(-active.reshape(-1),kind='stable'); ni,oi,yy,xx=np.unravel_index(int(site_order[site_rank]),active.shape)
+ else:
+  ni,oi,yy,xx=map(int,site_index.split(','))
+  if not (0<=ni<active.shape[0] and 0<=oi<active.shape[1] and 0<=yy<active.shape[2] and 0<=xx<active.shape[3]): raise ValueError('site index is outside the active-output array')
+ count=int(active[ni,oi,yy,xx]); contrib=[]; pad_y,pad_x=geom['conv_padding']; dy,dx=geom['conv_dilation']
  for o in [oi]:
   for ic in range(w.shape[1]):
    for ky in range(w.shape[2]):
@@ -37,7 +47,7 @@ def main():
       for _ in range(n):
        if abs(val)>0: contrib.append(val)
  chosen_current=float(cur.reshape(30,16,64,64)[ni,oi,yy,xx]); cmax=float(np.max(np.abs(cand))); vpu=headroom/cmax
- calname='sky130_ms_diff_gate_amplitude_c20_w10.5n_pg0.72_ng0.6_wp1.5_wn1_l10_d0v_cm0.9v_t200u_n46_fr0.1-1_h1b6c16181e_step2n.json' if cap==20 else 'sky130_ms_diff_gate_amplitude_c10_w10.5n_pg0.72_ng0.6_wp1.5_wn1_l10_t200u_fr0-0.05-0.1-0.15-0.2-0.25-0.3-0.35-0.4-0.45-0.5-0.55-0.6-0.65-0.7-0.75-0.8-0.85-0.9-0.95-1_step0.5n.json'; calpath=RES/calname; cal=json.loads(calpath.read_text()); pts=cal['event_transfer_by_gate_magnitude']; fs=sorted({float(r['gate_magnitude_fraction']) for r in pts if r['polarity']=='p' and float(r['gate_magnitude_fraction'])>0}); ds=[]
+ calname=next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith('--calibration=')), 'sky130_ms_diff_gate_amplitude_c20_w10.5n_pg0.72_ng0.6_wp1.5_wn1_l10_d0v_cm0.9v_t200u_n46_fr0.1-1_h1b6c16181e_step2n.json' if cap==20 else 'sky130_ms_diff_gate_amplitude_c10_w10.5n_pg0.72_ng0.6_wp1.5_wn1_l10_t200u_fr0-0.05-0.1-0.15-0.2-0.25-0.3-0.35-0.4-0.45-0.5-0.55-0.6-0.65-0.7-0.75-0.8-0.85-0.9-0.95-1_step0.5n.json'); calpath=RES/calname; cal=json.loads(calpath.read_text()); pts=cal['event_transfer_by_gate_magnitude']; fs=sorted({float(r['gate_magnitude_fraction']) for r in pts if r['polarity']=='p' and float(r['gate_magnitude_fraction'])>0}); ds=[]
  for f in fs:
   p=next(r for r in pts if r['polarity']=='p' and float(r['gate_magnitude_fraction'])==f); n=next(r for r in pts if r['polarity']=='n' and float(r['gate_magnitude_fraction'])==f); ds.append((abs(p['final_differential_change_mv'])+abs(n['final_differential_change_mv']))*0.5e-3)
  ds=np.maximum.accumulate(ds); gate=lambda val: float(np.interp(abs(val)*vpu*gain,ds,fs))
@@ -85,7 +95,7 @@ def main():
    t=first_us+i*period_us; active=(1.8-f*1.08) if gate=='p' else f*.6; pts += [f'{t-.001:.12g}u {off:.12g}',f'{t:.12g}u {active:.12g}',f'{t+pulse_ns/1000:.12g}u {active:.12g}',f'{t+pulse_ns/1000+.001:.12g}u {off:.12g}']
   pts += [f'5100u {off:.12g}']; return 'PWL('+' '.join(pts)+')'
  # write a clean deck from scratch
- deck_lines=['SKY130 full-float weighted event-sequence direct MOS accumulation',COMMON,'.subckt diff_inject vp vn pp np pn nn vdd vss params: wp=1.5 wn=1 l=10','Xp_pos vp pp vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}','Xn_neg vn nn vss vss sky130_fd_pr__nfet_01v8 w={wn} l={l}','Xp_neg vn pn vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}','Xn_pos vp np vss vss sky130_fd_pr__nfet_01v8 w={wn} l={l}','.ends diff_inject','Vdd vdd 0 1.8','Vcm vcm 0 0.9',
+ deck_lines=['SKY130 full-float weighted event-sequence direct MOS accumulation',common,f'.temp {temp:g}','.subckt diff_inject vp vn pp np pn nn vdd vss params: wp=1.5 wn=1 l=10','Xp_pos vp pp vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}','Xn_neg vn nn vss vss sky130_fd_pr__nfet_01v8 w={wn} l={l}','Xp_neg vn pn vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}','Xn_pos vp np vss vss sky130_fd_pr__nfet_01v8 w={wn} l={l}','.ends diff_inject','Vdd vdd 0 1.8','Vcm vcm 0 0.9',
  f'Xmem_pf vpf vcm membrane_mim w_um={cap:g} l_um={cap:g}',f'Xmem_nf vnf vcm membrane_mim w_um={cap:g} l_um={cap:g}','.ic v(vpf)=0.9','.ic v(vnf)=0.9','.ic v(xmem_pf.xmim.a)=0.9','.ic v(xmem_nf.xmim.a)=0.9',
  f'Xmem_pr vpr vcm membrane_mim w_um={cap:g} l_um={cap:g}',f'Xmem_nr vnr vcm membrane_mim w_um={cap:g} l_um={cap:g}','.ic v(vpr)=0.9','.ic v(vnr)=0.9','.ic v(xmem_pr.xmim.a)=0.9','.ic v(xmem_nr.xmim.a)=0.9',
  f'Xmem_pq vpq vcm membrane_mim w_um={cap:g} l_um={cap:g}',f'Xmem_nq vnq vcm membrane_mim w_um={cap:g} l_um={cap:g}','.ic v(vpq)=0.9','.ic v(vnq)=0.9','.ic v(xmem_pq.xmim.a)=0.9','.ic v(xmem_nq.xmim.a)=0.9',
@@ -100,10 +110,11 @@ def main():
   for suf,vp,vn in [('f','vpf','vnf'),('r','vpr','vnr'),('q','vpq','vnq'),('z','vpz','vnz')]:
    deck_lines += [f'Bcm_p_{suf} {vp} 0 I={{{cm_g:g}*((v({vp})+v({vn}))/2-v(vcm))}}',f'Bcm_n_{suf} {vn} 0 I={{{cm_g:g}*((v({vp})+v({vn}))/2-v(vcm))}}']
  deck_lines += ['.control','set numdgt=15','tran 2n 5.1m uic','let df=v(vpf)-v(vnf)','let dr=v(vpr)-v(vnr)','let cmf=(v(vpf)+v(vnf))/2','let cmr=(v(vpr)+v(vnr))/2','let dq=v(vpq)-v(vnq)','let cmq=(v(vpq)+v(vnq))/2','let dz=v(vpz)-v(vnz)','let cmz=(v(vpz)+v(vnz))/2','meas tran f_diff find df at=5m','meas tran r_diff find dr at=5m','meas tran q_diff find dq at=5m','meas tran z_diff find dz at=5m','meas tran f_cm find cmf at=5m','meas tran r_cm find cmr at=5m','meas tran q_cm find cmq at=5m','meas tran z_cm find cmz at=5m','quit','.endc','.end']
- tag=f'fullfloat_n{len(seq)}_rank{site_rank}_idx{ni}_o{oi}_y{yy}_x{xx}_H{headroom:g}_c{cap:g}_densecal_w10.5n_l10_g{gain:g}_p{period_us*1000:g}n_qseed{shuffle_seed}_order{order_policy}_cm{cm_g:g}_bal{int(balance)}_s2n_pwl12_refcmp'; deck=BENCH/f'sky130_ms_diff_weighted_sequence_{tag}.cir'; deck.write_text('\n'.join(deck_lines)+'\n')
+ cal_hash=hashlib.sha1(calname.encode()).hexdigest()[:8]
+ tag=f'fullfloat_n{len(seq)}_rank{site_rank}_idx{ni}_o{oi}_y{yy}_x{xx}_H{headroom:g}_c{cap:g}_{corner}_{temp:g}c_map{cal_hash}_densecal_w10.5n_l10_g{gain:g}_p{period_us*1000:g}n_qseed{shuffle_seed}_order{order_policy}_cm{cm_g:g}_bal{int(balance)}_s2n_pwl15_refcmp'; deck=BENCH/f'sky130_ms_diff_weighted_sequence_{tag}.cir'; deck.write_text('\n'.join(deck_lines)+'\n')
  cmd=['docker','run','--rm','--memory','8g','--cpus','2','--volume',f'{ROOT}:/workspace:ro','--volume',f'{OUT}:/workspace/artifacts/analog_asic','--workdir','/workspace/artifacts/analog_asic/benches','--entrypoint','timeout','eventspikeseg:analog-ngspice36','240','ngspice','-b',deck.name]; proc=subprocess.run(cmd,capture_output=True,text=True,timeout=255); log=proc.stdout+proc.stderr; out=RES/f'sky130_ms_diff_weighted_sequence_{tag}.log'; out.write_text(log)
  vals={k:float(v) for k,v in re.findall(r'(?im)^\s*(f_diff|r_diff|q_diff|z_diff|f_cm|r_cm|q_cm|z_cm)\s*=\s*([-+0-9.eE]+)',log)}; done=proc.returncode==0 and len(vals)==8
- ideal=chosen_current*vpu; result={'simulation_completed':done,'return_code':proc.returncode,'selected_site_rank_by_active_fanin':site_rank,'selected_time_index':int(ni),'selected_output_channel':int(oi),'selected_yx':[int(yy),int(xx)],'fan_in_events':len(seq),'ideal_full_float_current_model_units':chosen_current,'candidate_headroom_v':headroom,'volts_per_model_unit':vpu,'ideal_target_event_sum_v':ideal,'event_gain_correction':gain,'membrane_cap_square_width_um':cap,'common_mode_servo_transconductance_s':cm_g,'charge_balanced_gate_mapping':balance,'event_order_policy':order_policy,'random_order_seed':shuffle_seed if order_policy=='shuffle' else None,'event_time_range_us':[first_us,last_us],'event_spacing_us':period_us,'pulse_width_ns':pulse_ns,'timestep_ns':2,'sequence_order_comparison':{},'scope':f'One final_fuse output location with actual frozen full-float weights and presynaptic counts expanded into {pulse_ns:g} ns physical gate pulses. Events are serialized at the commanded spacing inside a 5ms hold interval. Direct differential MOS TT schematic with ideal gate values; charge balance uses separately interpolated pMOS/nMOS fractions from isolated-event TT calibration, still ideal gate sources. Neutral scheduling uses advance knowledge of all signed contributions and is an ideal controller upper bound. Any behavioral common-mode servo is an upper-bound experiment, not a transistor-level implementation. No per-weight programming circuit, noise/mismatch/PVT/layout or closed-loop network.'}
+ ideal=chosen_current*vpu; result={'simulation_completed':done,'return_code':proc.returncode,'mos_corner':corner,'temperature_c':temp,'transfer_calibration_report':calname,'selected_site_rank_by_active_fanin':None if site_index else site_rank,'selected_site_index':[int(ni),int(oi),int(yy),int(xx)],'selected_time_index':int(ni),'selected_output_channel':int(oi),'selected_yx':[int(yy),int(xx)],'fan_in_events':len(seq),'ideal_full_float_current_model_units':chosen_current,'candidate_headroom_v':headroom,'volts_per_model_unit':vpu,'ideal_target_event_sum_v':ideal,'event_gain_correction':gain,'membrane_cap_square_width_um':cap,'common_mode_servo_transconductance_s':cm_g,'charge_balanced_gate_mapping':balance,'event_order_policy':order_policy,'random_order_seed':shuffle_seed if order_policy=='shuffle' else None,'event_time_range_us':[first_us,last_us],'event_spacing_us':period_us,'pulse_width_ns':pulse_ns,'timestep_ns':2,'sequence_order_comparison':{},'scope':f'One final_fuse output location with actual frozen full-float weights and presynaptic counts expanded into {pulse_ns:g} ns physical gate pulses. Events are serialized at the commanded spacing inside a 5ms hold interval. Direct differential MOS schematic using {corner}/{temp:g}C device models and gate fractions derived from isolated-event calibration report {calname}; gate values remain ideal voltage sources. No analog weight storage/DAC, noise, mismatch, physical routing, PLIF dynamics or network feedback.'}
  if done:
   inc={k:vals[k]-vals['z_diff'] for k in ('f_diff','r_diff','q_diff')}
   result['sequence_order_comparison']={'forward_final_diff_v':inc['f_diff'],'reverse_final_diff_v':inc['r_diff'],f'{random_name}_final_diff_v':inc['q_diff'],'matched_no_event_final_diff_v':vals['z_diff'],'forward_raw_final_diff_v':vals['f_diff'],'reverse_raw_final_diff_v':vals['r_diff'],f'{random_name}_raw_final_diff_v':vals['q_diff'],'ideal_diff_v':ideal,'forward_relative_error':(inc['f_diff']-ideal)/max(abs(ideal),1e-15),'reverse_relative_error':(inc['r_diff']-ideal)/max(abs(ideal),1e-15),f'{random_name}_relative_error':(inc['q_diff']-ideal)/max(abs(ideal),1e-15),'order_difference_v':inc['f_diff']-inc['r_diff'],'matched_no_event_common_mode_v':vals['z_cm'],'forward_common_mode_v':vals['f_cm'],'reverse_common_mode_v':vals['r_cm'],f'{random_name}_common_mode_v':vals['q_cm'],'forward_common_mode_shift_v':vals['f_cm']-vals['z_cm'],'reverse_common_mode_shift_v':vals['r_cm']-vals['z_cm'],f'{random_name}_common_mode_shift_v':vals['q_cm']-vals['z_cm']}

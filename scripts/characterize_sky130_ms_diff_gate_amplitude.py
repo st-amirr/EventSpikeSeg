@@ -16,6 +16,7 @@ COMMON='''.option scale=1u
 def main():
   arg=lambda k,d: next((a.split('=',1)[1] for a in sys.argv[1:] if a.startswith(k+'=')),str(d))
   fractions=[float(v) for v in arg('--fractions','0,0.025,0.05,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1').split(',')]
+  cascode='--cascode' in sys.argv[1:]
   width_ns=float(arg('--pulse-width-ns',10.5)); cap=float(arg('--membrane-cap-um',20)); pfull=float(arg('--p-gate-full-v',0.72)); nfull=float(arg('--n-gate-full-v',0.6)); wp=float(arg('--p-width-um',1.5)); wn=float(arg('--n-width-um',1)); length=float(arg('--injector-length-um',10)); step_ns=float(arg('--tstep-ns',2)); timeout=int(arg('--timeout-s',240))
   corner=arg('--mos-corner','tt'); temperature_c=float(arg('--temperature-c',27))
   if corner not in ('tt','ss','ff'): raise ValueError('MOS corner must be tt, ss or ff')
@@ -23,8 +24,24 @@ def main():
   end_us=float(arg('--stop-us',1000)); initdiff=float(arg('--initial-differential-v',0)); initcm=float(arg('--initial-common-mode-v',0.9)); event_us=float(arg('--event-us',100)); measure_us=end_us-1.
   if not 0 < event_us < event_us+1 < measure_us: raise ValueError('stop must cover event and early/final measurements')
   cases=[('ref','z',0.0)]+[(f'{sign}{f:g}',sign,f) for f in fractions for sign in ('p','n')]
-  lines=['SKY130 direct differential MOS fixed-duration gate-amplitude sweep',COMMON.replace('__tt.corner.spice',f'__{corner}.corner.spice'),f'.temp {temperature_c:g}','Vdd vdd 0 1.8','Vcm vcm 0 0.9',
-    '.subckt diff_inject vp vn pp np pn nn vdd vss params: wp=1.5 wn=1 l=10',
+  lines=['SKY130 direct differential MOS fixed-duration gate-amplitude sweep',COMMON.replace('__tt.corner.spice',f'__{corner}.corner.spice'),f'.temp {temperature_c:g}','Vdd vdd 0 1.8','Vcm vcm 0 0.9']
+  if cascode:
+    lines += ['Vbpc vbp 0 0.8','Vbnc vbn 0 0.7',
+      '.subckt diff_inject vp vn pp np pn nn vdd vss vbp vbn params: wp=1.5 wn=1 l=10',
+      'Xp_pos vp_mid pp vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}',
+      'Xp_cas vp vbp vp_mid vdd sky130_fd_pr__pfet_01v8 w={2*wp} l={l}',
+      'Rbleed_pp vp_mid vdd 1e15',
+      'Xn_neg vn_mid nn vss vss sky130_fd_pr__nfet_01v8 w={wn} l={l}',
+      'Xn_cas vn vbn vn_mid vss sky130_fd_pr__nfet_01v8 w={2*wn} l={l}',
+      'Rbleed_nn vn_mid vss 1e15',
+      'Xp_neg vn_mid_n pn vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}',
+      'Xp_cas_n vn vbp vn_mid_n vdd sky130_fd_pr__pfet_01v8 w={2*wp} l={l}',
+      'Rbleed_pn vn_mid_n vdd 1e15',
+      'Xn_pos vp_mid_n np vss vss sky130_fd_pr__nfet_01v8 w={wn} l={l}',
+      'Xn_cas_n vp vbn vp_mid_n vss sky130_fd_pr__nfet_01v8 w={2*wn} l={l}',
+      'Rbleed_np vp_mid_n vss 1e15','.ends diff_inject']
+  else:
+    lines += ['.subckt diff_inject vp vn pp np pn nn vdd vss params: wp=1.5 wn=1 l=10',
     'Xp_pos vp pp vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}',
     'Xn_neg vn nn vss vss sky130_fd_pr__nfet_01v8 w={wn} l={l}',
     'Xp_neg vn pn vdd vdd sky130_fd_pr__pfet_01v8 w={wp} l={l}',
@@ -36,11 +53,13 @@ def main():
     if sign=='p': gates.update(pp=f'PWL(0 1.8 {event_us-.001:g}u 1.8 {event_us:g}u {pg:g} {event_us+width_ns/1000:g}u {pg:g} {event_us+width_ns/1000+.0001:g}u 1.8 {end_us:g}u 1.8)',nn=f'PWL(0 0 {event_us-.001:g}u 0 {event_us:g}u {ng:g} {event_us+width_ns/1000:g}u {ng:g} {event_us+width_ns/1000+.0001:g}u 0 {end_us:g}u 0)')
     elif sign=='n': gates.update(pn=f'PWL(0 1.8 {event_us-.001:g}u 1.8 {event_us:g}u {pg:g} {event_us+width_ns/1000:g}u {pg:g} {event_us+width_ns/1000+.0001:g}u 1.8 {end_us:g}u 1.8)',np=f'PWL(0 0 {event_us-.001:g}u 0 {event_us:g}u {ng:g} {event_us+width_ns/1000:g}u {ng:g} {event_us+width_ns/1000+.0001:g}u 0 {end_us:g}u 0)')
     for port,node,value in [('pp','pp',gates['pp']),('np','np',gates['np']),('pn','pn',gates['pn']),('nn','nn',gates['nn'])]: lines += [f'V{port}_{name} {node}_{name} 0 {value}']
-    lines += [f'Xinj_{name} {vp} {vn} pp_{name} np_{name} pn_{name} nn_{name} vdd 0 diff_inject wp={wp:g} wn={wn:g} l={length:g}']
+    pins=f'{vp} {vn} pp_{name} np_{name} pn_{name} nn_{name} vdd 0'
+    if cascode: pins += ' vbp vbn'
+    lines += [f'Xinj_{name} {pins} diff_inject wp={wp:g} wn={wn:g} l={length:g}']
   lines += ['.control','set numdgt=15',f'tran {step_ns:g}n {end_us:g}u uic']
   for name,_,_ in cases: lines += [f'let diff_{name}=v(vp_{name})-v(vn_{name})',f'let cm_{name}=(v(vp_{name})+v(vn_{name}))/2',f'meas tran early_diff_{name} find diff_{name} at={event_us+1:g}u',f'meas tran final_diff_{name} find diff_{name} at={measure_us:g}u',f'meas tran early_cm_{name} find cm_{name} at={event_us+1:g}u',f'meas tran final_cm_{name} find cm_{name} at={measure_us:g}u']
   lines += ['quit','.endc','.end']; BENCH.mkdir(parents=True,exist_ok=True); RES.mkdir(parents=True,exist_ok=True)
-  frac_hash=hashlib.sha1(','.join(f'{x:g}' for x in fractions).encode()).hexdigest()[:10]; tag=f'c{cap:g}_w{width_ns:g}n_pg{pfull:g}_ng{nfull:g}_wp{wp:g}_wn{wn:g}_l{length:g}_d{initdiff:g}v_cm{initcm:g}v_t{end_us:g}u_ev{event_us:g}u_n{len(fractions)}_fr{fractions[0]:g}-{fractions[-1]:g}_h{frac_hash}_step{step_ns:g}n_mos{corner}_temp{temperature_c:g}'
+  frac_hash=hashlib.sha1(','.join(f'{x:g}' for x in fractions).encode()).hexdigest()[:10]; tag=f'{"cascode_" if cascode else ""}c{cap:g}_w{width_ns:g}n_pg{pfull:g}_ng{nfull:g}_wp{wp:g}_wn{wn:g}_l{length:g}_d{initdiff:g}v_cm{initcm:g}v_t{end_us:g}u_ev{event_us:g}u_n{len(fractions)}_fr{fractions[0]:g}-{fractions[-1]:g}_h{frac_hash}_step{step_ns:g}n_mos{corner}_temp{temperature_c:g}'
   deck=BENCH/f'sky130_ms_diff_gate_amplitude_{tag}.cir'; deck.write_text('\n'.join(lines)+'\n',encoding='utf-8')
   cmd=['docker','run','--rm','--memory','8g','--cpus','2','--volume',f'{ROOT}:/workspace:ro','--volume',f'{OUT}:/workspace/artifacts/analog_asic','--workdir','/workspace/artifacts/analog_asic/benches','--entrypoint','timeout','eventspikeseg:analog-ngspice36',str(timeout),'ngspice','-b',deck.name]
   proc=subprocess.run(cmd,capture_output=True,text=True,timeout=timeout+15); log=proc.stdout+proc.stderr; (RES/f'sky130_ms_diff_gate_amplitude_{tag}.log').write_text(log,encoding='utf-8')
@@ -55,7 +74,7 @@ def main():
         cm=m[phase,'cm',name]-m[phase,'cm','ref']
         row[f'{phase}_differential_change_mv']=d*1e3; row[f'{phase}_common_mode_change_mv']=cm*1e3
       results.append(row)
-  report={'test':'sky130_differential_mos_fixed_width_gate_amplitude_sweep','simulation_completed':complete,'return_code':proc.returncode,'measurements':len(m),'mos_corner':corner,'temperature_c':temperature_c,'membrane_cap_square_width_um':cap,'pulse_width_ns':width_ns,'p_gate_full_magnitude_v':pfull,'n_gate_full_magnitude_v':nfull,'simulation_stop_us':end_us,'event_time_us':event_us,'event_transfer_by_gate_magnitude':results,'scope':'One fixed-duration isolated differential current event per case, measured after the event and near the end of the hold. Selected MOS corner and temperature, typical passive R/C/MIM; gate voltages are ideal sources, no analog weight storage/DAC, repeated events, readout, threshold/reset, supply corners, mismatch, noise, extraction, or network feedback.'}
+  report={'test':'sky130_differential_mos_fixed_width_gate_amplitude_sweep','simulation_completed':complete,'return_code':proc.returncode,'measurements':len(m),'mos_corner':corner,'temperature_c':temperature_c,'cascode_enabled':cascode,'internal_bleed_ohm':1e15 if cascode else None,'membrane_cap_square_width_um':cap,'pulse_width_ns':width_ns,'p_gate_full_magnitude_v':pfull,'n_gate_full_magnitude_v':nfull,'simulation_stop_us':end_us,'event_time_us':event_us,'event_transfer_by_gate_magnitude':results,'scope':'One fixed-duration isolated differential current event per case, measured after the event and near the end of the hold. Selected MOS corner and temperature, typical passive R/C/MIM; gate voltages and cascode biases are ideal sources, no analog weight storage/DAC, repeated events, readout, threshold/reset, supply corners, mismatch, noise, extraction, or network feedback.'}
   out=RES/f'sky130_ms_diff_gate_amplitude_{tag}.json'; out.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8'); print(json.dumps({'output':str(out),'simulation_completed':complete,'results':results},indent=2)); return 0 if complete else 2
 if __name__=='__main__': raise SystemExit(main())
 
