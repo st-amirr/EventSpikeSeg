@@ -3953,3 +3953,201 @@ gf180_two_polarity_readout_stage_2026_10_09:
   full_chip_accepted: false
   live_sessions: []
   goal_status: active_incomplete
+
+gf180_selective_precision_stage_2026_10_09:
+  stage: selective_input_stem_precision_feasibility
+  evidence: artifacts/analog_asic/results/gf180_precision_allocation_boundary.json
+  actor_manifest: artifacts/analog_asic/results/gf180_actor_precision_allocation.json
+  stem_packet_targets: artifacts/analog_asic/results/gf180_stem_float_packet_targets.json
+  original_float_checkpoint_unchanged: true
+  completed_replay_reports: 8
+  calibration_records: 8
+  model_forwards: 78
+  special_precision_actor: stem
+  special_precision_logical_state_count: 2252800
+  total_logical_state_count: 30976000
+  special_precision_fraction: 0.07272727272727272
+  hypothetical_stem_candidate_error_budget_uv_rms: 3
+  hypothetical_other_actor_candidate_error_budget_uv_rms: 15
+  error_budgets_physically_qualified: false
+  fixed_calibration_floor: four_times_base_threshold
+  fixed_calibration_guard_multiplier: 1.25
+  zero_channel_ranges: 0
+  held_out_record_indices: [8, 64]
+  evaluation_scope: same_sequence_partial_sensitivity_not_full_validation
+  perturbed_cases_include_ideal_rail_clipping: true
+  rail_only_controls: original_prediction_hashes_reproduced
+  held_out_baseline_iou: [0.164842, 0.134148]
+  held_out_uniform15uv_mean_iou: [0.097234, 0.096491]
+  held_out_stem3uv_other15uv_mean_iou: [0.158884, 0.131633]
+  actual_stem_float_coefficients_mapped: 1600
+  physical_weight_programming_reference_delivery: incomplete
+  new_combined_layout_qualified: false
+  next: special_stem_range_coded_charge_domain_precision_actual_float_packets_then_full_PLIF_service_dense_assembly
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_spatial_analog_range_stage_2026_10_09:
+  stage: alternative_analog_representation_precision_feasibility
+  evidence: artifacts/analog_asic/results/gf180_spatial_range_boundary.json
+  amplifier_evidence: artifacts/analog_asic/results/gf180_preamp_method_boundary.json
+  gain_manifest: artifacts/analog_asic/results/gf180_spatial_gain_candidates.json
+  original_float_checkpoint_unchanged: true
+  qat_or_quantized_reference_used: false
+  preferred_next_candidate: stem_fixed_8x8_spatial_range_capped_gain16
+  available_analog_gain_settings: [1, 2, 4, 8, 16]
+  stem_8x8_channel_tile_settings: 35840
+  stem_32x32_channel_tile_settings: 2240
+  calibrated_record_indices: [0, 1, 2, 3, 4, 5, 6, 7]
+  held_out_record_indices: [8, 64]
+  evaluation_sequence_count: 1
+  audited_model_forwards: 28
+  completed_replay_reports: 4
+  seeds: [1729]
+  hypothetical_total_candidate_error_uv: 15
+  error_budget_physically_qualified: false
+  baseline_iou: [0.1648416519165039, 0.1341480016708374]
+  whole_channel15uv_iou: [0.09698135405778885, 0.09665248543024063]
+  capped8x8_15uv_iou: [0.16065563261508942, 0.13279183208942413]
+  capped32x32_15uv_iou: [0.14869171380996704, 0.12525968253612518]
+  capped8x8_rail_control_pixel_change_fraction: [0.00008877841173671186, 0.000497159082442522]
+  native_preamp_noise_cases_complete: 4
+  native_preamp_reset_cases_bounded_incomplete: 2
+  native_preamp_selected: false
+  local_gain_reference_delivery_implemented: false
+  cross_channel_comparisons_require_common_model_units: true
+  new_combined_layout_qualified: false
+  area_saving_demonstrated: false
+  next: total_chain_error_tolerance_then_bounded_fixed_gain_actual_event_state_reference_interface
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_local_gain_physical_stage_2026_10_09:
+  stage: fixed_local_analog_scale_signed_weight_injection_feasibility
+  evidence: artifacts/analog_asic/results/gf180_local_gain_physical_boundary.json
+  timing_calibration: artifacts/analog_asic/results/gf180_local_gain_timing_calibration.json
+  programming_calibration: artifacts/analog_asic/results/gf180_local_gain_programming_calibration.json
+  original_float_checkpoint_unchanged: true
+  qat_or_quantized_reference_used: false
+  native_transistor_and_MIM_cards_unchanged: true
+  implemented_injection_gain_method: real_event_duration_and_idle_switch_commands
+  common_duration_offset_ns: 18.50814196777627
+  original_weight_indices_out_in_y_x: [[2, 1, 0, 3], [2, 0, 0, 4]]
+  original_base_increment_uv: [19.546869672424563, -23.095207891670785]
+  fixed_stem_tile_index: [0, 10]
+  fixed_tile_side_output_sites: 8
+  fixed_local_gain: 16
+  physical_command_widths_us: [1.4219261595896255, 2.112382981502571]
+  nominal_four_packet_max_relative_error_percent: 0.07883839693580921
+  mismatch_seed_checked: 29
+  external_programming_iterations: 3
+  frozen_alternating_four_packet_max_relative_error_percent: 0.01984347442240378
+  frozen_reversed_four_packet_max_relative_error_percent: 0.16629428711694832
+  frozen_allpositive_four_packet_max_relative_error_percent: 0.38622384908548896
+  external_bench_program_references_only: true
+  autonomous_calibration_and_reference_delivery_implemented: false
+  native_transient_noise_qualified: false
+  circuit_diagnostics_completed: 15
+  larger_error_model_forwards: 8
+  larger_error_held_out_records: [8, 64]
+  larger_error_seeds: [1729]
+  hypothetical_error_sigma_uv: [30, 60, 100]
+  larger_errors_apply_to_all25actors: true
+  larger_error_accuracy_acceptable: false
+  combined_bank_pair_programmer_layout_qualified: false
+  next: frozen_calibration_state_sequence_loading_dependence_and_physical_total_noise_reference_delivery
+  weighted_charge_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_local_gain_state_dependence_stage_2026_10_09:
+  stage: nonzero_membrane_state_input_interface_validation
+  evidence: artifacts/analog_asic/results/gf180_local_gain_state_dependence_boundary.json
+  original_float_checkpoint_unchanged: true
+  qat_or_quantized_reference_used: false
+  frozen_reset_only_program_calibration_fullrange_qualified: false
+  requested_preload_differential_v: [-0.1, 0, 0.1]
+  actual_completed_negative_preload_state_v: -0.0911538
+  actual_completed_compensated_positive_state_v: 0.0900831
+  uncompensated_negative_state_max_packet_error_percent: 36.0994775420743
+  compensated_positive_state_max_packet_error_percent: 37.948824014973184
+  balanced_quarter_tg_steering_selected: false
+  new_reusable_cell: gf180_fixed_body_tg_fullroute_quarter
+  new_cell_nf_pf_width_um: [0.25, 0.5]
+  new_cell_length_um: 0.28
+  new_cell_full_drc_errors: 0
+  new_cell_lvs_unique: true
+  new_cell_gds_readback_drc_errors: 0
+  new_cell_gds_readback_lvs_unique: true
+  new_cell_capacitance_extracted: true
+  new_cell_lef_size_um: [38, 41.2]
+  circuit_cases: 11
+  completed_circuit_cases: 3
+  incomplete_circuit_cases: 8
+  bounded_timeout_cases: 2
+  timestep_abort_cases: 6
+  finite_reference_resistor_gds_readback_qualified: false
+  isolated_stem_noise_model_forwards: 8
+  isolated_stem_sigma_uv: [15, 30, 60]
+  other24actor_sigma_uv: 15
+  independent_stem15uv_iou: [0.16065563261508942, 0.13279183208942413]
+  independent_stem30uv_iou: [0.14776970446109772, 0.12323830276727676]
+  independent_stem60uv_iou: [0.12806637585163116, 0.10909080505371094]
+  exact_transistor_error_mechanism_proven: false
+  combined_injector_layout_qualified: false
+  next: physical_summing_node_current_compliance_regulation_and_loop_stability_then_state_noise_calibration
+  weighted_charge_accepted: false
+  original_float_accuracy_accepted: false
+  complete_PLIF_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  live_sessions: []
+  goal_status: active_incomplete
+
+gf180_tracking_parking_stage_2026_10_09:
+  stage: analog_input_integrator_feasibility_before_complete_PLIF_and_array_layout
+  model_reference: original_epoch58_full_float_checkpoint_unchanged
+  audit: artifacts/analog_asic/results/gf180_tracking_parking_boundary.json
+  rejected_cascaded_loop_completed_cases: 6
+  nominal_isolated_source_completed_cases: 7
+  mechanism: state_dependent_charge_from_switched_source_output_and_idle_parking_network
+  isolated_equal_program_unwanted_charge_fc: 0.105
+  selected_development_candidate: tracking_idle_parking_with_native_autozero_follower_four_offset_feedback_banks
+  nominal_completed_state_packet_change_uv_upper_bound: 0.1
+  nominal_state_coverage_v: [-0.0906, 0.0906]
+  physical_settling_interval_us: 5
+  seed29_autozero_completed_state_cases: 3
+  seed29_autozero_uncalibrated_state_packet_change_uv_approx: 4.9
+  four_bank_completed_state_packet_variation_uv_upper_bound: 1.275
+  four_bank_scope: same_hierarchy_state_variation_not_total_weight_error_or_noise
+  one_bank_calibrated_first_packet_max_error_uv: 0.006674
+  one_bank_calibrated_reversed_order_max_error_uv: 0.050674
+  integrated_case_count: 29
+  integrated_completed_cases: 22
+  integrated_incomplete_cases: 7
+  separate_pre_simulation_netlist_rejections: 3
+  all_jobs_terminal: true
+  next: refit_four_bank_programming_and_quantify_accumulated_systematic_error_before_noise_and_layout
+  calibration_status: one_bank_external_PROGRAM_fit_completed_three_iterations_four_bank_refit_pending
+  fallback: switched_capacitor_weighted_charge_packet_if_calibrated_tracking_fails
+  systematic_per_event_error_is_not_gaussian_candidate_noise: true
+  transient_random_noise_qualified: false
+  combined_module_layout_qualified: false
+  physical_programmer_reference_controller_qualified: false
+  complete_PLIF_accepted: false
+  original_float_accuracy_accepted: false
+  full_5ms_population_service_accepted: false
+  full_chip_accepted: false
+  goal_status: active_incomplete
