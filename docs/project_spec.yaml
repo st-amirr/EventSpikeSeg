@@ -47,6 +47,10 @@ article_final_implementation:
     resident_membranes: 30976000
     total_logical_analog_state_identities: 54630400
     checkpoint_recorded_best_validation_mean_iou: 0.27976271510124207
+    checkpoint_metrics_record: docs/checkpoint_metrics.json
+    epoch80_validation_mean_iou: 0.27095654606819153
+    epoch80_checkpoint_sha256: c9d1edee4ee3742c65c39111859fb76d81706fd80cdbe941bc377a8e7940704d
+    best_validation_pixel_accuracy: 0.6693825125694275
     accuracy_evidence: artifacts/analog_asic/support/model_reference/eventspikeseg140k_float_reference.json
     accuracy_scope: stored checkpoint validation metadata; not new evaluation or hardware accuracy
   architecture:
@@ -588,6 +592,13 @@ article_final_implementation:
     submission_materials: article/submission
     submission_status: editorial_adaptation_complete_author_declarations_and_data_deposit_pending
     submission_manifest: article/submission/submission_manifest.json
+    publication_revision_labels: omitted_internal_ids_retained_in_manifests
+    printed_orcid: false
+    orcid_note: Not specified as required in current journal guide; retained in submission metadata.
+    supplementary_layout: article/submission/Supplementary_layout_sections.pdf
+    supplementary_layout_pages: 8
+    supplementary_layout_regions: 25
+    supplementary_layout_manifest: article/figures/layout_sections/manifest.json
     source_bundle: article/submission/EventSpikeSeg_Microelectronics_Journal_sources.zip
     authors:
     - name: Amir Mohammad Khadem Hosseini
@@ -630,13 +641,13 @@ article_final_implementation:
     original_image_published: false
     original_image_scope: Earlier topology and AI-edited raster retained; Figure 1 now uses editable vector source.
     compiled_pages: 10
-    reusable_figure_pages: 5
+    reusable_figure_pages: 13
     figure_review:
       status: completed_from_existing_layout_and_simulation_data
       architecture_edit_mode: deterministic_tikz_vector_redraw
       architecture_provenance: article/figures/architecture_image_provenance.json
       figure_provenance: article/figures/article_review_figure_manifest.json
-      full_layout_figure: article/figures/gds_full_atlas_publication.pdf
+      full_layout_figure: article/figures/gds_full_atlas_indexed.pdf
       full_layout_svg: artifacts/analog_asic/images/full_layout_overview_publication.svg
       full_layout_page: 6
       native_layout_page: 7
@@ -665,6 +676,12 @@ article_final_implementation:
 
 
 active_workflow:
+  workspace:
+    root: C:/Users/stamir/My Drive (amir76kh@gmail.com)/ELEC/EventSpikeSeg
+    artifacts_root: C:/Users/stamir/Desktop/EventSpikeSeg/artifacts
+    artifacts_access: local_directory_junction_and_existing_env_setting
+    github_repository: https://github.com/st-amirr/EventSpikeSeg
+    source_git_history: preserved_in_ignored_workspace_move_backup
   asic_source_cleanup:
     source_folder: asic
     purpose: Retained hardware source and build recipes; final results are under artifacts.

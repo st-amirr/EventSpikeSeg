@@ -39,3 +39,6 @@ artifacts/ASIC/*
 /bin/article_reorganization_*/
 
 /artifacts/article_work/
+
+# Recoverable project relocation and conflicting-file backups.
+/bin/workspace_move_*/

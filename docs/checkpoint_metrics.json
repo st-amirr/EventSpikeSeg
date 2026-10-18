@@ -1,0 +1,235 @@
+{
+  "evidence_kind": "stored_checkpoint_metadata",
+  "new_evaluation_run": false,
+  "hardware_accuracy_measured": false,
+  "checkpoints": [
+    {
+      "checkpoint": "artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_epoch080.pt",
+      "sha256": "c9d1edee4ee3742c65c39111859fb76d81706fd80cdbe941bc377a8e7940704d",
+      "epoch": 80,
+      "epochs": 80,
+      "best_epoch": 58,
+      "best_mean_iou": 0.27976271510124207,
+      "validation_metrics": {
+        "mean_iou": 0.27095654606819153,
+        "pixel_accuracy": 0.6501982808113098,
+        "per_class_iou": [
+          0.7759428024291992,
+          0.4056236445903778,
+          0.06748944520950317,
+          0.28188708424568176,
+          0.006822484079748392,
+          0.08797401934862137
+        ],
+        "valid_classes": 6,
+        "ground_truth_pixels": [
+          28493589,
+          26978400,
+          808633,
+          8596928,
+          5397,
+          1011453
+        ],
+        "predicted_pixels": [
+          27637822,
+          11689291,
+          1233248,
+          21862867,
+          385527,
+          3085645
+        ]
+      },
+      "best_validation_metrics": {
+        "mean_iou": 0.27976271510124207,
+        "pixel_accuracy": 0.6693825125694275,
+        "per_class_iou": [
+          0.8245449066162109,
+          0.3940027952194214,
+          0.06774845719337463,
+          0.2918868660926819,
+          0.012089124880731106,
+          0.08830408751964569
+        ],
+        "valid_classes": 6,
+        "ground_truth_pixels": [
+          28493589,
+          26978400,
+          808633,
+          8596928,
+          5397,
+          1011453
+        ],
+        "predicted_pixels": [
+          29619579,
+          11241073,
+          1601933,
+          20535443,
+          122107,
+          2774265
+        ]
+      },
+      "class_names": [
+        "flat",
+        "construction+sky",
+        "object",
+        "nature",
+        "human",
+        "vehicle"
+      ],
+      "dataset": "dsec",
+      "seed": 17,
+      "input_channels": 2,
+      "input_representation": "raw-events",
+      "output_size": [
+        440,
+        640
+      ],
+      "is_best": false,
+      "asic_qat_metadata": {},
+      "temporal_protocol": {
+        "version": "dsec-six-class-fixed-time-counts-async-v1",
+        "input_mode": "raw-events",
+        "input_channels": 2,
+        "integration_window_us": 50000,
+        "internal_updates": 10,
+        "event_clock_us": 5000,
+        "stateful_stream": true,
+        "validation_fraction": 0.1,
+        "manifest_digest": "c784a934265367195e3f7f497b7b9bfc0a1993d529ed31a24817537f973535f5",
+        "training_sequences": [
+          "zurich_city_00_a",
+          "zurich_city_01_a",
+          "zurich_city_04_a",
+          "zurich_city_05_a",
+          "zurich_city_06_a",
+          "zurich_city_07_a",
+          "zurich_city_08_a"
+        ],
+        "validation_sequences": [
+          "zurich_city_02_a"
+        ],
+        "validation_record_digest": "72484940da1be634c2fa66a6ccf7ef0877639c20123f7f1884669e408bfbeedd",
+        "timing_mode": "fixed-physical-time-counts-training-plus-direct-event-fpga"
+      },
+      "record_counts": {
+        "training_record_ids": 7840,
+        "validation_record_ids": 234
+      },
+      "protocol_fingerprint": "413904f0a7c83bc98aae2fa2b968cf83f7d44d7676d441b1c73ffab703c93570"
+    },
+    {
+      "checkpoint": "artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_best.pt",
+      "sha256": "c934da40b0f65d2a63155cb89b663e06aebf527cea1db4b9902a5b53840457d7",
+      "epoch": 58,
+      "epochs": 80,
+      "best_epoch": 58,
+      "best_mean_iou": 0.27976271510124207,
+      "validation_metrics": {
+        "mean_iou": 0.27976271510124207,
+        "pixel_accuracy": 0.6693825125694275,
+        "per_class_iou": [
+          0.8245449066162109,
+          0.3940027952194214,
+          0.06774845719337463,
+          0.2918868660926819,
+          0.012089124880731106,
+          0.08830408751964569
+        ],
+        "valid_classes": 6,
+        "ground_truth_pixels": [
+          28493589,
+          26978400,
+          808633,
+          8596928,
+          5397,
+          1011453
+        ],
+        "predicted_pixels": [
+          29619579,
+          11241073,
+          1601933,
+          20535443,
+          122107,
+          2774265
+        ]
+      },
+      "best_validation_metrics": {
+        "mean_iou": 0.27976271510124207,
+        "pixel_accuracy": 0.6693825125694275,
+        "per_class_iou": [
+          0.8245449066162109,
+          0.3940027952194214,
+          0.06774845719337463,
+          0.2918868660926819,
+          0.012089124880731106,
+          0.08830408751964569
+        ],
+        "valid_classes": 6,
+        "ground_truth_pixels": [
+          28493589,
+          26978400,
+          808633,
+          8596928,
+          5397,
+          1011453
+        ],
+        "predicted_pixels": [
+          29619579,
+          11241073,
+          1601933,
+          20535443,
+          122107,
+          2774265
+        ]
+      },
+      "class_names": [
+        "flat",
+        "construction+sky",
+        "object",
+        "nature",
+        "human",
+        "vehicle"
+      ],
+      "dataset": "dsec",
+      "seed": 17,
+      "input_channels": 2,
+      "input_representation": "raw-events",
+      "output_size": [
+        440,
+        640
+      ],
+      "is_best": true,
+      "asic_qat_metadata": {},
+      "temporal_protocol": {
+        "version": "dsec-six-class-fixed-time-counts-async-v1",
+        "input_mode": "raw-events",
+        "input_channels": 2,
+        "integration_window_us": 50000,
+        "internal_updates": 10,
+        "event_clock_us": 5000,
+        "stateful_stream": true,
+        "validation_fraction": 0.1,
+        "manifest_digest": "c784a934265367195e3f7f497b7b9bfc0a1993d529ed31a24817537f973535f5",
+        "training_sequences": [
+          "zurich_city_00_a",
+          "zurich_city_01_a",
+          "zurich_city_04_a",
+          "zurich_city_05_a",
+          "zurich_city_06_a",
+          "zurich_city_07_a",
+          "zurich_city_08_a"
+        ],
+        "validation_sequences": [
+          "zurich_city_02_a"
+        ],
+        "validation_record_digest": "72484940da1be634c2fa66a6ccf7ef0877639c20123f7f1884669e408bfbeedd",
+        "timing_mode": "fixed-physical-time-counts-training-plus-direct-event-fpga"
+      },
+      "record_counts": {
+        "training_record_ids": 7840,
+        "validation_record_ids": 234
+      },
+      "protocol_fingerprint": "413904f0a7c83bc98aae2fa2b968cf83f7d44d7676d441b1c73ffab703c93570"
+    }
+  ]
+}
