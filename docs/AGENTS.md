@@ -1,3 +1,80 @@
+
+
+## ASIC artifact reorganization — 2026-10-14
+
+Canonical article package: `artifacts/analog_asic/final/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
+
+Digital documentation-only snapshots are `artifacts/ASIC/final/` and `artifacts/ASIC_XL/final/`; neither claims a completed digital full-chip layout. Last exports, hierarchy inventory, completed block views and final reports are retained; digital jobs remain paused.
+
+All superseded attempts and build environments moved to `bin/asic_cleanup_2026-10-14_20261014T145109Z/`, including related digital OpenROAD history. No files deleted. cleanup_plan.json inventories every original file; integrity_audit.json accounts for all64,814 originals and verifies SHA256 of all2,779 retained files. restore_artifacts.ps1 can restore original artifact trees; pre-cleanup docs and .gitignore are backed up in the same bin. User review of this bin is pending; do not delete it without explicit instruction. Historical report/script paths are original provenance; resolve with the locator or restore dependencies before replay. New experiments belong outside final/.
+## Representative per-element consumption delivered — 2026-10-14
+
+The article layout and representative consumption characterization are complete under the user's clarified scope. `artifacts/analog_asic/results/module_consumption_v1/consumption_summary.json` covers all22 required element/module families, plus native capacitor, sampled decision, bias/normalization kernels and the three shared categorical macro estimates. One physical PLIF core, one3T+MIM resident cell, signed injector, adaptation, inhibition, normalization, readout, access and controls are distinguished. Each transient row states its window and supply energy/power; detailed reports retain input-port accounting. Core beta/decision/reset windows are measurements of the whole core during those phases, not standalone leaf powers.
+
+Coverage combines newly completed native transients, reused complete rail-current traces, native RMS DC/settled samples and explicitly labeled routed-library digital power estimates. Shared1024-state reader power is partition/leaf characterization, not a completed full connected-page power simulation. Bias/reference/phase-generator overhead outside the measured boundary remains excluded unless stated. No measured full-chip power, calibrated behavior or5ms full-population deadline is claimed. Do not sum overlapping modules or replicate shared-core cost per logical membrane. Further circuit optimization is optional.
+
+## Historical consumption task definition — 2026-10-14
+
+The user clarified that per-module simulation means power/energy consumption for one representative instance of each implemented model element: one PLIF core, one membrane storage cell, one signed synaptic injector, beta/threshold/reset, adaptation, inhibition, normalization and class readout, plus their shared access/bias/control circuits. The full article layout is already delivered. Characterize element types once with explicit nominal operating point, activity/load, operation duration, idle/hold power and energy per operation. Do not simulate every replicated instance or restart behavior/calibration/layout improvements as completion gates.
+
+Keep one resident storage cell separate from the shared PLIF update core and shared bank/page reader. Never divide a whole shared module's supply energy by its state capacity and label that a measured single-cell value. Account for driver/reference/programming ports explicitly; VDD alone may exclude energy supplied through other ports. Reuse saved current traces and existing supply results first, then run only missing bounded small-module measurements. Evidence/status: `artifacts/analog_asic/results/module_consumption_v1/consumption_inventory.json`; Representative consumption delivery is now recorded above; this paragraph preserves the task definition.
+
+## Article layout delivered — user scope clarification2026-10-14
+
+V31 is the completed full hierarchical research-layout deliverable under the user's instruction to avoid strict operational acceptance. See `artifacts/analog_asic/assembly/full25_native_controls_v31/article_layout_delivery_v1.json` and ACTIVE_TASKS. All original analog states and implemented modules are included; verified address/event/supply/reference wiring and explicit external research interfaces are documented. Native numerical errors, incomplete full1024-state transient and unproven global5ms timing are reported limitations, not blockers to this layout delivery. Module evidence covers18 completed nominal families plus the page-reader frontend partition. Connected signed-update/commit/5ms-hold evidence is in `results/selected_accumulation_retention_v2/simulation.json`. Further behavioral optimization is optional. Earlier strict flags below are historical; do not infer that the full GDS has not been exported.
+
+## Control and class infrastructure — 2026-10-14
+
+Latest qualified full-population GDS is V30 (`assembly/full25_class_infrastructure_v30/integration_readback_v1.json` under artifacts/analog_asic). All three categorical macro upper VDD/VSS grids are connected to existing rails; actual native M4/M5/VIA4 proofs cover all power-port rectangles. The class-current/readout wrapper has 118 verified boundary escapes and four verified supply/reference joins. V29 failed branch conflict is preserved; V30 moves the conflicting ground via. All source state geometry and existing graphs are preserved. Remaining work is native event/commit boundary controls, driven/observation terminal classification, retained module interfaces and connected per-module accumulation/retention/timing. No jobs live; full layout completion and 5 ms remain unproven. Earlier handoffs below are historical.
+
+## Infrastructure progress — 2026-10-14
+
+V26 is the latest incrementally readback-qualified full-population GDS. V24 added and verified 1,750 boundary terminals; V25 connected 100 analog supply endpoints; V26 connected 100 storage/compute-reference endpoints. Existing V23 address graph and all native state geometry are preserved. Evidence: `artifacts/analog_asic/assembly/full25_analog_references_v26/integration_readback_v1.json`. Remaining categorical/class-current infrastructure, operation interfaces and connected module simulations are listed in ACTIVE_TASKS. No global RC/IR/EM, full layout completion or 5 ms pass is claimed; no jobs are live. Prior handoffs below are historical.
+
+## Current layout handoff — qualified address binding V23, 2026-10-13
+
+Latest readback-qualified full-population GDS: `artifacts/analog_asic/assembly/full25_native_address_routes_v23/eventspikeseg140k_native_address_routes_v23.gds` (536,631,368 bytes), top `ESS140K_NATIVE_ADDRESS_ROUTES_V23`. All 947 controller address nets now physically reach all 1,622 native membrane address/select endpoints. Actual parent-metal graph and native dispatcher-edge checks pass: no opens, aliases, floating pieces, unlanded cuts, foreign/unknown native contacts or native-core intrusions within the checked scope. Complete V19 child geometry, all state identities, 25 spike paths and 3,050 control links are preserved. Combined evidence: `assembly/full25_native_address_routes_v23/independent_readback_v1.json` under `artifacts/analog_asic/`.
+
+Next: finalize supply/reference and external analog contribution/phase interfaces, then connected per-module accumulation/retention/timing simulation coverage. Do not repeat address routing. Full layout completion and 5 ms accumulation are still unproven; no global-wire RC or whole-chip DRC/timing claim. No host or Docker jobs remain live. V20/V21/V22 failed plans are retained. Read the active scope clarification below: only supplied input-event delivery/accumulation has the 5 ms deadline; trained-weight transfer, output completion and hardware mIoU are excluded.
+
+## Latest integration handoff — 2026-10-13
+
+V19 is the latest readback-qualified full-population layout. The 25 spike routes, 1,475 fabric/ingress routes and 1,575 ingress/destination-controller routes are already done. Native 1,622 address/select escapes are also done. Continue with the 947 controller-to-native address nets using assembly/native_address_route_inputs_v1/routing_inputs.json. Do not repeat completed links. The destination ORFS job is completed, archived and removed; no jobs are live. Read ACTIVE_TASKS for scope, evidence and remaining global/analog requirements.
+
+## Latest physical stage — 2026-10-13
+
+V17 full-population GDS now integrates the routed fabric/ingress pair and retains all 25 spike routes, with independent incremental readback passes. Read ACTIVE_TASKS for evidence and scope. Next is destination-to-membrane addressing/control and global infrastructure; do not repeat spike-to-fabric or fabric-to-ingress binding. Trained-weight programming and output accuracy remain outside the completion gates.
+
+## Active scope clarification — 2026-10-13
+
+The user defines this deliverable as an article-suitable analog/mixed-signal implementation of the EventSpikeSeg140k architecture: full physical layout with membrane storage and event-to-membrane accumulation, followed by per-module simulations. The original epoch58 float model defines topology and state identities; QAT is unnecessary.
+
+The 5 ms real-time requirement applies to delivery and accumulation of supplied input events onto their destination membranes. It does not require threshold/output generation, a full layer-to-layer inference pass, or final segmentation within 5 ms. For module timing, state exactly which input event workload and destinations were exercised; do not infer a full-model deadline pass from a small example. Later-layer workloads may be supplied externally for module characterization; this is not autonomous end-to-end inference.
+
+Trained-weight loading, transfer, programming and exact checkpoint weight reproduction are outside the required completion gates. Retain the synaptic contribution/weight-control interfaces and existing physical synapse circuitry: an externally applied analog magnitude/sign is an explicit research interface, not a claim of loaded trained weights. Events must still have physical paths to selected membrane capacitors; removing weight transfer does not remove event fanout, charge injection or membrane access time.
+
+A useful segmentation output, hardware mIoU, PyTorch-equivalent accuracy, calibration optimization and manufacture-ready signoff are not required. Preserve existing threshold/reset/adaptation/readout modules as architecture components and report their connectivity and simulation coverage, without requiring output completion for the accumulation deadline.
+
+Completion requires a real hierarchical full-architecture GDS, inventory and connection/boundary manifest, and per-module simulation results including selected-event membrane accumulation/retention and measured timing. Explicit external interfaces are allowed. Opens/shorts in paths claimed connected remain vital defects. Never call an unconnected placement a functioning full ASIC or claim 5 ms compliance without corresponding evidence.
+
+Next work: integrate the existing packet fabric and ingress/address macros with the membrane-access/injection architecture, expose analog contribution and phase controls, export the full architecture layout, then finish per-module simulations. Do not start trained-weight programming or output-accuracy campaigns. The old 68-decision-service lower bound is not an active completion gate. Existing packet/group lower bounds remain conditional on their supplied workload and assumed delivery architecture; they are not automatically waived or proven satisfied.
+
+This scope supersedes conflicting older requirements below. Existing results and failures remain unchanged. No physical Docker jobs are live.
+
+# Docker storage lifecycle — user instruction2026-10-13
+
+Reuse existing images. Use --rm for bounded foreground simulation containers. For detached ORFS jobs, collect terminal results, archive inspect/logs/exit state with scripts/docker_attempt_lifecycle.py, then remove the stopped container without force or volume deletion. The categorical collector now does this automatically for success andfailure. Archived job evidence replaces container presence; never restart a completed job just because its disposable container was removed. Keep physical source/results and useful failed checkpoints. Remove only proven byte-identical,unreferenced intermediate copies while retaining canonical views; do not delete images,named data volumes or unique results as routine cleanup. No live job may be removed.
+
+# User delivery priority - 2026-10-13
+
+Complete the full layout first, then per-module simulation. Carry existing measured errors. Make only changes vital to connect or operate required blocks; defer behavior/calibration improvements. This user instruction supersedes precision-first stage ordering below. Original full-float analog architecture remains active.
+
+# Current workflow override - 2026-10-10
+
+Read docs/ACTIVE_TASKS.md first, then the relevant evidence only. docs/project_spec.yaml active_workflow is current; dated sections and digital/SKY130 policies below are historical and do not override it. Current prototype is GF180, original epoch58 float, analog state, article-suitable research scope. No QAT/digital membrane fallback or full-model SPICE. Use the experiment/documentation limits in ACTIVE_TASKS; routine work does not require rereading historical specs. Preserve artifacts. No subagents without user authorization.
+
+# Preserved earlier instructions
+
 # EventSpikeSeg Agent Instructions
 
 ## Analog synapse decision review — 2026-09-24

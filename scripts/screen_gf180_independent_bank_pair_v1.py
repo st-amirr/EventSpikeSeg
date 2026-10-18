@@ -1,0 +1,33 @@
+"""Bounded native bank-selection/write-isolation sequence on all128 resident sites."""
+from pathlib import Path
+import hashlib,json,re,subprocess
+import numpy as np
+R=Path(__file__).resolve().parents[1];B=R/'artifacts/analog_asic'
+def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def main():
+ cell='gf180_independent_bank_pair_v4';d=B/'layout'/cell;qf=d/'qualification.json';ff=d/'flat_cap_full_qualification.json';q=json.loads(qf.read_text());f=json.loads(ff.read_text());assert q['magic_drc_count']==q['gds_roundtrip_drc_count']==0 and q['lvs_unique'] and q['gds_roundtrip_lvs_unique'] and f['all_flat_extraction_node_ground_caps_verified'];src=d/(cell+'_fullcap.spice');assert sha(src)==f['sha256'][src.relative_to(R).as_posix()];files={Path(__file__),qf,ff,src}
+ stem=cell+'_native_independent_selection_src'+sha(Path(__file__))[:12];rp=B/'results'/(stem+'.json');assert not rp.exists();data=rp.with_suffix('.dat');models=B/'pdk/gf180_primitive_source/models/ngspice';files.update(models.rglob('*.spice'));pre='/workspace/'+models.relative_to(R).as_posix()
+ lines=['Native independently selected128state bank pair',f'.include {pre}/design.spice',f'.lib {pre}/sm141064.spice typical',f'.lib {pre}/sm141064.spice mimcap_typical',f'.lib {pre}/sm141064.spice res_typical','.param sw_stat_global=0 sw_stat_mismatch=0','.temp 27','.options method=gear reltol=1e-6 abstol=1e-16 vntol=1e-10 gmin=1e-18',src.read_text(),'.global VSUBS','Vsub VSUBS 0 0','Vdd VDD 0 3.3','Vss VSS 0 0','Vcm VCM 0 1.2']
+ def wave(name,pts):lines.append('V'+name+' '+name+' 0 PWL('+' '.join(f'{t}u {v}' for t,v in pts)+')')
+ # Address transitions take place with both commands deasserted.
+ address=[(0,0),(7.9,0),(8,3.3),(28.9,3.3),(29,0),(38.9,0),(39,3.3),(50,3.3)]
+ for n in ['A0','A1','A2','BANK_SELECT']:wave(n,address)
+ wave('WRITE_CMD',[(0,0),(1.9,0),(2,3.3),(5.9,3.3),(6,0),(11.9,0),(12,3.3),(15.9,3.3),(16,0),(50,0)])
+ wave('READ_CMD',[(0,0),(29.9,0),(30,3.3),(34.9,3.3),(35,0),(39.9,0),(40,3.3),(44.9,3.3),(45,0),(50,0)])
+ for col in range(8):wave('DATA'+str(col),[(0,1.4-.01*col),(9.9,1.4-.01*col),(10,.95+.01*col),(19.9,.95+.01*col),(20,0),(23.9,0),(24,3.3),(27.9,3.3),(28,1.2),(50,1.2)])
+ for bi in range(2):
+  a=30 if bi==0 else 40;b=a+5;lines.append(f'Imaster{bi} 0 B{bi}_BIAS PWL(0 0 {a+.1}u 0 {a+.2}u 1u {b-.2}u 1u {b-.1}u 0 50u 0)')
+ states=[f'B{bi}_STATE{row}{col}' for bi in range(2) for row in range(8) for col in range(8)];reads=[f'B{bi}_READOUT{col}' for bi in range(2) for col in range(8)]
+ # Startup seed is explicit; it does not stand in for a qualified native reset/init path.
+ lines+=['.ic '+' '.join('v('+n+')=1.2' for n in states),'Xpair '+' '.join(q['ports'])+' '+cell,'.control','set numdgt=15','set wr_singlescale','set wr_vecnames','tran .01u 50u 0 .5u uic','wrdata /workspace/'+data.relative_to(R).as_posix()+' '+' '.join('v('+n+')' for n in states+reads)+' i(Vdd)','quit','.endc','.end'];deck=B/'benches'/(stem+'.spice');deck.write_text('\n'.join(lines)+'\n');files.add(deck);snap=B/'tools/source_snapshots'/(stem+'.py');snap.write_bytes(Path(__file__).read_bytes());files.add(snap)
+ cmd=['docker','run','--rm','--network','none','--memory','2g','--cpus','2','--volume',f'{R}:/workspace','--entrypoint','timeout','eventspikeseg:analog-ngspice47','120','ngspice','-b','/workspace/'+deck.relative_to(R).as_posix()];run=subprocess.run(cmd,capture_output=True,text=True,timeout=135);log=run.stdout+run.stderr;lp=rp.with_suffix('.log');lp.write_text(log);files.add(lp)
+ out=dict(module_simulation_completed=False,simulator_returncode=run.returncode,independent_bank_write_sequence_observed=False,original_float_accuracy_accepted=False,full_5ms_population_service_accepted=False,full_chip_layout_complete=False,scope='One50us typical27C sequence:actual770MOS128MIM flat native geometry,all7310verified native substrate/coupling branches.128state startup values seeded by.ic/UIC; not native initialization/5ms retention proof. Native4bit bank/row address and separate read/write command gates write bank0row0 thenbank1row7 using common8analog DATA trunks; command-low bank/address transitions; shared DATA stress0/3.3V with all writes disabled; selected native source-follower read on each bank. All128state identities monitored. External analog DATA/VCM/VDD/master-current and categorical commands; no ideal internal buffer/state correction. Higher bank selection,readout mux/feedback reader,compute,trained accuracy and complete ASIC remain unbound.20mV write/disturbance probes are local engineering observations,not trained-model tolerance.')
+ try:
+  w=np.loadtxt(data,skiprows=1);files.add(data);t=w[:,0];out['module_simulation_completed']=bool(run.returncode==0 and w.shape[1]==146 and np.isfinite(w).all() and abs(t[-1]-50e-6)<1e-12 and 'aborted' not in log.lower())
+  if out['module_simulation_completed']:
+   sample=lambda n,us:float(np.interp(us*1e-6,t,w[:,1+(states+reads).index(n)]));selected={f'B0_STATE0{c}' for c in range(8)}|{f'B1_STATE7{c}' for c in range(8)};after0=[sample(f'B0_STATE0{c}',7.5) for c in range(8)];after1=[sample(f'B1_STATE7{c}',18) for c in range(8)]
+   err0=max(abs(v-(1.4-.01*c)) for c,v in enumerate(after0));err1=max(abs(v-(.95+.01*c)) for c,v in enumerate(after1));dist0=max(abs(sample(n,7.5)-sample(n,1)) for n in states if n.startswith('B1_'));dist1=max(abs(sample(n,18)-sample(n,10.5)) for n in states if n.startswith('B0_'));untouched=max(abs(sample(n,49.9)-sample(n,1)) for n in states if n not in selected)
+   out.update(cases=[dict(sequence='bank0row0 write,bank1row7 write,commonDATA stress,bank0row0 read,bank1row7 read',bank0row0_after_write_v=after0,bank1row7_after_write_v=after1,bank0_write_max_error_v=err0,bank1_write_max_error_v=err1,opposite_bank_change_during_bank0_write_v=dist0,opposite_bank_change_during_bank1_write_v=dist1,unaddressed112states_max_change_v=untouched,bank0row0_native_read_v=[sample(n,34) for n in reads[:8]],bank1row7_native_read_v=[sample(n,44) for n in reads[8:]])],independent_bank_write_sequence_observed=bool(max(err0,err1,dist0,dist1,untouched)<.02),VDD_supply_energy_j_excludes_external_fixtures=float(np.trapezoid(-3.3*w[:,-1],t)))
+ except Exception as e:out['postprocess_error']=str(e)
+ out['sha256']={p.relative_to(R).as_posix():sha(p) for p in files};rp.write_text(json.dumps(out,indent=2)+'\n');print(json.dumps({k:v for k,v in out.items() if k!='sha256'},indent=2))
+if __name__=='__main__':main()

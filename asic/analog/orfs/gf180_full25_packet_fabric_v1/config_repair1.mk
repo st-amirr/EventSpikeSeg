@@ -1,0 +1,25 @@
+export DESIGN_NAME = gf180_analog_full25_packet_fabric_v1
+export DESIGN_NICKNAME = gf180_analog_full25_packet_fabric_v1
+export PLATFORM = gf180
+export VERILOG_FILES = /workspace/asic/analog/orfs/gf180_full25_packet_fabric_v1/macro_blackboxes.v /workspace/asic/analog/gf180_analog_full25_packet_fabric_v1.sv
+export SDC_FILE = /workspace/asic/analog/orfs/gf180_full25_packet_fabric_v1/constraint.sdc
+export CORNER = TC
+export TC_LIB_FILES = /OpenROAD-flow-scripts/flow/platforms/gf180/lib/gf180mcu_fd_sc_mcu9t5v0__tt_025C_3v30.lib.gz
+export TC_VOLTAGE = 3.3
+export TC_TEMPERATURE = 25c
+export ADDITIONAL_LEFS = /workspace/artifacts/analog_asic/orfs/results/gf180/gf180_analog_full25_event_graph_interconnect_v1/full25_graph_v1/gf180_analog_full25_event_graph_interconnect_v1.lef /workspace/artifacts/analog_asic/orfs/results/gf180/gf180_analog_scalar_result_packet_v1/scalar_result_v1/gf180_analog_scalar_result_packet_v1.lef
+export ADDITIONAL_GDS = /workspace/artifacts/analog_asic/orfs/results/gf180/gf180_analog_full25_event_graph_interconnect_v1/full25_graph_v1/6_final.gds /workspace/artifacts/analog_asic/orfs/results/gf180/gf180_analog_scalar_result_packet_v1/scalar_result_v1/6_final.gds
+export ADDITIONAL_LIBS = /workspace/artifacts/analog_asic/assembly/full25_packet_fabric_v1/gf180_analog_full25_event_graph_interconnect_v1_3v3.lib /workspace/artifacts/analog_asic/assembly/full25_packet_fabric_v1/gf180_analog_scalar_result_packet_v1_3v3.lib
+export DIE_AREA = 0 0 4500 3500
+export CORE_AREA = 20 20 4480 3480
+export MACRO_PLACEMENT_TCL = /workspace/asic/analog/orfs/gf180_full25_packet_fabric_v1/macro_placement.tcl
+export PLACE_DENSITY = 0.30
+export CLOCK_PERIOD = 20.0
+export SYNTH_HIERARCHICAL = 0
+export ABC_AREA = 1
+export NUM_CORES = 2
+export SKIP_CTS_REPAIR_TIMING = 1
+
+export PLACE_DENSITY = 0.08
+export GPL_TIMING_DRIVEN = 0
+export GPL_ROUTABILITY_DRIVEN = 0

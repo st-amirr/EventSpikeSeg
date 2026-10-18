@@ -1,0 +1,102 @@
+"""Screen a physical MOS-capacitor equivalent for the v12 auxiliary node."""
+from pathlib import Path
+import hashlib
+import json
+import re
+import subprocess
+
+ROOT = Path(__file__).resolve().parents[1]
+BASE = ROOT / "artifacts/analog_asic"
+CELL = "gf180_sc_state_packet_compact_v12"
+SIM = CELL + "_beta_aux_mos13_endpoint_screen_v1"
+layout = BASE / "layout" / CELL
+netlist = layout / f"{CELL}_cap.spice"
+bench = BASE / "benches" / f"{SIM}.spice"
+logp = BASE / "results" / f"{SIM}.log"
+report = BASE / "results" / f"{SIM}.json"
+assert all(not p.exists() for p in (bench, logp, report))
+
+L = [
+    "Routed SC endpoint signed packet updates and 5ms hold",
+    ".include /workspace/artifacts/analog_asic/pdk/gf180_primitive_source/models/ngspice/design.spice",
+    ".lib /workspace/artifacts/analog_asic/pdk/gf180_primitive_source/models/ngspice/sm141064.spice typical",
+    ".lib /workspace/artifacts/analog_asic/pdk/gf180_primitive_source/models/ngspice/sm141064.spice mimcap_typical",
+    ".temp 27",
+    ".options method=gear reltol=1e-6 abstol=1e-16 vntol=1e-10 gmin=1e-18",
+    ".global VSUBS",
+    "Vsub VSUBS 0 0",
+    f".include /workspace/{netlist.relative_to(ROOT).as_posix()}",
+]
+casespec = [
+    ("low_pos", 0.75, 0.899545, 0.135),
+    ("low_neg", 0.75, 0.899545, 0.088),
+    ("high_pos", 2.55, 2.497545, 0.079),
+    ("high_neg", 2.55, 2.497545, 0.035),
+]
+mos_count = 13
+for tag, init, base, step in casespec:
+    event = base + step
+    L += [
+        f"Vdd_{tag} vdd_{tag} 0 3.3",
+        f"Vss_{tag} vss_{tag} 0 0",
+        f"Vcm_{tag} vcm_{tag} 0 1.65",
+        f"Vauxref_{tag} auxref_{tag} 0 1.65",
+        f"Vdata_{tag} data_{tag} 0 {init}",
+        *[
+            f"Maux_{tag}_{i} vcm_{tag} aux_{tag} vcm_{tag} vcm_{tag} nfet_03v3 w=0.42u l=10u"
+            for i in range(mos_count)
+        ],
+        f"Vweight_{tag} weight_{tag} 0 PWL(0 {base} 99.999u {base} 100u {event:.6f} 116.499u {event:.6f} 116.5u {event:.6f} 116.501u {base} 5200u {base})",
+        f"Vwrite_{tag} write_{tag} 0 PWL(0 3.3 9.999u 3.3 10u 0 5200u 0)",
+        f"Vwriteb_{tag} writeb_{tag} 0 PWL(0 0 9.999u 0 10u 3.3 5200u 3.3)",
+        f"Vreset_{tag} reset_{tag} 0 PWL(0 3.3 1.999u 3.3 2u 0 5200u 0)",
+        f"Vbeta_{tag} beta_{tag} 0 PWL(0 0 19.999u 0 20u 3.3 34.999u 3.3 35u 0 5200u 0)",
+        f"Vtop_{tag} top_{tag} 0 PWL(0 3.3 115.999u 3.3 116u 0 5200u 0)",
+        f"Vtopb_{tag} topb_{tag} 0 PWL(0 0 115.999u 0 116u 3.3 5200u 3.3)",
+        f"Vsample_{tag} sample_{tag} 0 PWL(0 3.3 59u 3.3 60u 0 5200u 0)",
+        f"Vsampleb_{tag} sampleb_{tag} 0 PWL(0 0 59u 0 60u 3.3 5200u 3.3)",
+        f"Vdrive_{tag} drive_{tag} 0 PWL(0 0 60.999u 0 61u 3.3 116.499u 3.3 116.5u 0 5200u 0)",
+        f"Vdriveb_{tag} driveb_{tag} 0 PWL(0 3.3 60.999u 3.3 61u 0 116.499u 0 116.5u 3.3 5200u 3.3)",
+        f"Xdut_{tag} state_{tag} aux_{tag} data_{tag} write_{tag} writeb_{tag} reset_{tag} beta_{tag} auxref_{tag} vcm_{tag} weight_{tag} top_{tag} topb_{tag} sample_{tag} sampleb_{tag} drive_{tag} driveb_{tag} pkt_top_{tag} pkt_bottom_{tag} vdd_{tag} vss_{tag} {CELL}",
+        f".ic v(state_{tag})={init} v(aux_{tag})=1.65 v(pkt_top_{tag})={init} v(pkt_bottom_{tag})={init}",
+    ]
+L += [".control", "set numdgt=15", "tran 20n 5200u 0 20n uic"]
+for tag, *_ in casespec:
+    for name, at in [
+        ("pre_beta", 19e-6), ("post_beta", 40e-6), ("pre_event", 99e-6),
+        ("during_packet", 110e-6), ("post_release", 120e-6), ("hold_5ms", 5.117e-3),
+    ]:
+        L.append(f"meas tran {tag}_{name} find v(state_{tag}) at={at}")
+L += ["quit", ".endc", ".end", ""]
+bench.write_text("\n".join(L), encoding="utf8")
+run = subprocess.run(
+    ["docker", "run", "--rm", "--network", "none", "--memory", "2g", "--cpus", "2",
+     "--volume", f"{ROOT}:/workspace", "--workdir", "/workspace", "--entrypoint", "timeout",
+     "eventspikeseg:analog-ngspice47", "240", "ngspice", "-b", "/workspace/" + bench.relative_to(ROOT).as_posix()],
+    capture_output=True, text=True, timeout=250,
+)
+log = run.stdout + run.stderr
+logp.write_text(log, encoding="utf8")
+vals = {k.lower(): float(v) for k, v in re.findall(r"(?mi)^([a-z][a-z0-9_]*)\s*=\s*([-+0-9.eE]+)", log)}
+keys = [f"{tag}_{n}" for tag, *_ in casespec for n in ("pre_beta", "post_beta", "pre_event", "during_packet", "post_release", "hold_5ms")]
+assert run.returncode == 0 and "ngspice-47 done" in log.lower() and all(k in vals for k in keys), log[-2000:]
+results = []
+for tag, init, base, step in casespec:
+    pre_beta, post_beta, pre, during, release, hold = [vals[f"{tag}_{n}"] for n in ("pre_beta", "post_beta", "pre_event", "during_packet", "post_release", "hold_5ms")]
+    results.append({
+        "case": tag, "initial_state_v": init, "baseline_v": base, "packet_step_mv": step * 1000,
+        "pre_beta_v": pre_beta, "post_beta_v": post_beta,
+        "handoff_error_mv": (pre - post_beta) * 1000, "pre_event_v": pre,
+        "during_packet_v": during, "connected_change_mv": (during - pre) * 1000,
+        "after_release_v": release, "net_update_mv": (release - pre) * 1000,
+        "after_5ms_v": hold, "postrelease_hold_drift_mv": (hold - release) * 1000,
+    })
+r = {
+    "simulation_completed": True, "cell": CELL, "corner": "GF180 typical, 27C",
+    "auxiliary_capacitor": {"implementation": "13 parallel NFET gate capacitors with D/S/B tied to VCM", "w_um": 0.42, "l_um": 10.0, "count": mos_count},
+    "cases": results,
+    "scope": "Schematic MOS-cap screen with PDK nonlinear device models attached to routed extracted parent. MOS-cap layout, extraction, DRC/LVS/GDS, and full-float accuracy are not yet qualified.",
+    "sha256": {"netlist": hashlib.sha256(netlist.read_bytes()).hexdigest(), "qualification": hashlib.sha256((layout / "qualification.json").read_bytes()).hexdigest(), "bench": hashlib.sha256(bench.read_bytes()).hexdigest()},
+}
+report.write_text(json.dumps(r, indent=2) + "\n")
+print(json.dumps(r, indent=2))

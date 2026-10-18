@@ -1,0 +1,12 @@
+export DESIGN_NAME = gf180_analog_event_upsample2x
+export DESIGN_NICKNAME = gf180_analog_event_upsample2x
+export PLATFORM = gf180
+export VERILOG_FILES = /workspace/asic/rtl/event_upsample2x.sv /workspace/asic/analog/gf180_analog_event_upsample2x.sv
+export SDC_FILE = /workspace/asic/analog/orfs/gf180_analog_event_upsample2x/constraint.sdc
+export CORE_UTILIZATION = 35
+export PLACE_DENSITY = 0.35
+export CLOCK_PERIOD = 100.0
+export SYNTH_HIERARCHICAL = 0
+export ABC_AREA = 1
+export NUM_CORES = 1
+export SKIP_CTS_REPAIR_TIMING = 1

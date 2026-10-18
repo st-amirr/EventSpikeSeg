@@ -1,0 +1,12 @@
+export DESIGN_NAME = gf180_analog_weight_event_scatter_depthwise128
+export DESIGN_NICKNAME = gf180_analog_weight_event_scatter_depthwise128
+export PLATFORM = gf180
+export VERILOG_FILES = /workspace/asic/analog/gf180_analog_weight_event_scatter.sv /workspace/asic/analog/gf180_analog_weight_event_scatter_depthwise128.sv
+export SDC_FILE = /workspace/asic/analog/orfs/gf180_weight_scatter_depthwise128/constraint.sdc
+export CORE_UTILIZATION = 35
+export PLACE_DENSITY = 0.35
+export CLOCK_PERIOD = 100.0
+export SYNTH_HIERARCHICAL = 0
+export ABC_AREA = 1
+export NUM_CORES = 1
+export SKIP_CTS_REPAIR_TIMING = 1

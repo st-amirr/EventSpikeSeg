@@ -30,3 +30,6 @@ ehthumbs.db
 $RECYCLE.BIN/
 asic/DSEC_sample/
 artifacts/ASIC/*
+
+# Recoverable ASIC cleanup review bins (generated artifacts).
+/bin/asic_cleanup_*/

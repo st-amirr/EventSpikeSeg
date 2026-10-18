@@ -1,0 +1,16 @@
+{
+  "yaml_parses": true,
+  "final_specification_roundtrip_matches": true,
+  "committed_markdown_snapshot_verified": true,
+  "deleted_tracked_markdown_files": [],
+  "files_with_removed_or_replaced_text": 5,
+  "HEAD_snapshot": "docs/documentation_history/article_markdown_HEAD_4fd2e5e93257_20261014T155300Z.zip",
+  "backup": "docs/documentation_history/project_docs_before_final_article_yaml_20261014T155300Z.zip",
+  "review": "docs/documentation_history/article_markdown_review_2026-10-14.html",
+  "representative_rows_in_yaml": 24,
+  "all_measurement_rows_in_linked_summary": 74,
+  "final_section_missing_paths": [],
+  "duplicate_yaml_keys": false,
+  "canonical_and_packaged_yaml_identical": true,
+  "other_historical_root_sections_unchanged": true
+}

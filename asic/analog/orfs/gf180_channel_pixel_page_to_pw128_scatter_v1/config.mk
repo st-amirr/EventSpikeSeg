@@ -1,0 +1,13 @@
+export DESIGN_NAME = gf180_analog_channel_pixel_page_to_pw128_scatter_v1
+export DESIGN_NICKNAME = gf180_analog_channel_pixel_page_to_pw128_scatter_v1
+export PLATFORM = gf180
+export FLOW_VARIANT = channel_pixel_v1
+export VERILOG_FILES = /workspace/asic/analog/gf180_analog_binary_event_merge_sorted2.sv /workspace/asic/analog/gf180_analog_spike_event_serializer32_v1.sv /workspace/asic/analog/gf180_analog_spike_event_page128_v1.sv /workspace/asic/analog/gf180_analog_weight_event_scatter_parallel.sv /workspace/asic/analog/gf180_analog_weight_event_scatter_pw128.sv /workspace/asic/analog/gf180_analog_page_to_pw128_scatter_v1.sv
+export SDC_FILE = /workspace/asic/analog/orfs/gf180_channel_pixel_page_to_pw128_scatter_v1/constraint.sdc
+export CORE_UTILIZATION = 30
+export PLACE_DENSITY = 0.30
+export CLOCK_PERIOD = 100.0
+export SYNTH_HIERARCHICAL = 0
+export ABC_AREA = 1
+export NUM_CORES = 1
+export SKIP_CTS_REPAIR_TIMING = 1
