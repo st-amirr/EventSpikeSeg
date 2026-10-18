@@ -1,6 +1,81 @@
+## Microelectronics Journal editorial review - 2026-10-18
+
+Final delivery check (18 October 2026): rebuilt and visually reviewed the 10-page manuscript and 5-page reusable figures; corrected GDS-to-PDF coordinate precision. Editable source bundle and submission_manifest.json are in article/submission/. Abstract, highlight lengths and citation keys checked; no LaTeX warnings. Author declarations/data deposit remain pending.
+
+The manuscript has been adapted to the publisher's live Guide for Authors (https://www.sciencedirect.com/journal/microelectronics-journal/publish/guide-for-authors), read on 18 October 2026. Original-paper format: `elsarticle`, numbered decimal sections, numeric citations in first-appearance order, abstract under 250 words, seven keywords, four highlights of at most 85 characters. Required data/funding/conflict/AI sections and an author-contribution field are included; unknown declarations remain visibly marked.
+
+Reviewer changes: clarified simulation versus silicon evidence; defined PLIF symbols, MIM and graph terminology; stated the charge/capacitance relation without claiming calibrated weight transfer; reordered figure first mentions and bibliography; added DYNAPs/Braindrop circuit context; updated SpikingEDN, SLTNet and EvSegSNN publication references; preserved all model/training/history details. Architecture is an editable vector diagram; overview and waveform PDF exports preserve existing source geometry/data. Six separately named artwork PDFs and editable sources/captions are in `article/submission/`. Existing numerical results and GDS remain unchanged.
+
+Author metadata supplied: Amir Mohammad Khadem Hosseini, am_khadem@alumni.iust.ac.ir, ORCID 0009-0001-8347-9410; Sattar Mirzakuchaki, m_kuchaki@iust.ac.ir, ORCID 0000-0003-0232-9267 (verified against the public ORCID record with verified iust.ac.ir domain). The user identifies as an MSc graduate; no current student appointment is asserted.
+
+This is an author-requested editorial review, not independent journal peer review. Remaining scientific limitations are explicitly reported. Remaining submission items are documented in ACTIVE_TASKS and YAML; no claim of submission readiness until author declarations and data availability are complete.
+
+## Article review and figure evidence - 2026-10-15
+
+### Addressed in the manuscript
+
+| Reviewer issue | Revision and evidence |
+| --- | --- |
+| Main architecture used an unwanted visual style; historical image had stale topology | Corrected original-style `140k_final.png` is Figure 1; native detail8, skip sum/concat, fusion40-to-16 and continuous16-to-6 are shown. Original asset and previous vector reference retained. |
+| Full implementation overview missing from main article | Figure 4 uses the delivered V31 GDS-derived SVG hierarchy, with unchanged placement and fixed small-cell extents. Source GDS SHA256 remains `fb28eeb6bbc8901ad8594dcd4b5cc14450b7cae438bd5f239096c587f96d1d92`. |
+| Layout colors weak on paper | Added white-background/darker `_publication.svg/.png` exports; SVG definition coordinates/paths/transforms are unchanged. Native KLayout renders use the shared publication palette; bank wiring retained. |
+| Signed update/retention described only as scalar results | Figure 6 plots the saved 2,360-sample binary trace. It reproduces 0.531097 mV drift over 5 ms. Restore70-80us, beta85-85.5us, positive pulse97-102us, negative pulse110-113us; commit baseline230us. |
+| Nominal conditions and evidence types unclear | Added typical GF180, 3.3 V, 27 C; external fixture and local capacitance boundaries. 74 rows: 59 per-instance transients, 6 reused transient supplies, 3 DC, 3 settled samples, 3 routed-library estimates. |
+| Logical state total not decomposed | 30,976,000 membranes + 10,982,400 age + 10,982,400 amplitude + 1,689,600 class-current identities = 54,630,400. |
+| Storage discussion used superseded capacitor geometry | Final 5x5um plate gives 774.4mm2 for membrane plates alone. 100.32x99.90um bank /64 =156.59325um2 per state; membrane-bank replication reference4850.632512mm2, excluding other state/peripherals. This is not measured final die area. |
+
+### Interpretation and remaining author work
+
+Native device and bank panels are direct KLayout GDS renders. The full view is a GDS-derived hierarchy rendering with fixed simplified extents, not a fully resolved mask plot at arbitrary zoom. Only one full-layout export was found in the current project; no cleaner earlier physical placement was substituted. The 1438.228445x2928.936410mm atlas envelope is a spacious database arrangement, not a reticle-sized die claim. The detailed 140k model/training/search material remains intact.
+
+The reviewer pass is based on local source data; it is not an independent literature or silicon validation. The manuscript retains commit/coupling errors, the incomplete full1024-page transient, unqualified PVT/mismatch robustness, global timing/power, and hardware mIoU as evidence limits. Author affiliation, email, acknowledgments and funding details still need author input. No unsupported measurement or performance comparison was added.
+
+Provenance: `article/figures/article_review_figure_manifest.json`, `architecture_image_provenance.json`, `gds_figure_manifest.json`, `gds_device_manifest.json`; saved review audit: `artifacts/article_work/reviewer_delivery.json`.
+
+## Wire-hidden device views and full model figures — 2026-10-15
+
+The user requested regeneration with invisible wiring in PLIF/injector panels and visible wiring in the native 64-state bank. KLayout now hides metal1–5 and via1–4 for panels (a)/(c), with enlarged device windows; bank panel (b) is unchanged. Source GDS files are not modified. Renderer: scripts/render_article_gds_devices.py; source hashes, windows and hidden layer pairs: article/figures/gds_device_manifest.json. These are device-layer illustrations, not complete connectivity views. Full current 140k architecture is restored to the main model section (page 3) as an editable vector TikZ diagram. Original 140k_v4.png is preserved in the appendix (page 8), explicitly identified as the earlier detail32/selector96/spike-count topology. Current model detail8/fusion40-to-16/continuous16-to-6 remains authoritative. Both appear in Blocks_figures.tex. Article: 8 pages; reusable figures: 5 pages; compiled and visually reviewed. No circuit changes or new simulations.
+
+## Model detail preservation and section figures — 2026-10-15
+
+Article presentation update only: detailed model topology/training/search history retained; native PLIF state/threshold, reset, decision and injector source/TG windows replace long-wire full views in panels (a)/(c). Cell geometry and all reported circuit measurements are unchanged. Provenance is article/figures/gds_section_manifest.json. The bank remains a full native 8x8 component view. Physical compaction/routing optimization is not claimed.
+
 ## Article layout delivered — user scope clarification2026-10-14
 
 V31 is the completed full hierarchical research-layout deliverable under the user's instruction to avoid strict operational acceptance. See `artifacts/analog_asic/assembly/full25_native_controls_v31/article_layout_delivery_v1.json` and ACTIVE_TASKS. All original analog states and implemented modules are included; verified address/event/supply/reference wiring and explicit external research interfaces are documented. Native numerical errors, incomplete full1024-state transient and unproven global5ms timing are reported limitations, not blockers to this layout delivery. Module evidence covers18 completed nominal families plus the page-reader frontend partition. Connected signed-update/commit/5ms-hold evidence is in `results/selected_accumulation_retention_v2/simulation.json`. Further behavioral optimization is optional. Earlier strict flags below are historical; do not infer that the full GDS has not been exported.
+
+
+## Article background: restored quantitative experiments
+
+Restored from the [committed Markdown snapshot](documentation_history/article_markdown_HEAD_4fd2e5e93257_20261014T155300Z.zip), commit `4fd2e5e93257`, on 2026-10-14. Historical experiments below retain their original scope; the current delivery is specified by `article_final_implementation` in [project_spec.yaml](project_spec.yaml).
+
+These are development experiments and analytical estimates, suitable for methods discussion or supplementary material. Final layout and representative consumption results remain those in `artifacts/analog_asic/`; these historical measurements must not be presented as final-chip PPA or hardware mIoU.
+
+### Storage capacity and service arithmetic — 2026-10-08
+
+For the earlier native 7 × 7 micrometre MIM candidate, one plate per 30,976,000 membranes gives `30,976,000 × 49 / 1,000,000 = 1,517.824 mm²` of plate area. Differential pairs double that plate-only estimate. It excludes 10,982,400 adaptation-enabled states, access devices, shared peripherals and routing. Repeating isolated cell bounding boxes gave 3,124.23936 mm²; that is not an optimized array-area minimum. Neither value is the area of the final 5 × 5 micrometre MIM implementation or the delivered atlas.
+
+Servicing every membrane once per 5 ms would require 6.1952 billion state updates per second before additional event and graph work. The historical analysis also considered a hypothetical 300 mm² allocation: half for membrane plates allowed 4.84246 µm² per state, while one quarter for the then-current feedback plates allowed an optimistic 3.12659 µs serial service slot. The measured 25 µs encoding phase of that candidate already exceeded the slot before reset/event/restore overhead. These conditional calculations motivated sharing and topology exploration; they do not establish a final throughput result or an unavoidable service requirement for every alternative schedule.
+
+Source: the corresponding historical section in the committed Markdown snapshot linked above.
+
+### Original-float software sensitivity to state noise — 2026-10-08
+
+The archived screen injected independent state noise into original-float full-frame, writeback-every-bin software replays. With 274.199 µV noise and actor-based voltage ranges, record 0 present-class IoU fell from 0.205726 to 0.04618–0.04864. Ideal per-channel ranges improved the noisy result to 0.11872–0.11984. Record 1 fell from 0.198918 to 0.05807–0.06123 under actor-based ranges.
+
+These are selected-record software sensitivity experiments with optimistic per-record scaling, not validation-set mIoU, transistor sampled-noise measurements, or accuracy results for the final ASIC. They demonstrate why voltage range and analog error must be evaluated together; float32 training or a Q7.16 export alone cannot specify required analog precision. The old entry announcing a 100 µV follow-up run is not a completed result and is deliberately excluded here.
+
+Source: `docs/ARCHITECTURE.md`, “Linear state-noise tolerance screen”, in the committed snapshot linked above; related detailed experiments are in the archived RESULTS file.
+
+### Tracking-parking calibration and state dependence — 2026-10-09
+
+One feedback bank with external PROGRAM calibration converged in three iterations to +312.750/−369.530 µV, against targets of +312.749915/−369.523326 µV. Reversing event order at zero state gave a maximum target error of 0.050674 µV. This did not remove the approximately 4.9 µV bias observed with a nonzero membrane state.
+
+Four native nine-MIM feedback banks reduced measured state-dependent packet variation to at most 1.275 µV in the completed negative 20 ns and positive 10 ns cases, each compared with its matching zero-state control. Four-bank tests inherited the one-bank programming; reset target errors were approximately 4 µV. The 1.275 µV value is relative state dependence, not total weight error, sampled noise, all-weight precision or model accuracy. Systematic event error can accumulate.
+
+The archived audit covered six completed/rejected cascaded-loop cases, seven completed isolated-source diagnostics and 29 integrated reports (22 complete and seven incomplete), plus three pre-simulation netlist rejections. These counts describe the diagnostic campaign, not the final 22-family consumption coverage.
+
+Source: the corresponding historical section in the committed Markdown snapshot linked above.
 
 ## Control and class infrastructure — 2026-10-14
 
@@ -3936,7 +4011,7 @@ The membrane cell write/read total positive terminal imports are reported in the
 
 ## ASIC artifact reorganization — 2026-10-14
 
-Canonical article package: `artifacts/analog_asic/final/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
+Canonical article package: `artifacts/analog_asic/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
 
 Digital documentation-only snapshots are `artifacts/ASIC/final/` and `artifacts/ASIC_XL/final/`; neither claims a completed digital full-chip layout. Last exports, hierarchy inventory, completed block views and final reports are retained; digital jobs remain paused.
 

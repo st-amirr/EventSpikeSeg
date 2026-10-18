@@ -2,8 +2,8 @@
 from pathlib import Path
 import mmap,struct,math,json,hashlib,time
 from PIL import Image,ImageDraw,ImageFont
-R=Path(__file__).resolve().parents[1];B=R/'artifacts/analog_asic';O=B/'final/images'
-SRC=B/'final/layout/EventSpikeSeg140k_GF180_Analog.gds';TOP='ESS140K_NATIVE_CONTROLS_V31'
+R=Path(__file__).resolve().parents[1];B=R/'artifacts/analog_asic';O=B/'images'
+SRC=B/'layout/EventSpikeSeg140k_GF180_Analog.gds';TOP='ESS140K_NATIVE_CONTROLS_V31'
 PALETTE={22:'#866b4d',24:'#a58e69',30:'#e06666',31:'#d37090',32:'#a15aa2',33:'#e6ddd0',34:'#4c91db',35:'#d8e9fc',36:'#52c2b0',38:'#d4fff4',42:'#e6bb4c',40:'#fff5cf',46:'#ab79d6',41:'#f2d6ff',81:'#ef9660'}
 def real8(b):return 0. if b==bytes(8) else (-1 if b[0]&128 else 1)*int.from_bytes(b[1:],'big')/(2**56)*16.**((b[0]&127)-64)
 def union(a,b):
@@ -103,7 +103,7 @@ def main():
   target=(right-left)*.18/scale*units;ex=10**math.floor(math.log10(target));bar=max(v*ex for v in (1,2,5) if v*ex<=target);bw=bar/units*scale;xx=W-100-bw;yy=H-96;dr.line((xx,yy,xx+bw,yy),fill='#f4f7fa',width=5);dr.line((xx,yy-8,xx,yy+8),fill='#f4f7fa',width=3);dr.line((xx+bw,yy-8,xx+bw,yy+8),fill='#f4f7fa',width=3);label=f'{bar/1000:g} mm' if bar>=1000 else f'{bar:g} um';dr.text((xx,yy-38),label,font=font(22),fill='#f4f7fa');dr.text((90,H-61),'Actual GDS geometry  |  GF180  |  research implementation',font=font(20),fill='#8498ac');path=O/filename;im.save(path,dpi=(300,300));manifest['images'].append({'file':path.relative_to(R).as_posix(),'cell':name,'bbox_dbu':bbox(name),'pixel_size':[W,H],'render_stats':stats,'minimum_cell_size_pixels':threshold});print(json.dumps({'rendered':filename,'stats':stats,'seconds':time.monotonic()-start}),flush=True)
  if not (O/'full_layout_overview.png').exists():render(TOP,'EventSpikeSeg140k | full layout','V31 hierarchical research atlas - exact placement, with small hierarchy instances shown as extents','full_layout_overview.png',3200,2700,60.)
  for native,title,file in [('gf180_underplate_biased_bank8x8_v1','Membrane storage | one native 8 x 8 bank','membrane_bank_detail.png'),('gf180_neuron_five_module_parent_v6','PLIF | native update core','plif_core_detail.png')]:
-  source=B/'final/components'/native/(native+'.gds');original=source.read_bytes();starts={};pos=0;st=None;nm=None
+  source=B/'components'/native/(native+'.gds');original=source.read_bytes();starts={};pos=0;st=None;nm=None
   while pos<len(original):
    size,typ,dt=struct.unpack_from('>HBB',original,pos)
    if typ==5:st=pos

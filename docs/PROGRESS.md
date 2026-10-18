@@ -1,3 +1,35 @@
+## 2026-10-18 - Microelectronics Journal adaptation
+
+Final delivery check (18 October 2026): rebuilt and visually reviewed the 10-page manuscript and 5-page reusable figures; corrected GDS-to-PDF coordinate precision. Editable source bundle and submission_manifest.json are in article/submission/. Abstract, highlight lengths and citation keys checked; no LaTeX warnings. Author declarations/data deposit remain pending.
+
+Converted the current article to Elsevier `elsarticle`, refined the circuit-focused presentation and completed a bounded reviewer edit from existing evidence. Added journal-specific highlights, numbered references, separate artwork, data/funding/conflict/contribution/AI sections and supplied author metadata/ORCIDs. Replaced low-resolution conceptual artwork with an editable vector redraw and preserved historical figures. Journal choice and remaining author submission items are recorded in ACTIVE_TASKS, RESULTS, DECISIONS and project_spec.yaml. Backup: `artifacts/article_work/microelectronics_20261018/before_changes.zip`. No circuit simulation, Docker operation, GDS edit, staging, commit or submission.
+
+## Article reviewer pass and final figures - 2026-10-15
+
+Corrected Figure 1 in the original illustration style and removed the historical appendix duplicate. Added the full GDS hierarchy overview to the manuscript; generated `_publication.svg/.png` variants next to the original exports and regenerated native KLayout panels with darker outlines. Added plots of all 2,360 retained selected-state transient samples, the 54,630,400-state breakdown, typical 3.3 V / 27 C conditions, and the 59/6/3/3/3 result-method breakdown. Updated the area discussion to the final bank geometry. Both PDFs compile and were visually reviewed (9/5 pages). Full GDS SHA256 remains unchanged. No new simulation, permanent deletion, staging or commit. Backup: `artifacts/article_work/before_article_review_20261015T161841.zip`.
+
+## ASIC source cleanup — 2026-10-15
+
+`asic/` is retained hardware source/build input; final results remain in `artifacts/analog_asic/`. Archived 38 superseded/provisional/metadata files (171,273 bytes) to `bin/asic_source_cleanup_20261015T115233Z`; 185 original source/configuration files remain. Final GF180 control roots and retained digital tool/test dependencies are preserved; the older parallel scatter source stays because the pw128 wrapper uses it. All 223 original hashes were checked after the move; the README was then refreshed with its original in before_changes.zip. Bin includes inventory, restore script and audit; artifact resolver handles archived original paths. No tests/simulations, permanent deletion, staging or commit.
+
+## Wire-hidden device views and full model figures — 2026-10-15
+
+The user requested regeneration with invisible wiring in PLIF/injector panels and visible wiring in the native 64-state bank. KLayout now hides metal1–5 and via1–4 for panels (a)/(c), with enlarged device windows; bank panel (b) is unchanged. Source GDS files are not modified. Renderer: scripts/render_article_gds_devices.py; source hashes, windows and hidden layer pairs: article/figures/gds_device_manifest.json. These are device-layer illustrations, not complete connectivity views. Full current 140k architecture is restored to the main model section (page 3) as an editable vector TikZ diagram. Original 140k_v4.png is preserved in the appendix (page 8), explicitly identified as the earlier detail32/selector96/spike-count topology. Current model detail8/fusion40-to-16/continuous16-to-6 remains authoritative. Both appear in Blocks_figures.tex. Article: 8 pages; reusable figures: 5 pages; compiled and visually reviewed. No circuit changes or new simulations.
+
+## Model detail preservation and section figures — 2026-10-15
+
+Restored detailed model and training content alongside GF180 implementation results; added the 25-actor layer/state table and corrected the residual-block caption to distinguish standard from DW/PW variants. KLayout produced five device-section PNGs with exact source hashes/cell coordinates. PDF visual review corrected float placement/alignment. Final article: 7 pages; reusable figures: 3 pages. No GDS geometry changed, no new simulations, no staging or commit.
+
+## Article and documentation consolidation — 2026-10-15
+
+Merged seven byte-identical packaged docs into the single main docs source by moving the duplicate directory into the review bin. Updated current paths after the user moved `analog_asic/final` up one level. Retained 201 existing scripts; archived 2,074 attempt/cache/backup files with hashes and restore instructions. Added one KLayout renderer. Rendered native 8x8 bank and injector source GDS plus the matched PLIF cell directly inside the V31 full GDS, with source hashes and physical extents in `article/figures/gds_figure_manifest.json`.
+
+Revised the manuscript around GF180 analog/mixed-signal state, connectivity and representative consumption; removed obsolete digital-full-chip pending claims and incompatible historical model figures. Corrected the displayed PLIF reset to subtractive reset and reported epoch58 checkpoint metadata mIoU 0.2797627151 separately from hardware evidence. The manuscript and three-page figure collection compile; final pages were visually reviewed. No new circuit simulations, containers left behind, or commits.
+
+## Article background restored to topic sections — 2026-10-14
+
+Restored useful pre-compaction material from commit `4fd2e5e93257`: SNN mapping, storage/service sharing and parking rationale in ARCHITECTURE; historical area/service calculations, selected-record noise sensitivity and calibration measurements in RESULTS; ASAP7 tool/model limitations and design choices in DECISIONS. Dated measurements retain their experimental scope and source links. Current delivery status is unchanged. The complete original text remains in `docs/documentation_history/article_markdown_HEAD_4fd2e5e93257_20261014T155300Z.zip`. No simulation, staging or commit was performed.
+
 ## Article layout delivered — user scope clarification2026-10-14
 
 V31 is the completed full hierarchical research-layout deliverable under the user's instruction to avoid strict operational acceptance. See `artifacts/analog_asic/assembly/full25_native_controls_v31/article_layout_delivery_v1.json` and ACTIVE_TASKS. All original analog states and implemented modules are included; verified address/event/supply/reference wiring and explicit external research interfaces are documented. Native numerical errors, incomplete full1024-state transient and unproven global5ms timing are reported limitations, not blockers to this layout delivery. Module evidence covers18 completed nominal families plus the page-reader frontend partition. Connected signed-update/commit/5ms-hold evidence is in `results/selected_accumulation_retention_v2/simulation.json`. Further behavioral optimization is optional. Earlier strict flags below are historical; do not infer that the full GDS has not been exported.
@@ -1482,7 +1514,7 @@ Coverage combines newly completed native transients, reused complete rail-curren
 
 ## ASIC artifact reorganization — 2026-10-14
 
-Canonical article package: `artifacts/analog_asic/final/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
+Canonical article package: `artifacts/analog_asic/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
 
 Digital documentation-only snapshots are `artifacts/ASIC/final/` and `artifacts/ASIC_XL/final/`; neither claims a completed digital full-chip layout. Last exports, hierarchy inventory, completed block views and final reports are retained; digital jobs remain paused.
 

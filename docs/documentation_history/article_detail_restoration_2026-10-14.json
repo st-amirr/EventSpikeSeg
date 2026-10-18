@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-14",
+  "backup": "docs/documentation_history/project_docs_before_article_detail_restore_20261014T162107Z.zip",
+  "source_snapshot": "docs/documentation_history/article_markdown_HEAD_4fd2e5e93257_20261014T155300Z.zip",
+  "restored_sections": {
+    "ARCHITECTURE.md": "Article methods: restored model and circuit mapping",
+    "RESULTS.md": "Article background: restored quantitative experiments",
+    "DECISIONS.md": "Article methods: restored technology and design rationale"
+  },
+  "resolved_historical_reports": {},
+  "preexisting_document_text_preserved": true,
+  "packaged_documentation_synchronized": true,
+  "commit_performed": false
+}

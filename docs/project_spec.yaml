@@ -1,5 +1,5 @@
 article_final_implementation:
-  updated: '2026-10-14'
+  updated: '2026-10-15'
   status: delivered_for_article_layout_and_representative_consumption_scope
   authority: Current final package; supersedes older unfinished-layout stage snapshots for delivery status.
   process:
@@ -46,6 +46,9 @@ article_final_implementation:
     - final_fuse.standard
     resident_membranes: 30976000
     total_logical_analog_state_identities: 54630400
+    checkpoint_recorded_best_validation_mean_iou: 0.27976271510124207
+    accuracy_evidence: artifacts/analog_asic/support/model_reference/eventspikeseg140k_float_reference.json
+    accuracy_scope: stored checkpoint validation metadata; not new evaluation or hardware accuracy
   architecture:
     synapse: Presynaptic spike triggers signed analog charge contribution through pulse-duration/injection circuitry;
       weight does not set presynaptic firing frequency.
@@ -69,7 +72,7 @@ article_final_implementation:
     - reference and programming ports as documented in module benches
     trained_checkpoint_weight_loading_required: false
   layout:
-    gds: artifacts/analog_asic/final/layout/EventSpikeSeg140k_GF180_Analog.gds
+    gds: artifacts/analog_asic/layout/EventSpikeSeg140k_GF180_Analog.gds
     gds_bytes: 537103416
     gds_sha256: fb28eeb6bbc8901ad8594dcd4b5cc14450b7cae438bd5f239096c587f96d1d92
     top_cell: ESS140K_NATIVE_CONTROLS_V31
@@ -91,7 +94,7 @@ article_final_implementation:
     area_interpretation: The atlas envelope is not a fabricated die or compact silicon-area estimate. Historical
       plate-area extrapolations must be labeled with their own geometry and exclusions.
   selected_connected_membrane_result:
-    report: artifacts/analog_asic/final/evidence/module_results/selected_accumulation_retention_v2/simulation.json
+    report: artifacts/analog_asic/evidence/module_results/selected_accumulation_retention_v2/simulation.json
     positive_step_mV: 88.98389458538536
     negative_step_mV: -254.94504265695616
     hold_ms: 5
@@ -103,8 +106,8 @@ article_final_implementation:
     required_families: 22
     covered_families: 22
     reported_rows: 74
-    summary: artifacts/analog_asic/final/consumption/summary.json
-    inventory: artifacts/analog_asic/final/consumption/inventory.json
+    summary: artifacts/analog_asic/consumption/summary.json
+    inventory: artifacts/analog_asic/consumption/inventory.json
     units:
       power: W
       energy: J
@@ -197,7 +200,7 @@ article_final_implementation:
       VDD_energy_J: 1.4361687004659427e-16
       measured_positive_import_J: 4.1228477739700067e-14
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/membrane_cell_v2/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/membrane_cell_v2/consumption.json
       activity_note: Native3T+5x5MIM device partition; no bank-wire extraction. Write window1.2us, read window1.4us
         with external1uA column-load pulse,10fF read load. Positive terminal energy includes charging; it is not
         strictly dissipated heat.
@@ -210,7 +213,7 @@ article_final_implementation:
       VDD_energy_J: 3.334825157368655e-12
       measured_positive_import_J: 3.337846463375644e-12
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/membrane_cell_v2/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/membrane_cell_v2/consumption.json
       activity_note: Native3T+5x5MIM device partition; no bank-wire extraction. Write window1.2us, read window1.4us
         with external1uA column-load pulse,10fF read load. Positive terminal energy includes charging; it is not
         strictly dissipated heat.
@@ -223,7 +226,7 @@ article_final_implementation:
       VDD_energy_J: 8.070175958854683e-16
       measured_positive_import_J: 8.07044045807973e-16
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/membrane_cell_v2/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/membrane_cell_v2/consumption.json
       activity_note: Native3T+5x5MIM device partition; no bank-wire extraction. Write window1.2us, read window1.4us
         with external1uA column-load pulse,10fF read load. Positive terminal energy includes charging; it is not
         strictly dissipated heat.
@@ -236,7 +239,7 @@ article_final_implementation:
       VDD_energy_J: 1.872153742401899e-09
       measured_positive_import_J: 1.8737068919300127e-09
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/plif_core_fast_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/plif_core_fast_sources/consumption.json
       activity_note: 'Original nominal core fixture: initialize, beta, sampled decision/reset, hold. Signed injector
         remains parked; no synaptic event in this core cycle. Separate positive/negative injector measurements are
         supplied. This is not energy of a complete weighted SNN update.'
@@ -251,7 +254,7 @@ article_final_implementation:
       VDD_energy_J: 2.085546174815228e-07
       measured_positive_import_J: 2.0855461748445366e-07
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/plif_core_fast_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/plif_core_fast_sources/consumption.json
       activity_note: 'Original nominal core fixture: initialize, beta, sampled decision/reset, hold. Signed injector
         remains parked; no synaptic event in this core cycle. Separate positive/negative injector measurements are
         supplied. This is not energy of a complete weighted SNN update.'
@@ -264,7 +267,7 @@ article_final_implementation:
       VDD_energy_J: 8.906826293987406e-13
       measured_positive_import_J: 9.09606362175281e-13
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/signed_injector_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/signed_injector_sources/consumption.json
       activity_note: Original positive/negative/idle fixture uses1.609384us pulses. pulse_and_recovery is a6us window
         and includes continuously biased current steering; native phase-driver losses remain outside the measured
         injector.
@@ -277,7 +280,7 @@ article_final_implementation:
       VDD_energy_J: 7.431914221500995e-10
       measured_positive_import_J: 7.431914221939388e-10
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/signed_injector_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/signed_injector_sources/consumption.json
       activity_note: Original positive/negative/idle fixture uses1.609384us pulses. pulse_and_recovery is a6us window
         and includes continuously biased current steering; native phase-driver losses remain outside the measured
         injector.
@@ -290,7 +293,7 @@ article_final_implementation:
       VDD_energy_J: 2.574134001892305e-09
       measured_positive_import_J: 2.5742920820292022e-09
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/weight_duration_fast_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/weight_duration_fast_sources/consumption.json
       source_row_index_zero_based: 30
     - cell: gf180_resident_adaptation_expiry_v3
       instance: Xresident
@@ -300,7 +303,7 @@ article_final_implementation:
       VDD_energy_J: 4.665407881374793e-08
       measured_positive_import_J: 4.6774068065174395e-08
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/resident_adaptation_fast_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/resident_adaptation_fast_sources/consumption.json
       source_row_index_zero_based: 44
     - cell: gf180_six_class_readout_v3
       instance: Xbank_all_negative
@@ -310,7 +313,7 @@ article_final_implementation:
       VDD_energy_J: 3.305993742556161e-08
       measured_positive_import_J: 3.306710638283791e-08
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/six_class_readout_fast_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/six_class_readout_fast_sources/consumption.json
       source_row_index_zero_based: 51
     - cell: gf180_event_phase_sequencer_v1
       instance: Xseq_idle
@@ -320,7 +323,7 @@ article_final_implementation:
       VDD_energy_J: 1.9835965265886792e-10
       measured_positive_import_J: 1.9899438290972637e-10
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/event_sequencer_fast_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/event_sequencer_fast_sources/consumption.json
       source_row_index_zero_based: 53
     - cell: gf180_bin_commit_controller_v2
       instance: Xseq_wait_then_complete
@@ -330,7 +333,7 @@ article_final_implementation:
       VDD_energy_J: 1.13500513296806e-09
       measured_positive_import_J: 1.138743118562933e-09
       basis: native transient, one physical instance
-      evidence: artifacts/analog_asic/final/consumption/measurements/bin_sequencer_fast_sources/consumption.json
+      evidence: artifacts/analog_asic/consumption/measurements/bin_sequencer_fast_sources/consumption.json
       source_row_index_zero_based: 55
     - cell: gf180_bank_pair_shared_reader_v1
       instance: one physical shared module/partition
@@ -339,8 +342,8 @@ article_final_implementation:
       VDD_mean_power_W: 2.3913417150058145e-05
       VDD_energy_J: 1.6739392005040699e-09
       basis: reused native transient supply current
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_bank_pair_shared_reader_v1_native_two_bank_one_reader_v1.json
-      trace: artifacts/analog_asic/final/evidence/module_results/gf180_bank_pair_shared_reader_v1_native_two_bank_one_reader_v1.raw
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_bank_pair_shared_reader_v1_native_two_bank_one_reader_v1.json
+      trace: artifacts/analog_asic/evidence/module_results/gf180_bank_pair_shared_reader_v1_native_two_bank_one_reader_v1.raw
       source_row_index_zero_based: 59
     - cell: shared_reader_page1024_v1
       instance: one physical shared module/partition
@@ -349,8 +352,8 @@ article_final_implementation:
       VDD_mean_power_W: 2.821944698518957e-05
       VDD_energy_J: 1.1287778794075827e-09
       basis: reused native transient supply current
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_page1024_read_frontend_partition_v1_native_A_B_A.json
-      trace: artifacts/analog_asic/final/evidence/module_results/gf180_page1024_read_frontend_partition_v1_native_A_B_A.raw
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_page1024_read_frontend_partition_v1_native_A_B_A.json
+      trace: artifacts/analog_asic/evidence/module_results/gf180_page1024_read_frontend_partition_v1_native_A_B_A.raw
       source_row_index_zero_based: 63
       interpretation: Page frontend/partition trace; not full connected 1024-state page power.
     - cell: gf180_decoded_shared_compute_tile_v2
@@ -360,8 +363,8 @@ article_final_implementation:
       VDD_mean_power_W: 0.0003349051113422011
       VDD_energy_J: 7.702817560870624e-08
       basis: reused native transient supply current
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_decoded_shared_compute_tile_v2_native_selected_row_cycle_v1.json
-      trace: artifacts/analog_asic/final/evidence/module_results/gf180_decoded_shared_compute_tile_v2_native_selected_row_cycle_v1.raw
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_decoded_shared_compute_tile_v2_native_selected_row_cycle_v1.json
+      trace: artifacts/analog_asic/evidence/module_results/gf180_decoded_shared_compute_tile_v2_native_selected_row_cycle_v1.raw
       source_row_index_zero_based: 64
     - cell: gf180_formatted_energy64_v3
       instance: one64-channel formatted RMS module
@@ -370,7 +373,7 @@ article_final_implementation:
       VDD_mean_power_W: 0.006180412501700358
       VDD_energy_J: null
       basis: native hierarchy DC supply power
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_formatted_energy64_v3_native_hierarchy_dc_src06716ac6c5d8.json
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_formatted_energy64_v3_native_hierarchy_dc_src06716ac6c5d8.json
       source_row_index_zero_based: 65
     - cell: gf180_formatted_energy64_v3
       instance: one64-channel formatted RMS module
@@ -379,7 +382,7 @@ article_final_implementation:
       VDD_mean_power_W: 0.006235062196469271
       VDD_energy_J: null
       basis: native hierarchy DC supply power
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_formatted_energy64_v3_native_hierarchy_dc_src06716ac6c5d8.json
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_formatted_energy64_v3_native_hierarchy_dc_src06716ac6c5d8.json
       source_row_index_zero_based: 66
     - cell: gf180_formatted_energy64_v3
       instance: one64-channel formatted RMS module
@@ -388,7 +391,7 @@ article_final_implementation:
       VDD_mean_power_W: 0.006290380441970915
       VDD_energy_J: null
       basis: native hierarchy DC supply power
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_formatted_energy64_v3_native_hierarchy_dc_src06716ac6c5d8.json
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_formatted_energy64_v3_native_hierarchy_dc_src06716ac6c5d8.json
       source_row_index_zero_based: 67
     - cell: gf180_energy_mean_root128_v1
       instance: one128-channel unformatted RMS reducer
@@ -397,7 +400,7 @@ article_final_implementation:
       VDD_mean_power_W: 0.0034531272547076316
       VDD_energy_J: null
       basis: native transient settled supply sample
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_energy_mean_root128_v1_three_transient_srcc9c7ea27b3b8.json
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_energy_mean_root128_v1_three_transient_srcc9c7ea27b3b8.json
       source_row_index_zero_based: 68
     - cell: gf180_energy_mean_root128_v1
       instance: one128-channel unformatted RMS reducer
@@ -406,7 +409,7 @@ article_final_implementation:
       VDD_mean_power_W: 0.003563065798585648
       VDD_energy_J: null
       basis: native transient settled supply sample
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_energy_mean_root128_v1_three_transient_srcc9c7ea27b3b8.json
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_energy_mean_root128_v1_three_transient_srcc9c7ea27b3b8.json
       source_row_index_zero_based: 69
     - cell: gf180_energy_mean_root128_v1
       instance: one128-channel unformatted RMS reducer
@@ -415,7 +418,7 @@ article_final_implementation:
       VDD_mean_power_W: 0.0036743476245649368
       VDD_energy_J: null
       basis: native transient settled supply sample
-      evidence: artifacts/analog_asic/final/evidence/module_results/gf180_energy_mean_root128_v1_three_transient_srcc9c7ea27b3b8.json
+      evidence: artifacts/analog_asic/evidence/module_results/gf180_energy_mean_root128_v1_three_transient_srcc9c7ea27b3b8.json
       source_row_index_zero_based: 70
     - cell: gf180_analog_full25_packet_fabric_v1
       instance: one routed shared categorical macro
@@ -427,7 +430,7 @@ article_final_implementation:
       switching_power_W: 0.00288071
       leakage_power_W: 2.4795e-06
       basis: routed OpenROAD/OpenSTA library power estimate; not transistor transient
-      evidence: artifacts/analog_asic/final/evidence/assembly/full25_packet_fabric_v1/physical_macro.json
+      evidence: artifacts/analog_asic/evidence/assembly/full25_packet_fabric_v1/physical_macro.json
       source_row_index_zero_based: 71
     - cell: gf180_analog_full25_actor_ingress_v2
       instance: one routed shared categorical macro
@@ -439,7 +442,7 @@ article_final_implementation:
       switching_power_W: 0.0249705
       leakage_power_W: 3.04184e-06
       basis: routed OpenROAD/OpenSTA library power estimate; not transistor transient
-      evidence: artifacts/analog_asic/final/evidence/assembly/full25_actor_ingress_v2/physical_macro.json
+      evidence: artifacts/analog_asic/evidence/assembly/full25_actor_ingress_v2/physical_macro.json
       source_row_index_zero_based: 72
     - cell: gf180_analog_full25_accumulation_dispatch_v1
       instance: one routed shared categorical macro
@@ -451,12 +454,12 @@ article_final_implementation:
       switching_power_W: 0.0917531
       leakage_power_W: 4.19387e-06
       basis: routed OpenROAD/OpenSTA library power estimate; not transistor transient
-      evidence: artifacts/analog_asic/final/evidence/assembly/full25_accumulation_dispatch_v1/physical_macro.json
+      evidence: artifacts/analog_asic/evidence/assembly/full25_accumulation_dispatch_v1/physical_macro.json
       source_row_index_zero_based: 73
     full_connected_1024_page_power_available: false
     measured_full_chip_power_available: false
   figures:
-    folder: artifacts/analog_asic/final/images
+    folder: artifacts/analog_asic/images
     formats:
     - PNG
     - SVG
@@ -468,8 +471,40 @@ article_final_implementation:
       add omitted transistor detail.
     membrane_detail_scope: Qualified native 8x8 bank component; not independently matched as an assembled-cell crop.
     plif_detail_scope: Native cell geometry matched to a cell inside assembled GDS.
-    render_manifest: artifacts/analog_asic/final/images/render_manifest.json
-    svg_manifest: artifacts/analog_asic/final/images/svg_manifest.json
+    render_manifest: artifacts/analog_asic/images/render_manifest.json
+    svg_manifest: artifacts/analog_asic/images/svg_manifest.json
+    native_klayout_views:
+      source: scripts/render_article_gds_klayout.py
+      manifest: article/figures/gds_figure_manifest.json
+      images:
+      - article/figures/gds_plif_core.png
+      - article/figures/gds_membrane_bank.png
+      - article/figures/gds_signed_injector.png
+      all_selected_cell_hierarchy_levels_rendered: true
+      reusable_latex: article/Blocks_figures.tex
+      figure_pdf: article/figures/Blocks_figures.pdf
+    device_klayout_views:
+      source: scripts/render_article_gds_devices.py
+      manifest: article/figures/gds_device_manifest.json
+      hidden_metal_layers: [34, 36, 42, 46, 81]
+      hidden_via_layers: [35, 38, 40, 41]
+      panels_with_hidden_wiring: [a, c]
+      bank_panel_b_keeps_all_wiring: true
+      source_gds_modified: false
+      scope: Device-layer display only; complete connectivity is intentionally not visible in panels a and c.
+    section_klayout_views:
+      source: scripts/render_article_gds_sections.py
+      manifest: article/figures/gds_section_manifest.json
+      images:
+      - article/figures/gds_plif_threshold_detail.png
+      - article/figures/gds_plif_reset_detail.png
+      - article/figures/gds_plif_decision_detail.png
+      - article/figures/gds_injector_sources_detail.png
+      - article/figures/gds_injector_switch_detail.png
+      article_panels: [a, c]
+      geometry_modified: false
+      routing_optimization_claimed: false
+      scope: Local windows at original GDS coordinates; remote wiring continues outside the crops. Full-cell images retained.
   acceptance:
     layout_delivered: true
     representative_module_consumption_delivered: true
@@ -487,11 +522,11 @@ article_final_implementation:
       partition has completed characterization.
     - Selected local signed update/commit/5ms hold is measured; it does not establish full-model5ms performance.
   provenance:
-    delivery_report: artifacts/analog_asic/final/delivery.json
-    physical_assembly: artifacts/analog_asic/final/evidence/assembly/full25_native_controls_v31/physical_assembly.json
-    independent_readback: artifacts/analog_asic/final/evidence/assembly/full25_native_controls_v31/independent_readback_v1.json
-    research_interfaces: artifacts/analog_asic/final/evidence/assembly/full25_native_controls_v31/research_boundary_v1.json
-    module_evidence: artifacts/analog_asic/final/evidence/assembly/full25_native_controls_v31/module_evidence_v2.json
+    delivery_report: artifacts/analog_asic/delivery.json
+    physical_assembly: artifacts/analog_asic/evidence/assembly/full25_native_controls_v31/physical_assembly.json
+    independent_readback: artifacts/analog_asic/evidence/assembly/full25_native_controls_v31/independent_readback_v1.json
+    research_interfaces: artifacts/analog_asic/evidence/assembly/full25_native_controls_v31/research_boundary_v1.json
+    module_evidence: artifacts/analog_asic/evidence/assembly/full25_native_controls_v31/module_evidence_v2.json
     historical_path_resolver: artifacts/asic_artifact_index.json
   preserved_digital_references:
     ASIC: artifacts/ASIC/final
@@ -541,19 +576,113 @@ article_final_implementation:
       source: HEAD:docs/ARCHITECTURE.md, Model-to-circuit contract; current docs/AGENTS.md
       scope: Use original epoch58 float semantics. Early quantized ranges and provisional ASAP7 voltage scales are
         obsolete for the final implementation.
-
-# Operational index; historical dated stage keys below remain snapshots.
-
-
-
+  canonical_documentation: docs
+  manuscript:
+    title: 'EventSpikeSeg: Analog/Mixed-Signal ASIC Implementation of an Event-Camera Spiking Segmentation Network'
+    target_journal: Microelectronics Journal
+    article_type: Original paper
+    journal_guide: https://www.sciencedirect.com/journal/microelectronics-journal/publish/guide-for-authors
+    journal_requirements_checked: '2026-10-18'
+    latex_class: elsarticle
+    latex_options: final,5p,times,twocolumn,numbers,sort&compress
+    submission_materials: article/submission
+    submission_status: editorial_adaptation_complete_author_declarations_and_data_deposit_pending
+    submission_manifest: article/submission/submission_manifest.json
+    source_bundle: article/submission/EventSpikeSeg_Microelectronics_Journal_sources.zip
+    authors:
+    - name: Amir Mohammad Khadem Hosseini
+      corresponding: true
+      email: am_khadem@alumni.iust.ac.ir
+      orcid: 0009-0001-8347-9410
+      background: MSc graduate, Electrical Engineering - Digital Electronic Systems; supplied by author
+    - name: Sattar Mirzakuchaki
+      email: m_kuchaki@iust.ac.ir
+      orcid: 0000-0003-0232-9267
+      orcid_source: https://orcid.org/0000-0003-0232-9267
+    affiliation: School of Electrical Engineering, Iran University of Science and Technology, Narmak, Tehran, Iran
+    remaining_submission_items:
+    - Confirm full institutional postal address and work affiliation; degree is not a current appointment.
+    - Funding and sponsor roles; competing interests; complete publisher declarations form.
+    - Confirm CRediT roles, co-author agreement and final human review of assisted content.
+    - Deposit supporting research data and add a persistent identifier/citation, or state a justified restriction.
+    - Supply independent reviewer suggestions in the submission system.
+    source: article/article.tex
+    pdf: article/article.pdf
+    focus: GF180 analog/mixed-signal ASIC physical implementation and representative module consumption
+    full_chip_power_or_hardware_accuracy_claimed: false
+    model_details_preserved:
+    - Raw-event protocol, float PLIF dynamics and subtractive reset
+    - Full 140k topology with per-stage actor and membrane inventory
+    - Standard and depthwise/pointwise blocks, residual ordering, native fusion and continuous readout
+    - Chronological training, scheduled losses and original float checkpoint
+    - Architecture-search stages and separate XL/digital history
+    registered_parameters: 149835
+    inference_parameters: 149423
+    deployed_synaptic_weights: 143824
+    layer_table_actor_total: 25
+    layer_table_membrane_total: 30976000
+    layout_figure_policy: Hide metal/via layers in PLIF and injector device views; preserve bank wiring and the unmodified source GDS.
+    full_current_architecture_figure: article/figures/140k_mejo_vector.tikz
+    previous_raster_architecture: article/figures/140k_final.png
+    previous_vector_architecture_reference: article/figures/140k_full_architecture.tikz
+    full_current_architecture_page: 3
+    original_architecture_image: article/figures/140k_v4.png
+    original_image_published: false
+    original_image_scope: Earlier topology and AI-edited raster retained; Figure 1 now uses editable vector source.
+    compiled_pages: 10
+    reusable_figure_pages: 5
+    figure_review:
+      status: completed_from_existing_layout_and_simulation_data
+      architecture_edit_mode: deterministic_tikz_vector_redraw
+      architecture_provenance: article/figures/architecture_image_provenance.json
+      figure_provenance: article/figures/article_review_figure_manifest.json
+      full_layout_figure: article/figures/gds_full_atlas_publication.pdf
+      full_layout_svg: artifacts/analog_asic/images/full_layout_overview_publication.svg
+      full_layout_page: 6
+      native_layout_page: 7
+      transient_figure: article/figures/selected_state_transient.svg
+      transient_page: 8
+      source_gds_modified: false
+      native_bank_wiring_visible: true
+      new_circuit_simulations: false
+      transient_samples: 2360
+      nominal_supply_V: 3.3
+      nominal_temperature_C: 27
+      nominal_corner: typical
+      consumption_row_methods:
+        per_instance_transient: 59
+        reused_transient_supply: 6
+        dc_supply: 3
+        settled_transient_sample: 3
+        routed_library_estimate: 3
+      geometric_references:
+        membrane_plate_only_mm2: 774.4
+        native_bank_bbox_um2: 10021.968
+        bank_amortized_um2_per_state: 156.59325
+        membrane_bank_replication_mm2: 4850.632512
+        interpretation: Geometry arithmetic only; excludes other state and service circuits, not final die area.
+      remaining_author_details: Funding, conflicts, contribution roles, postal-address confirmation, data deposit and final author review.
 
 
 active_workflow:
-  final_analog_package: artifacts/analog_asic/final
-  final_analog_index: artifacts/analog_asic/final/index.html
-  final_analog_gds: artifacts/analog_asic/final/layout/EventSpikeSeg140k_GF180_Analog.gds
-  final_consumption_summary: artifacts/analog_asic/final/consumption/summary.json
-  final_layout_images: artifacts/analog_asic/final/images
+  asic_source_cleanup:
+    source_folder: asic
+    purpose: Retained hardware source and build recipes; final results are under artifacts.
+    review_bin: bin/asic_source_cleanup_20261015T115233Z
+    original_files: 223
+    retained_files: 185
+    archived_files: 38
+    archived_bytes: 171273
+    permanent_deletions: 0
+    original_hashes_verified: true
+    original_readme_backed_up: true
+    final_gf180_control_sources_retained: true
+    digital_reference_dependencies_retained: true
+  final_analog_package: artifacts/analog_asic
+  final_analog_index: artifacts/analog_asic/index.html
+  final_analog_gds: artifacts/analog_asic/layout/EventSpikeSeg140k_GF180_Analog.gds
+  final_consumption_summary: artifacts/analog_asic/consumption/summary.json
+  final_layout_images: artifacts/analog_asic/images
   final_digital_reference: artifacts/ASIC/final
   final_xl_reference: artifacts/ASIC_XL/final
   artifact_path_locator: artifacts/asic_artifact_index.json
@@ -561,30 +690,30 @@ active_workflow:
   cleanup_deleted_files: 0
   cleanup_user_review_pending: true
   remaining_task: none_for_article_layout_and_representative_consumption_scope
-  per_element_consumption_inventory: artifacts/analog_asic/final/consumption/inventory.json
+  per_element_consumption_inventory: artifacts/analog_asic/consumption/inventory.json
   per_element_consumption_complete: true
-  per_element_consumption_summary: artifacts/analog_asic/final/consumption/summary.json
+  per_element_consumption_summary: artifacts/analog_asic/consumption/summary.json
   consumption_coverage_basis: native_transients_reused_rails_DC_samples_and_labeled_library_estimates
   full1024_connected_page_power_measured: false
   measured_full_chip_power_available: false
   per_module_definition: one_representative_physical_element_or_shared_module
   consumption_requires_strict_functional_accuracy: false
-  latest_full_population_layout: artifacts/analog_asic/final/evidence/assembly/full25_native_controls_v31/physical_assembly.json
-  latest_full_population_readback: artifacts/analog_asic/final/evidence/assembly/full25_native_controls_v31/independent_readback_v1.json
-  article_layout_delivery: artifacts/analog_asic/final/delivery.json
+  latest_full_population_layout: artifacts/analog_asic/evidence/assembly/full25_native_controls_v31/physical_assembly.json
+  latest_full_population_readback: artifacts/analog_asic/evidence/assembly/full25_native_controls_v31/independent_readback_v1.json
+  article_layout_delivery: artifacts/analog_asic/delivery.json
   article_layout_delivery_complete: true
   strict_operational_acceptance_required_for_layout: false
   native_control_boundary_escapes_verified: 325
   native_operation_pads_verified: 725
-  current_module_evidence: artifacts/analog_asic/final/evidence/assembly/full25_native_controls_v31/module_evidence_v2.json
-  connected_selected_accumulation_retention: artifacts/analog_asic/final/evidence/module_results/selected_accumulation_retention_v2/simulation.json
+  current_module_evidence: artifacts/analog_asic/evidence/assembly/full25_native_controls_v31/module_evidence_v2.json
+  connected_selected_accumulation_retention: artifacts/analog_asic/evidence/module_results/selected_accumulation_retention_v2/simulation.json
   categorical_upper_supply_components_joined: 6
   class_current_boundary_escapes_verified: 118
   class_current_supply_reference_endpoints_joined: 4
   analog_boundary_escapes_verified: 1750
   analog_supply_endpoints_joined: 100
   analog_reference_endpoints_joined: 100
-  destination_dispatch_physical_macro: artifacts/analog_asic/final/evidence/assembly/full25_accumulation_dispatch_v1/physical_macro.json
+  destination_dispatch_physical_macro: artifacts/analog_asic/evidence/assembly/full25_accumulation_dispatch_v1/physical_macro.json
   destination_ingress_link: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/accumulation_dispatch_link_v2/independent_readback_v1.json
   native_address_escape_readback: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/full25_membrane_address_breakouts_v18/independent_readback_v1.json
   native_address_routing_inputs: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/native_address_route_inputs_v1/routing_inputs.json
@@ -597,7 +726,7 @@ active_workflow:
   destination_dispatch_job: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/full25_accumulation_dispatch_v1/status.json
   destination_dispatch_simulation: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/results/accumulation_dispatch_v1/simulation.json
   full_population_accumulation_layout: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/full25_accumulation_architecture_v17/physical_assembly.json
-  full_population_accumulation_readback: artifacts/analog_asic/final/evidence/assembly/full25_accumulation_architecture_v17/independent_readback_v1.json
+  full_population_accumulation_readback: artifacts/analog_asic/evidence/assembly/full25_accumulation_architecture_v17/independent_readback_v1.json
   fabric_ingress_pair_layout: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/accumulation_fabric_ingress_v1/physical_assembly.json
   fabric_ingress_pair_readback: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/accumulation_fabric_ingress_v1/independent_readback_v1.json
   accumulation_integration_contract: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/accumulation_architecture_v1/physical_binding_contract.json
@@ -631,7 +760,7 @@ active_workflow:
   independent_parallel_storage_candidate: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/parallel_storage_roots_v4/physical_partition.json
   independent_parallel_storage_readback: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/parallel_storage_roots_v4/independent_readback_v1.json
   real_time_5ms_user_confirmed_20261013: true
-  ingress_physical_macro: artifacts/analog_asic/final/evidence/assembly/full25_actor_ingress_v2/physical_macro.json
+  ingress_physical_macro: artifacts/analog_asic/evidence/assembly/full25_actor_ingress_v2/physical_macro.json
   ingress_current_job: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/full25_actor_ingress_v2/status.json
   decision_control_previous_physical_macro: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/full25_decision_control_v2/physical_macro.json
   decision_control_previous_40mhz_timing_met: false
@@ -639,7 +768,7 @@ active_workflow:
   measured_parallel_service_requirements: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/full25_actor_ingress_v2/measured_parallel_service_requirements_v1.json
   serial_service_architecture_5ms_accepted: false
   required_architecture_next: none_for_delivered_article_scope
-  updated: '2026-10-14'
+  updated: '2026-10-15'
   scope: original_float_analog_ASIC_article_research_implementation
   status: article_layout_and_representative_consumption_delivered
   current_stage: article_layout_delivered_with_documented_operating_limitations
@@ -671,10 +800,10 @@ active_workflow:
   local_update_candidate: settled_NF_terminal_storage_with_frozen_physical_aux_reference_unqualified_complete_PLIF
   module_catalog: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/article_module_catalog_v104.json
   float_parameter_capacity: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/float_parameter_capacity_v1/parameter_capacity_assembly.json
-  shared_storage_50ms_retention: artifacts/analog_asic/final/evidence/module_results/gf180_underplate_biased_bank8x8_v1_native_50ms_select_write_hold_read_src668eeadc9e0e.json
+  shared_storage_50ms_retention: artifacts/analog_asic/evidence/module_results/gf180_underplate_biased_bank8x8_v1_native_50ms_select_write_hold_read_src668eeadc9e0e.json
   storage_capacity_layout: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/assembly/full_capacity_storage_gds_v2/capacity_assembly.json
   storage_retention_supplement: bin/asic_cleanup_2026-10-14_20261014T145109Z/artifacts/analog_asic/results/gf180_parameter_and_retention_supplement_v1.json
-  full_population_manifest: artifacts/analog_asic/final/evidence/assembly/full25actor_original_float_population_manifest_v1.json
+  full_population_manifest: artifacts/analog_asic/evidence/assembly/full25actor_original_float_population_manifest_v1.json
   next_gate: physically_assemble_extracted_signed_event_and_native_state_update_cells;correct_beta_edge_offset;then_bind_v6_bank_scale_and_run_original_float_update_sequence
   refinement_policy: document_known_errors_complete_layout_module_simulation_before_further_precision_tuning
   latest_experiment:
@@ -735,9 +864,18 @@ active_workflow:
     full_chip: false
   final_article_specification: article_final_implementation
   article_markdown_review: docs/documentation_history/article_markdown_review_2026-10-14.html
+  canonical_documentation: docs
+  script_index: scripts/index.html
+  script_review_bin: bin/scripts_cleanup_20261014T163508Z
+  article_sources:
+  - article/article.tex
+  - article/Blocks_figures.tex
+  article_update_status: compiled_and_visual_review_complete
+  article_pdf: article/article.pdf
+  article_figure_pdf: article/figures/Blocks_figures.pdf
 
 document:
-  title: 'EventSpikeSeg: analog/mixed-signal ASIC research implementation for event-camera semantic segmentation'
+  title: 'EventSpikeSeg: Analog/Mixed-Signal ASIC Implementation of an Event-Camera Spiking Segmentation Network'
   short_name: EventSpikeSeg-ASIC
   version: 2.3.0
   status: analog_article_layout_and_representative_consumption_delivered
@@ -870,7 +1008,7 @@ document:
 
 full_model_physical_implementation:
   primary_target: EventSpikeSeg140k_original_float_epoch58_GF180
-  primary_result_root: artifacts/analog_asic/final
+  primary_result_root: artifacts/analog_asic
   current_specification: article_final_implementation
   scope: full_hierarchical_article_layout_and_representative_element_consumption
   layout_complete_for_article_scope: true

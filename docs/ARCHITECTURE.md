@@ -1,6 +1,37 @@
+## Current publication architecture - 2026-10-15
+
+The updated original-style Figure 1 (`article/figures/140k_final.png`) branches native detail directly from the input; skip A is the 32-channel half-resolution sum and skip B is the 64-channel quarter-resolution concat. Native fusion is 40-to-16 PLIF and the head is continuous 16-to-6. Existing actor/state table remains the detailed contract. Full placement overview is GDS-derived with small hierarchy extents; native KLayout detail panels preserve source geometry. See `article/figures/article_review_figure_manifest.json` for recoloring and waveform provenance.
+
 ## Article layout delivered — user scope clarification2026-10-14
 
 V31 is the completed full hierarchical research-layout deliverable under the user's instruction to avoid strict operational acceptance. See `artifacts/analog_asic/assembly/full25_native_controls_v31/article_layout_delivery_v1.json` and ACTIVE_TASKS. All original analog states and implemented modules are included; verified address/event/supply/reference wiring and explicit external research interfaces are documented. Native numerical errors, incomplete full1024-state transient and unproven global5ms timing are reported limitations, not blockers to this layout delivery. Module evidence covers18 completed nominal families plus the page-reader frontend partition. Connected signed-update/commit/5ms-hold evidence is in `results/selected_accumulation_retention_v2/simulation.json`. Further behavioral optimization is optional. Earlier strict flags below are historical; do not infer that the full GDS has not been exported.
+
+
+## Article methods: restored model and circuit mapping
+
+Restored from the [committed Markdown snapshot](documentation_history/article_markdown_HEAD_4fd2e5e93257_20261014T155300Z.zip), commit `4fd2e5e93257`, on 2026-10-14. Historical experiments below retain their original scope; the current delivery is specified by `article_final_implementation` in [project_spec.yaml](project_spec.yaml).
+
+### SNN event and state mapping
+
+A presynaptic spike triggers a signed weighted contribution to its destination membrane. The weight controls the contribution magnitude/sign; it does not determine the presynaptic neuron's firing frequency. Raw input events can have multiplicity, while hidden-layer outputs are binary spikes. Contributions accumulate within the model's 5 ms bin before thresholding.
+
+The original float PLIF charge equation is `candidate = beta * previous_post_reset_state + summed_current`. Apply learned beta once per update, preserve the model's affine gain/offset and subtractive reset (`v_reset=None`), and preserve the ordering of threshold, inhibition and adaptation. An implementation can pre-apply beta after a committed update if the state entering the next bin is equivalent. A bin with no presynaptic event still requires the appropriate state evolution. The six-class readout accumulates signed class current over ten model bins; it does not allocate class PLIF neurons.
+
+Pulse-duration injection and switched-capacitor packets are both ways to deliver the signed contribution. Their relevant properties are integrated charge, state-dependent error, droop, and service time. The early pulse-duration experiments below explain the development path; they do not override the later switched-capacitor and connected-module records elsewhere in this document. The final article permits externally supplied analog contribution/sign and service-phase interfaces and does not claim programmed checkpoint weights or autonomous inference.
+
+### Resident storage and shared service circuits
+
+The 140k model label describes weight scale, not membrane count. At 440 × 640 resolution the implementation preserves 30,976,000 membrane identities across 25 PLIF actors; the delivered layout contains 54,630,400 total logical analog state identities. Shared access circuitry does not remove these separately retained states.
+
+Resident storage is distinct from the circuitry that reads, updates and writes it. Bank/page readers, injection lanes, feedback amplifiers, reference circuits and phase controllers can service multiple stored states. Sharing reduces peripheral replication but adds multiplexing, settling and scheduling overhead. An access transistor or capacitor belonging to a resident cell remains local even when its column reader is shared. Report one-cell consumption separately from shared reader/core costs; multiplying a whole shared core's power by every membrane would overcount.
+
+The final native bank uses 3T plus MIM storage with 8 × 8 organization and shared column bias. Earlier 7 × 7 micrometre plate calculations describe a different candidate. The delivered GDS is a spacious hierarchical research atlas; its envelope is not a compact fabricated die area. Historical plate-area and service calculations are restored in [RESULTS.md](RESULTS.md#article-background-restored-quantitative-experiments).
+
+### Why tracking parking and autozero were explored
+
+The 2026-10-09 injector studies identified charge exchange when an idle source output switched from a fixed common-mode voltage to the state-dependent summing node. A parking follower tracked that node while the source was idle, reducing the voltage step at reconnection. Analog autozero addressed mismatch; additional feedback-capacitor banks reduced state-dependent packet variation in the tested cases.
+
+These circuits were intended to be shared per physical injection lane, not replicated for every logical neuron. A successful zero-state calibration did not establish accuracy at nonzero state, and a small variation relative to a control did not establish random-noise performance or all-weight accuracy. Numerical results and these distinctions are retained in RESULTS.
 
 ## Control and class infrastructure — 2026-10-14
 
@@ -653,7 +684,7 @@ Coverage combines newly completed native transients, reused complete rail-curren
 
 ## ASIC artifact reorganization — 2026-10-14
 
-Canonical article package: `artifacts/analog_asic/final/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
+Canonical article package: `artifacts/analog_asic/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
 
 Digital documentation-only snapshots are `artifacts/ASIC/final/` and `artifacts/ASIC_XL/final/`; neither claims a completed digital full-chip layout. Last exports, hierarchy inventory, completed block views and final reports are retained; digital jobs remain paused.
 

@@ -33,3 +33,9 @@ artifacts/ASIC/*
 
 # Recoverable ASIC cleanup review bins (generated artifacts).
 /bin/asic_cleanup_*/
+
+/bin/scripts_cleanup_*/
+
+/bin/article_reorganization_*/
+
+/artifacts/article_work/

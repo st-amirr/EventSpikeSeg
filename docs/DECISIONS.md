@@ -1,6 +1,43 @@
+## Journal target and manuscript format - 2026-10-18
+
+Target Microelectronics Journal as an Original paper, emphasizing GF180 circuit mapping, shared analog service, physical hierarchy and representative module characterization. Use the publisher's `elsarticle` template; two-column LaTeX is allowed. Retain the user-approved title and detailed model sections. Replace the 1,619-pixel-wide conceptual image with a deterministic vector redraw using the same graph/color organization; retain the original raster. Preserve native GDS visibility policies and source geometry. Report nominal simulation evidence without claiming measured silicon, calibrated segmentation or a compact die. Add mixed-signal circuit context, but avoid incompatible energy rankings. Publication or data deposition has not been authorized by this formatting request.
+
+## Publication figure and evidence decisions - 2026-10-15
+
+Use the corrected original illustration as main Figure 1 and omit the duplicate historical image from the PDFs while retaining its source. Use darker layer colors and a white background for GDS-derived publication variants; preserve geometry and mark hierarchy simplification explicitly. Local PLIF/injector images hide interconnect only; the native 64-state bank retains all wiring. Add results only from existing source data: waveform plots, state inventory, nominal operating conditions and geometric area arithmetic. No new circuit simulation or inferred full-chip performance is required for this editorial revision.
+
 ## Article layout delivered — user scope clarification2026-10-14
 
 V31 is the completed full hierarchical research-layout deliverable under the user's instruction to avoid strict operational acceptance. See `artifacts/analog_asic/assembly/full25_native_controls_v31/article_layout_delivery_v1.json` and ACTIVE_TASKS. All original analog states and implemented modules are included; verified address/event/supply/reference wiring and explicit external research interfaces are documented. Native numerical errors, incomplete full1024-state transient and unproven global5ms timing are reported limitations, not blockers to this layout delivery. Module evidence covers18 completed nominal families plus the page-reader frontend partition. Connected signed-update/commit/5ms-hold evidence is in `results/selected_accumulation_retention_v2/simulation.json`. Further behavioral optimization is optional. Earlier strict flags below are historical; do not infer that the full GDS has not been exported.
+
+
+## Article methods: restored technology and design rationale
+
+Restored from the [committed Markdown snapshot](documentation_history/article_markdown_HEAD_4fd2e5e93257_20261014T155300Z.zip), commit `4fd2e5e93257`, on 2026-10-14. Historical experiments below retain their original scope; the current delivery is specified by `article_final_implementation` in [project_spec.yaml](project_spec.yaml).
+
+### ASAP7 tool and model boundary — historical 2026-09-23 evaluation
+
+The inspected ASAP7 umbrella revision was `d24f8b857ff74cf5b21ab18a7e1b11a3954c449b`; the device PDK revision was `58d72c9d291e186a77468586ab0c43d8a21eda6a`. Its unmodified TT card declared HSPICE level 72 and BSIM-CMG version 107. The initial inverter probe failed in the then-installed ngspice 36 with an unsupported model level. The inspected alternative VA-Models implementation used BSIM-CMG 111.2.1, so substituting it without validated parameter mapping would not establish equivalence to the original model card.
+
+The checked Calibre DRC/LVS/PEX directories contained download instructions rather than usable rule decks. At that stage, native analog macro layout, qualified storage and complete extraction evidence were also missing. These were concrete limitations of the evaluated tool/model setup, not proof that 7 nm cannot support analog circuits. Subsequent MOSCAP diagnostics remain separate experiments with their own retention/acceptance results; they do not retroactively validate this initial probe or establish a usable full ASAP7 analog flow.
+
+The final article implementation uses GF180MCU and native GF180 physical modules. Earlier SKY130 and ASAP7 work supports the development rationale but is not a controlled cross-process PPA comparison. Digital cell libraries and ORFS alone do not turn a behavioral analog circuit into a physically qualified macro.
+
+Source: the corresponding historical section in the committed Markdown snapshot linked above.
+
+### Preserve analog semantics without prescribing fixed-point precision
+
+Use the original epoch58 float checkpoint for model topology and semantics. Quantized export ranges and provisional ASAP7 voltage scales were early experiment settings and are not requirements for the final analog implementation. Required analog precision depends on scaling, sampled error, retention, mismatch and model sensitivity. Report software accuracy separately from circuit evidence.
+
+A presynaptic event contributes signed charge; pulse duration was reused first to limit redesign. Switched-capacitor injection remained an alternative and later circuit records document its development. Compare approaches through charge delivery, state dependence and timing under explicit operating conditions. Do not infer that one encoding is inherently more faithful solely from the fact that the network spikes.
+
+### Share expensive peripherals while preserving resident states
+
+The architecture must retain separately addressable membrane/state identities even when a physical read/compute/write lane is reused. This motivated shared readers, references, injection and feedback circuitry. The historical area and service estimates in RESULTS explain the tradeoff: less replicated peripheral area increases service scheduling and settling demands. They are neither final die-area measurements nor demonstrated population throughput.
+
+### Keep development evidence distinct from article delivery
+
+The useful historical experiments have been restored to ARCHITECTURE and RESULTS; obsolete live-session instructions, unfinished-stage task lists and provisional calibration settings remain in the snapshot. The V31 article layout and representative module-consumption deliverables remain complete under the agreed research scope. Unproven global 5 ms performance, full-chip power and calibrated accuracy remain explicit limitations rather than being inferred from local measurements.
 
 ## Control and class infrastructure — 2026-10-14
 
@@ -986,7 +1023,7 @@ Coverage combines newly completed native transients, reused complete rail-curren
 
 ## ASIC artifact reorganization — 2026-10-14
 
-Canonical article package: `artifacts/analog_asic/final/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
+Canonical article package: `artifacts/analog_asic/` (start at index.html). Final GDS is `layout/EventSpikeSeg140k_GF180_Analog.gds`; PNG/SVG figures are together in images/; current consumption data is consumption/summary.json. Original manifests/source/results are preserved unchanged under evidence/, components/, model_reference/support locations. The current path locator is `artifacts/asic_artifact_index.json`.
 
 Digital documentation-only snapshots are `artifacts/ASIC/final/` and `artifacts/ASIC_XL/final/`; neither claims a completed digital full-chip layout. Last exports, hierarchy inventory, completed block views and final reports are retained; digital jobs remain paused.
 
