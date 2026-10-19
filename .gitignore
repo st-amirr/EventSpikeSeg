@@ -42,3 +42,6 @@ artifacts/ASIC/*
 
 # Recoverable project relocation and conflicting-file backups.
 /bin/workspace_move_*/
+
+# Recoverable consolidation of article publication files.
+/bin/article_consolidation_*/

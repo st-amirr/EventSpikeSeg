@@ -1,0 +1,63 @@
+\paragraph{Figure 1.} Final EventSpikeSeg140k topology used for the analog mapping. The native detail stream branches directly from the input. Matching A markers denote the half-resolution 32-channel skip sum; B markers denote the quarter-resolution 64-channel skip concatenation. Native fusion maps 40 to 16 channels, followed by a continuous 16-to-6 class-current head. The 25 hidden PLIF actors are enumerated in Table~1; auxiliary training heads are omitted. This explanatory vector diagram is rendered from editable TikZ source; it is not a physical-layout image. Diagram prepared with AI-assisted TikZ scripting.
+
+\paragraph{Figure 2.} Depthwise/pointwise residual variant of \texttt{SpikingConvBlock}. Standard-convolution stages instead use one convolution, channel affine transform, and PLIF. The residual is used only for equal channel counts and stride one. Diagram prepared with AI-assisted TikZ scripting.
+
+\paragraph{Figure 3.} EventSpikeSeg native-input, fusion, and continuous-readout path. The figure emphasizes the operations most relevant to recurrent-state cost and preservation of weak spatial evidence. Diagram prepared with AI-assisted TikZ scripting.
+
+\paragraph{Figure 4.} Complete layout hierarchy overview derived from the delivered GDS, with unchanged relative placement. Markers 1--25 locate the individual regions in Supplementary Material S1. Filled blue regions include simplified small-cell extents; this is not a fully resolved transistor view. The atlas spans approximately $1{,}438.2\times2{,}929.0$ mm in database coordinates. That intentionally spacious assembly envelope is not a compact die-area result. Native component geometry is shown separately in Fig.~5.
+
+\paragraph{Figure 5.} Native GF180 layout views. The source GDS is unchanged. Views use independent scales; dimensions describe the displayed windows except for (b), which shows the full native 64-state bank. Panel (a) uses the delivered assembly; (b)--(c) use native component GDS.
+
+\paragraph{Figure 6.} Saved native-tile transient at 3.3 V, 27$^\circ$C, typical corner. (a) Shared compute state and selected resident state during signed pulses and row commit; pulse-start markers identify the externally driven positive and negative events. Restore is enabled at 70--80 $\mu$s and the beta phase at 85--85.5 $\mu$s. (b) Change in the selected stored voltage relative to its value at 230 $\mu$s, over the subsequent 5-ms hold. These plots reuse the original simulation data; no resimulation or weight fitting is applied.
+
+\paragraph{Supplementary Material S1.} Twenty-five GDS-derived vector regions. Regional hierarchy and spatial cutoffs remain documented in the vector manifest.
+
+\paragraph{Figure S1.} Region 1: Native detail input. GDS region extent: $251.75\times496.66$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S2.} Region 2: Native detail convolution. GDS region extent: $251.75\times496.66$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S3.} Region 3: Semantic input stem. GDS region extent: $251.75\times496.92$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S4.} Region 4: Encoder 1 convolution. GDS region extent: $251.75\times496.66$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S5.} Region 5: Encoder 1 extra depthwise. GDS region extent: $251.75\times496.66$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S6.} Region 6: Encoder 1 extra pointwise. GDS region extent: $251.75\times496.66$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S7.} Region 7: Encoder 2 downsampling. GDS region extent: $253.07\times913.67$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S8.} Region 8: Encoder 2 depthwise. GDS region extent: $253.07\times913.67$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S9.} Region 9: Encoder 2 pointwise. GDS region extent: $253.07\times913.67$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S10.} Region 10: Encoder 2 extra depthwise. GDS region extent: $253.07\times913.67$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S11.} Region 11: Encoder 2 extra pointwise. GDS region extent: $253.07\times913.67$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S12.} Region 12: Encoder 3 downsampling depthwise. GDS region extent: $127.30\times476.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S13.} Region 13: Encoder 3 downsampling pointwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S14.} Region 14: Encoder 3 depthwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S15.} Region 15: Encoder 3 pointwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S16.} Region 16: Encoder 3 extra depthwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S17.} Region 17: Encoder 3 extra pointwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S18.} Region 18: Context block 1 depthwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S19.} Region 19: Context block 1 pointwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S20.} Region 20: Context block 2 depthwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S21.} Region 21: Context block 2 pointwise. GDS region extent: $159.95\times632.65$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S22.} Region 22: Decoder coarse projection. GDS region extent: $126.01\times161.25$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S23.} Region 23: Decoder coarse fusion. GDS region extent: $251.74\times306.98$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S24.} Region 24: Decoder fine projection. GDS region extent: $158.63\times210.30$ mm; atlas coordinates, not a compact die footprint.
+
+\paragraph{Figure S25.} Region 25: Native-resolution fusion. GDS region extent: $378.28\times783.59$ mm; atlas coordinates, not a compact die footprint.

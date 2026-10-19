@@ -481,9 +481,9 @@ article_final_implementation:
       source: scripts/render_article_gds_klayout.py
       manifest: article/figures/gds_figure_manifest.json
       images:
-      - article/figures/gds_plif_core.png
+      - article/figures/old/gds_plif_core.png
       - article/figures/gds_membrane_bank.png
-      - article/figures/gds_signed_injector.png
+      - article/figures/old/gds_signed_injector.png
       all_selected_cell_hierarchy_levels_rendered: true
       reusable_latex: article/Blocks_figures.tex
       figure_pdf: article/figures/Blocks_figures.pdf
@@ -498,13 +498,13 @@ article_final_implementation:
       scope: Device-layer display only; complete connectivity is intentionally not visible in panels a and c.
     section_klayout_views:
       source: scripts/render_article_gds_sections.py
-      manifest: article/figures/gds_section_manifest.json
+      manifest: article/figures/old/gds_section_manifest.json
       images:
-      - article/figures/gds_plif_threshold_detail.png
-      - article/figures/gds_plif_reset_detail.png
-      - article/figures/gds_plif_decision_detail.png
-      - article/figures/gds_injector_sources_detail.png
-      - article/figures/gds_injector_switch_detail.png
+      - article/figures/old/gds_plif_threshold_detail.png
+      - article/figures/old/gds_plif_reset_detail.png
+      - article/figures/old/gds_plif_decision_detail.png
+      - article/figures/old/gds_injector_sources_detail.png
+      - article/figures/old/gds_injector_switch_detail.png
       article_panels: [a, c]
       geometry_modified: false
       routing_optimization_claimed: false
@@ -589,17 +589,46 @@ article_final_implementation:
     journal_requirements_checked: '2026-10-18'
     latex_class: elsarticle
     latex_options: final,5p,times,twocolumn,numbers,sort&compress
-    submission_materials: article/submission
-    submission_status: editorial_adaptation_complete_author_declarations_and_data_deposit_pending
-    submission_manifest: article/submission/submission_manifest.json
+    submission_materials: article
+    submission_status: author_declarations_provided_final_submission_checks_pending
+    submission_manifest: article/publication_manifest.json
     publication_revision_labels: omitted_internal_ids_retained_in_manifests
     printed_orcid: false
+    author_declarations_confirmed: 2026-10-19
+    data_repository: https://github.com/st-amirr/EventSpikeSeg
+    dataset_used: DSEC with DSEC-Semantic labels only
+    dataset_download_url: https://dsec.ifi.uzh.ch/dsec-datasets/download/
+    semantic_label_url: https://dsec.ifi.uzh.ch/dsec-semantic/
+    funding_declaration: No specific grant supported this research.
+    competing_interests: None declared.
+    credit_lead_author: Amir Mohammad Khadem Hosseini - research, development, validation, analysis, data curation, visualization and writing
+    credit_senior_author: Sattar Mirzakuchaki - Supervision
+    acknowledgements_section: removed
+    ai_disclosure: OpenAI tools including Codex primarily for coding, feature combination, final model development, layout, routing and simulation support; Grok and manuscript editing also disclosed.
     orcid_note: Not specified as required in current journal guide; retained in submission metadata.
-    supplementary_layout: article/submission/Supplementary_layout_sections.pdf
-    supplementary_layout_pages: 8
-    supplementary_layout_regions: 25
-    supplementary_layout_manifest: article/figures/layout_sections/manifest.json
-    source_bundle: article/submission/EventSpikeSeg_Microelectronics_Journal_sources.zip
+    separate_supplementary_document: false
+    separate_supplementary_files: true
+    layout_region_location: Supplementary Material S1 - individual files
+    supplementary_layout_directory: article/supplementary_layout
+    supplementary_layout_captions: embedded_in_each_individual_PDF
+    supplementary_layout_caption_source: article/supplementary_layout/manifest.json
+    supplementary_layout_caption_renderer: scripts/caption_article_layout_sections.py
+    supplementary_layout_individual_pdfs: 25
+    supplementary_layout_combined_pdf: false
+    layout_region_figures: S1-S25
+    layout_region_count: 25
+    layout_region_manifest: article/supplementary_layout/manifest.json
+    layout_region_vector_manifest: article/supplementary_layout/vector_manifest.json
+    layout_region_formats: [PDF_vector, SVG_vector]
+    layout_region_detail_policy: Existing hierarchy and spatial cutoffs retained; thin routing above extent cutoff restored; previously visible geometry retains its original appearance.
+    unused_figures_archive: article/figures/old
+    unused_figures_archived_count: 61
+    journal_page_limit_note: No overall ten-page limit specified in current guide; checked 2026-10-19.
+    editable_source_directory: article
+    separate_artwork_directory: article/figures
+    highlights: article/highlights.txt
+    figure_captions: embedded_in_article_tex_and_individual_supplementary_PDFs
+    previous_package_archive: bin/article_consolidation_20261019/previous_submission_folder
     authors:
     - name: Amir Mohammad Khadem Hosseini
       corresponding: true
@@ -610,16 +639,18 @@ article_final_implementation:
       email: m_kuchaki@iust.ac.ir
       orcid: 0000-0003-0232-9267
       orcid_source: https://orcid.org/0000-0003-0232-9267
-    affiliation: School of Electrical Engineering, Iran University of Science and Technology, Narmak, Tehran, Iran
+    affiliation: Iran University of Science and Technology, Tehran, Iran
     remaining_submission_items:
     - Confirm full institutional postal address and work affiliation; degree is not a current appointment.
-    - Funding and sponsor roles; competing interests; complete publisher declarations form.
-    - Confirm CRediT roles, co-author agreement and final human review of assisted content.
-    - Deposit supporting research data and add a persistent identifier/citation, or state a justified restriction.
+    - Complete publisher declarations form at submission.
+    - Confirm co-author agreement and final manuscript review.
+    - Verify public release coverage of generated checkpoints, GDS and simulation traces referenced by repository documentation.
     - Supply independent reviewer suggestions in the submission system.
     source: article/article.tex
     pdf: article/article.pdf
     focus: GF180 analog/mixed-signal ASIC physical implementation and representative module consumption
+    publication_internal_bookkeeping: omitted_local_paths_yaml_markdown_manifests_checksums_and_source_filenames
+    figure_reproducibility_appendix: removed
     full_chip_power_or_hardware_accuracy_claimed: false
     model_details_preserved:
     - Raw-event protocol, float PLIF dynamics and subtractive reset
@@ -632,22 +663,27 @@ article_final_implementation:
     deployed_synaptic_weights: 143824
     layer_table_actor_total: 25
     layer_table_membrane_total: 30976000
-    layout_figure_policy: Hide metal/via layers in PLIF and injector device views; preserve bank wiring and the unmodified source GDS.
+    layout_figure_policy: Preserve original bank and overview appearance; visually subdue only newly restored routes; source GDS unchanged.
     full_current_architecture_figure: article/figures/140k_mejo_vector.tikz
-    previous_raster_architecture: article/figures/140k_final.png
-    previous_vector_architecture_reference: article/figures/140k_full_architecture.tikz
+    previous_raster_architecture: article/figures/old/140k_final.png
+    previous_vector_architecture_reference: article/figures/old/140k_full_architecture.tikz
     full_current_architecture_page: 3
-    original_architecture_image: article/figures/140k_v4.png
+    original_architecture_image: article/figures/old/140k_v4.png
     original_image_published: false
     original_image_scope: Earlier topology and AI-edited raster retained; Figure 1 now uses editable vector source.
     compiled_pages: 10
-    reusable_figure_pages: 13
+    reusable_figure_pages: 5
     figure_review:
       status: completed_from_existing_layout_and_simulation_data
       architecture_edit_mode: deterministic_tikz_vector_redraw
-      architecture_provenance: article/figures/architecture_image_provenance.json
+      architecture_provenance: article/figures/old/architecture_image_provenance.json
       figure_provenance: article/figures/article_review_figure_manifest.json
-      full_layout_figure: article/figures/gds_full_atlas_indexed.pdf
+      full_layout_figure: article/figures/gds_full_atlas_indexed_article.png
+      full_layout_vector_source: article/figures/gds_full_atlas_indexed.pdf
+      overview_raster_manifest: article/figures/overview_raster_manifest.json
+      overview_article_dpi: 1016
+      overview_reusable_dpi: 1053.1707317073171
+      overview_embedding: raster_for_fast_pdf_rendering
       full_layout_svg: artifacts/analog_asic/images/full_layout_overview_publication.svg
       full_layout_page: 6
       native_layout_page: 7
@@ -672,7 +708,7 @@ article_final_implementation:
         bank_amortized_um2_per_state: 156.59325
         membrane_bank_replication_mm2: 4850.632512
         interpretation: Geometry arithmetic only; excludes other state and service circuits, not final die area.
-      remaining_author_details: Funding, conflicts, contribution roles, postal-address confirmation, data deposit and final author review.
+      remaining_author_details: Postal-address confirmation, co-author approval, publisher form, generated-artifact public release coverage and final manuscript review.
 
 
 active_workflow:

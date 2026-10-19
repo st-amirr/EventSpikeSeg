@@ -151,17 +151,31 @@ full analog implementation has passed end-to-end model equivalence.
 
 Local publication material includes:
 
-- `article/article.tex` and `article/article.pdf`: the 10-page manuscript.
+- `article/article.tex` and `article/article.pdf`: the 10-page main manuscript.
 - `article/Blocks_figures.tex` and `article/figures/Blocks_figures.pdf`: reusable figures.
-- `article/submission/Supplementary_layout_sections.pdf`: 25 GDS-derived actor-region views,
-  keyed to numbered locations in the complete layout overview.
-- `article/submission/`: editable sources, separate artwork, captions, highlights, and manifest.
+- `article/figures/`: layout images and separately exported publication artwork.
+- `article/highlights.txt` and `article/publication_manifest.json`: journal upload materials. Captions are embedded in the manuscript and each supplementary PDF.
 
-The overview simplifies small hierarchy extents. The regional views show eight hierarchy
-levels, with deeper cells represented by bounds; native device and bank figures provide
-cell-level detail. Source hashes and rendering settings accompany the figures.
+The 25 layout-region views are separate one-page vector PDFs with matching SVGs
+in `article/supplementary_layout/` (Figures S1-S25). Upload individual files;
+there is no combined supplementary PDF. Each PDF includes its caption.
 
-The manuscript is being prepared for **Microelectronics Journal**. Author declarations,
-final author approval, and a public research-data deposit/citation or justified access
-restriction remain required before submission. A GitHub source repository alone does
-not make the ignored checkpoints, GDS, and simulation evidence publicly available.
+The overview simplifies small hierarchy extents. The 25 regional views are supplied as PDF and SVG vectors, using adaptive hierarchy
+boundaries and mask geometry. Small cells
+use bounds; existing spatial cutoffs remain documented in the vector manifest.
+Native device and bank figures provide cell-level detail. Source hashes and rendering settings accompany the figures.
+
+The manuscript is being prepared for **Microelectronics Journal**. The author has
+confirmed no specific research funding and no competing interests. Amir Mohammad
+Khadem Hosseini performed the research and development; Sattar Mirzakuchaki supervised.
+The manuscript discloses AI assistance in software, model development, layout/routing,
+simulation workflows and writing. Final co-author approval and submission checks remain.
+
+### Data availability
+
+Project source code and documentation: [EventSpikeSeg on GitHub](https://github.com/st-amirr/EventSpikeSeg).
+Only **DSEC**, including its **DSEC-Semantic** labels, was used for the reported experiments:
+[dataset downloads](https://dsec.ifi.uzh.ch/dsec-datasets/download/) and
+[semantic-label information](https://dsec.ifi.uzh.ch/dsec-semantic/).
+Generated checkpoints, GDS and simulation traces are identified by the project manifests;
+local ignored artifacts require a separate release to become publicly downloadable.
