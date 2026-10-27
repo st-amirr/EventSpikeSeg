@@ -1,3 +1,13 @@
+hardware_paper_scope_current:
+  updated: '2026-10-21'
+  primary_contribution: Resident capacitor memory with shared analog processing for SNNs.
+  central_evidence: Selected-state nominal extracted 64-state tile transient and separate module consumption.
+  application_role: EventSpikeSeg is the application and scaling case study; preserve model details.
+  full_network_asic_demonstrated: false
+  silicon_measurements: false
+  validation_remaining: Transfer accuracy, all-state coverage, PVT and mismatch, complete-tile energy and throughput, matched circuit comparison.
+  scaling_5fF: Analytical only; characterized storage remains 50 fF.
+
 article_final_implementation:
   updated: '2026-10-15'
   status: delivered_for_article_layout_and_representative_consumption_scope

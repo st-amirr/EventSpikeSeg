@@ -1,3 +1,7 @@
+## Hardware paper scope - 2026-10-21 (current)
+
+Lead with resident capacitor memory and shared analog processing. The extracted 64-state tile selected-state experiment is the central evidence, with separate module consumption. EventSpikeSeg and the full hierarchy are an application/scaling case study, not a demonstrated full-network ASIC. Preserve the model detail. Do not describe nominal characterization as comprehensive validation; PVT/mismatch, transfer accuracy, full-tile energy/throughput and matched circuit comparison remain open.
+
 ## Publication prose policy - 2026-10-19 (current)
 
 The article omits internal project bookkeeping: YAML/Markdown files, local artifact paths, source-code filenames, manifests, checksums and delivery-report inventories. The former Figure and Evidence Reproducibility appendix is removed. Keep scientific methods, operating conditions, evidence boundaries, model/training detail, supplementary figure references and public data/code links in the publication. Technical provenance remains in repository documentation and manifests. Older descriptions below of that appendix are historical.
