@@ -18,6 +18,7 @@ quantization-aware training is not required for this analog mapping.
 | Item | Retained result |
 | --- | --- |
 | Best software validation mIoU | **27.976%**, seed 17, epoch 58 of 80 |
+| Completed detailed analog behavioral forward run | **24.26% mIoU** on one full-resolution frame; matching PyTorch frame: **26.22%** |
 | Best-checkpoint pixel accuracy | **66.938%** |
 | Final epoch-80 validation mIoU | **27.096%** |
 | Input / task | Raw DSEC events, 440 x 640, six merged semantic classes |
@@ -28,10 +29,32 @@ quantization-aware training is not required for this analog mapping.
 | Process / storage | GF180MCU, 180 nm; native MIM capacitors with shared access and update circuits |
 | Characterization coverage | 22 module families, 74 retained rows with explicit method and energy boundaries |
 
-These accuracy values are **stored PyTorch validation results**. The physical implementation
-has not been evaluated for segmentation mIoU. The GDS is a spatially expanded research
+The training/validation accuracy rows are **stored PyTorch validation results**. The 24.26%
+row is a separate, completed SPICE-calibrated behavioral simulation of one full frame.
+It uses detailed per-pulse arithmetic and count/voltage output calibration. Physical
+whole-GDS segmentation accuracy remains unqualified. The GDS is a spatially expanded research
 assembly; its envelope is not a compact fabricated-die area result. Whole-chip timing,
 power, mismatch tolerance, and a full-population 5 ms deadline remain unverified.
+
+## Completed forward simulation
+
+The retained run uses the **best epoch-58 checkpoint**, all **25 actor convolutions**,
+one **440 x 640** frame (`zurich_city_02_a`, frame 1), and **10 event bins**. Its result is
+**24.26% mIoU**, compared with **26.22% for that same frame in PyTorch**: a difference
+of **-1.96 percentage points**. This single-frame comparison is separate from the
+234-record software validation summarized below.
+
+The simulation ran on CPU in **14.85 minutes**, with **2.42 GiB peak RSS**. It uses
+the nominal **5 fF storage variant**, measured storage/refresh errors, unchanged
+**3.3 V supply**, and an assumed **1 mV RMS storage-noise term**. The reported result
+uses the detailed per-pulse calibrated model; the later endpoint approximation was
+discarded as unnecessary for this forward demonstration.
+
+Start with the [final simulation report](artifacts/analog_asic/evidence/forward_simulation/README.md)
+and [comparison image](artifacts/analog_asic/evidence/forward_simulation/comparison/comparison.png).
+The directory guide below locates the preserved simulator, outputs, reference and layout.
+Calibration/extrapolation limits and unqualified physical categorical/noise behavior
+are recorded in the report and completion audit.
 
 ## Checkpoint accuracy and provenance
 
@@ -79,6 +102,13 @@ digital event/address control are shared across states. Six continuous class-cur
 accumulators implement the readout. Full-precision training does not establish the
 precision attained by the analog circuits.
 
+The completed forward run additionally retains a separate **5 fF compact-bank variant**:
+64 cells, native read-bias devices and eight physically routed complementary row drivers
+(473 MOS total, **86.2 x 87.9 um**). Its DRC and unique LVS pass, including GDS readback.
+The compact bank has its own GDS, Magic source and SPICE netlists in the artifact guide.
+The original whole-model GDS still describes the original assembly; full-model layout
+replacement/compaction has not been performed.
+
 Representative nominal results include a **41.711 uW** biased PLIF core and **0.531 mV**
 selected-state drift over a 5 ms hold. Their operating windows and measurement boundaries
 are documented in [RESULTS](docs/RESULTS.md) and the manuscript. Module measurements
@@ -106,7 +136,82 @@ analog state and the original float checkpoint.
 | `docs/RESULTS.md` | Retained software and implementation results |
 | `docs/ACTIVE_TASKS.md` | Current scope and remaining author actions |
 | `article/` | Local manuscript sources, figures, and submission package |
-| `artifacts/` | Large local checkpoints, GDS, traces, and generated evidence; ignored by Git |
+| `artifacts/` | Generated checkpoints, ASIC/analog results, simulation evidence and layouts under the project root |
+
+### Project directory layout
+
+All paths and links below are relative to the main `EventSpikeSeg/` project folder.
+Checkpoints, simulation results and layouts are stored together under `artifacts/`.
+
+The project directory tree is:
+
+```text
+EventSpikeSeg/
+|-- README.md
+|-- src/, scripts/, docs/, asic/, article/
+`-- artifacts/
+    |-- model_checkpoints/dsec_6class/
+    |   `-- EventSpikeSeg140k_seed17_best.pt
+    |-- ASIC/reports/forward_simulation/
+    |   |-- README.md
+    |   |-- pytorch_reference.npz
+    |   |-- pytorch_reference.png
+    |   `-- pytorch_full_validation_summary.json
+    `-- analog_asic/
+        |-- SIMULATION_RESULTS.md
+        |-- layout/EventSpikeSeg140k_GF180_Analog.gds
+        |-- components/storage_bank_5ff_driven/
+        |   |-- storage_bank_5ff_driven.gds
+        |   |-- storage_bank_5ff_driven.mag
+        |   |-- storage_bank_5ff_driven.spice
+        |   |-- qualification.json
+        |   `-- readback/storage_bank_5ff_driven_cap.spice
+        `-- evidence/forward_simulation/
+            |-- README.md
+            |-- result.json
+            |-- retention_manifest.json
+            |-- final_result/
+            |   |-- 0000_zurich_city_02_a_000001.npz
+            |   |-- 0000_zurich_city_02_a_000001.png
+            |   |-- summary.json
+            |   `-- completion_audit.json
+            |-- comparison/comparison.png
+            `-- provenance/
+                |-- count_decoder_full_forward.py
+                |-- count_calibrated_mac_provider.py
+                |-- completed_forward_arguments.json
+                |-- calibrated_convolution_adapter.py
+                |-- native_memory_arithmetic_kernel.py
+                `-- ... calibration tables and validation records
+```
+
+### Artifact file guide
+
+Paths and **Open** links below are relative to the project root.
+
+| File / purpose | Path under `EventSpikeSeg/` | Link |
+| --- | --- | --- |
+| Main simulator source, preserved byte-for-byte | `artifacts/analog_asic/evidence/forward_simulation/provenance/count_decoder_full_forward.py` | [Open](artifacts/analog_asic/evidence/forward_simulation/provenance/count_decoder_full_forward.py) |
+| Count/voltage calibration implementation | `artifacts/analog_asic/evidence/forward_simulation/provenance/count_calibrated_mac_provider.py` | [Open](artifacts/analog_asic/evidence/forward_simulation/provenance/count_calibrated_mac_provider.py) |
+| Recorded run arguments | `artifacts/analog_asic/evidence/forward_simulation/provenance/completed_forward_arguments.json` | [Open](artifacts/analog_asic/evidence/forward_simulation/provenance/completed_forward_arguments.json) |
+| Final prediction, target, logits and event counts | `artifacts/analog_asic/evidence/forward_simulation/final_result/0000_zurich_city_02_a_000001.npz` | [Open](artifacts/analog_asic/evidence/forward_simulation/final_result/0000_zurich_city_02_a_000001.npz) |
+| Final result preview | `artifacts/analog_asic/evidence/forward_simulation/final_result/0000_zurich_city_02_a_000001.png` | [Open](artifacts/analog_asic/evidence/forward_simulation/final_result/0000_zurich_city_02_a_000001.png) |
+| Ground truth / reference / simulation comparison | `artifacts/analog_asic/evidence/forward_simulation/comparison/comparison.png` | [Open](artifacts/analog_asic/evidence/forward_simulation/comparison/comparison.png) |
+| Final metrics and independent audit | `artifacts/analog_asic/evidence/forward_simulation/final_result/completion_audit.json` | [Open](artifacts/analog_asic/evidence/forward_simulation/final_result/completion_audit.json) |
+| Matching PyTorch reference | `artifacts/ASIC/reports/forward_simulation/pytorch_reference.npz` | [Open](artifacts/ASIC/reports/forward_simulation/pytorch_reference.npz) |
+| Selected epoch-58 checkpoint | `artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_best.pt` | [Open](artifacts/model_checkpoints/dsec_6class/EventSpikeSeg140k_seed17_best.pt) |
+| Original whole-model layout | `artifacts/analog_asic/layout/EventSpikeSeg140k_GF180_Analog.gds` | [Open](artifacts/analog_asic/layout/EventSpikeSeg140k_GF180_Analog.gds) |
+| Final compact 5 fF bank layout | `artifacts/analog_asic/components/storage_bank_5ff_driven/storage_bank_5ff_driven.gds` | [Open](artifacts/analog_asic/components/storage_bank_5ff_driven/storage_bank_5ff_driven.gds) |
+| Compact-bank device SPICE netlist | `artifacts/analog_asic/components/storage_bank_5ff_driven/storage_bank_5ff_driven.spice` | [Open](artifacts/analog_asic/components/storage_bank_5ff_driven/storage_bank_5ff_driven.spice) |
+| Compact-bank extracted parasitic SPICE netlist | `artifacts/analog_asic/components/storage_bank_5ff_driven/readback/storage_bank_5ff_driven_cap.spice` | [Open](artifacts/analog_asic/components/storage_bank_5ff_driven/readback/storage_bank_5ff_driven_cap.spice) |
+
+The preserved source, parameters and calibration evidence are archived together under
+`provenance/`. Cleanup removed the former `artifacts/simulation/` working directory,
+its Python environment and raw transient dependencies. Rerunning the archived simulator
+requires restoring the environment and restoring/adapting its transient-verification
+dependencies and historical paths. The final outputs, source files and layout/netlist
+files remain available at the locations above. `retention_manifest.json` records their
+original/current locations and checksums.
 
 The article directory has its own Git history. Manuscript paths refer to the local
 checkout; availability on GitHub depends on publishing that directory/repository as well.

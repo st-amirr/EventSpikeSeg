@@ -1,3 +1,13 @@
+## Model forward simulation added — 2026-11-07 (current)
+
+The article now reports the completed detailed per-pulse SPICE-calibrated behavioral forward pass: one 440×640 record, ten bins, all 25 actors, 24.2625% mIoU versus 26.2210% for its matching PyTorch reference. This is not the full 234-record validation score or direct transistor-level network inference. External encoding/decoding remains ideal; assumed storage noise is 1 mV RMS. Calibration has a 3 mV tested-history working tolerance, counted extrapolations and failed stricter source checks. A separate 5 fF bank has passing retained DRC/LVS/readback evidence; the original whole-model GDS is unchanged.
+
+Supplementary Material S3 is included under Model_Forward_Simulation/ in article/supplementary.zip. Canonical result: artifacts/analog_asic/evidence/forward_simulation/result.json. Matching baseline: artifacts/ASIC/reports/forward_simulation/. Older statements that 5 fF is analytical-only or no network behavioral simulation exists are superseded by this entry.
+
+## Publication target — 2026-11-03 (current)
+
+Target Computers & Electrical Engineering (Elsevier, COMPELECENG). Preserve the latest user-edited architecture manuscript and model details. Use the submission mapping and verification limits in COMPELECENG_SUBMISSION.md. Prior JSA/TCAS/Microelectronics targets are historical. No new experimental or full-system claims are authorized by retargeting.
+
 ## Hardware paper scope - 2026-10-21 (current)
 
 Lead with resident capacitor memory and shared analog processing. The extracted 64-state tile selected-state experiment is the central evidence, with separate module consumption. EventSpikeSeg and the full hierarchy are an application/scaling case study, not a demonstrated full-network ASIC. Preserve the model detail. Do not describe nominal characterization as comprehensive validation; PVT/mismatch, transfer accuracy, full-tile energy/throughput and matched circuit comparison remain open.

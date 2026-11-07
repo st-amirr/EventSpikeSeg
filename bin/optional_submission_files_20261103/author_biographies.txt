@@ -1,0 +1,5 @@
+Amir Mohammad Khadem Hosseini
+Amir Mohammad Khadem Hosseini received his M.Sc. degree in electronic engineering, specializing in digital systems, from Iran University of Science and Technology, Tehran, Iran, in 2025. His research focuses on hardware-efficient computer vision, spiking neural networks, event-driven inference, and hardware-software co-design. His work includes FPGA-based semantic segmentation and mixed-signal architectures for event-camera processing. He also has experience in embedded firmware, microcontroller-based hardware, sensor integration, and hardware validation.
+
+Sattar Mirzakuchaki
+Sattar Mirzakuchaki received his Ph.D. degree in electrical engineering from the University of Missouri-Columbia, USA, in 1996. He is a professor of electrical engineering at Iran University of Science and Technology, Tehran, Iran. His research spans VLSI circuit design, cryptography, image processing, and neural computing hardware. His publications include FPGA implementations of neural-network accelerators and image-processing systems, as well as memristor-based neural circuits.

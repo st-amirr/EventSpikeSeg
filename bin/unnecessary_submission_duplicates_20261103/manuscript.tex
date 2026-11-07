@@ -1,0 +1,549 @@
+% Computers \& Electrical Engineering (Elsevier) - revised working manuscript, 2026-11-03.
+% Adapted from the supplied IEEEtran manuscript; experimental values are preserved.
+% Research-paper draft requiring author review and publisher-portal verification.
+\documentclass[preprint,12pt,number]{elsarticle}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{adjustbox}
+\usepackage{microtype}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric,shadows.blur}
+\usepackage[hidelinks]{hyperref}
+\hypersetup{pdfauthor={Amir Mohammad Khadem Hosseini and Sattar Mirzakuchaki}}
+\journal{Computers \& Electrical Engineering}
+\biboptions{numbers,sort&compress}
+
+% -----------------------------------------------------------------------------
+% Submission-update macros. Model accuracy is separated from ASIC
+% implementation metrics so the original float checkpoint can be updated.
+% -----------------------------------------------------------------------------
+% Prior unbound draft mIoU removed; use checkpoint-matched validation evidence.
+
+\newcommand{\CurrentCheckpointLabel}{original float epoch58 checkpoint}
+
+\newcommand{\BaseModel}{EventSpikeSeg}
+\newcommand{\XLModel}{EventSpikeSegXL}
+\newcommand{\NumParams}{149,835}
+\newcommand{\ExecParams}{149,423}
+\newcommand{\SynWeights}{143,824}
+\newcommand{\NumActors}{25}
+\newcommand{\NumEdges}{54}
+\newcommand{\NumPLIF}{30,976,000}
+\newcommand{\NumAdapt}{10,982,400}
+
+
+% -----------------------------------------------------------------------------
+% Shared visual language for the finalized architecture figures.
+% -----------------------------------------------------------------------------
+\definecolor{ink}{HTML}{302B2B}
+\definecolor{muted}{HTML}{625D5D}
+\definecolor{paper}{HTML}{FFFDFC}
+\definecolor{preDark}{HTML}{5C8FBC}
+\definecolor{preMid}{HTML}{87ADD0}
+\definecolor{preLight}{HTML}{EEF5FB}
+\definecolor{encDark}{HTML}{5E966B}
+\definecolor{encMid}{HTML}{8DBA91}
+\definecolor{encLight}{HTML}{F1F8EF}
+\definecolor{bridgeDark}{HTML}{7D4F9F}
+\definecolor{bridgeMid}{HTML}{A47BC0}
+\definecolor{bridgeLight}{HTML}{F5EFF9}
+\definecolor{decDark}{HTML}{B73544}
+\definecolor{decMid}{HTML}{D76A73}
+\definecolor{decLight}{HTML}{FCEFF0}
+\definecolor{readDark}{HTML}{263F79}
+\definecolor{readMid}{HTML}{5B73A4}
+\definecolor{readLight}{HTML}{F0F3FA}
+\definecolor{plifDark}{HTML}{B66B2F}
+\definecolor{plifLight}{HTML}{FCE7D2}
+\definecolor{neutralLight}{HTML}{F4F2F1}
+\definecolor{neutralEdge}{HTML}{7D7774}
+
+\newcommand{\FigureHeaderFont}{\fontsize{9.7}{11.0}\selectfont\bfseries}
+\newcommand{\FigureBadgeFont}{\fontsize{7.8}{9.0}\selectfont\bfseries}
+\newcommand{\FigureBodyFont}{\fontsize{7.9}{9.2}\selectfont}
+\newcommand{\FigureBodyBold}{\fontsize{7.9}{9.2}\selectfont\bfseries}
+\newcommand{\FigureTensorFont}{\fontsize{7.6}{8.9}\selectfont\bfseries}
+\newcommand{\FigureMetaFont}{\fontsize{7.2}{8.4}\selectfont}
+\newcommand{\FigureNoteFont}{\fontsize{7.1}{8.3}\selectfont}
+\newcommand{\SJConv}{\textbf{SpikingJelly Conv2d}}
+\newcommand{\PLIFNode}{\textbf{ParametricLIF}}
+\newcommand{\SpikeBlock}{\textbf{SpikingConvBlock}}
+
+\tikzset{
+  flow/.style={-{Latex[length=3.0mm,width=2.1mm]}, line width=1.15pt, draw=ink, rounded corners=2pt},
+  skip/.style={-{Latex[length=2.7mm,width=1.9mm]}, line width=1.0pt, draw=ink!88, dashed, dash pattern=on 4pt off 3pt, rounded corners=4pt},
+  tensor/.style={font=\FigureTensorFont, text=ink, align=center, fill=white, draw=ink!18, rounded corners=3pt, inner xsep=4pt, inner ysep=3pt},
+  note/.style={font=\FigureNoteFont, align=center, text=muted},
+  card/.style={draw=ink!24, fill=white, rounded corners=4pt, line width=0.95pt, align=center, font=\FigureBodyFont, minimum height=9.5mm, minimum width=21mm, inner xsep=4pt, inner ysep=3pt},
+  precard/.style={card, draw=preDark!70},
+  enccard/.style={card, draw=encDark!78},
+  bridgecard/.style={card, draw=bridgeDark!78},
+  deccard/.style={card, draw=decDark!80},
+  readcard/.style={card, draw=readDark!80},
+  neutralcard/.style={card, draw=neutralEdge!65, fill=neutralLight!45},
+  plif/.style={draw=plifDark!90, fill=plifLight, rounded corners=5pt, line width=1.0pt, minimum width=24mm, minimum height=9.5mm, align=center, font=\FigureBodyBold},
+  add/.style={circle, draw=ink!72, fill=white, line width=1.25pt, minimum size=6mm, inner sep=0pt, font=\bfseries\small}
+}
+\newcommand{\panelbg}[4]{%
+  \begin{scope}[on background layer]
+    \node[fit=#1, rounded corners=8pt, fill=#2, draw=#3, line width=1.15pt, inner sep=8pt] (#4) {};
+  \end{scope}}
+\newcommand{\panelheader}[4]{%
+  \node[fill=#2, rounded corners=4pt, minimum width=#4, minimum height=8mm, anchor=south west] (#1hdr) at ($(#1.north west)+(0mm,1.5mm)$) {};
+  \node[font=\FigureHeaderFont,text=white,anchor=west] at ($(#1hdr.west)+(4mm,0)$) {#3};}
+
+\begin{document}
+\begin{frontmatter}
+\title{EventSpikeSeg: Memory-Aware Mixed-Signal Architecture for Event-Camera Spiking Segmentation}
+\author[iust]{Amir Mohammad Khadem Hosseini\corref{cor1}}
+\ead{am_khadem@alumni.iust.ac.ir}
+\author[iust]{Sattar Mirzakuchaki}
+\ead{m_kuchaki@iust.ac.ir}
+\cortext[cor1]{Corresponding author.}
+\address[iust]{Iran University of Science and Technology, Hengam Street, Resalat Square, Tehran 16846-13114, Iran}
+\begin{abstract}
+Event-camera segmentation requires persistent neural state despite sparse input events, making memory organization a central constraint on embedded implementation. We present EventSpikeSeg, a mixed-signal architecture combining resident capacitor memory with shared analog processing in GF180MCU 180-nm CMOS. Its 25-population spiking encoder--decoder has 143,824 synaptic weights but requires 30,976,000 membrane states at $440\times640$ resolution. The mapping specifies chronological 5-ms model updates, digital event/address services and 64-state capacitor banks. Characterization covers 22 module families and 74 operating points, distinguishing transistor simulations from digital-library estimates. Nominal results include 41.711-$\mu$W biased neuron-core power, 3.338-pJ positive terminal energy for a 1.4-$\mu$s cell read, and 0.531-mV selected-state drift over a 5-ms extracted-tile hold. Commit and coupling errors are reported separately. The software checkpoint records 27.976\% mean intersection-over-union on a held-out six-class DSEC split; this is not hardware accuracy. Component layouts and simulation evidence quantify local implementation costs and expose storage replication and service scheduling as scaling constraints. Full-network operation, compact-die feasibility, system energy and mismatch robustness remain unverified.
+\end{abstract}
+\begin{keyword}
+Event-camera segmentation \sep Spiking neural networks \sep Mixed-signal computing \sep Analog memory \sep Hardware mapping \sep Circuit simulation
+\end{keyword}
+\end{frontmatter}
+
+\section{Introduction}
+Event cameras emit asynchronous brightness-change events $e=(x,y,t,p)$ rather than conventional intensity frames. Their high temporal resolution and activity-dependent output motivate embedded perception pipelines that do not discard timing information at the sensor boundary \cite{gallego2022survey,binas2017ddd17,gehrig2021dsec}. Directly trained spiking neural networks (SNNs) can retain time-dependent internal state while communicating hidden activations as discrete spikes \cite{neftci2019surrogate,fang2021plif,fang2023spikingjelly}. Semantic segmentation nevertheless creates a particularly demanding architectural workload: dense per-pixel class decisions require both long-range context and native-resolution detail, even when activity at the input is sparse.
+
+A small number of trainable synaptic weights is not an adequate predictor of the area, memory bandwidth, or response time of a spatially expanded recurrent SNN. Every active pixel/channel instance can retain a membrane variable, and additional adaptation and readout variables persist between model updates. A systems-oriented evaluation must therefore account for the software execution graph, event routing and accumulation, resident state placement, shared compute service, update ordering, and finally the coverage of physical evidence. Circuit-level power numbers alone cannot establish system-level efficiency.
+
+This article connects event-camera computation to electrical implementation through EventSpikeSeg, examining how persistent analog storage and shared service circuitry realize a stateful inference workload. The workload is a six-class event-camera encoder--decoder with persistent PLIF state and a separate native-resolution detail branch. Its research implementation uses GF180MCU analog storage, shared update/readout functions, and categorical digital dispatch. Native circuit layouts and a hierarchical research assembly provide the physical mapping evidence; the assembly is not a compact taped-out die. The electrical evidence consists of characterized modules and a connected selected-state experiment, not an autonomously operating full-network accelerator.
+
+The contributions of the present study are as follows:
+\begin{enumerate}
+\item A workload-to-hardware mapping of a 25-actor, 54-edge spiking segmentation graph that explicitly distinguishes synaptic parameters from more than 54 million recurrent and readout-state identities.
+\item An execution contract for chronological 5-ms updates, including signed event contributions, persistent-state restoration, sharing of analog update circuits, and the boundary between model-time requirements and unverified full-population deadlines.
+\item A banked mixed-signal implementation with native component layouts and 74 reported operating points across 22 module families, including an extracted-tile signed-update and retention experiment.
+\item An evaluation separating software accuracy, hardware-module simulations, storage-area estimates, and unverified system requirements.
+\end{enumerate}
+
+The aim is to document the architectural consequences of applying a stateful dense-prediction model to neuromorphic hardware; the results do not demonstrate a fabricated device, end-to-end hardware accuracy, or lower system energy than published processors. Sections~\ref{sec:model} and~\ref{sec:mapping} specify the workload and mapping, Sections~\ref{sec:asic} and~\ref{sec:verification} cover implementation, and Section~\ref{sec:results} distinguishes the completed evidence from open validation questions.
+
+\section{Related Work}
+\subsection{Event-Based Semantic Segmentation}
+DSEC and DSEC-Semantic provide high-resolution driving events and semantic labels suitable for raw-event dense prediction \cite{gehrig2021dsec,sun2022ess}. EV-SegNet established an early event-only semantic-segmentation baseline \cite{alonso2019evsegnet}. Kim \emph{et al.} demonstrated direct surrogate-gradient training for semantic segmentation \cite{kim2022beyond}; EvSegSNN emphasized a compact PLIF U-shaped network \cite{hareb2024evsegsnn}. More recent SpikingEDN and SLTNet designs introduced adaptive thresholds, multi-path processing, and spike-driven attention-like operations \cite{zhang2024spikingedn,long2025sltnet}.
+
+\subsection{Neuromorphic and Hardware-Oriented SNN Processing}
+Loihi-based event processing and hardware-aware pipelines such as TRIP illustrate the benefit of aligning event sensing, SNN dynamics, and hardware execution \cite{renner2019attention,arjmand2024trip}. FPGA-oriented work similarly emphasizes fixed-point neuron state and explicit event routing \cite{courtois2024embedded}. Here, the model graph is mapped to a fixed application-specific directed acyclic graph (DAG) of actors, with explicit accounting for every spatially replicated recurrent state.
+
+Patel \emph{et al.} provide a related ASIC deployment: a spiking U-Net mapped across Intel Loihi chips for microscopy-image segmentation \cite{patel2021segmentation}. Using 8-bit weights across platforms, they report over twice the energy efficiency of CPU/GPU execution for online single-image inference, with comparable task performance. Their work demonstrates dense prediction on digital neuromorphic silicon and addresses inter-chip communication. EventSpikeSeg instead maps event-camera segmentation to analog membrane storage and shared mixed-signal circuitry. The different datasets and measured-chip versus module-simulation evidence preclude a direct efficiency ranking.
+
+Mixed-signal processors provide a closer circuit-level context. DYNAPs combines analog neuron/synapse dynamics with asynchronous digital routing and heterogeneous memory structures, demonstrated in prototype silicon \cite{moradi2018dynaps}. Braindrop couples subthreshold analog dynamics to a high-level programming model and compensates device variability at network level \cite{neckar2019braindrop}. EventSpikeSeg investigates a complementary mapping problem: retaining the spatial state inventory of one trained segmentation graph while sharing analog service circuitry. Its evidence is hierarchical layout and nominal module simulation. These different workloads, implementation stages, and energy boundaries do not support a numerical energy-efficiency ranking against those chips.
+
+\subsection{Embedded SNN Architecture and Co-design}
+The Darwin neural processing unit illustrates a configurable digital SNN co-processor, with prototype-silicon evidence for an application-facing architecture \cite{ma2017darwin}. Recent work in this journal has also treated SNN placement and spike-communication patterns as a joint software/hardware optimization problem \cite{xiao2025codesign}. These studies establish an architectural perspective in which communication, memory, mapping, and scheduling matter alongside neuron arithmetic. EventSpikeSeg targets a different workload and a different evidence stage: dense event-based segmentation mapped to resident analog state with shared compute peripherals. Neither throughput nor energy rankings are inferred across these non-equivalent experiments. The present contribution is principally an explicit state-and-service mapping and its physical feasibility constraints, rather than a measured replacement for these systems.
+
+\subsection{Open Mixed-Signal Implementation Flow}
+The GF180MCU open PDK supplies device and physical-design resources for a 0.18-$\mu$m MCU process \cite{gf180pdk}. Native analog cells are assembled with digital control macros; Yosys and OpenROAD support the latter's RTL-to-layout flow \cite{ajayi2019openroad}. KLayout renders the delivered mask geometry directly from GDS \cite{klayout}. Earlier ASAP7 digital results and analog tool-compatibility probes \cite{clark2016asap7,vashishtha2017asap7} remain historical evidence, not the technology basis of the present analog results.
+
+\section{Workload and Stateful Execution Model}
+\label{sec:model}
+
+The model specification defines the temporal and spatial requirements of the circuit implementation. EventSpikeSeg is the primary model and hardware target; EventSpikeSegXL is the larger capacity/reference model. The ten 5-ms bins define model time; achieving that schedule at full population is a separate hardware question.
+
+\subsection{Raw-Event Protocol}
+For semantic label time $t_k$, the DSEC loader selects rectified events
+\begin{equation}
+\mathcal{E}_k=\{e_i\mid t_k-50\,\mathrm{ms}\le t_i<t_k\}
+\end{equation}
+and assigns them chronologically to ten model updates of $\Delta t=5$ ms. The six active output classes merge the eleven DSEC semantic classes as: road/sidewalk $\rightarrow$ flat; sky/building/fence/wall $\rightarrow$ construction+sky; pole/traffic-sign $\rightarrow$ object; vegetation $\rightarrow$ nature; person $\rightarrow$ human; and vehicle $\rightarrow$ vehicle. Complete sequences are held out for validation so recurrent state is never evaluated across shuffled frames.
+
+\subsection{PLIF and Custom Dynamics}
+All signed synaptic contributions for one destination and one 5-ms interval are accumulated before one PLIF update. A simplified floating-point form is
+\begin{align}
+ u_k &= \beta v_{k-1}+I_k,\\
+ s_k &= H(u_k-\theta_k),\\
+ v_k &= u_k-s_k\theta_k.
+\end{align}
+Here $I_k$ is the accumulated synaptic contribution, $\beta$ is learned retention, $\theta_k$ is the effective threshold including adaptation, and $H$ is the threshold function. The subtractive reset follows the original float path with no fixed reset voltage. The model retains stem-only peer-membrane inhibition and triangular retinotopic threshold adaptation. Hidden winner-peer WTA is excluded because the mechanism screen showed severe deep-layer spike starvation.
+
+\subsection{Inference Graph and Recurrent-State Inventory}
+Fig.~\ref{fig:base_arch} shows the final model topology and its two skip merges.
+
+\begin{figure}[!t]
+\centering
+\begin{adjustbox}{max width=0.98\textwidth}\input{figures/140k_mejo_vector.tikz}\end{adjustbox}
+\caption{EventSpikeSeg inference topology used for the analog mapping. The native detail stream branches directly from the input. Matching A markers denote the half-resolution 32-channel skip sum; B markers denote the quarter-resolution 64-channel skip concatenation. Native fusion maps 40 to 16 channels, followed by a continuous 16-to-6 class-current head. The 25 hidden PLIF actors are enumerated in Table~\ref{tab:140k_layers}; auxiliary training heads are omitted. This is an architecture diagram, not a physical-layout image. Diagram preparation used AI-assisted LaTeX/TikZ coding, reviewed by the authors.}
+\label{fig:base_arch}
+\end{figure}
+
+The primary model has \NumParams{} registered parameters, \ExecParams{} inference parameters, and \SynWeights{} deployed synaptic weights. Its 25 PLIF populations form the exported 54-edge actor graph. Table~\ref{tab:140k_layers} expands the native detail, semantic encoder, context, and decoder paths. Actor counts include both PLIF stages of each depthwise/pointwise block; a pointwise projection with one PLIF contributes one actor.
+
+\begin{table}[!t]
+\centering\small
+\caption{Inference topology of EventSpikeSeg at $440\times640$ input resolution. DW/PW denotes depthwise $3\times3$ followed by pointwise $1\times1$; each has its own affine transform and PLIF. Membrane counts exclude adaptation and continuous-readout state.}
+\label{tab:140k_layers}
+\begin{tabularx}{\textwidth}{p{2.1cm}p{2.0cm}X r r}
+\toprule
+Path / stage & Spatial size & Executed operations & Actors & Membranes \\
+\midrule
+Native detail & $440\times640$ & Standard $3\times3$: $2\to8$, then residual $8\to8$. & 2 & 4,505,600 \\
+Half encoder & $220\times320$ & Standard $5\times5$, stride 2: $2\to32$; residual standard $3\times3$ and residual DW/PW at 32 channels. & 4 & 9,011,200 \\
+Quarter encoder & $110\times160$ & Standard $3\times3$, stride 2: $32\to64$; DW/PW at 64 channels, then residual DW/PW. & 5 & 5,632,000 \\
+Eighth encoder & $55\times80$ & DW/PW stride 2: $64\to128$; DW/PW at 128 channels, then residual DW/PW. & 6 & 3,097,600 \\
+Dilated context & $55\times80$ & Two residual DW/PW blocks at 128 channels; depthwise dilation 2. & 4 & 2,252,800 \\
+Decoder projections & Eighth / quarter & $1\times1$: $128\to64$ at eighth; upsample and concatenate with quarter skip ($64+64$); fuse $128\to64$, then project $64\to32$. & 3 & 1,971,200 \\
+Native fusion & $440\times640$ & Upsample semantic32, merge half-resolution skip, upsample to native; concatenate detail8, standard $3\times3$ $40\to16$. & 1 & 4,505,600 \\
+\midrule
+Total hidden state & & & 25 & 30,976,000 \\
+Continuous head & $440\times640$ & $1\times1$ signed current: $16\to6$, temporal accumulation; no class PLIF. & 0 & --- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The half-resolution decoder skip adds semantic and encoder spikes while preserving multiplicity up to two; it is not clamped before native fusion. Within a residual feature block, the residual sum after PLIF is clamped to $[0,1]$. Fig.~\ref{fig:resblock} shows the depthwise and pointwise variant. Standard blocks use a single convolution--affine--PLIF stage. The context dilation enlarges the receptive field without widening the 128-channel state tensor.
+
+The model's learnable retention and thresholds coexist with channel-affine transforms. Stem-only peer-membrane inhibition and encoder/context triangular threshold adaptation are retained; native detail and the half-resolution encoder path do not receive that adaptation. The exported inventory contains \NumAdapt{} adaptation-enabled identities. Auxiliary and boundary heads support training and are excluded from the executed inference inventory.
+
+\begin{figure}[!t]
+\centering
+\begin{adjustbox}{max width=0.96\textwidth}
+\begin{tikzpicture}[node distance=6mm]
+  \node[tensor] (in) {input\\$[T,N,C,H,W]$};
+  \node[enccard, right=8mm of in, minimum width=31mm] (dw) {\SJConv\\depthwise, $3\!\times\!3$, $s=1$\\groups $=C$};
+  \node[enccard, right=of dw, minimum width=24mm] (a1) {\textbf{ChannelAffine}};
+  \node[plif, right=of a1] (p1) {\PLIFNode};
+  \draw[flow] (in)--(dw)--(a1)--(p1);
+  \node[enccard, below=15mm of dw, minimum width=33mm] (pw) {\SJConv\\pointwise, $1\!\times\!1$\\$C\!\rightarrow\!C$};
+  \node[enccard, right=of pw, minimum width=24mm] (a2) {\textbf{ChannelAffine}};
+  \node[plif, right=of a2] (p2) {\PLIFNode};
+  \node[add, right=8mm of p2] (add) {$+$};
+  \node[neutralcard, right=7mm of add, minimum width=18mm] (clamp) {clamp\\$[0,1]$};
+  \node[tensor, right=8mm of clamp] (out) {output\\$[T,N,C,H,W]$};
+  \draw[flow] (p1.south) -- ++(0,-6mm) -| (pw.north);
+  \draw[flow] (pw)--(a2)--(p2)--(add)--(clamp)--(out);
+  \draw[skip] (in.south) -- ++(0,-31mm) -| (add.south);
+  \node[note, below=21mm of a2, xshift=27mm] (n) {identity residual is added \textbf{after the second ParametricLIF}};
+  \panelbg{(in)(p1)(pw)(out)(n)}{encLight}{encDark!72}{panelB}
+  \panelheader{panelB}{encDark}{RESIDUAL SPIKINGCONVBLOCK}{158mm}
+\end{tikzpicture}
+\end{adjustbox}
+\caption{Depthwise/pointwise residual variant of \texttt{SpikingConvBlock}. Standard-convolution stages instead use one convolution, channel affine transform, and PLIF. The residual is used only for equal channel counts and stride one. Diagram preparation used AI-assisted LaTeX/TikZ coding, reviewed by the authors.}
+\label{fig:resblock}
+\end{figure}
+
+\subsection{Native Fusion and Continuous Readout}
+Fig.~\ref{fig:eventspikeseg_path} expands the accuracy- and state-sensitive native path. Raw DSEC events feed a narrow native detail stem and a learned stride-2 semantic stem; decoded semantic features are concatenated with native detail features, mixed by a standard $3\times3$ PLIF stage, and accumulated by the continuous semantic readout.
+
+\begin{figure}[!t]
+\centering
+\begin{adjustbox}{max width=0.97\textwidth}
+\begin{tikzpicture}[node distance=7mm]
+  \node[precard, minimum width=30mm, minimum height=14mm] (raw) {\textbf{Raw DSEC}\\rectified $(t,x,y,p)$\\10$\times$5-ms bins};
+  \node[bridgecard, right=12mm of raw, yshift=13mm, minimum width=34mm] (detail) {\textbf{Detail stream}\\$3\times3$: $2\rightarrow8\rightarrow8$\\native; residual second block};
+  \node[enccard, right=12mm of raw, yshift=-13mm, minimum width=34mm] (sem) {\textbf{Semantic stem}\\standard $5\times5$, $s=2$\\$2\rightarrow32$};
+  \draw[flow] (raw.east) -- ++(6mm,0) |- (detail.west);
+  \draw[flow] (raw.east) -- ++(6mm,0) |- (sem.west);
+  \node[deccard, right=23mm of sem, minimum width=35mm] (d2) {\textbf{Decoder semantic32}\\skip/fusion\\native upsample};
+  \draw[flow] (sem) -- node[note,above,text width=20mm] {encoder +\\context} (d2);
+  \node[bridgecard, right=24mm of detail, minimum width=34mm] (cat) {\textbf{Native concat}\\semantic32 + detail8\\40 channels};
+  \draw[flow] (d2.north) |- (cat.south);
+  \draw[flow] (detail)--(cat);
+  \node[bridgecard, right=9mm of cat, minimum width=38mm] (fuse) {\textbf{Standard $3\times3$ fusion}\\$40\rightarrow16$\\one PLIF threshold};
+  \node[readcard, right=9mm of fuse, minimum width=34mm] (read) {\textbf{Class-current readout}\\$1\times1$, $16\rightarrow6$\\no output PLIF};
+  \node[readcard, right=9mm of read, minimum width=32mm] (arg) {\textbf{10-bin accumulation}\\first-index argmax\\semantic mask};
+  \draw[flow] (cat)--(fuse)--(read)--(arg);
+  \node[note, below=8mm of fuse] (n) {native fusion mixes semantic and detail evidence before the final hidden PLIF threshold};
+  \panelbg{(raw)(detail)(sem)(d2)(cat)(fuse)(read)(arg)(n)}{bridgeLight}{bridgeDark!72}{panelV}
+  \panelheader{panelV}{bridgeDark}{EVENTSPIKESEG FRONT END, NATIVE FUSION, AND READOUT}{190mm}
+\end{tikzpicture}
+\end{adjustbox}
+\caption{EventSpikeSeg native-input, fusion, and continuous-readout path. The figure emphasizes the operations most relevant to recurrent-state cost and preservation of weak spatial evidence. Diagram preparation used AI-assisted LaTeX/TikZ coding, reviewed by the authors.}
+\label{fig:eventspikeseg_path}
+\end{figure}
+
+\subsection{Float Reference and Training Boundary}
+The analog architecture uses the original best-validation float checkpoint from epoch 58. Quantization-aware training (QAT) and Q7.16 digital exports do not define the analog numerical contract. Float32 parameter storage likewise does not imply float32 circuit accuracy: acceptable voltage/charge errors depend on model sensitivity and physical operating conditions.
+
+Training carries recurrent state chronologically and resets it at stream breaks. The scheduled loss transfers emphasis from pixel cross-entropy (CE) toward target-present-class macro CE, increases Dice and boundary supervision, and decreases auxiliary CE. The native detail stream preserves fine spatial evidence while the semantic hierarchy learns broader context. Surrogate gradients train the hidden spikes and PLIF dynamics jointly. The analog reference is the best-validation epoch of the original seed-17, 80-epoch float run; later QAT checkpoints are not used for the analog mapping.
+
+\subsection{Capacity Reference and Numerical Boundaries}
+EventSpikeSegXL was retained as a capacity comparison: 979,179 registered parameters, 968,831 inference parameters, 959,824 synaptic weights, and 44 PLIF actors. Its additional lower-resolution processing, projected bridges, richer decoder fusion, three-way context, 16-channel detail path, 24-channel refinement, and four-head spiking attention explain the larger inventory. Attention uses Q/K coincidence and V gating rather than dense softmax. XL has a separate graph and readout configuration, and is excluded from the present analog measurements.
+
+The earlier digital workflow appended three epochs of range-matched QAT with FP32 master parameters and forward-grid fake quantization. Its archived formats were Q7.16 weights/thresholds, Q15.16 membrane/current, UQ1.23 retention, six-bit adaptation age, Q3.16 adaptation amplitude/strength, and Q5.16 duration. These details preserve the design history; the active analog implementation uses the original float parameters and does not require QAT.
+
+\subsection{Hardware-Oriented Model Selection}
+\label{sec:evolution}
+
+EventSpikeSeg was selected through several controlled search stages rather than by scaling a single backbone. The intermediate candidates are summarized here by the features they tested and the design decisions they established.
+
+The initial ten-model screen varied standard versus depthwise-separable processing, dilation, multiscale fusion, normalization, auxiliary supervision, and skip structures. The strongest configuration was the FPGA-oriented hybrid design. This stage established that compact depthwise/pointwise processing could remain competitive, modest dilation was useful, and parameter count alone was a poor predictor of segmentation quality.
+
+A first top-five mechanism screen then explored learnable PLIF dynamics together with instantaneous and longer-term inhibition. The strongest configuration kept the PLIF/long-term dynamics without aggressive hidden gating, indicating that hard competition could damage deeper spike propagation. A second top-five mechanism screen isolated peer-membrane inhibition, winner-take-all behavior, and triangular threshold adaptation. The light peer-membrane configuration was strongest, so EventSpikeSeg retains peer inhibition only at the stem together with local triangular threshold adaptation and rejects hard hidden winner competition.
+
+The structural top-five search compared compact width, wider multiscale processing, additional depth, dilation, and an early large-kernel stem. The compact dilated configuration was strongest, reinforcing the choice of moderate semantic widths instead of widening every stage. The final top-three accuracy-oriented search focused on multiscale evidence preservation; the dual-path detail configuration was strongest and motivated the persistent native-resolution detail stream used in EventSpikeSeg.
+
+The final EventSpikeSeg configuration therefore uses native $440\times640$ DSEC input, a narrow detail stream alongside a 32/64/128 semantic hierarchy, spike-preserving late fusion, and continuous temporal class-current accumulation rather than a spiking output population. These choices increase immutable synaptic capacity where useful while reducing spatially replicated recurrent state and avoiding premature loss of weak semantic evidence.
+
+The architecture-search measurements were obtained under earlier or reduced protocols and are not used as final DSEC accuracy results. Their role is to explain why the retained EventSpikeSeg features were selected.
+
+The hardware consequence is a large spatial state inventory despite a small synaptic parameter count. The model contains \SynWeights{} deployed synaptic weights but \NumPLIF{} membrane identities. Parameter sharing across spatial positions does not eliminate the need to retain each recurrent state. This motivated banked analog storage and shared physical service circuitry instead of replicating a complete analog update core for each logical neuron.
+
+\section{Cross-Layer System Mapping}
+\label{sec:mapping}
+\subsection{Actor Graph, Persistent State and Communication}
+The executed model is a directed actor graph in which a source spike can request signed contributions at one or more destinations. Each actor retains a tensor of membrane variables across successive chronological bins; the persistent state is not equivalent to one register per trainable synaptic parameter. The deployed graph has 25 PLIF actor populations and 54 directed edges, with 143,824 synaptic weights but 30,976,000 individual membrane identities. Adaptation age and amplitude together contribute another 21,964,800 identities, while class-current accumulation contributes 1,689,600. The resulting total is 54,630,400 logical state identities (Table~\ref{tab:state_inventory}).
+
+Architecturally, this separation leads to three different replication domains: (i) logical state, whose independent values must be retained, (ii) reusable parameter and synaptic contribution logic, and (iii) physical service circuits that can be multiplexed over stored states. Convolutional weight sharing compresses the parameter domain but leaves the state domain proportional to spatial resolution and channel count. Replacing one compute core per state with bank/page-shared service reduces peripheral replication, but incurs addressing, read/restore, settling, and writeback transactions. The work therefore reports state, service, and connectivity inventories separately, rather than equating model parameter count with neuromorphic hardware size.
+
+\subsection{Chronological Execution and Service Requirements}
+The software loader creates ten ordered 5-ms model updates per 50-ms semantic-label record. In each update, input events are accumulated in their corresponding temporal bin, hidden spikes propagate through the defined graph, and the PLIF dynamics evolve with persistent state; an empty incoming-event bin does not imply the state is frozen. The implementation must preserve the trained recurrence and the specified order of leak, threshold/reset, inhibition, and adaptation. Output is a six-class continuous current accumulated across model updates, not six additional spiking neuron populations.
+
+A service-capacity calculation highlights why sharing requires scheduling analysis. If an architecture attempted to update all 30,976,000 membrane identities once in every 5-ms interval, it would demand at least
+\begin{equation}
+ R_{\mathrm{state,all}}=\frac{30{,}976{,}000}{0.005\,\mathrm{s}}=6.1952\times10^9\ \mathrm{updates/s},
+\label{eq:conditional_service}
+\end{equation}
+\emph{before} event fanout, memory access, or inter-actor dependency costs. This is a conditional all-state-workload calculation, not a measured EventSpikeSeg transaction rate or a universal lower bound for alternative sparse schedules. Whether silent states can be represented more economically while preserving leak and adaptation is a separate algorithm--architecture equivalence problem. The original project sets a 5-ms model-time accumulation target for supplied event traffic; it does not establish that all graph layers or a final segmentation mask can complete within 5 ms on the research layout.
+
+\subsection{Hardware/Software Boundary and Reproducibility}
+The software reference is the original floating-point seed-17 checkpoint. This establishes graph connectivity, membrane update semantics, and the recorded segmentation scores, but not analog numerical accuracy. The circuit mapping exposes signed contribution magnitude and sign, operating phases, analog reference/programming ports, and digital event/destination control. Trained-weight transfer and autonomous full-network inference have not been demonstrated. A meaningful co-design validation therefore needs (a) a workload trace of actual event fanout and service transactions, (b) measured or simulated access/compute/commit delays including routed loads, (c) an explicit schedule satisfying dependencies, and (d) hardware-in-the-loop or circuit-calibrated accuracy across the validation split. None of these four steps is asserted to be completed for the entire deployed graph.
+
+\begin{table}[t]
+\centering\small
+\caption{Workload/implementation correspondence and current evidence.}
+\label{tab:cosystem}
+\begin{tabularx}{\textwidth}{p{0.26\textwidth}X}
+\toprule
+System dimension & Documented implementation and evidence boundary \\
+\midrule
+Model execution & 25 PLIF actors, 54 directed edges; original float model and chronological DSEC validation. \\
+Persistent storage & 30.976 million membranes, plus adaptation and class-current identities; native 64-cell storage banks in GDS. \\
+Event communication & Digital packet/actor/destination controls, addressed analog contribution interfaces; bounded RTL/connectivity checks, not total workload throughput. \\
+Neuron service & Shared restore, signed accumulation, leak, decision/reset, and commit modules; nominal module/tile transients, not all-state timing. \\
+Dense readout & Six continuous class-current outputs; native readout module evidence, no full-hardware mIoU. \\
+Physical result & Hierarchical GF180 research atlas; no compact die area, silicon measurement, or system-level PPA. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Banked Mixed-Signal Architecture}
+\label{sec:asic}
+\subsection{3T--MIM Membrane Storage and Shared PLIF Service}
+The implementation retains the 25-actor model graph and its spatial identities. Resident cells use three-transistor access/sensing circuitry and a native metal--insulator--metal (MIM) capacitor; the characterized 8$\times$8 bank contains 64 stored states with shared column bias. The nominal membrane capacitor is 50 fF with a 5$\times$5-$\mu$m plate. Hierarchical page access connects banks to shared read, compute, and writeback circuits. Sharing removes repeated peripheral circuitry, while introducing access and settling costs; it does not merge independently stored membrane values.
+
+The local operating sequence comprises restoring a selected resident state to the shared compute path, applying retention and signed contributions, and committing the updated state to storage. The resident capacitor then holds the state between accesses. Threshold and reset are PLIF service functions; the connected accumulation/hold experiment isolates update, commit, and retention with output-decision/reset stimuli disabled. Accordingly, the bank, PLIF core, and connected tile have distinct characterization boundaries.
+
+Analog service modules implement PLIF update, signed contribution injection, threshold/reset, adaptation, inhibition, normalization, and class-current readout. Digital control macros handle packets, actor ingress, and destination dispatch. These control bits address analog states; they do not make the resident membrane a fixed-point register. The final hierarchy includes 54,630,400 logical analog state identities, of which 30,976,000 are membranes. Table~\ref{tab:state_inventory} separates the state categories; auxiliary compute capacitors and parameter/reference storage are outside this logical count.
+
+\begin{table}[t]
+\centering\small
+\caption{Logical analog state inventory of the mapped inference model.}
+\label{tab:state_inventory}
+\begin{tabular}{lr}
+\toprule
+State category & Identities \\
+\midrule
+PLIF membrane & 30,976,000 \\
+Adaptation age & 10,982,400 \\
+Adaptation amplitude & 10,982,400 \\
+Continuous class current & 1,689,600 \\
+\midrule
+Total & 54,630,400 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Signed Contributions and Model Time}
+A presynaptic event triggers a signed contribution. Weight controls its magnitude and sign, not the presynaptic firing frequency. Pulse-duration/current injection and later switched-capacitor studies address the same integration requirement: deliver the intended signed charge while controlling state-dependent error, idle droop, and access overhead. The final research interfaces permit externally supplied magnitude/sign, references, clocks, and service phases. The layout therefore represents the architecture and native circuitry without claiming that all trained weights have been programmed or that autonomous end-to-end inference has been demonstrated.
+
+For a nominal linear storage capacitor, the intended injection relation is
+\begin{equation}
+\Delta V_m=\frac{Q_{\mathrm{inj}}}{C_m},\qquad
+Q_{\mathrm{inj}}=\int_{t_0}^{t_1}i_{\mathrm{inj}}(t)\,dt.
+\end{equation}
+A model-to-voltage scale must relate the accumulated model contribution to $\Delta V_m$. The trained floating-point representation does not determine that scale or the usable dynamic range. The reported pulse experiments characterize the native circuit under specified stimuli; they do not establish an accurate transfer function for all trained weights.
+
+Contributions are accumulated before thresholding at the model update boundary. Learned retention is applied once per update; thresholding, subtractive reset, inhibition, and adaptation must follow the software ordering. The 5-ms requirement concerns supplied-event accumulation onto membranes, not completion of a segmentation output in 5 ms. A small connected test does not establish a population-wide deadline.
+
+\subsection{Physical Graph and Interfaces}
+The delivered hierarchical assembly retains 25 actor regions and verifies 947 native address nets reaching 1,622 endpoints. It records 2,075 actor boundary escapes, 118 class-current boundary escapes, and 725 verified native operation pads. Six categorical upper supply-grid components and four class supply/reference joins are documented. These counts describe checked connectivity scopes, rather than whole-chip timing or electrical signoff.
+
+\section{Implementation Methodology and Verification Scope}
+\label{sec:verification}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[height=87mm,width=0.97\linewidth,keepaspectratio]{figures/gds_full_atlas_indexed_article.png}
+\caption{Complete layout hierarchy overview derived from the delivered GDS, with unchanged relative placement. Markers 1--25 locate the individual regions in Supplementary Material S1. Filled blue regions include simplified small-cell extents; this is not a fully resolved transistor view. The atlas spans approximately $1{,}438.2\times2{,}929.0$ mm in database coordinates. That intentionally spacious assembly envelope is not a compact die-area result. Native component geometry is shown separately in Fig.~\ref{fig:gds_detail}. Rendering scripts were developed with AI assistance; the view is derived from GDS data.}
+\label{fig:gds_full}
+\end{figure}
+Representative consumption is reported once per distinct physical element or shared module. The evidence combines native transistor transients, reused complete supply-current traces, native settled/DC samples, and explicitly labeled OpenROAD/OpenSTA library estimates. These methods provide different evidence boundaries; all reported circuit results are simulation-based, and no fabricated-chip measurements are included. The full connected 1,024-state page lacks a completed supply transient; its coverage is through frontend/leaf partitions.
+
+\subsection{Characterization Conditions and Scope}
+The 17 retained per-instance consumption jobs use a 3.3-V supply, 27$^\circ$C, and the typical GF180 device corner. Their supplied waveforms, loads, and measurement windows are retained with each result. Ideal independent fixtures drive programming and control ports; the energy boundary excludes their generators unless terminal imports are explicitly recorded. These nominal transient results are separated from the reused traces, settled samples, and library-based estimates described above.
+
+The connected signed-update experiment uses the extracted native 64-state compute tile with 579 MOS devices, eight resistors, 172 native MIM instances, and 5,337 extracted capacitance branches. It uses a typical-corner 3.3-V, 27$^\circ$C setup, a 5-$\mu$s positive pulse starting at 97 $\mu$s and a 3-$\mu$s negative pulse starting at 110 $\mu$s. Statistical process/mismatch switches and output-decision/reset stimuli are disabled. The trace covers 5.23 ms and contains 2,360 adaptive time samples. Local routing capacitance is included; global atlas wiring RC and the routed duration-controller chain are outside this experiment. Consequently, the result characterizes signed accumulation, commit, and hold at one operating point.
+
+For an operating window $[t_0,t_1]$, supply energy and mean power are
+\begin{align}
+ E_{\mathrm{VDD}}&=\int_{t_0}^{t_1}V_{\mathrm{DD}}(t)I_{\mathrm{in}}(t)\,dt,\\
+ \overline P_{\mathrm{VDD}}&=E_{\mathrm{VDD}}/(t_1-t_0).
+\end{align}
+Here positive current enters the measured module. Independent programming, reference, load, and driver ports can supply additional energy; positive terminal imports are reported separately where measured. Energy can include stored capacitor energy and standing bias, so it must not automatically be interpreted as irreversible dissipation or incremental event energy. Shared-core, submodule, bank, and tile measurements overlap and must not be summed into a chip total.
+
+\section{Evaluation: Software and Hardware Evidence}
+\label{sec:results}
+Table~\ref{tab:analog_consumption} reports per-module consumption, and Fig.~\ref{fig:state_transient} reports the connected extracted-tile voltage response. Together they provide electrical simulation evidence in addition to the physical views. The consumption inventory mixes explicitly distinguished analysis methods; it is not a full-chip post-layout power simulation.
+
+\subsection{Delivered Layout and Native GDS Figures}
+The hierarchical assembly includes the full mapped state inventory and the implemented module families. It is a spatially expanded research layout (an assembly atlas), whose envelope is not a compact die-area metric. Fig.~\ref{fig:gds_full} shows the complete placement overview. Fig.~\ref{fig:gds_detail} shows native mask geometry rendered by KLayout, including a PLIF cell selected inside the delivered full GDS. The storage-bank and injector views come from retained native component GDS files. The overview preserves the GDS coordinates while representing small hierarchy instances by extents. Numbered regions link the overview to Supplementary Material S1 (individual Figs. S1--S25), which provides an individual GDS-derived vector view of every actor region. The white-background palette improves print contrast; it does not alter placement or routing.
+
+
+
+\begin{figure}[!t]
+\centering
+\begin{minipage}[t]{0.32\textwidth}\centering\vspace{0pt}
+\includegraphics[height=36mm,width=\linewidth,keepaspectratio]{figures/gds_plif_threshold_devices.pdf}\\
+{\small State/threshold devices: $10\times9\,\mu$m}\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}\centering\vspace{0pt}
+\includegraphics[height=36mm,width=\linewidth,keepaspectratio]{figures/gds_plif_reset_devices.pdf}\\
+{\small Reset device: $7\times9\,\mu$m}\end{minipage}\hfill
+\begin{minipage}[t]{0.32\textwidth}\centering\vspace{0pt}
+\includegraphics[height=36mm,width=\linewidth,keepaspectratio]{figures/gds_plif_decision_devices.pdf}\\
+{\small Decision storage region: $15\times9\,\mu$m}\end{minipage}\\[2mm]
+{\small (a) PLIF device sections.}\\[3mm]
+\begin{minipage}[t]{0.44\textwidth}\centering\vspace{0pt}
+\includegraphics[width=0.88\linewidth]{figures/gds_membrane_bank.pdf}\\
+{\small (b) Native 64-state bank: $100.32\times99.90\,\mu$m.}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.52\textwidth}\centering\vspace{0pt}
+\includegraphics[height=34mm,width=\linewidth,keepaspectratio]{figures/gds_injector_sources_devices.pdf}\\
+{\small Source device: $9\times8\,\mu$m window}\\[2mm]
+\includegraphics[width=54mm]{figures/gds_injector_switch_devices.pdf}\\
+{\small Transmission gate: $30\times8\,\mu$m window}\\[2mm]
+{\small (c) Signed injector devices.}
+\end{minipage}
+\caption{Native GF180 layout views. The source GDS is unchanged. Views use independent scales; dimensions describe the displayed windows except for (b), which shows the full native 64-state bank. Panel (a) uses the delivered assembly; (b)--(c) use native component GDS. Rendering scripts were developed with AI assistance; the view is derived from GDS data.}
+\label{fig:gds_detail}
+\end{figure}
+
+\subsection{Simulated Module Power and Operation Energy}
+Supplementary Material S2 (Circuit Simulation Evidence) provides the complete 74-row consumption table, per-module reports, and the retained testbenches, simulator logs and waveforms. Its linked results index identifies the evidence for each operating point, including the PLIF core, resident membrane cell and signed injector; transistor simulations and digital-library estimates are explicitly distinguished.
+
+The completed inventory covers all 22 required element/module families and contains 74 rows: 59 per-instance native-transient rows, six reused transient-supply rows, three native DC points, three settled transient samples, and three routed-library estimates. Table~\ref{tab:analog_consumption} lists representative operating windows. The PLIF core consumes 41.71 $\mu$W while biased; its 45-$\mu$s initialized beta/decision/reset window consumes 1.872 nJ with the injector parked. That window is not a complete weighted synaptic update. The single-cell read uses an external 1-$\mu$A column-load pulse and a 10-fF read load; the native device partition excludes bank-wire extraction.
+
+\begin{table}[!htbp]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\caption{Representative native module consumption; windows and boundaries are not interchangeable.}
+\label{tab:analog_consumption}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.45cm}>{\raggedright\arraybackslash}p{1.35cm}>{\raggedleft\arraybackslash}p{1.82cm}>{\raggedleft\arraybackslash}p{2.02cm}>{\raggedright\arraybackslash}X@{}}
+\toprule
+Element / operation & Window & \shortstack[l]{Mean VDD\\power\\($\mu$W)} & \shortstack[l]{VDD energy\\(pJ)} & Characterization boundary \\
+\midrule
+PLIF core, biased hold & 5 ms & 41.711 & 208,555 & One physical core, including standing bias. \\
+PLIF update & 45 $\mu$s & 41.603 & 1,872.15 & Injector parked; not full weighted update. \\
+One resident cell, write & 1.2 $\mu$s & $1.197\times10^{-4}$ & $1.436\times10^{-4}$ & Positive terminal imports: 0.04123 pJ. \\
+One resident cell, read & 1.4 $\mu$s & 2.382 & 3.3348 & Positive terminal imports: 3.33785 pJ. \\
+Signed injector & 6 $\mu$s & 0.14845 & 0.89068 & Pulse/recovery; independent phase generation excluded. \\
+Resident adaptation & 200 $\mu$s & 233.270 & 46,654.1 & Five age advances and two spikes. \\
+Six-class evaluation & 100 $\mu$s & 330.599 & 33,059.9 & Readout evaluation only. \\
+Shared bank-pair reader & 70 $\mu$s & 23.913 & 1,673.94 & Reused nominal supply trace. \\
+Page reader frontend & 40 $\mu$s & 28.219 & 1,128.78 & Partition; not full 1,024-state page. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The 64-channel formatted normalization block has settled supply samples of 6.180--6.290 mW; the 128-channel unformatted reducer has samples of 3.453--3.674 mW. These are operating-point samples, not event energies, and their numerical errors remain documented. Routed-library default-activity estimates are 5.258 mW for the packet fabric, 75.950 mW for actor ingress, and 216.102 mW for destination dispatch. They retain the flow's activity/clock assumptions and are not measured full-chip or per-event consumption.
+
+\subsection{Extracted-Tile Signed Update, Commit Error, and Retention}
+The extracted-tile testbench, simulation report, simulator log and raw waveform supporting Fig.~\ref{fig:state_transient} are included in Supplementary Material S2.
+
+A connected selected-state experiment produces positive and negative steps of +88.984 and $-254.945$ mV, respectively. The simulated commit error is $-19.979$ mV; other selected-row columns change by up to 14.377 mV. The selected-state drift over the following 5-ms hold is 0.531 mV. This establishes local signed-update and hold behavior while exposing commit and coupling errors. It does not establish calibrated weight transfer, noise robustness, or a full-population 5-ms service guarantee. Fig.~\ref{fig:state_transient} plots the retained binary simulation trace directly. The compute-node voltage and committed storage-node voltage are distinct circuit quantities; their absolute levels should not be treated as calibrated equivalents.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/selected_state_transient.pdf}
+\caption{Saved native-tile transient at 3.3 V, 27$^\circ$C, typical corner. (a) Shared compute state and selected resident state during signed pulses and row commit; pulse-start markers identify the externally driven positive and negative events. Restore is enabled at 70--80 $\mu$s and the beta phase at 85--85.5 $\mu$s. (b) Change in the selected stored voltage relative to its value at 230 $\mu$s, over the subsequent 5-ms hold. These plots reuse the original simulation data; no resimulation or weight fitting is applied. Plotting scripts were developed with AI assistance; plotted values are from the retained simulator output.}
+\label{fig:state_transient}
+\end{figure}
+
+\subsection{Software Accuracy and Evidence Separation}
+Software segmentation accuracy belongs to the selected PyTorch checkpoint and dataset protocol. It is not a measurement of the physical implementation. The retained epoch58 float-reference metadata records a best validation mean IoU of 0.2797627 (27.976\%). This is a stored checkpoint result under the recorded six-class DSEC protocol, not a new evaluation or a measurement of the ASIC. No hardware mIoU is claimed.
+
+\section{Discussion}
+The dominant storage cost follows spatial state count. With the final nominal $5\times5$-$\mu$m MIM plate, one plate per membrane corresponds to 774.4 mm$^2$ of plate area alone. The retained native 64-state bank occupies a $100.32\times99.90$-$\mu$m bounding box, or 10,021.968 $\mu$m$^2$ per bank and 156.593 $\mu$m$^2$ per stored state after amortizing that bank's access, bias, and routing. Replicating this bank footprint for 30,976,000 membranes gives a geometric reference of 4,850.633 mm$^2$. This calculation excludes adaptation/class-current storage, higher-level service circuits, and top-level placement; it is not the final assembled union area or a compact-die estimate. It explains why capacitor plate area, bank footprint, and the much larger atlas envelope must be reported separately. Small synaptic parameter count does not imply small spatial recurrent-state hardware.
+
+An area-oriented scaling scenario reduces the nominal membrane capacitance from 50 fF to 5 fF. Assuming the same effective plate density of 2 fF/$\mu$m$^2$, the estimated plate area becomes 2.5 $\mu$m$^2$ per membrane and 77.44 mm$^2$ across all membranes, a 90\% reduction in membrane plate area. This estimate excludes access circuitry, spacing and routing; it does not imply a tenfold reduction in bank or die area. The existing layout and simulations remain at 50 fF. At 5 fF, unchanged injected charge or leakage would produce tenfold larger voltage changes, requiring charge retuning and retention checks. Minimum geometry and parasitics must also be checked before this scenario can become a physical design.
+
+Sharing also creates a service-time tradeoff. The characterization windows include settling and bias costs, and the current interfaces can be externally driven. Global interconnect parasitics, supply-voltage drop and electromigration, full-chip timing, population service scheduling, and total chip power remain unqualified. The full 1,024-state connected-page transient and analog precision across noise, mismatch, and operating conditions remain open. These limits define the next engineering stages after the delivered architecture layout and representative characterization.
+
+Historical selected-record software noise screens further show that analog accuracy cannot be inferred from a storage datatype. Those experiments are retained as additional research evidence, with their voltage scaling and limited record coverage explicit. The present contribution is the physical mapping and simulated module evidence; silicon area optimization and calibrated end-to-end inference require additional work.
+
+\subsection{Architectural Interpretation and Comparison Limits}
+The storage figures indicate that the dominant design challenge is not the raw count of learned weights but the scheduling and physical retention of a dense, spatially recurrent state graph. Moving computation into a shared service lane transfers complexity from replicated analog arithmetic to control traffic, bank-access contention, and voltage-error management. The retained nominal module results quantify some ingredients of that tradeoff but do not yet measure whether sharing is beneficial at application level. In contrast to fabricated co-processors such as Darwin \cite{ma2017darwin} or communication-aware SNN co-design \cite{xiao2025codesign}, the present implementation cannot support a quantitative energy, speed, area, or accuracy superiority claim.
+
+For an application-level evaluation, the next experiments should use recorded DSEC event distributions to derive per-actor request arrival rates, compute worst-case and typical page-service occupancy, and measure deadline misses for explicitly stated scheduling and bank configurations. An independent sparse-state equivalence test would establish the cost of updating inactive neurons, while post-layout routed loads and calibrated analog replay would close the loop from the hardware mapping back to semantic segmentation fidelity. These are targeted validation requirements, not results supplied by the current experiments.
+
+\section{Conclusion}
+This work maps EventSpikeSeg to a banked GF180 mixed-signal research architecture, exposing constraints masked by its approximately 150k parameters. The 25-actor, 54-edge model entails 30,976,000 resident membrane states and 54,630,400 total logical state identities; the native 64-state banks and shared service modules separate storage replication from computation replication. Verified local connectivity and the hierarchical GDS demonstrate a physical research assembly. Nominal module simulations, including a 41.711-$\mu$W biased PLIF core and a connected signed-update/retention experiment, provide bounded implementation evidence, while the recorded 27.976\% six-class validation mIoU remains software-only. The decisive system-level questions---mapping the actual spike workload into a feasible service schedule, preserving model accuracy under analog error, and evaluating compact full-network implementation---remain unresolved. The results should therefore be read as a resource-explicit architectural case study rather than a validated real-time neuromorphic segmentation accelerator.
+
+\section*{Funding}
+This research received no specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
+
+\section*{Declaration of Competing Interest}
+The authors declare no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\section*{Data Availability}
+Supplementary Material S1 comprises 25 individual actor-region layout views (Figs. S1--S25). Supplementary Material S2 contains the circuit simulation evidence. Both are supplied in the accompanying supplementary archive, with the layout views retained as individual vector PDFs. It includes a linked results index, the 74-row module-consumption table, numerical reports, retained testbenches, simulator logs, and waveforms. These artifacts support the reported operating points but do not constitute a verified one-command reproduction environment.
+
+The project repository for source code and documentation is \url{https://github.com/st-amirr/EventSpikeSeg}. The generated circuit evidence described above is supplied as Supplementary Material S2; a separate public repository deposit of these generated data has not yet been established. The experiments used only the publicly available DSEC dataset, including its DSEC-Semantic labels \cite{gehrig2021dsec,sun2022ess}. The dataset is available from \url{https://dsec.ifi.uzh.ch/dsec-datasets/download/}, with semantic-label information at \url{https://dsec.ifi.uzh.ch/dsec-semantic/}.
+
+\section*{CRediT authorship contribution statement}
+Amir Mohammad Khadem Hosseini: conceptualization, methodology, software, validation, formal analysis, investigation, data curation, visualization, original draft, review and editing, and project administration. Sattar Mirzakuchaki: supervision.
+
+\section*{Declaration of generative AI and AI-assisted technologies in the manuscript preparation process}
+During this work, the authors used OpenAI tools, including Codex, and xAI Grok to assist code generation and debugging, exploration and combination of model features, development of the final network model, and scripting and execution support for circuit layout, routing, and simulations. OpenAI tools were used primarily for these development tasks and also assisted manuscript organization and editing. OpenAI image generation assisted an earlier conceptual illustration; the model diagram in Fig.~\ref{fig:base_arch} is rendered from editable TikZ source. Physical-layout views were rendered from GDS, and transient plots were produced from retained simulation data using scripts. The authors reviewed and edited the assisted work and take full responsibility for the content of this publication.
+
+% Numbered author-year-independent bibliography for Elsevier numeric citations.
+
+\begin{thebibliography}{99}
+\bibitem{gallego2022survey} G. Gallego, T. Delbruck, G. Orchard, \emph{et al.}, ``Event-based vision: A survey,'' \emph{IEEE Trans. Pattern Anal. Mach. Intell.}, vol. 44, pp. 154--180, 2022, doi: 10.1109/TPAMI.2020.3008413.
+\bibitem{binas2017ddd17} J. Binas, D. Neil, S.-C. Liu, and T. Delbruck, ``DDD17: End-to-end DAVIS driving dataset,'' arXiv:1711.01458, 2017, doi: 10.48550/arXiv.1711.01458.
+\bibitem{gehrig2021dsec} M. Gehrig, W. Aarents, D. Gehrig, and D. Scaramuzza, ``DSEC: A stereo event camera dataset for driving scenarios,'' \emph{IEEE Robot. Autom. Lett.}, vol. 6, pp. 4947--4954, 2021, doi: 10.1109/LRA.2021.3068942.
+\bibitem{neftci2019surrogate} E. O. Neftci, H. Mostafa, and F. Zenke, ``Surrogate gradient learning in spiking neural networks,'' \emph{IEEE Signal Process. Mag.}, vol. 36, pp. 51--63, 2019.
+\bibitem{fang2021plif} W. Fang, Z. Yu, Y. Chen, T. Masquelier, T. Huang, and Y. Tian, ``Incorporating learnable membrane time constant to enhance learning of spiking neural networks,'' in \emph{Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV)}, 2021, pp. 2661--2671.
+\bibitem{fang2023spikingjelly} W. Fang, Y. Chen, J. Ding, \emph{et al.}, ``SpikingJelly: An open-source machine learning infrastructure platform for spike-based intelligence,'' \emph{Sci. Adv.}, vol. 9, Art. no. eadi1480, 2023, doi: 10.1126/sciadv.adi1480.
+\bibitem{alonso2019evsegnet} I. Alonso and A. C. Murillo, ``EV-SegNet: Semantic segmentation for event-based cameras,'' in \emph{Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Workshops (CVPRW)}, 2019.
+\bibitem{kim2022beyond} Y. Kim, J. Chough, and P. Panda, ``Beyond classification: Directly training spiking neural networks for semantic segmentation,'' \emph{Neuromorphic Comput. Eng.}, vol. 2, Art. no. 044015, 2022, doi: 10.1088/2634-4386/ac9b86.
+\bibitem{hareb2024evsegsnn} D. Hareb and J. Martinet, ``EvSegSNN: Neuromorphic semantic segmentation for event data,'' in \emph{Proc. Int. Joint Conf. Neural Netw. (IJCNN)}, 2024, pp. 1--8, doi: 10.1109/IJCNN60899.2024.10650811.
+\bibitem{zhang2024spikingedn} R. Zhang, L. Leng, K. Che, \emph{et al.}, ``Accurate and efficient event-based semantic segmentation using adaptive spiking encoder-decoder network,'' \emph{IEEE Trans. Neural Netw. Learn. Syst.}, vol. 36, pp. 9326--9340, 2025, doi: 10.1109/TNNLS.2024.3437415.
+\bibitem{long2025sltnet} X. Long, X. Zhu, F. Guo, \emph{et al.}, ``SLTNet: Efficient event-based semantic segmentation with spike-driven lightweight transformer-based networks,'' in \emph{Proc. IEEE/RSJ Int. Conf. Intell. Robots Syst. (IROS)}, 2025, doi: 10.1109/IROS60139.2025.11247662.
+\bibitem{sun2022ess} Z. Sun, N. Messikommer, D. Gehrig, and D. Scaramuzza, ``ESS: Learning event-based semantic segmentation from still images,'' in \emph{Proc. Eur. Conf. Comput. Vis. (ECCV)}, 2022.
+\bibitem{renner2019attention} A. Renner, M. Evanusa, and Y. Sandamirskaya, ``Event-based attention and tracking on neuromorphic hardware,'' arXiv:1907.04060, 2019, doi: 10.48550/arXiv.1907.04060.
+\bibitem{arjmand2024trip} C. Arjmand, Y. Xu, K. Shidqi, \emph{et al.}, ``TRIP: Trainable region-of-interest prediction for hardware-efficient neuromorphic processing on event-based vision,'' arXiv:2406.17483, 2024, doi: 10.48550/arXiv.2406.17483.
+\bibitem{courtois2024embedded} J. Courtois, P.-E. Novac, E. Lemaire, A. Pegatoquet, and B. Miramond, ``Embedded event based object detection with spiking neural network,'' arXiv:2406.17617, 2024, doi: 10.48550/arXiv.2406.17617.
+\bibitem{patel2021segmentation} K. Patel, E. Hunsberger, S. Batir, and C. Eliasmith, ``A spiking neural network for image segmentation,'' arXiv:2106.08921, 2021, doi: 10.48550/arXiv.2106.08921.
+\bibitem{ma2017darwin} D. Ma, J. Shen, Z. Gu, M. Zhang, X. Zhu, X. Xu, Q. Xu, Y. Shen, and G. Pan, ``Darwin: A neuromorphic hardware co-processor based on spiking neural networks,'' \emph{J. Syst. Archit.}, vol. 77, pp. 43--51, 2017, doi: 10.1016/j.sysarc.2017.01.003.
+\bibitem{xiao2025codesign} C. Xiao, Y. Wei, Y. Luo, Z. Yang, R. Gong, W. Xu, L. Wang, \emph{et al.}, ``Hardware/Software Co-design for spike communication optimization: Leveraging neuron-level communication patterns,'' \emph{J. Syst. Archit.}, vol. 168, Art. no. 103553, 2025, doi: 10.1016/j.sysarc.2025.103553.
+\bibitem{moradi2018dynaps} S. Moradi, N. Qiao, F. Stefanini, and G. Indiveri, ``A scalable multicore architecture with heterogeneous memory structures for dynamic neuromorphic asynchronous processors (DYNAPs),'' \emph{IEEE Trans. Biomed. Circuits Syst.}, vol. 12, pp. 106--122, 2018, doi: 10.1109/TBCAS.2017.2759700.
+\bibitem{neckar2019braindrop} A. Neckar, S. Fok, B. V. Benjamin, \emph{et al.}, ``Braindrop: A mixed-signal neuromorphic architecture with a dynamical systems-based programming model,'' \emph{Proc. IEEE}, vol. 107, pp. 144--164, 2019, doi: 10.1109/JPROC.2018.2881432.
+\bibitem{gf180pdk} Google and GlobalFoundries, ``GF180MCU open-source PDK,'' project documentation. [Online]. Available: \url{https://github.com/google/gf180mcu-pdk/blob/main/README.rst}. Accessed: Oct. 18, 2026.
+\bibitem{ajayi2019openroad} T. Ajayi, V. A. Chhabria, M. Foga\c{c}a, \emph{et al.}, ``Toward an open-source digital flow: First learnings from the OpenROAD project,'' in \emph{Proc. 56th ACM/IEEE Design Autom. Conf. (DAC)}, 2019, Art. no. 76, doi: 10.1145/3316781.3326334.
+\bibitem{klayout} KLayout, ``KLayout layout viewer and editor: Introduction.'' [Online]. Available: \url{https://www.klayout.de/intro.html}. Accessed: Oct. 18, 2026.
+\bibitem{clark2016asap7} L. T. Clark, V. Vashishtha, L. Shifren, \emph{et al.}, ``ASAP7: A 7-nm FinFET predictive process design kit,'' \emph{Microelectron. J.}, vol. 53, pp. 105--115, 2016, doi: 10.1016/j.mejo.2016.04.006.
+\bibitem{vashishtha2017asap7} V. Vashishtha, M. Vangala, and L. T. Clark, ``ASAP7 predictive design kit development and cell design technology co-optimization,'' in \emph{Proc. IEEE/ACM Int. Conf. Comput.-Aided Design (ICCAD)}, 2017, pp. 992--998, doi: 10.1109/ICCAD.2017.8203889.
+\end{thebibliography}
+
+
+% Author declarations previously confirmed; verify again before submission.
+
+
+
+\end{document}

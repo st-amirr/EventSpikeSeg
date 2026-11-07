@@ -1,0 +1,19 @@
+{
+  "title": "EventSpikeSeg mixed-signal architecture circuit simulation and layout evidence",
+  "creators": [
+    {
+      "name": "Khadem Hosseini, Amir Mohammad",
+      "orcid": "0009-0001-8347-9410"
+    },
+    {
+      "name": "Mirzakuchaki, Sattar",
+      "orcid": "0000-0003-0232-9267"
+    }
+  ],
+  "description": "S1: 25 individual vector layout PDFs and SVG masters. S2: module consumption table, retained simulation testbenches, reports, logs and waveforms. Nominal simulations and extracted-tile evidence; no silicon measurements or full-network operation.",
+  "related_repository": "https://github.com/st-amirr/EventSpikeSeg",
+  "file": "supplementary.zip",
+  "sha256": "6e234a0376c1b960374604e21456d19dff952f62b8eb8e4c9b0f9dfb1f562f56",
+  "status": "Prepared locally; not deposited; no DOI assigned",
+  "license": "Author selection and third-party model licensing review required before public deposit"
+}

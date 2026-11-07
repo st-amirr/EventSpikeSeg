@@ -1,3 +1,31 @@
+model_forward_simulation_current:
+  updated: '2026-11-07'
+  evidence: artifacts/analog_asic/evidence/forward_simulation/result.json
+  scope: Detailed per-pulse SPICE-calibrated behavioral simulation with ideal external interfaces.
+  records: 1
+  bins: 10
+  actors: 25
+  miou_percent: 24.262471155327045
+  matched_pytorch_miou_percent: 26.22101028799863
+  nominal_storage_fF: 5
+  assumed_storage_noise_rms_mV: 1
+  measured_history_working_limit_mV: 3
+  whole_gds_transistor_inference: false
+  whole_model_gds_changed: false
+  full_validation_split_completed: false
+  supplement: article/supplementary.zip / Model_Forward_Simulation
+
+publication_target_current:
+  updated: '2026-11-03'
+  journal: Computers & Electrical Engineering
+  publisher: Elsevier
+  portal_code: COMPELECENG
+  article_type: Research article
+  format: elsarticle_single_column_preprint
+  scope: Event-camera computation integrated with resident analog memory and shared mixed-signal circuits.
+  current_guide_verification: Official scope verified; author-guide access returned HTTP 403; portal-specific checks pending.
+  submission_notes: docs/COMPELECENG_SUBMISSION.md
+
 hardware_paper_scope_current:
   updated: '2026-10-21'
   primary_contribution: Resident capacitor memory with shared analog processing for SNNs.
@@ -6,7 +34,7 @@ hardware_paper_scope_current:
   full_network_asic_demonstrated: false
   silicon_measurements: false
   validation_remaining: Transfer accuracy, all-state coverage, PVT and mismatch, complete-tile energy and throughput, matched circuit comparison.
-  scaling_5fF: Analytical only; characterized storage remains 50 fF.
+  scaling_5fF: Separate compact 5 fF bank verified and used in calibrated forward model; original whole-model GDS unchanged.
 
 article_final_implementation:
   updated: '2026-10-15'
@@ -593,7 +621,7 @@ article_final_implementation:
   canonical_documentation: docs
   manuscript:
     title: 'EventSpikeSeg: Analog/Mixed-Signal ASIC Implementation of an Event-Camera Spiking Segmentation Network'
-    target_journal: Microelectronics Journal
+    target_journal: Computers & Electrical Engineering
     article_type: Original paper
     journal_guide: https://www.sciencedirect.com/journal/microelectronics-journal/publish/guide-for-authors
     journal_requirements_checked: '2026-10-18'
